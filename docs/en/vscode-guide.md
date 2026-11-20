@@ -28,10 +28,11 @@ For local extension development, open `editors/vscode/` in VS Code and press `F5
 
 ## Extension settings
 
-Configure `ghidra-lsp` in User or Workspace `settings.json`:
+When `ghidraLsp.serverPath` (`"ghidra-lsp"`) and `ghidraLsp.mcpCommand` (`"ghidra-mcp"`) keep their defaults and are missing from `PATH`, the extension installs `@ghidra-lsp/cli` and `@ghidra-mcp/cli` via `npm` into the shared managed bin directory (`~/.local/share/ghidra-lsp/bin` on Linux and macOS, or `%LOCALAPPDATA%\ghidra-lsp\bin` on Windows). Configure `ghidra-lsp` in User or Workspace `settings.json`:
 
 ```json
 {
+  "ghidraLsp.autoInstall": true,
   "ghidraLsp.serverPath": "ghidra-lsp",
   "ghidraLsp.mcpCommand": "ghidra-mcp",
   "ghidraLsp.mcpArgs": [],
@@ -46,6 +47,7 @@ Configure `ghidra-lsp` in User or Workspace `settings.json`:
 
 | Setting | Type and default | Behavior |
 | --- | --- | --- |
+| `ghidraLsp.autoInstall` | `boolean`, `true` | Automatically install missing default `ghidra-lsp` and `ghidra-mcp` binaries via `npm` into the shared user bin directory |
 | `ghidraLsp.serverPath` | `string`, `"ghidra-lsp"` | Path to the `ghidra-lsp` executable (restart extension after changing) |
 | `ghidraLsp.mcpCommand` | `string`, `"ghidra-mcp"` | Path or command name for the `ghidra-mcp` child process |
 | `ghidraLsp.mcpArgs` | `string[]`, `[]` | Extra CLI arguments forwarded to `ghidra-mcp` |
@@ -135,6 +137,7 @@ Opening a project data type creates a `ghidra-type://<md5><path>.ghidra-type?v=3
 - `ghidraLsp.reanalyze`: **Ghidra: Reanalyze Program**
 - `ghidraLsp.cancelAnalysis`: **Ghidra: Stop Waiting for Analysis**
 - `ghidraLsp.closeSession`: **Ghidra: Close Program**
+- `ghidraLsp.installBinaries`: **Ghidra: Install or Update Binaries**
 
 ### Navigation, catalogs, and inspection
 

@@ -6,6 +6,8 @@
 
 ## 安装与配置
 
+当 `server_path` 与 `mcp_command` 保持默认且未在 `PATH` 中找到时，插件会自动通过 `npm` 安装 `@ghidra-lsp/cli` 与 `@ghidra-mcp/cli` 到共享托管目录（Linux/macOS 为 `~/.local/share/ghidra-lsp/bin`，Windows 为 `%LOCALAPPDATA%\ghidra-lsp\bin`，与 VS Code 扩展复用同一份二进制）。随时可执行 `:GhidraInstall` 手动安装或更新。
+
 ### 使用 `lazy.nvim` 安装
 
 ```lua
@@ -70,6 +72,7 @@ require('ghidra-lsp').setup({
 | `template_arguments` | `'omit'` | `'omit'` 折叠外层 C++ 模板参数为 `<…>`；`'show'` 完整展示。 |
 | `auto_attach` | `true` | 打开 `ghidra://` 等受支持虚拟缓冲区时自动附着 LSP 客户端。 |
 | `auto_start` | `false` | 设为 `true` 时在调用 `setup()` 阶段立即启动语言服务器。 |
+| `auto_install` | `true` | 设为 `true` 时在默认二进制缺失时自动通过 `npm` 安装到共享托管目录。 |
 
 ### 健康检查
 
@@ -79,7 +82,7 @@ require('ghidra-lsp').setup({
 :checkhealth ghidra-lsp
 ```
 
-检查项（`editors/nvim/lua/ghidra-lsp/health.lua`）涵盖 Neovim `>= 0.10` 版本、`server_path` 与 `mcp_command` 可执行性、活跃 LSP 客户端的 `offset_encoding`（期望为 `utf-16`），以及当前选中的 Ghidra 会话与待决重命名状态。
+检查项（`editors/nvim/lua/ghidra-lsp/health.lua`）涵盖 Neovim `>= 0.10` 版本、`npm` 可用性、共享托管二进制目录、`server_path` 与 `mcp_command` 解析来源（`managed`/`path`/`custom`）与可执行性、活跃 LSP 客户端的 `offset_encoding`（期望为 `utf-16`），以及当前选中的 Ghidra 会话与待决重命名状态。
 
 ---
 
@@ -89,12 +92,13 @@ require('ghidra-lsp').setup({
 
 ---
 
-## 24 条用户命令参考（`editors/nvim/plugin/ghidra-lsp.lua`）
+## 25 条用户命令参考（`editors/nvim/plugin/ghidra-lsp.lua`）
 
 ### 会话与二进制管理
 
 | 命令 | 参数 | 功能说明 |
 | --- | --- | --- |
+| `:GhidraInstall` | `[lsp\|mcp]` | 通过 `npm` 安装或更新托管目录中的 `ghidra-lsp` 与 `ghidra-mcp` 二进制文件。 |
 | `:GhidraOpenBinary` | `[path]` | 打开磁盘二进制文件（支持文件路径补全）。已分析则静默恢复，未分析时询问是否启动分析。 |
 | `:GhidraSelectSession` | `[md5]` | 列出并切换到活跃或历史保存的 Ghidra 会话。 |
 | `:GhidraCloseSession` | `[md5]` | 关闭当前或指定会话（若存在未保存的待决重命名会阻止关闭）。 |

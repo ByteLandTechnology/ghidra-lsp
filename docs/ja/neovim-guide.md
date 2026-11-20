@@ -4,6 +4,8 @@
 
 ## インストールと設定
 
+`server_path` と `mcp_command` が既定値のままで `PATH` に見つからない場合、プラグインは `npm` を通じて `@ghidra-lsp/cli` と `@ghidra-mcp/cli` を共有管理ディレクトリ（Linux/macOS は `~/.local/share/ghidra-lsp/bin`、Windows は `%LOCALAPPDATA%\ghidra-lsp\bin`、VS Code 拡張と共有）へ自動インストールします。`:GhidraInstall` でいつでも手動インストール・更新できます。
+
 プラグイン概要は [editors/nvim/README.md](../../editors/nvim/README.md) も参照してください。
 
 ### `lazy.nvim` での設定例
@@ -39,17 +41,19 @@
 | `template_arguments` | `'omit'` | `'omit'` で C++ テンプレート引数を `<…>` 省略、`'show'` で完全表示 |
 | `auto_attach` | `true` | 仮想バッファへ LSP クライアントを自動アタッチするかどうか |
 | `auto_start` | `false` | `setup()` 呼び出し時に即座に `ghidra-lsp` クライアントを起動するかどうか |
+| `auto_install` | `true` | 既定の `ghidra-lsp` / `ghidra-mcp` が見つからない場合に `npm` で自動インストールするかどうか |
 
-導入後は `:checkhealth ghidra-lsp` で Neovim バージョン（`>= 0.10`）、`ghidra-lsp` / `ghidra-mcp` バイナリ、LSP クライアント状態、および選択中セッションを診断できます。
+導入後は `:checkhealth ghidra-lsp` で Neovim バージョン（`>= 0.10`）、`npm`、共有バイナリディレクトリ、`ghidra-lsp` / `ghidra-mcp` の解決元（`managed`/`path`/`custom`）、LSP クライアント状態、および選択中セッションを診断できます。
 
 ![Neovim Ghidra LSP ワークベンチ](../assets/screenshots/neovim-workbench.svg)
 
-## 全 24 個の `:Ghidra*` ユーザーコマンド
+## 全 25 個の `:Ghidra*` ユーザーコマンド
 
-`editors/nvim/plugin/ghidra-lsp.lua` に登録されている全 24 個のコマンドは次のとおりです。
+`editors/nvim/plugin/ghidra-lsp.lua` に登録されている全 25 個のコマンドは次のとおりです。
 
 | コマンド | 引数 | 動作 |
 | --- | --- | --- |
+| `:GhidraInstall` | `[lsp\|mcp]` | `npm` 経由で `ghidra-lsp` と `ghidra-mcp` バイナリをインストールまたは更新します |
 | `:GhidraOpenBinary` | `[path]` | バイナリファイルを開きます（解析済みなら無言で復元、未解析なら解析実行を確認） |
 | `:GhidraSelectSession` | `[md5]` | 開いているまたは保存済みの Ghidra セッションを選択・アクティブ化します |
 | `:GhidraCloseSession` | `[md5]` | 指定または現在の Ghidra セッションを閉じます（未保存編集や保留中リネームがある場合は拒否） |

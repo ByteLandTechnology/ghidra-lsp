@@ -19,8 +19,11 @@ code --install-extension editors/vscode/ghidra-lsp-0.1.0.vsix
 
 ### 扩展设置项（`ghidraLsp.*`）
 
+当 `ghidraLsp.serverPath`（`"ghidra-lsp"`）和 `ghidraLsp.mcpCommand`（`"ghidra-mcp"`）保持默认值且未在 `PATH` 中找到时，扩展会自动通过 `npm` 安装 `@ghidra-lsp/cli` 与 `@ghidra-mcp/cli` 到共享托管目录（Linux/macOS 为 `~/.local/share/ghidra-lsp/bin`，Windows 为 `%LOCALAPPDATA%\ghidra-lsp\bin`）。
+
 | 配置项 | 类型与默认值 | 说明 |
 | --- | --- | --- |
+| `ghidraLsp.autoInstall` | `boolean`，默认 `true` | 当使用默认可执行文件名且缺失时，自动通过 `npm` 安装 `ghidra-lsp` 与 `ghidra-mcp` 到共享用户二进制目录。 |
 | `ghidraLsp.serverPath` | `string`，默认 `"ghidra-lsp"` | Rust 语言服务器可执行文件路径。修改后需重启扩展或重载窗口。 |
 | `ghidraLsp.mcpCommand` | `string`，默认 `"ghidra-mcp"` | `ghidra-mcp` 后端可执行文件路径。 |
 | `ghidraLsp.mcpArgs` | `string[]`，默认 `[]` | 启动 `ghidra-mcp` 子进程时追加的命令行参数列表。 |
@@ -115,7 +118,7 @@ code --install-extension editors/vscode/ghidra-lsp-0.1.0.vsix
 
 ### 完整命令列表
 
-- **会话与生命周期**：`ghidraLsp.openBinary`（Open Binary）、`ghidraLsp.openRecent`（Open Recent Program）、`ghidraLsp.selectSession`（Select Session）、`ghidraLsp.selectSessionItem`（Switch to Session）、`ghidraLsp.openRecentItem`（Reopen Session）、`ghidraLsp.refreshSessions`（Refresh Sessions）、`ghidraLsp.closeSession`（Close Program）、`ghidraLsp.reanalyze`（Reanalyze Program）、`ghidraLsp.cancelAnalysis`（Stop Waiting for Analysis）、`ghidraLsp.programOverview`（Program Overview）。
+- **会话与生命周期**：`ghidraLsp.openBinary`（Open Binary）、`ghidraLsp.openRecent`（Open Recent Program）、`ghidraLsp.selectSession`（Select Session）、`ghidraLsp.selectSessionItem`（Switch to Session）、`ghidraLsp.openRecentItem`（Reopen Session）、`ghidraLsp.refreshSessions`（Refresh Sessions）、`ghidraLsp.closeSession`（Close Program）、`ghidraLsp.reanalyze`（Reanalyze Program）、`ghidraLsp.cancelAnalysis`（Stop Waiting for Analysis）、`ghidraLsp.programOverview`（Program Overview）、`ghidraLsp.installBinaries`（Install or Update Binaries）。
 - **导航与信息检视**：`ghidraLsp.openFunction`、`ghidraLsp.goToAddress`、`ghidraLsp.demangle`、`ghidraLsp.refresh`、`ghidraLsp.refreshBrowser`、`ghidraLsp.refreshStrings`、`ghidraLsp.functionDetails`、`ghidraLsp.inspectType`、`ghidraLsp.browseSymbol`。
 - **重命名、注释与代码修改**：`ghidraLsp.renameSymbol`、`ghidraLsp.saveRename`、`ghidraLsp.saveAllRenames`、`ghidraLsp.showPendingRename`、`ghidraLsp.discardRename`、`ghidraLsp.codeActions`、`ghidraLsp.editComment`、`ghidraLsp.editCommentText`（行内注释 Edit）、`ghidraLsp.selectCommentKind`（Switch Comment Kind）、`ghidraLsp.saveComment`（行内注释 Save）、`ghidraLsp.cancelCommentEdit`（行内注释 Cancel）、`ghidraLsp.closeCommentEditor`（Close comment editor）、`ghidraLsp.editFunction`、`ghidraLsp.editVariables`、`ghidraLsp.editSymbol`。
 - **数据类型管理**：`ghidraLsp.createType`、`ghidraLsp.editType`、`ghidraLsp.deleteType`、`ghidraLsp.applyType`、`ghidraLsp.typeDetails`、`ghidraLsp.compareType`、`ghidraLsp.reloadType`。

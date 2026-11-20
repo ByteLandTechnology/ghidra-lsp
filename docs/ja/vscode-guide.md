@@ -101,10 +101,11 @@ code --install-extension editors/vscode/ghidra-lsp-0.1.0.vsix
 
 ## 拡張機能設定リファレンス（`ghidraLsp.*`）
 
-VS Code のユーザーまたはワークスペース `settings.json` で設定します。
+`ghidraLsp.serverPath`（`"ghidra-lsp"`）と `ghidraLsp.mcpCommand`（`"ghidra-mcp"`）が既定値のままで `PATH` 上に見つからない場合、拡張機能は `npm` を通じて `@ghidra-lsp/cli` と `@ghidra-mcp/cli` を共有管理ディレクトリ（Linux/macOS は `~/.local/share/ghidra-lsp/bin`、Windows は `%LOCALAPPDATA%\ghidra-lsp\bin`）へ自動インストールします。VS Code のユーザーまたはワークスペース `settings.json` で設定します。
 
 ```json
 {
+  "ghidraLsp.autoInstall": true,
   "ghidraLsp.serverPath": "ghidra-lsp",
   "ghidraLsp.mcpCommand": "ghidra-mcp",
   "ghidraLsp.mcpArgs": [],
@@ -117,10 +118,11 @@ VS Code のユーザーまたはワークスペース `settings.json` で設定�
 }
 ```
 
-`editors/vscode/package.json` で定義されている全 7 項目の設定キーです。
+`editors/vscode/package.json` で定義されている全 8 項目の設定キーです。
 
 | 設定キー | 型 | デフォルト | 説明 |
 | --- | --- | --- | --- |
+| `ghidraLsp.autoInstall` | `boolean` | `true` | 既定の `ghidra-lsp` / `ghidra-mcp` が見つからない場合に `npm` 経由で共有バイナリディレクトリへ自動インストールします |
 | `ghidraLsp.serverPath` | `string` | `"ghidra-lsp"` | `ghidra-lsp` バイナリのパス。変更後は拡張機能の再起動が必要です |
 | `ghidraLsp.mcpCommand` | `string` | `"ghidra-mcp"` | `ghidra-mcp` 実行ファイルのコマンド名またはパス |
 | `ghidraLsp.mcpArgs` | `string[]` | `[]` | `ghidra-mcp` 子プロセスへ渡す追加コマンドライン引数 |
@@ -143,7 +145,7 @@ VS Code のユーザーまたはワークスペース `settings.json` で設定�
 
 | カテゴリ | コマンド ID とタイトル |
 | --- | --- |
-| セッション・解析 | `ghidraLsp.openBinary`（Open Binary）、`ghidraLsp.openRecent`（Open Recent Program）、`ghidraLsp.selectSession`（Select Session）、`ghidraLsp.selectSessionItem`（Switch to Session）、`ghidraLsp.openRecentItem`（Reopen Session）、`ghidraLsp.refreshSessions`（Refresh Sessions）、`ghidraLsp.closeSession`（Close Program）、`ghidraLsp.reanalyze`（Reanalyze Program）、`ghidraLsp.cancelAnalysis`（Stop Waiting for Analysis）、`ghidraLsp.programOverview`（Program Overview） |
+| セッション・解析 | `ghidraLsp.openBinary`（Open Binary）、`ghidraLsp.openRecent`（Open Recent Program）、`ghidraLsp.selectSession`（Select Session）、`ghidraLsp.selectSessionItem`（Switch to Session）、`ghidraLsp.openRecentItem`（Reopen Session）、`ghidraLsp.refreshSessions`（Refresh Sessions）、`ghidraLsp.closeSession`（Close Program）、`ghidraLsp.reanalyze`（Reanalyze Program）、`ghidraLsp.cancelAnalysis`（Stop Waiting for Analysis）、`ghidraLsp.programOverview`（Program Overview）、`ghidraLsp.installBinaries`（Install or Update Binaries） |
 | ナビゲーション・詳細 | `ghidraLsp.openFunction`（Open Function）、`ghidraLsp.goToAddress`（Go to Address）、`ghidraLsp.demangle`（Demangle C++ Symbols）、`ghidraLsp.refresh`（Refresh Documents）、`ghidraLsp.refreshBrowser`（Refresh Program Browser）、`ghidraLsp.refreshStrings`（Refresh Strings）、`ghidraLsp.functionDetails`（Function Details）、`ghidraLsp.inspectType`（Inspect Type at Cursor）、`ghidraLsp.browseSymbol`（Show Symbol Details） |
 | リネーム・編集 | `ghidraLsp.renameSymbol`（Rename Symbol）、`ghidraLsp.saveRename`（Submit Pending Rename）、`ghidraLsp.saveAllRenames`（Submit All Pending Renames）、`ghidraLsp.showPendingRename`（Show Pending Rename）、`ghidraLsp.discardRename`（Discard Pending Rename）、`ghidraLsp.codeActions`（Code Actions…）、`ghidraLsp.editComment`（Edit Comment）、`ghidraLsp.editCommentText` / `ghidraLsp.selectCommentKind`（Switch Comment Kind） / `ghidraLsp.saveComment` / `ghidraLsp.cancelCommentEdit` / `ghidraLsp.closeCommentEditor`（インラインコメント操作）、`ghidraLsp.editFunction`（Edit Function Signature）、`ghidraLsp.editVariables`（Edit Variables and Parameters）、`ghidraLsp.editSymbol`（Edit Global Symbol） |
 | データ型 | `ghidraLsp.createType`（Create Data Type）、`ghidraLsp.editType`（Edit Data Type）、`ghidraLsp.deleteType`（Delete Data Type）、`ghidraLsp.applyType`（Apply Data Type）、`ghidraLsp.typeDetails`（Data Type Details）、`ghidraLsp.compareType`（Compare Data Type with Ghidra）、`ghidraLsp.reloadType`（Reload Data Type from Ghidra） |

@@ -7,7 +7,9 @@ The Neovim plugin in `editors/nvim/` integrates `ghidra-lsp` with native Neovim 
 ## Requirements and installation
 
 - Neovim `>= 0.10` (verified by `:checkhealth ghidra-lsp`)
-- Compiled `ghidra-lsp` executable and `ghidra-mcp` installed on `PATH` (or configured by path)
+- Node.js and `npm` on `PATH` for automatic binary installation (`auto_install = true`, default), or pre-installed `ghidra-lsp` and `ghidra-mcp` executables
+
+Missing default binaries install automatically via `npm` (`@ghidra-lsp/cli` and `@ghidra-mcp/cli`) into the shared managed bin directory (`~/.local/share/ghidra-lsp/bin` on Linux and macOS, or `%LOCALAPPDATA%\ghidra-lsp\bin` on Windows), which is shared with the VS Code extension. Run `:GhidraInstall` at any time to install or update them.
 
 ### `lazy.nvim`
 
@@ -73,15 +75,17 @@ require('ghidra-lsp').setup({
 | `template_arguments` | `'omit'` | `'omit'` shows outer C++ template lists as `<…>`; `'show'` expands them |
 | `auto_attach` | `true` | Automatically attach the LSP client to `ghidra://` buffers |
 | `auto_start` | `false` | When `true`, starts the `ghidra-lsp` client immediately inside `setup()` |
+| `auto_install` | `true` | When `true`, automatically installs missing default `ghidra-lsp` and `ghidra-mcp` binaries via `npm` into the shared managed bin directory |
 
-Run `:checkhealth ghidra-lsp` at any time to inspect the Neovim version, `ghidra-lsp` binary path, `ghidra-mcp` availability, running LSP client ID and `utf-16` offset encoding, active session MD5, and any active pending rename.
+Run `:checkhealth ghidra-lsp` at any time to inspect the Neovim version, `npm` availability, shared managed bin directory, `ghidra-lsp` and `ghidra-mcp` resolution paths and sources (`managed`, `path`, or `custom`), running LSP client ID and `utf-16` offset encoding, active session MD5, and any active pending rename.
 
 ## Complete `:Ghidra*` command reference
 
-`editors/nvim/plugin/ghidra-lsp.lua` registers all 24 user commands:
+`editors/nvim/plugin/ghidra-lsp.lua` registers all 25 user commands:
 
 | Command | Arguments | Action |
 | --- | --- | --- |
+| `:GhidraInstall` | `[lsp\|mcp]` | Install or update managed `ghidra-lsp` and `ghidra-mcp` binaries via `npm` |
 | `:GhidraOpenBinary` | `[path]` | Open a binary (file completion); restores silently if analyzed, or prompts to analyze |
 | `:GhidraSelectSession` | `[md5]` | Pick or activate an open or saved Ghidra session |
 | `:GhidraCloseSession` | `[md5]` | Close the active or specified clean session |
