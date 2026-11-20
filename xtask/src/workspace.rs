@@ -94,7 +94,7 @@ fn walk(
     if name.starts_with('.')
       || matches!(
         name.as_str(),
-        "target" | "artifacts" | "node_modules" | "vendor" | "out" | "dist"
+        "target" | "artifacts" | "node_modules" | "vendor" | "out" | "dist" | "npm-dist"
       )
     {
       continue;

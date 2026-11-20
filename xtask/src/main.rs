@@ -15,40 +15,67 @@ mod forbidden;
 mod headers;
 /// Small Rust lexer that separates code from comments and literals.
 mod lexer;
+/// Third-party license notice collector for locked dependencies.
+mod licenses;
 /// Maximum code-line limit checker for workspace source files.
 mod lines;
+/// npm launcher and platform package assembler.
+mod npm;
 /// Workspace path discovery helpers.
 mod workspace;
 
+use std::path::PathBuf;
 use std::process::ExitCode;
 
-/// Command-line usage text printed for `help` or invalid arguments.
-const USAGE: &str = "\
-Usage: cargo xtask <command>
+use clap::{Parser, Subcommand};
 
-Commands:
-  ci               Run fmt, check, clippy, doc, build, and cargo-deny
-  check            Run header, line-limit, and forbidden-code checks
-  license-headers  Check the license header of each source file
-  line-limit       Check the code-line limit of each source file
-  forbidden-code   Find code or manifests that AGENTS.md forbids
-  help             Show this text";
+/// Command-line arguments for `cargo xtask`.
+#[derive(Parser)]
+#[command(name = "cargo xtask", bin_name = "cargo xtask")]
+#[command(about = "Repository checks and CI runner for the ghidra-lsp workspace.")]
+struct Cli {
+  /// Subcommand to execute.
+  #[command(subcommand)]
+  command: Commands,
+}
+
+/// Available repository tasks.
+#[derive(Subcommand)]
+enum Commands {
+  /// Run fmt, check, clippy, doc, build, and cargo-deny.
+  Ci,
+  /// Run header, line-limit, and forbidden-code checks.
+  Check,
+  /// Check the license header of each source file.
+  LicenseHeaders,
+  /// Check the code-line limit of each source file.
+  LineLimit,
+  /// Find code or manifests that AGENTS.md forbids.
+  ForbiddenCode,
+  /// Collect license notices for locked Rust dependencies.
+  CollectLicenses,
+  /// Make the npm packages from the release executables.
+  NpmPack {
+    /// Directory that holds the release executables.
+    #[arg(long)]
+    dist: PathBuf,
+    /// Directory for the generated packages. It must be absent or empty.
+    #[arg(long)]
+    out: PathBuf,
+  },
+}
 
 /// Parses the subcommand and prints any check failure to standard error.
 fn main() -> ExitCode {
-  let args: Vec<String> = std::env::args().skip(1).collect();
-  let args: Vec<&str> = args.iter().map(String::as_str).collect();
-  let result = match args.as_slice() {
-    ["ci"] => ci::run(),
-    ["check"] => run_all(),
-    ["license-headers"] => headers::check(),
-    ["line-limit"] => lines::check(),
-    ["forbidden-code"] => forbidden::check(),
-    ["help"] | [] => {
-      println!("{USAGE}");
-      return ExitCode::SUCCESS;
-    }
-    _ => Err(format!("unknown command\n\n{USAGE}")),
+  let cli = Cli::parse();
+  let result = match cli.command {
+    Commands::Ci => ci::run(),
+    Commands::Check => run_all(),
+    Commands::LicenseHeaders => headers::check(),
+    Commands::LineLimit => lines::check(),
+    Commands::ForbiddenCode => forbidden::check(),
+    Commands::CollectLicenses => licenses::collect(),
+    Commands::NpmPack { dist, out } => npm::pack(&dist, &out),
   };
   match result {
     Ok(()) => ExitCode::SUCCESS,
