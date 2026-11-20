@@ -8,9 +8,10 @@ use serde_json::{Value, json};
 
 use super::Server;
 use crate::backend::McpBackend;
+use crate::workbench;
 
 impl Server {
-  /// Dispatches string lookup and comment, prototype, and variable mutation commands.
+  /// Dispatches string lookup, type-document, comment, prototype, and variable commands.
   pub(super) async fn execute_edit_command(
     &self,
     command: &str,
@@ -22,6 +23,26 @@ impl Server {
         let md5 = self.scoped_md5(&arg).await?;
         crate::address::defined_strings(backend, &md5).await
       }
+      "ghidra.typeDocument" => {
+        let md5 = self.scoped_md5(&arg).await?;
+        let path = arg
+          .get("path")
+          .and_then(Value::as_str)
+          .context("type path is required")?;
+        crate::types_doc::get_type_document(backend, &md5, path).await
+      }
+      "ghidra.validateTypeDocument" => {
+        let text = arg
+          .get("text")
+          .and_then(Value::as_str)
+          .context("text is required")?;
+        let original = arg
+          .get("original")
+          .filter(|v| v.is_object())
+          .context("original data type snapshot is required")?;
+        Ok(crate::types_doc::validate_type_document(text, original))
+      }
+      "ghidra.saveTypeDocument" => self.handle_save_type_document(&arg, backend).await,
       "ghidra.commentsAt" => {
         let md5 = self.scoped_md5(&arg).await?;
         let address = arg
@@ -127,5 +148,57 @@ impl Server {
       "persisted": true,
       "result": result,
     }))
+  }
+
+  /// Validates conflicts, applies mutations, refreshes state, and reconciles a saved type buffer.
+  async fn handle_save_type_document(&self, arg: &Value, backend: &McpBackend) -> Result<Value> {
+    let md5 = self.scoped_md5(arg).await?;
+    let path = arg
+      .get("path")
+      .and_then(Value::as_str)
+      .context("type path is required")?;
+    let text = arg
+      .get("text")
+      .and_then(Value::as_str)
+      .context("text is required")?;
+    let original = arg
+      .get("original")
+      .filter(|v| v.is_object())
+      .context("original data type snapshot is required")?;
+    let (draft, operations) = crate::types_doc::prepare_type_save(text, original)?;
+    let mut e = self.engine.lock().await;
+    Self::ensure_program_clean(&e, &md5)?;
+    let current =
+      crate::types_doc::fetch_and_check_type_conflict(backend, &md5, path, original).await?;
+    let Some((domain, operation, parameters)) =
+      crate::types_doc::build_type_write_request(&operations)
+    else {
+      drop(e);
+      return Ok(crate::types_doc::noop_type_save(&md5, path, text, current));
+    };
+    workbench::allow_write(domain, operation, &parameters)?;
+    let (tool, tool_operation) = workbench::mcp_operation(domain, operation);
+    let result = backend
+      .call(tool, &tool_operation, Some(&md5), parameters)
+      .await
+      .map_err(crate::types_doc::wrap_post_send_error)?;
+    workbench::check_write_result(domain, operation, &result)
+      .map_err(crate::types_doc::wrap_post_send_error)?;
+    if let Err(error) = workbench::persist(backend, &md5).await {
+      drop(e);
+      self.changed(&md5).await;
+      return Err(crate::types_doc::wrap_post_send_error(error));
+    }
+    let changes = e
+      .refresh_session(&md5, None)
+      .await
+      .map_err(crate::types_doc::wrap_post_send_error)?;
+    drop(e);
+    self.changed(&md5).await;
+    self
+      .apply_refresh(changes)
+      .await
+      .map_err(crate::types_doc::wrap_post_send_error)?;
+    crate::types_doc::read_type_and_finish_save(backend, &md5, path, text, &draft).await
   }
 }

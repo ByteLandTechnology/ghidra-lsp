@@ -21,6 +21,8 @@ mod gui;
 mod mutations;
 /// Language Server Protocol state and handlers.
 mod server;
+/// Virtual `.ghidra-type` JSONC documents, validation, and save coordination.
+mod types_doc;
 /// Bridge resource coverage helpers.
 mod workbench;
 
