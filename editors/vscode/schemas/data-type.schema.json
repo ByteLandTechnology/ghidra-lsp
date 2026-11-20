@@ -1,0 +1,109 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Ghidra Data Type",
+  "type": "object",
+  "required": ["path", "kind"],
+  "properties": {
+    "path": { "type": "string", "description": "The existing Ghidra type path. Read-only; use Create Data Type to create a different type." },
+    "kind": { "type": "string", "description": "The existing type kind. Read-only." }
+  },
+  "definitions": {
+    "id": { "type": "string", "description": "Existing member identity. Keep it when renaming; omit it for a new member. Ghidra updates IDs after saving." },
+    "type": { "type": "string", "minLength": 1, "description": "A type name or full category path, optionally followed by * or [count], such as int, /types/Record, char * or int[4]." },
+    "field": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "type"],
+      "properties": {
+        "id": { "$ref": "#/definitions/id" },
+        "offset": { "type": "integer", "minimum": 0, "maximum": 2147483647, "description": "Structure byte offset. Insertions and removals follow Ghidra's layout rules; actual offsets are read back after saving." },
+        "name": { "type": "string" },
+        "type": { "$ref": "#/definitions/type" },
+        "length": { "type": "integer", "minimum": 1, "maximum": 2147483647, "description": "Optional byte length. Omit for the natural type size. Arrays use the count in their type; changing type uses its natural size unless this length also changes." }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "kind": { "const": "struct" } } },
+      "then": {
+        "required": ["fields"],
+        "properties": {
+          "fields": {
+            "type": "array",
+            "items": {
+              "allOf": [
+                { "$ref": "#/definitions/field" },
+                { "required": ["offset"] }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "union" } } },
+      "then": {
+        "required": ["fields"],
+        "properties": {
+          "fields": {
+            "type": "array",
+            "items": {
+              "allOf": [
+                { "$ref": "#/definitions/field" },
+                {
+                  "properties": { "name": { "minLength": 1 } },
+                  "not": { "required": ["offset"] }
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "enum" } } },
+      "then": {
+        "required": ["values"],
+        "properties": {
+          "values": {
+            "type": "array",
+            "items": {
+              "type": "object", "additionalProperties": false, "required": ["name", "value"],
+              "properties": {
+                "id": { "$ref": "#/definitions/id" },
+                "name": { "type": "string", "minLength": 1 },
+                "value": { "type": "integer", "minimum": -9007199254740991, "maximum": 9007199254740991, "description": "A lossless JSON integer. Larger 64-bit enum values must be edited in Ghidra." }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "function" } } },
+      "then": {
+        "required": ["signature"],
+        "properties": {
+          "signature": {
+            "type": "object", "additionalProperties": false,
+            "required": ["return_type", "calling_convention", "has_var_args", "has_no_return", "parameters"],
+            "properties": {
+              "return_type": { "$ref": "#/definitions/type" },
+              "calling_convention": { "type": "string", "minLength": 1, "default": "default" },
+              "has_var_args": { "type": "boolean" },
+              "has_no_return": { "type": "boolean" },
+              "parameters": {
+                "type": "array",
+                "items": {
+                  "type": "object", "additionalProperties": false, "required": ["name", "type"],
+                  "properties": { "name": { "type": "string" }, "type": { "$ref": "#/definitions/type" } }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

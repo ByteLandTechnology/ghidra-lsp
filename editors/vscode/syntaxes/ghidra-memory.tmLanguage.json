@@ -1,0 +1,15 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Ghidra Bytes",
+  "scopeName": "source.ghidra-memory",
+  "patterns": [
+    {
+      "match": "^([0-9A-Fa-f]{2,16})(\\s+)((?:[0-9a-f]{2}\\s+)*)(.*)$",
+      "captures": {
+        "1": { "name": "constant.numeric.address.ghidra" },
+        "3": { "name": "constant.numeric.hex.ghidra" },
+        "4": { "patterns": [ { "match": "\\|.*\\|", "name": "string.unquoted.ghidra" } ] }
+      }
+    }
+  ]
+}

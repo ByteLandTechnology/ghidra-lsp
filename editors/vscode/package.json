@@ -1,0 +1,1048 @@
+{
+  "name": "ghidra-lsp",
+  "displayName": "Ghidra LSP",
+  "description": "Browse and rename Ghidra symbols through ghidra-mcp",
+  "version": "0.1.0",
+  "publisher": "byteland-app",
+  "license": "MIT",
+  "icon": "resources/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ByteLandTechnology/ghidra-lsp.git",
+    "directory": "editors/vscode"
+  },
+  "homepage": "https://github.com/ByteLandTechnology/ghidra-lsp#readme",
+  "bugs": {
+    "url": "https://github.com/ByteLandTechnology/ghidra-lsp/issues"
+  },
+  "keywords": [
+    "ghidra",
+    "decompiler",
+    "disassembly",
+    "reverse-engineering",
+    "lsp",
+    "mcp"
+  ],
+  "engines": {
+    "vscode": "^1.96.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "main": "./out/extension.js",
+  "activationEvents": [
+    "onFileSystem:ghidra",
+    "onFileSystem:ghidra-listing",
+    "onFileSystem:ghidra-memory",
+    "onLanguage:ghidra-decompiled",
+    "onWebviewPanel:ghidra.programOverview",
+    "onWebviewPanel:ghidra.dataType",
+    "onWebviewPanel:ghidra.symbolDetails",
+    "onWebviewPanel:ghidra.functionDetails",
+    "onWebviewPanel:ghidra.listing",
+    "onWebviewPanel:ghidra.memory",
+    "onWebviewPanel:ghidra.strings",
+    "onWebviewPanel:ghidra.imports",
+    "onWebviewPanel:ghidra.exports",
+    "onWebviewPanel:ghidra.callGraph",
+    "onWebviewPanel:ghidra.controlFlow",
+    "onWebviewPanel:ghidra.callers",
+    "onWebviewPanel:ghidra.callees",
+    "onWebviewPanel:ghidra.references",
+    "onFileSystem:ghidra-type",
+    "onCustomEditor:ghidra.analysisControlFlow",
+    "onCustomEditor:ghidra.dataTypeEditor"
+  ],
+  "scripts": {
+    "compile": "tsc -p .",
+    "check": "tsc -p . --noEmit",
+    "vscode:prepublish": "npm run compile",
+    "package": "vsce package"
+  },
+  "contributes": {
+    "configurationDefaults": {
+      "[ghidra-listing]": {
+        "editor.wordWrap": "on",
+        "editor.wrappingIndent": "same"
+      }
+    },
+    "resourceLabelFormatters": [
+      {
+        "scheme": "ghidra-reference",
+        "formatting": {
+          "label": "${path}",
+          "separator": "/",
+          "stripPathStartingSeparator": true
+        }
+      },
+      {
+        "scheme": "ghidra-listing",
+        "formatting": {
+          "label": "${path}",
+          "separator": "/",
+          "stripPathStartingSeparator": true
+        }
+      },
+      {
+        "scheme": "ghidra-memory",
+        "formatting": {
+          "label": "${path}",
+          "separator": "/",
+          "stripPathStartingSeparator": true
+        }
+      },
+      {
+        "scheme": "ghidra-type",
+        "formatting": {
+          "label": "${path}",
+          "separator": "/",
+          "stripPathStartingSeparator": true
+        }
+      }
+    ],
+    "languages": [
+      {
+        "id": "ghidra-decompiled",
+        "aliases": [
+          "Ghidra Decompilation"
+        ],
+        "configuration": "./language-configuration.json"
+      },
+      {
+        "id": "ghidra-listing",
+        "aliases": [
+          "Ghidra Listing"
+        ],
+        "configuration": "./language-configuration.json"
+      },
+      {
+        "id": "ghidra-memory",
+        "aliases": [
+          "Ghidra Bytes"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "ghidra-decompiled",
+        "scopeName": "source.ghidra-c",
+        "path": "./syntaxes/ghidra.tmLanguage.json"
+      },
+      {
+        "language": "ghidra-listing",
+        "scopeName": "source.ghidra-listing",
+        "path": "./syntaxes/ghidra-listing.tmLanguage.json"
+      },
+      {
+        "language": "ghidra-memory",
+        "scopeName": "source.ghidra-memory",
+        "path": "./syntaxes/ghidra-memory.tmLanguage.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "ghidraLsp.demangle",
+        "title": "Ghidra: Demangle C++ Symbols"
+      },
+      {
+        "command": "ghidraLsp.selectSession",
+        "title": "Ghidra: Select Session"
+      },
+      {
+        "command": "ghidraLsp.selectSessionItem",
+        "title": "Ghidra: Switch to Session"
+      },
+      {
+        "command": "ghidraLsp.openRecentItem",
+        "title": "Ghidra: Reopen Session"
+      },
+      {
+        "command": "ghidraLsp.refreshSessions",
+        "title": "Ghidra: Refresh Sessions",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "ghidraLsp.renameSymbol",
+        "title": "Ghidra: Rename Symbol",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "ghidraLsp.saveRename",
+        "title": "Ghidra: Submit Pending Rename",
+        "icon": "$(save)"
+      },
+      {
+        "command": "ghidraLsp.saveAllRenames",
+        "title": "Ghidra: Submit All Pending Renames"
+      },
+      {
+        "command": "ghidraLsp.showPendingRename",
+        "title": "Ghidra: Show Pending Rename"
+      },
+      {
+        "command": "ghidraLsp.openBinary",
+        "title": "Ghidra: Open Binary",
+        "icon": "$(add)"
+      },
+      {
+        "command": "ghidraLsp.openFunction",
+        "title": "Ghidra: Open Function"
+      },
+      {
+        "command": "ghidraLsp.refresh",
+        "title": "Ghidra: Refresh Documents"
+      },
+      {
+        "command": "ghidraLsp.discardRename",
+        "title": "Ghidra: Discard Pending Rename"
+      },
+      {
+        "command": "ghidraLsp.refreshBrowser",
+        "title": "Ghidra: Refresh Program Browser",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "ghidraLsp.programOverview",
+        "title": "Ghidra: Program Overview"
+      },
+      {
+        "command": "ghidraLsp.openRecent",
+        "title": "Ghidra: Open Recent Program"
+      },
+      {
+        "command": "ghidraLsp.closeSession",
+        "title": "Ghidra: Close Program"
+      },
+      {
+        "command": "ghidraLsp.reanalyze",
+        "title": "Ghidra: Reanalyze Program"
+      },
+      {
+        "command": "ghidraLsp.cancelAnalysis",
+        "title": "Ghidra: Stop Waiting for Analysis",
+        "icon": "$(debug-pause)"
+      },
+      {
+        "command": "ghidraLsp.showListing",
+        "title": "Ghidra: Disassembly Listing"
+      },
+      {
+        "command": "ghidraLsp.showMemory",
+        "title": "Ghidra: Memory and Bytes (Hex)",
+        "icon": "$(file-binary)"
+      },
+      {
+        "command": "ghidraLsp.showStrings",
+        "title": "Ghidra: Strings"
+      },
+      {
+        "command": "ghidraLsp.showImports",
+        "title": "Ghidra: Imports"
+      },
+      {
+        "command": "ghidraLsp.showExports",
+        "title": "Ghidra: Exports"
+      },
+      {
+        "command": "ghidraLsp.showCallGraph",
+        "title": "Ghidra: Call Graph"
+      },
+      {
+        "command": "ghidraLsp.showControlFlow",
+        "title": "Ghidra: Control Flow Graph"
+      },
+      {
+        "command": "ghidraLsp.showCallHierarchy",
+        "title": "Ghidra: Show Call Hierarchy"
+      },
+      {
+        "command": "ghidraLsp.showCallers",
+        "title": "Ghidra: Callers"
+      },
+      {
+        "command": "ghidraLsp.showCallees",
+        "title": "Ghidra: Callees"
+      },
+      {
+        "command": "ghidraLsp.goToAddress",
+        "title": "Ghidra: Go to Address"
+      },
+      {
+        "command": "ghidraLsp.createType",
+        "title": "Ghidra: Create Data Type"
+      },
+      {
+        "command": "ghidraLsp.editType",
+        "title": "Ghidra: Edit Data Type"
+      },
+      {
+        "command": "ghidraLsp.deleteType",
+        "title": "Ghidra: Delete Data Type"
+      },
+      {
+        "command": "ghidraLsp.applyType",
+        "title": "Ghidra: Apply Data Type"
+      },
+      {
+        "command": "ghidraLsp.editFunction",
+        "title": "Ghidra: Edit Function Signature"
+      },
+      {
+        "command": "ghidraLsp.editVariables",
+        "title": "Ghidra: Edit Variables and Parameters"
+      },
+      {
+        "command": "ghidraLsp.codeActions",
+        "title": "Ghidra: Code Actions…"
+      },
+      {
+        "command": "ghidraLsp.editComment",
+        "title": "Ghidra: Edit Comment"
+      },
+      {
+        "command": "ghidraLsp.editCommentText",
+        "title": "Edit",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "ghidraLsp.selectCommentKind",
+        "title": "Switch Comment Kind"
+      },
+      {
+        "command": "ghidraLsp.saveComment",
+        "title": "Save"
+      },
+      {
+        "command": "ghidraLsp.cancelCommentEdit",
+        "title": "Cancel"
+      },
+      {
+        "command": "ghidraLsp.closeCommentEditor",
+        "title": "Close comment editor",
+        "icon": "$(close)"
+      },
+      {
+        "command": "ghidraLsp.editSymbol",
+        "title": "Ghidra: Edit Global Symbol"
+      },
+      {
+        "command": "ghidraLsp.browseSymbol",
+        "title": "Show Symbol Details"
+      },
+      {
+        "command": "ghidraLsp.inspectType",
+        "title": "Ghidra: Inspect Type at Cursor"
+      },
+      {
+        "command": "ghidraLsp.functionDetails",
+        "title": "Ghidra: Function Details"
+      },
+      {
+        "command": "ghidraLsp.showReferences",
+        "title": "Ghidra: Address References"
+      },
+      {
+        "command": "ghidraLsp.showAddressReferences",
+        "title": "Ghidra: Binary Address References"
+      },
+      {
+        "command": "ghidraLsp.browseListing",
+        "title": "Ghidra: Program Listing",
+        "icon": "$(list-flat)"
+      },
+      {
+        "command": "ghidraLsp.listingFunction",
+        "title": "Ghidra: Open Containing Function",
+        "icon": "$(symbol-function)"
+      },
+      {
+        "command": "ghidraLsp.listingReferences",
+        "title": "Ghidra: References at Address",
+        "icon": "$(references)"
+      },
+      {
+        "command": "ghidraLsp.listingBytes",
+        "title": "Ghidra: Switch to Bytes",
+        "icon": "$(file-binary)"
+      },
+      {
+        "command": "ghidraLsp.bytesListing",
+        "title": "Ghidra: Switch to Listing",
+        "icon": "$(list-flat)"
+      },
+      {
+        "command": "ghidraLsp.listingCopyAddress",
+        "title": "Ghidra: Copy Address",
+        "icon": "$(copy)"
+      },
+      {
+        "command": "ghidraLsp.listingBrowse",
+        "title": "Ghidra: Open in Program Listing",
+        "icon": "$(list-tree)"
+      },
+      {
+        "command": "ghidraLsp.listingRefresh",
+        "title": "Ghidra: Refresh Listing",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "ghidraLsp.openViews",
+        "title": "Ghidra: Open Analysis Views",
+        "icon": "$(split-horizontal)"
+      },
+      {
+        "command": "ghidraLsp.reloadType",
+        "title": "Ghidra: Reload Data Type from Ghidra",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "ghidraLsp.compareType",
+        "title": "Ghidra: Compare Data Type with Ghidra",
+        "icon": "$(diff)"
+      },
+      {
+        "command": "ghidraLsp.typeDetails",
+        "title": "Ghidra: Data Type Details",
+        "icon": "$(info)"
+      },
+      {
+        "command": "ghidraLsp.analysisView",
+        "title": "Ghidra: Switch Analysis View…",
+        "icon": "$(layout)"
+      },
+      {
+        "command": "ghidraLsp.refreshStrings",
+        "title": "Ghidra: Refresh Strings",
+        "icon": "$(refresh)"
+      }
+    ],
+    "configuration": {
+      "title": "Ghidra LSP",
+      "properties": {
+        "ghidraLsp.serverPath": {
+          "type": "string",
+          "default": "ghidra-lsp",
+          "description": "Path to the Rust language server. Restart the extension after changing settings."
+        },
+        "ghidraLsp.mcpCommand": {
+          "type": "string",
+          "default": "ghidra-mcp",
+          "description": "Path to ghidra-mcp."
+        },
+        "ghidraLsp.mcpArgs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "ghidraLsp.requestTimeoutMs": {
+          "type": "number",
+          "default": 35000,
+          "minimum": 100,
+          "maximum": 300000
+        },
+        "ghidraLsp.liveRefreshIntervalMs": {
+          "type": "number",
+          "default": 2000,
+          "minimum": 0,
+          "description": "Refresh visible, unmodified functions from Ghidra at this interval. Set 0 to disable."
+        },
+        "ghidraLsp.templateArguments": {
+          "type": "string",
+          "enum": [
+            "omit",
+            "show"
+          ],
+          "enumDescriptions": [
+            "Show C++ template argument lists as <…>; the full name stays in tooltips and hovers.",
+            "Show complete template argument lists."
+          ],
+          "default": "omit",
+          "description": "How demangled C++ names show template arguments."
+        },
+        "ghidraLsp.views.syncCursor": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Synchronize cursor selection across open Program Listing, Hex View, and Decompiler tabs for the same program."
+        }
+      }
+    },
+    "keybindings": [
+      {
+        "key": "ctrl+.",
+        "mac": "cmd+.",
+        "command": "ghidraLsp.codeActions",
+        "when": "resourceScheme == ghidra && editorTextFocus && editorLangId == ghidra-decompiled && !renameInputVisible"
+      },
+      {
+        "key": "f2",
+        "command": "ghidraLsp.renameSymbol",
+        "when": "resourceScheme == ghidra && editorTextFocus && !renameInputVisible"
+      },
+      {
+        "key": "ctrl+s",
+        "mac": "cmd+s",
+        "command": "ghidraLsp.saveRename",
+        "when": "resourceScheme == ghidra && editorTextFocus && !renameInputVisible"
+      }
+    ],
+    "submenus": [
+      {
+        "id": "ghidra.editor",
+        "label": "Ghidra"
+      },
+      {
+        "id": "ghidra.listing",
+        "label": "Ghidra"
+      }
+    ],
+    "menus": {
+      "comments/commentThread/title": [
+        {
+          "command": "ghidraLsp.closeCommentEditor",
+          "group": "navigation",
+          "when": "commentController == ghidra-comments"
+        }
+      ],
+      "comments/comment/title": [
+        {
+          "command": "ghidraLsp.editCommentText",
+          "group": "inline",
+          "when": "commentController == ghidra-comments && comment == ghidraComment"
+        }
+      ],
+      "comments/comment/context": [
+        {
+          "command": "ghidraLsp.saveComment",
+          "group": "inline@1",
+          "when": "commentController == ghidra-comments && comment == ghidraComment"
+        },
+        {
+          "command": "ghidraLsp.cancelCommentEdit",
+          "group": "inline@2",
+          "when": "commentController == ghidra-comments && comment == ghidraComment"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "ghidraLsp.browseSymbol",
+          "when": "false"
+        },
+        {
+          "command": "ghidraLsp.editCommentText",
+          "when": "false"
+        },
+        {
+          "command": "ghidraLsp.selectCommentKind",
+          "when": "false"
+        },
+        {
+          "command": "ghidraLsp.saveComment",
+          "when": "false"
+        },
+        {
+          "command": "ghidraLsp.cancelCommentEdit",
+          "when": "false"
+        },
+        {
+          "command": "ghidraLsp.closeCommentEditor",
+          "when": "false"
+        },
+        {
+          "command": "ghidraLsp.showReferences",
+          "when": "false"
+        },
+        {
+          "command": "ghidraLsp.showCallHierarchy",
+          "when": "false"
+        },
+        {
+          "command": "ghidraLsp.listingFunction",
+          "when": "false"
+        },
+        {
+          "command": "ghidraLsp.listingReferences",
+          "when": "false"
+        },
+        {
+          "command": "ghidraLsp.listingBytes",
+          "when": "resourceScheme == ghidra-listing && editorLangId == ghidra-listing && activeCustomEditorId != ghidra.analysisControlFlow"
+        },
+        {
+          "command": "ghidraLsp.bytesListing",
+          "when": "resourceScheme == ghidra-listing && editorLangId == ghidra-memory && activeCustomEditorId != ghidra.analysisControlFlow"
+        },
+        {
+          "command": "ghidraLsp.listingCopyAddress",
+          "when": "false"
+        },
+        {
+          "command": "ghidraLsp.listingBrowse",
+          "when": "false"
+        },
+        {
+          "command": "ghidraLsp.listingRefresh",
+          "when": "false"
+        },
+        {
+          "command": "ghidraLsp.typeDetails",
+          "when": "resourceScheme == ghidra-type"
+        },
+        {
+          "command": "ghidraLsp.compareType",
+          "when": "resourceScheme == ghidra-type"
+        },
+        {
+          "command": "ghidraLsp.reloadType",
+          "when": "resourceScheme == ghidra-type"
+        },
+        {
+          "command": "ghidraLsp.analysisView",
+          "when": "resourceScheme == ghidra-listing"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "ghidraLsp.saveRename",
+          "when": "resourceScheme == ghidra && ghidra.hasPendingRename",
+          "group": "navigation@1"
+        },
+        {
+          "command": "ghidraLsp.listingFunction",
+          "when": "resourceScheme == ghidra-listing && activeCustomEditorId != ghidra.analysisControlFlow",
+          "group": "navigation@1"
+        },
+        {
+          "command": "ghidraLsp.listingReferences",
+          "when": "resourceScheme == ghidra-listing && activeCustomEditorId != ghidra.analysisControlFlow",
+          "group": "navigation@2"
+        },
+        {
+          "command": "ghidraLsp.listingBrowse",
+          "when": "resourceScheme == ghidra-listing && activeCustomEditorId != ghidra.analysisControlFlow",
+          "group": "1_modification@1"
+        },
+        {
+          "command": "ghidraLsp.listingCopyAddress",
+          "when": "resourceScheme == ghidra-listing && activeCustomEditorId != ghidra.analysisControlFlow",
+          "group": "9_cutcopypaste@1"
+        },
+        {
+          "command": "ghidraLsp.listingRefresh",
+          "when": "resourceScheme == ghidra-listing && activeCustomEditorId != ghidra.analysisControlFlow",
+          "group": "navigation@4"
+        },
+        {
+          "command": "ghidraLsp.openViews",
+          "when": "resourceScheme == ghidra",
+          "group": "navigation@5"
+        },
+        {
+          "command": "ghidraLsp.typeDetails",
+          "when": "resourceScheme == ghidra-type",
+          "group": "navigation@1"
+        },
+        {
+          "command": "ghidraLsp.compareType",
+          "when": "resourceScheme == ghidra-type",
+          "group": "navigation@2"
+        },
+        {
+          "command": "ghidraLsp.reloadType",
+          "when": "resourceScheme == ghidra-type",
+          "group": "navigation@3"
+        },
+        {
+          "command": "ghidraLsp.analysisView",
+          "when": "resourceScheme == ghidra-listing",
+          "group": "navigation@0"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "ghidraLsp.openBinary",
+          "when": "resourceScheme == file",
+          "group": "navigation@20"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "ghidraLsp.openBinary",
+          "when": "view == ghidra.sessions",
+          "group": "navigation@1"
+        },
+        {
+          "command": "ghidraLsp.refreshSessions",
+          "when": "view == ghidra.sessions",
+          "group": "navigation@2"
+        },
+        {
+          "command": "ghidraLsp.cancelAnalysis",
+          "when": "view == ghidra.sessions && ghidra.hasWaitingAnalysis",
+          "group": "navigation@3"
+        },
+        {
+          "command": "ghidraLsp.openBinary",
+          "when": "view == ghidra.symbols",
+          "group": "navigation@1"
+        },
+        {
+          "command": "ghidraLsp.refreshBrowser",
+          "when": "view == ghidra.symbols || view == ghidra.types",
+          "group": "navigation@2"
+        },
+        {
+          "command": "ghidraLsp.browseListing",
+          "when": "view == ghidra.symbols && ghidra.browserHasProgram",
+          "group": "navigation@3"
+        },
+        {
+          "command": "ghidraLsp.showMemory",
+          "when": "view == ghidra.symbols && ghidra.browserHasProgram",
+          "group": "navigation@4"
+        },
+        {
+          "command": "ghidraLsp.programOverview",
+          "when": "view == ghidra.symbols",
+          "group": "ghidra@0"
+        },
+        {
+          "command": "ghidraLsp.showListing",
+          "when": "view == ghidra.symbols",
+          "group": "ghidra@1"
+        },
+        {
+          "command": "ghidraLsp.showStrings",
+          "when": "view == ghidra.symbols",
+          "group": "ghidra@3"
+        },
+        {
+          "command": "ghidraLsp.showImports",
+          "when": "view == ghidra.symbols",
+          "group": "ghidra@4"
+        },
+        {
+          "command": "ghidraLsp.showExports",
+          "when": "view == ghidra.symbols",
+          "group": "ghidra@5"
+        },
+        {
+          "command": "ghidraLsp.goToAddress",
+          "when": "view == ghidra.symbols",
+          "group": "ghidra@6"
+        },
+        {
+          "command": "ghidraLsp.createType",
+          "when": "view == ghidra.types",
+          "group": "navigation@3"
+        },
+        {
+          "command": "ghidraLsp.refreshStrings",
+          "when": "view == ghidra.strings",
+          "group": "navigation@1"
+        },
+        {
+          "command": "ghidraLsp.showStrings",
+          "when": "view == ghidra.strings",
+          "group": "ghidra@1"
+        }
+      ],
+      "editor/context": [
+        {
+          "submenu": "ghidra.editor",
+          "when": "resourceScheme == ghidra",
+          "group": "ghidra"
+        },
+        {
+          "submenu": "ghidra.listing",
+          "when": "resourceScheme == ghidra-listing",
+          "group": "ghidra"
+        }
+      ],
+      "ghidra.editor": [
+        {
+          "command": "ghidraLsp.openViews",
+          "group": "navigation@1"
+        },
+        {
+          "command": "ghidraLsp.showListing",
+          "group": "navigation@1"
+        },
+        {
+          "command": "ghidraLsp.showAddressReferences",
+          "group": "navigation@2"
+        },
+        {
+          "command": "ghidraLsp.goToAddress",
+          "group": "navigation@3"
+        },
+        {
+          "command": "ghidraLsp.browseListing",
+          "group": "navigation@4"
+        },
+        {
+          "command": "ghidraLsp.showMemory",
+          "group": "navigation@5"
+        },
+        {
+          "command": "ghidraLsp.showControlFlow",
+          "group": "graphs@1"
+        },
+        {
+          "command": "ghidraLsp.showCallGraph",
+          "group": "graphs@2"
+        },
+        {
+          "command": "ghidraLsp.editFunction",
+          "group": "editing@1"
+        },
+        {
+          "command": "ghidraLsp.editVariables",
+          "group": "editing@2"
+        },
+        {
+          "command": "ghidraLsp.codeActions",
+          "group": "editing@3"
+        },
+        {
+          "command": "ghidraLsp.applyType",
+          "group": "editing@4"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "ghidraLsp.editFunction",
+          "when": "viewItem == ghidra.function",
+          "group": "ghidra@0"
+        },
+        {
+          "command": "ghidraLsp.editVariables",
+          "when": "viewItem == ghidra.function",
+          "group": "ghidra@1"
+        },
+        {
+          "command": "ghidraLsp.showCallGraph",
+          "when": "viewItem == ghidra.function",
+          "group": "ghidra@2"
+        },
+        {
+          "command": "ghidraLsp.showControlFlow",
+          "when": "viewItem == ghidra.function",
+          "group": "ghidra@3"
+        },
+        {
+          "command": "ghidraLsp.browseListing",
+          "when": "viewItem == ghidra.function",
+          "group": "ghidra@4"
+        },
+        {
+          "command": "ghidraLsp.showMemory",
+          "when": "viewItem == ghidra.function",
+          "group": "ghidra@5"
+        },
+        {
+          "command": "ghidraLsp.editType",
+          "when": "viewItem == ghidra.type",
+          "group": "ghidra@4"
+        },
+        {
+          "command": "ghidraLsp.deleteType",
+          "when": "viewItem == ghidra.type",
+          "group": "ghidra@5"
+        },
+        {
+          "command": "ghidraLsp.browseSymbol",
+          "when": "viewItem == ghidra.symbol",
+          "group": "ghidra@5"
+        },
+        {
+          "command": "ghidraLsp.editSymbol",
+          "when": "viewItem == ghidra.symbol",
+          "group": "ghidra@6"
+        },
+        {
+          "command": "ghidraLsp.browseListing",
+          "when": "viewItem == ghidra.symbol",
+          "group": "ghidra@7"
+        },
+        {
+          "command": "ghidraLsp.showMemory",
+          "when": "viewItem == ghidra.symbol",
+          "group": "ghidra@8"
+        },
+        {
+          "command": "ghidraLsp.programOverview",
+          "when": "viewItem == ghidra.session || viewItem == ghidra.activeSession || viewItem == ghidra.sessionTask || viewItem == ghidra.activeSessionTask",
+          "group": "ghidra@0"
+        },
+        {
+          "command": "ghidraLsp.browseListing",
+          "when": "viewItem == ghidra.session || viewItem == ghidra.activeSession",
+          "group": "ghidra@0b"
+        },
+        {
+          "command": "ghidraLsp.showMemory",
+          "when": "viewItem == ghidra.session || viewItem == ghidra.activeSession",
+          "group": "ghidra@0c"
+        },
+        {
+          "command": "ghidraLsp.reanalyze",
+          "when": "viewItem == ghidra.session || viewItem == ghidra.activeSession || viewItem == ghidra.sessionTask || viewItem == ghidra.activeSessionTask",
+          "group": "ghidra@1"
+        },
+        {
+          "command": "ghidraLsp.closeSession",
+          "when": "viewItem == ghidra.session || viewItem == ghidra.activeSession || viewItem == ghidra.sessionTask || viewItem == ghidra.activeSessionTask",
+          "group": "ghidra@2"
+        },
+        {
+          "command": "ghidraLsp.cancelAnalysis",
+          "when": "viewItem == ghidra.activeTask || viewItem == ghidra.sessionTask || viewItem == ghidra.activeSessionTask",
+          "group": "ghidra@0"
+        },
+        {
+          "command": "ghidraLsp.openRecentItem",
+          "when": "viewItem == ghidra.recentItem",
+          "group": "ghidra@0"
+        },
+        {
+          "command": "ghidraLsp.showListing",
+          "when": "viewItem == ghidra.string",
+          "group": "ghidra@0"
+        },
+        {
+          "command": "ghidraLsp.showAddressReferences",
+          "when": "viewItem == ghidra.string",
+          "group": "ghidra@1"
+        },
+        {
+          "command": "ghidraLsp.showMemory",
+          "when": "viewItem == ghidra.string",
+          "group": "ghidra@2"
+        },
+        {
+          "command": "ghidraLsp.browseListing",
+          "when": "viewItem == ghidra.string",
+          "group": "ghidra@3"
+        }
+      ],
+      "ghidra.listing": [
+        {
+          "command": "ghidraLsp.analysisView",
+          "group": "navigation@0"
+        },
+        {
+          "command": "ghidraLsp.listingFunction",
+          "group": "navigation@1"
+        },
+        {
+          "command": "ghidraLsp.listingReferences",
+          "group": "navigation@2"
+        },
+        {
+          "command": "ghidraLsp.listingCopyAddress",
+          "group": "navigation@4"
+        },
+        {
+          "command": "ghidraLsp.listingBrowse",
+          "group": "navigation@5"
+        },
+        {
+          "command": "ghidraLsp.listingRefresh",
+          "group": "navigation@6"
+        }
+      ]
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "ghidra",
+          "title": "Ghidra",
+          "icon": "resources/ghidra.svg"
+        }
+      ]
+    },
+    "views": {
+      "ghidra": [
+        {
+          "id": "ghidra.sessions",
+          "name": "Sessions",
+          "visibility": "collapsed"
+        },
+        {
+          "id": "ghidra.symbols",
+          "name": "Symbols"
+        },
+        {
+          "id": "ghidra.strings",
+          "name": "Strings",
+          "visibility": "collapsed"
+        },
+        {
+          "id": "ghidra.types",
+          "name": "Data Types"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "ghidra.symbols",
+        "contents": "Open a binary to start exploring its functions and symbols.\n[Open Binary](command:ghidraLsp.openBinary)\n[Open Recent Program](command:ghidraLsp.openRecent)\nOr [select an open session](command:ghidraLsp.selectSession).",
+        "when": "!ghidra.browserHasProgram"
+      },
+      {
+        "view": "ghidra.types",
+        "contents": "Data types appear after you [open a binary](command:ghidraLsp.openBinary) or [select an open session](command:ghidraLsp.selectSession).",
+        "when": "!ghidra.browserHasProgram"
+      },
+      {
+        "view": "ghidra.strings",
+        "contents": "Strings appear after you [open a binary](command:ghidraLsp.openBinary) or [select an open session](command:ghidraLsp.selectSession).",
+        "when": "!ghidra.stringsHasProgram"
+      }
+    ],
+    "jsonValidation": [
+      {
+        "fileMatch": [
+          "ghidra-type:/**/*"
+        ],
+        "url": "./schemas/data-type.schema.json"
+      }
+    ],
+    "customEditors": [
+      {
+        "viewType": "ghidra.analysisControlFlow",
+        "displayName": "Ghidra Control Flow",
+        "selector": [
+          {
+            "filenamePattern": "ghidra-listing:/listing/*"
+          }
+        ],
+        "priority": "option"
+      },
+      {
+        "viewType": "ghidra.dataTypeEditor",
+        "displayName": "Ghidra Data Type Editor",
+        "selector": [
+          {
+            "filenamePattern": "ghidra-type:/**/*"
+          }
+        ],
+        "priority": "option"
+      }
+    ]
+  },
+  "dependencies": {
+    "elkjs": "0.12.0",
+    "jsonc-parser": "3.3.1",
+    "vscode-languageclient": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/vscode": "^1.96.0",
+    "@vscode/vsce": "^3.0.0",
+    "typescript": "^5.7.0"
+  }
+}

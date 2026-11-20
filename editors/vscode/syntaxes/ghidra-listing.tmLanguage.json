@@ -1,0 +1,21 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Ghidra Listing",
+  "scopeName": "source.ghidra-listing",
+  "patterns": [
+    {
+      "match": "^([0-9A-Fa-f]{2,16})(\\s+)(.*?)(?:\\s+;\\s+([0-9a-f]{2}(?:\\s+[0-9a-f]{2})*(?:\\s+\\.\\.)?))?$",
+      "captures": {
+        "1": { "name": "constant.numeric.address.ghidra" },
+        "4": { "name": "constant.numeric.hex.ghidra" },
+        "3": {
+          "patterns": [
+            { "match": "^[A-Z][A-Z0-9._]*\\b", "name": "keyword.control.ghidra" },
+            { "match": "[A-Za-z_$][A-Za-z0-9_$]*", "name": "variable.other.ghidra" },
+            { "match": "0x[0-9a-fA-F]+", "name": "constant.numeric.ghidra" }
+          ]
+        }
+      }
+    }
+  ]
+}
