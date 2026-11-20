@@ -1,12 +1,40 @@
 // Copyright 2026 ByteLand Technology Limited
 // SPDX-License-Identifier: MIT
 
-//! Checks the code-line limit of each Rust and Lua source file.
+//! Checks the code-line limit of each Rust, Lua, and TypeScript source file.
 
 use crate::{lexer, workspace};
 
 /// Maximum number of non-comment, non-blank code lines in one file.
 const LIMIT: usize = 800;
+
+/// Active lexical context while scanning TypeScript source lines.
+enum TsState {
+  /// Regular code outside comments, strings, templates, and regular expressions.
+  Normal {
+    /// Whether `/` starts a regular expression literal instead of division.
+    can_start_regex: bool,
+  },
+  /// Single-line `//` comment extending to the next newline.
+  LineComment {
+    /// Saved `can_start_regex` state to restore after the newline.
+    can_start_regex: bool,
+  },
+  /// Multi-line `/* ... */` block comment.
+  BlockComment {
+    /// Saved `can_start_regex` state to restore after `*/`.
+    can_start_regex: bool,
+  },
+  /// Quoted single-line string literal `'...'` or `"..."`.
+  ShortString(u8),
+  /// Template literal `` `...` `` supporting `${...}` expression interpolations.
+  Template,
+  /// Single-line `/.../` regular expression literal.
+  Regex {
+    /// Whether the scanner is inside a `[...]` character class.
+    in_class: bool,
+  },
+}
 
 /// Active lexical context while scanning Lua source lines.
 enum LuaState {
@@ -135,7 +163,235 @@ fn lua_code_lines(source: &str) -> usize {
   count
 }
 
-/// Verifies that no Rust or Lua file exceeds [`LIMIT`] lines of code.
+/// Returns whether an identifier or keyword allows a following `/` regex literal.
+fn is_regex_prefix_keyword(ident: &[u8]) -> bool {
+  matches!(
+    ident,
+    b"return"
+      | b"case"
+      | b"throw"
+      | b"else"
+      | b"do"
+      | b"typeof"
+      | b"void"
+      | b"delete"
+      | b"in"
+      | b"instanceof"
+      | b"new"
+      | b"await"
+      | b"yield"
+      | b"of"
+  )
+}
+
+/// Returns whether a punctuation byte allows a following `/` regex literal.
+fn allows_regex_after_punct(byte: u8) -> bool {
+  matches!(
+    byte,
+    b'('
+      | b'['
+      | b'{'
+      | b','
+      | b';'
+      | b':'
+      | b'='
+      | b'!'
+      | b'&'
+      | b'|'
+      | b'?'
+      | b'+'
+      | b'-'
+      | b'*'
+      | b'/'
+      | b'%'
+      | b'<'
+      | b'>'
+      | b'~'
+      | b'^'
+  )
+}
+
+/// Counts non-comment, non-blank lines in a TypeScript source file.
+fn ts_code_lines(source: &str) -> usize {
+  let bytes = source.as_bytes();
+  let mut state = TsState::Normal {
+    can_start_regex: true,
+  };
+  let mut template_braces: Vec<usize> = Vec::new();
+  let mut count = 0_usize;
+  let mut has_code = false;
+  let mut index = 0_usize;
+
+  while index < bytes.len() {
+    let byte = bytes[index];
+    if byte == b'\n' {
+      if has_code {
+        count += 1;
+        has_code = false;
+      }
+      state = match state {
+        TsState::LineComment { can_start_regex } => TsState::Normal { can_start_regex },
+        TsState::ShortString(_) | TsState::Regex { .. } => TsState::Normal {
+          can_start_regex: false,
+        },
+        other => other,
+      };
+      index += 1;
+      continue;
+    }
+
+    match state {
+      TsState::LineComment { .. } => index += 1,
+      TsState::BlockComment { can_start_regex } => {
+        if byte == b'*' && bytes.get(index + 1) == Some(&b'/') {
+          state = TsState::Normal { can_start_regex };
+          index += 2;
+        } else {
+          index += 1;
+        }
+      }
+      TsState::ShortString(quote) => {
+        if !byte.is_ascii_whitespace() {
+          has_code = true;
+        }
+        if byte == b'\\' && index + 1 < bytes.len() {
+          if bytes[index + 1] == b'\n' {
+            count += usize::from(has_code);
+            has_code = false;
+          }
+          index += 2;
+        } else if byte == quote {
+          state = TsState::Normal {
+            can_start_regex: false,
+          };
+          index += 1;
+        } else {
+          index += 1;
+        }
+      }
+      TsState::Template => {
+        if !byte.is_ascii_whitespace() {
+          has_code = true;
+        }
+        if byte == b'\\' && index + 1 < bytes.len() {
+          if bytes[index + 1] == b'\n' {
+            count += usize::from(has_code);
+            has_code = false;
+          }
+          index += 2;
+        } else if byte == b'$' && bytes.get(index + 1) == Some(&b'{') {
+          template_braces.push(0);
+          state = TsState::Normal {
+            can_start_regex: true,
+          };
+          index += 2;
+        } else if byte == b'`' {
+          state = TsState::Normal {
+            can_start_regex: false,
+          };
+          index += 1;
+        } else {
+          index += 1;
+        }
+      }
+      TsState::Regex { in_class } => {
+        has_code = true;
+        if byte == b'\\' && index + 1 < bytes.len() {
+          index += 2;
+        } else if byte == b'[' && !in_class {
+          state = TsState::Regex { in_class: true };
+          index += 1;
+        } else if byte == b']' && in_class {
+          state = TsState::Regex { in_class: false };
+          index += 1;
+        } else if byte == b'/' && !in_class {
+          state = TsState::Normal {
+            can_start_regex: false,
+          };
+          index += 1;
+        } else {
+          index += 1;
+        }
+      }
+      TsState::Normal { can_start_regex } => {
+        if byte.is_ascii_whitespace() {
+          index += 1;
+        } else if byte == b'/' && bytes.get(index + 1) == Some(&b'/') {
+          state = TsState::LineComment { can_start_regex };
+          index += 2;
+        } else if byte == b'/' && bytes.get(index + 1) == Some(&b'*') {
+          state = TsState::BlockComment { can_start_regex };
+          index += 2;
+        } else if byte == b'/' && can_start_regex {
+          has_code = true;
+          state = TsState::Regex { in_class: false };
+          index += 1;
+        } else if byte == b'\'' || byte == b'"' {
+          has_code = true;
+          state = TsState::ShortString(byte);
+          index += 1;
+        } else if byte == b'`' {
+          has_code = true;
+          state = TsState::Template;
+          index += 1;
+        } else if byte == b'{' {
+          has_code = true;
+          if let Some(depth) = template_braces.last_mut() {
+            *depth += 1;
+          }
+          state = TsState::Normal {
+            can_start_regex: true,
+          };
+          index += 1;
+        } else if byte == b'}' {
+          has_code = true;
+          match template_braces.last_mut() {
+            Some(depth) if *depth == 0 => {
+              template_braces.pop();
+              state = TsState::Template;
+            }
+            Some(depth) => {
+              *depth -= 1;
+              state = TsState::Normal {
+                can_start_regex: false,
+              };
+            }
+            None => {
+              state = TsState::Normal {
+                can_start_regex: true,
+              };
+            }
+          }
+          index += 1;
+        } else if byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'$') {
+          has_code = true;
+          let start = index;
+          while index < bytes.len()
+            && (bytes[index].is_ascii_alphanumeric() || matches!(bytes[index], b'_' | b'$'))
+          {
+            index += 1;
+          }
+          state = TsState::Normal {
+            can_start_regex: is_regex_prefix_keyword(&bytes[start..index]),
+          };
+        } else {
+          has_code = true;
+          state = TsState::Normal {
+            can_start_regex: allows_regex_after_punct(byte),
+          };
+          index += 1;
+        }
+      }
+    }
+  }
+
+  if has_code {
+    count += 1;
+  }
+  count
+}
+
+/// Verifies that no Rust, Lua, or TypeScript file exceeds [`LIMIT`] lines of code.
 pub(crate) fn check() -> Result<(), String> {
   let mut over = Vec::new();
   for path in workspace::rust_files()? {
@@ -151,6 +407,13 @@ pub(crate) fn check() -> Result<(), String> {
   for path in workspace::lua_files()? {
     let source = workspace::read(&path)?;
     let count = lua_code_lines(&source);
+    if count > LIMIT {
+      over.push((count, workspace::display(&path)));
+    }
+  }
+  for path in workspace::ts_files()? {
+    let source = workspace::read(&path)?;
+    let count = ts_code_lines(&source);
     if count > LIMIT {
       over.push((count, workspace::display(&path)));
     }

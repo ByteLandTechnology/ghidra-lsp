@@ -21,6 +21,17 @@ const TEST_NAMES: &[&str] = &[
   "should_panic",
 ];
 
+/// Dependency prefixes reserved for JavaScript or TypeScript test suites.
+const TEST_PACKAGE_PREFIXES: &[&str] = &[
+  "\"@vscode/test-electron\":",
+  "\"@vscode/test-cli\":",
+  "\"mocha\":",
+  "\"vitest\":",
+  "\"jest\":",
+  "\"ava\":",
+  "\"tap\":",
+];
+
 /// Checks all workspace sources, manifests, and markdown files for violations.
 pub(crate) fn check() -> Result<(), String> {
   let mut findings = Vec::new();
@@ -62,6 +73,9 @@ pub(crate) fn check() -> Result<(), String> {
   }
   for path in workspace::manifests()? {
     check_manifest(&path, &workspace::read(&path)?, &mut findings);
+  }
+  for path in workspace::package_manifests()? {
+    check_package_manifest(&path, &workspace::read(&path)?, &mut findings);
   }
   findings.sort();
   findings.dedup();
@@ -226,6 +240,32 @@ fn check_manifest(path: &Path, source: &str, findings: &mut Vec<String>) {
         path,
         index + 1,
         "test targets belong outside this repository",
+        findings,
+      );
+    }
+  }
+}
+
+/// Checks a `package.json` manifest for forbidden test scripts or dependencies.
+fn check_package_manifest(path: &Path, source: &str, findings: &mut Vec<String>) {
+  for (index, raw_line) in source.lines().enumerate() {
+    let line = raw_line.trim_start();
+    if line.starts_with("\"test\":") || line.starts_with("\"test:") {
+      report(
+        path,
+        index + 1,
+        "test scripts belong outside this repository",
+        findings,
+      );
+    }
+    if TEST_PACKAGE_PREFIXES
+      .iter()
+      .any(|prefix| line.starts_with(prefix))
+    {
+      report(
+        path,
+        index + 1,
+        "test dependencies belong outside this repository",
         findings,
       );
     }

@@ -15,7 +15,7 @@ mod forbidden;
 mod headers;
 /// Small Rust lexer that separates code from comments and literals.
 mod lexer;
-/// Maximum code-line limit checker for Rust source files.
+/// Maximum code-line limit checker for workspace source files.
 mod lines;
 /// Workspace path discovery helpers.
 mod workspace;
@@ -29,8 +29,8 @@ Usage: cargo xtask <command>
 Commands:
   ci               Run fmt, check, clippy, doc, build, and cargo-deny
   check            Run header, line-limit, and forbidden-code checks
-  license-headers  Check the license header of each Rust file
-  line-limit       Check the code-line limit of each Rust file
+  license-headers  Check the license header of each source file
+  line-limit       Check the code-line limit of each source file
   forbidden-code   Find code or manifests that AGENTS.md forbids
   help             Show this text";
 

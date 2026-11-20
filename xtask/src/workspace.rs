@@ -24,9 +24,19 @@ pub(crate) fn lua_files() -> Result<Vec<PathBuf>, String> {
   files_with(|name| name.ends_with(".lua"))
 }
 
+/// Returns each `.ts` file in the repository, sorted by path.
+pub(crate) fn ts_files() -> Result<Vec<PathBuf>, String> {
+  files_with(|name| name.ends_with(".ts"))
+}
+
 /// Returns the root manifest and each crate manifest, sorted by path.
 pub(crate) fn manifests() -> Result<Vec<PathBuf>, String> {
   files_with(|name| name == "Cargo.toml")
+}
+
+/// Returns each `package.json` manifest in the repository, sorted by path.
+pub(crate) fn package_manifests() -> Result<Vec<PathBuf>, String> {
+  files_with(|name| name == "package.json")
 }
 
 /// Returns every non-hidden Markdown file in the workspace, sorted by path.
@@ -84,7 +94,7 @@ fn walk(
     if name.starts_with('.')
       || matches!(
         name.as_str(),
-        "target" | "artifacts" | "node_modules" | "vendor"
+        "target" | "artifacts" | "node_modules" | "vendor" | "out" | "dist"
       )
     {
       continue;
@@ -93,7 +103,7 @@ fn walk(
       .file_type()
       .map_err(|error| format!("{}: {error}", display(&path)))?;
     if kind.is_dir() {
-      if matches!(name.as_str(), "tests" | "benches") {
+      if matches!(name.as_str(), "test" | "tests" | "benches" | "__tests__") {
         test_directories.push(path.clone());
       }
       walk(&path, matches, files, test_directories)?;

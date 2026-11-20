@@ -42,6 +42,8 @@ The command `cargo xtask ci` makes sure that most of these rules are obeyed.
   (`src/`) and `xtask` (`xtask/`).
 - `editors/nvim/` holds the Neovim client plugin (`plugin/` and
   `lua/ghidra-lsp/`).
+- `editors/vscode/` holds the Visual Studio Code client extension
+  (`src/`, `schemas/`, `syntaxes/`, and `resources/`).
 - Keep other editor plugins and all test suites outside this
   repository.
 
@@ -64,7 +66,7 @@ The command `cargo xtask ci` makes sure that most of these rules are obeyed.
   `unreachable_pub` lint is on.
 - Before you write a helper, look in existing modules. Do not copy a
   helper into a second module.
-- Each `.rs` or `.lua` file must have no more than 800 lines of code.
+- Each `.rs`, `.lua`, or `.ts` file must have no more than 800 lines of code.
   Comments and blank lines are not counted. There are no exceptions.
 
 ## Code rules
@@ -115,6 +117,13 @@ Start each Lua source file with these two lines:
 -- SPDX-License-Identifier: MIT
 ```
 
+Start each TypeScript source file with these two lines:
+
+```ts
+// Copyright 2026 ByteLand Technology Limited
+// SPDX-License-Identifier: MIT
+```
+
 ## Commit messages
 
 - Obey Conventional Commits.
@@ -136,6 +145,7 @@ Start each Lua source file with these two lines:
     `src/workbench.rs`.
   - `server`: LSP protocol dispatch in `src/server/`.
   - `nvim`: the Neovim client plugin in `editors/nvim/`.
+  - `vscode`: the Visual Studio Code extension in `editors/vscode/`.
   - `xtask`: repository checks in `xtask/`.
   - `docs`: documents.
   - `build`: build, manifest, and ignore files.
