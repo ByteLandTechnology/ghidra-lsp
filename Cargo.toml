@@ -1,0 +1,56 @@
+[workspace]
+resolver = "2"
+members = ["xtask"]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.88"
+license = "MIT"
+authors = ["ByteLand Technology Limited"]
+repository = "https://github.com/ByteLandTechnology/ghidra-lsp"
+homepage = "https://github.com/ByteLandTechnology/ghidra-lsp"
+
+[workspace.lints.rust]
+missing_docs = "deny"
+unreachable_pub = "deny"
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+allow_attributes = "deny"
+expect_used = "deny"
+missing_docs_in_private_items = "deny"
+unwrap_used = "deny"
+
+[workspace.lints.rustdoc]
+bare_urls = "deny"
+broken_intra_doc_links = "deny"
+private_intra_doc_links = "deny"
+
+[package]
+name = "ghidra-lsp"
+version = "0.1.0"
+description = "Language server for Ghidra decompilation through ghidra-mcp"
+publish = false
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+md-5 = "0.10.6"
+object = { version = "0.36.7", default-features = false, features = ["read", "std"] }
+percent-encoding = "2"
+rmcp = { version = "3.9", default-features = false, features = ["client", "transport-child-process"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+tower-lsp-server = "0.23"
+url = "2"
