@@ -3,7 +3,15 @@
 
 //! Language server entry point for Ghidra decompilation through `ghidra-mcp`.
 
+/// Model Context Protocol child-process client and response normalization.
+mod backend;
+/// Language Server Protocol state and handlers.
+mod server;
+
+use backend::Config;
 use clap::Parser;
+use server::Server;
+use tower_lsp_server::{LspService, Server as LspServer};
 
 /// Command-line options for the `ghidra-lsp` executable.
 #[derive(Parser)]
@@ -20,10 +28,18 @@ struct Args {
   request_timeout_ms: u64,
 }
 
-/// Parses command-line options and starts the language server runtime.
+/// Parses command-line options and serves LSP requests over standard input and output.
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
   let args = Args::parse();
-  let _ = (&args.mcp_command, &args.mcp_arg, args.request_timeout_ms);
+  let config = Config {
+    mcp_command: args.mcp_command,
+    mcp_args: args.mcp_arg,
+    request_timeout_ms: args.request_timeout_ms,
+  };
+  let (service, socket) = LspService::new(move |client| Server::new(client, config.clone()));
+  LspServer::new(tokio::io::stdin(), tokio::io::stdout(), socket)
+    .serve(service)
+    .await;
   Ok(())
 }
