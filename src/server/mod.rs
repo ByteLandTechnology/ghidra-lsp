@@ -7,6 +7,8 @@
 mod commands;
 /// Domain command handlers for binaries, queries, mutations, and rename lifecycle.
 mod domain_commands;
+/// String lookup and comment, prototype, and variable mutation command handlers.
+mod edit_commands;
 /// `LanguageServer` trait implementation for [`Server`].
 mod lsp;
 /// Document and workspace symbol search handlers.
@@ -45,6 +47,12 @@ const COMMANDS: &[&str] = &[
   "ghidra.symbols",
   "ghidra.types",
   "ghidra.type",
+  "ghidra.strings",
+  "ghidra.commentsAt",
+  "ghidra.saveComment",
+  "ghidra.functionPrototype",
+  "ghidra.saveFunctionPrototype",
+  "ghidra.saveVariables",
   "ghidra.openSymbol",
   "ghidra.openFunction",
   "ghidra.refresh",
@@ -389,6 +397,16 @@ impl Server {
       | "ghidra.typeAtPosition" => {
         self
           .execute_session_command(&params.command, arg, backend.as_ref())
+          .await
+      }
+      "ghidra.strings"
+      | "ghidra.commentsAt"
+      | "ghidra.saveComment"
+      | "ghidra.functionPrototype"
+      | "ghidra.saveFunctionPrototype"
+      | "ghidra.saveVariables" => {
+        self
+          .execute_edit_command(&params.command, arg, backend.as_ref())
           .await
       }
       _ => {

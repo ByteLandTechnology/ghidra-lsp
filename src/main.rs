@@ -3,6 +3,8 @@
 
 //! Language server entry point for Ghidra decompilation through `ghidra-mcp`.
 
+/// Canonical address parsing, structured type references, and defined string queries.
+mod address;
 /// Model Context Protocol child-process client and response normalization.
 mod backend;
 /// Binary loader import and export parsing.
@@ -15,6 +17,8 @@ mod document;
 mod engine;
 /// Native Ghidra GUI layout validation.
 mod gui;
+/// Comment, function prototype, and variable mutation planning.
+mod mutations;
 /// Language Server Protocol state and handlers.
 mod server;
 /// Bridge resource coverage helpers.
