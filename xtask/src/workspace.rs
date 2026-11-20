@@ -19,6 +19,11 @@ pub(crate) fn rust_files() -> Result<Vec<PathBuf>, String> {
   files_with(|name| name.ends_with(".rs"))
 }
 
+/// Returns each `.lua` file in the repository, sorted by path.
+pub(crate) fn lua_files() -> Result<Vec<PathBuf>, String> {
+  files_with(|name| name.ends_with(".lua"))
+}
+
 /// Returns the root manifest and each crate manifest, sorted by path.
 pub(crate) fn manifests() -> Result<Vec<PathBuf>, String> {
   files_with(|name| name == "Cargo.toml")

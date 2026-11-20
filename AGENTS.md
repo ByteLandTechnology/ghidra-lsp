@@ -40,7 +40,10 @@ The command `cargo xtask ci` makes sure that most of these rules are obeyed.
 
 - The workspace has two members: the root binary package `ghidra-lsp`
   (`src/`) and `xtask` (`xtask/`).
-- Keep editor plugins and external test suites outside this repository.
+- `editors/nvim/` holds the Neovim client plugin (`plugin/` and
+  `lua/ghidra-lsp/`).
+- Keep other editor plugins and all test suites outside this
+  repository.
 
 ## Disk use and cleanup
 
@@ -61,8 +64,8 @@ The command `cargo xtask ci` makes sure that most of these rules are obeyed.
   `unreachable_pub` lint is on.
 - Before you write a helper, look in existing modules. Do not copy a
   helper into a second module.
-- A `.rs` file must have no more than 800 lines of code. Comments and
-  blank lines are not counted. There are no exceptions.
+- Each `.rs` or `.lua` file must have no more than 800 lines of code.
+  Comments and blank lines are not counted. There are no exceptions.
 
 ## Code rules
 
@@ -105,6 +108,13 @@ Start each Rust source file with these two lines:
 // SPDX-License-Identifier: MIT
 ```
 
+Start each Lua source file with these two lines:
+
+```lua
+-- Copyright 2026 ByteLand Technology Limited
+-- SPDX-License-Identifier: MIT
+```
+
 ## Commit messages
 
 - Obey Conventional Commits.
@@ -125,6 +135,7 @@ Start each Rust source file with these two lines:
   - `workbench`: semantic tokens and project guards in
     `src/workbench.rs`.
   - `server`: LSP protocol dispatch in `src/server/`.
+  - `nvim`: the Neovim client plugin in `editors/nvim/`.
   - `xtask`: repository checks in `xtask/`.
   - `docs`: documents.
   - `build`: build, manifest, and ignore files.

@@ -1,27 +1,57 @@
 // Copyright 2026 ByteLand Technology Limited
 // SPDX-License-Identifier: MIT
 
-//! Checks that every Rust source file starts with the two-line SPDX header.
+//! Checks that every Rust and Lua source file starts with the two-line SPDX header.
+
+use std::path::PathBuf;
 
 use crate::workspace;
 
 /// Required first line of each Rust source file.
-const COPYRIGHT: &str = "// Copyright 2026 ByteLand Technology Limited";
+const RUST_COPYRIGHT: &str = "// Copyright 2026 ByteLand Technology Limited";
 
 /// Required second line of each Rust source file.
-const SPDX: &str = "// SPDX-License-Identifier: MIT";
+const RUST_SPDX: &str = "// SPDX-License-Identifier: MIT";
 
-/// Verifies that every workspace `.rs` file starts with the required header.
-pub(crate) fn check() -> Result<(), String> {
-  let mut missing = Vec::new();
-  for path in workspace::rust_files()? {
+/// Required first line of each Lua source file.
+const LUA_COPYRIGHT: &str = "-- Copyright 2026 ByteLand Technology Limited";
+
+/// Required second line of each Lua source file.
+const LUA_SPDX: &str = "-- SPDX-License-Identifier: MIT";
+
+/// Collects relative paths whose leading two lines do not match `copyright` and `spdx`.
+fn collect_missing(
+  files: Vec<PathBuf>,
+  copyright: &str,
+  spdx: &str,
+  missing: &mut Vec<String>,
+) -> Result<(), String> {
+  for path in files {
     let source = workspace::read(&path)?;
     let mut lines = source.lines();
-    if lines.next() == Some(COPYRIGHT) && lines.next() == Some(SPDX) {
+    if lines.next() == Some(copyright) && lines.next() == Some(spdx) {
       continue;
     }
     missing.push(workspace::display(&path));
   }
+  Ok(())
+}
+
+/// Verifies that every workspace `.rs` and `.lua` file starts with its SPDX header.
+pub(crate) fn check() -> Result<(), String> {
+  let mut missing = Vec::new();
+  collect_missing(
+    workspace::rust_files()?,
+    RUST_COPYRIGHT,
+    RUST_SPDX,
+    &mut missing,
+  )?;
+  collect_missing(
+    workspace::lua_files()?,
+    LUA_COPYRIGHT,
+    LUA_SPDX,
+    &mut missing,
+  )?;
   if missing.is_empty() {
     println!("License headers: OK");
     Ok(())
