@@ -65,8 +65,8 @@ export function formatFriendlyError(error: unknown): string {
 
     if (/spawn\b.*ENOENT|launching.*server.*not found/i.test(raw)) {
         return /ghidra-mcp/i.test(raw)
-            ? 'Ghidra MCP was not found. Set ghidraLsp.mcpCommand to the full path of ghidra-mcp, then reload the window.'
-            : 'Ghidra LSP was not found. Set ghidraLsp.serverPath to the full path of ghidra-lsp, then reload the window.';
+            ? 'Ghidra MCP was not found. Run "Ghidra: Install or Update Binaries" or set ghidraLsp.mcpCommand, then reload the window.'
+            : 'Ghidra LSP was not found. Run "Ghidra: Install or Update Binaries" or set ghidraLsp.serverPath, then reload the window.';
     }
 
     if (/timed out; a write may have completed/i.test(raw)) {

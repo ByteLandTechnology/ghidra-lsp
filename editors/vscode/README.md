@@ -15,10 +15,11 @@ Online documentation is available in the [ghidra-lsp documentation](https://gith
 
 ## Requirements and configuration
 
-Install `ghidra-lsp` and `ghidra-mcp` on `PATH`, or configure their executable paths in VS Code `settings.json`:
+When `ghidraLsp.serverPath` (`"ghidra-lsp"`) and `ghidraLsp.mcpCommand` (`"ghidra-mcp"`) are left at their defaults and are not yet on `PATH`, the extension automatically installs `@ghidra-lsp/cli` and `@ghidra-mcp/cli` via `npm` into the shared managed bin directory (`~/.local/share/ghidra-lsp/bin` on Linux and macOS, or `%LOCALAPPDATA%\ghidra-lsp\bin` on Windows). You can also run **Ghidra: Install or Update Binaries** (`ghidraLsp.installBinaries`) at any time, or point `ghidraLsp.serverPath` / `ghidraLsp.mcpCommand` to custom executables in VS Code `settings.json`:
 
 ```json
 {
+  "ghidraLsp.autoInstall": true,
   "ghidraLsp.serverPath": "ghidra-lsp",
   "ghidraLsp.mcpCommand": "ghidra-mcp",
   "ghidraLsp.mcpArgs": [],
@@ -29,6 +30,7 @@ Install `ghidra-lsp` and `ghidra-mcp` on `PATH`, or configure their executable p
 }
 ```
 
+- `ghidraLsp.autoInstall`: Automatically install missing default `ghidra-lsp` and `ghidra-mcp` binaries via `npm` into the shared user bin directory (`true` by default).
 - `ghidraLsp.serverPath`: Executable path or command name for `ghidra-lsp` (restart the extension after changing).
 - `ghidraLsp.mcpCommand`: Executable path or command name for `ghidra-mcp`.
 - `ghidraLsp.mcpArgs`: Array of extra CLI arguments forwarded to `ghidra-mcp`.
@@ -60,7 +62,7 @@ Install `ghidra-lsp` and `ghidra-mcp` on `PATH`, or configure their executable p
 ### Sessions and analysis
 
 - **Ghidra: Open Binary** / **Ghidra: Open Recent Program** / **Ghidra: Select Session** / **Ghidra: Switch to Session** / **Ghidra: Reopen Session**
-- **Ghidra: Refresh Sessions** / **Ghidra: Close Program** / **Ghidra: Reanalyze Program** / **Ghidra: Stop Waiting for Analysis** / **Ghidra: Program Overview**
+- **Ghidra: Refresh Sessions** / **Ghidra: Close Program** / **Ghidra: Reanalyze Program** / **Ghidra: Stop Waiting for Analysis** / **Ghidra: Program Overview** / **Ghidra: Install or Update Binaries**
 
 ### Navigation and inspection
 

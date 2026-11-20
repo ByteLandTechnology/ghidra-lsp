@@ -415,20 +415,29 @@
         "command": "ghidraLsp.refreshStrings",
         "title": "Ghidra: Refresh Strings",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "ghidraLsp.installBinaries",
+        "title": "Ghidra: Install or Update Binaries"
       }
     ],
     "configuration": {
       "title": "Ghidra LSP",
       "properties": {
+        "ghidraLsp.autoInstall": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically install missing default ghidra-lsp and ghidra-mcp binaries via npm into the shared user bin directory."
+        },
         "ghidraLsp.serverPath": {
           "type": "string",
           "default": "ghidra-lsp",
-          "description": "Path to the Rust language server. Restart the extension after changing settings."
+          "description": "Path to the Rust language server. Leave at default to auto-resolve or install via npm. Restart the extension after changing settings."
         },
         "ghidraLsp.mcpCommand": {
           "type": "string",
           "default": "ghidra-mcp",
-          "description": "Path to ghidra-mcp."
+          "description": "Path to ghidra-mcp. Leave at default to auto-resolve or install via npm."
         },
         "ghidraLsp.mcpArgs": {
           "type": "array",

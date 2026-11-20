@@ -25,9 +25,12 @@ import { MemoryFiles, memoryAddressAt, memoryScheme } from './bytes';
 import { ViewSets } from './views';
 import { AnalysisMode, ControlFlowView } from './control-flow-view';
 import { DataTypeFiles, typeScheme } from './type-files';
+import { installManagedBinaries, resolveOrInstallBinaries, ResolvedBinaries } from './installer';
 
 /** Active LSP language client instance for `ghidra-lsp`. */
 let client: LanguageClient | undefined;
+/** Active `ghidra/changed` notification subscription for the running LSP client. */
+let changedSub: vscode.Disposable | undefined;
 /** Navigation commands filtered out of VS Code Code Actions to avoid duplicate items. */
 const nativeNavigationCommands = new Set(['ghidraLsp.showReferences', 'ghidraLsp.showCallers', 'ghidraLsp.showCallees', 'ghidraLsp.showCallHierarchy']);
 /** Function summary item returned by `ghidra.functions`. */
@@ -40,47 +43,51 @@ interface AnalysisOperation { token: string; md5: string; state: 'pending' | 're
 export async function activate(extension: vscode.ExtensionContext): Promise<void> {
     let renames: ReadonlyRenames;
     let references: ReferenceViews;
+    const output = vscode.window.createOutputChannel('Ghidra LSP');
+    extension.subscriptions.push(output);
     const config = vscode.workspace.getConfiguration('ghidraLsp');
     setShowTemplateArguments(config.get('templateArguments') === 'show');
-    const server: ServerOptions = { command: config.get<string>('serverPath', 'ghidra-lsp'), args: [] };
-    const options: LanguageClientOptions = {
-        // Reference views of Listing rows are not decompiler documents; only decompiled and Markdown ones reach the server.
-        documentSelector: [{ scheme: 'ghidra' }, { scheme: referenceScheme, language: 'ghidra-decompiled' }, { scheme: referenceScheme, language: 'markdown' }],
-        uriConverters: {
-            code2Protocol: uri => (referenceSource(uri) || uri).toString(),
-            protocol2Code: uri => vscode.Uri.parse(uri),
-        },
-        middleware: {
-            didOpen: async (document, next) => { if (document.uri.scheme !== referenceScheme) { await next(document); } },
-            didChange: async (event, next) => { if (event.document.uri.scheme !== referenceScheme) { await next(event); } },
-            didClose: async (document, next) => { if (document.uri.scheme !== referenceScheme) { await next(document); } },
-            didSave: async (document, next) => { if (!['ghidra', referenceScheme].includes(document.uri.scheme)) { await next(document); } },
-            provideReferences: async (document, position, context, token, next) => {
-                const locations = await next(document, position, context, token);
-                return locations && references ? references.locations(locations, token, document.uri) : locations;
+    const createClientOptions = (mcpCommand: string): LanguageClientOptions => {
+        const current = vscode.workspace.getConfiguration('ghidraLsp');
+        return {
+            // Reference views of Listing rows are not decompiler documents; only decompiled and Markdown ones reach the server.
+            documentSelector: [{ scheme: 'ghidra' }, { scheme: referenceScheme, language: 'ghidra-decompiled' }, { scheme: referenceScheme, language: 'markdown' }],
+            outputChannel: output,
+            uriConverters: {
+                code2Protocol: uri => (referenceSource(uri) || uri).toString(),
+                protocol2Code: uri => vscode.Uri.parse(uri),
             },
-            provideCodeActions: async (document, range, context, token, next) => {
-                const actions = await next(document, range, context, token);
-                return actions?.filter(action => !nativeNavigationCommands.has(typeof action.command === 'string' ? action.command : action.command?.command || ''));
+            middleware: {
+                didOpen: async (document, next) => { if (document.uri.scheme !== referenceScheme) { await next(document); } },
+                didChange: async (event, next) => { if (event.document.uri.scheme !== referenceScheme) { await next(event); } },
+                didClose: async (document, next) => { if (document.uri.scheme !== referenceScheme) { await next(document); } },
+                didSave: async (document, next) => { if (!['ghidra', referenceScheme].includes(document.uri.scheme)) { await next(document); } },
+                provideReferences: async (document, position, context, token, next) => {
+                    const locations = await next(document, position, context, token);
+                    return locations && references ? references.locations(locations, token, document.uri) : locations;
+                },
+                provideCodeActions: async (document, range, context, token, next) => {
+                    const actions = await next(document, range, context, token);
+                    return actions?.filter(action => !nativeNavigationCommands.has(typeof action.command === 'string' ? action.command : action.command?.command || ''));
+                },
+                provideCodeLenses: async (document, token, next) => {
+                    const lenses = await next(document, token);
+                    return lenses?.filter(lens => !lens.command || !nativeNavigationCommands.has(lens.command.command));
+                },
+                provideRenameEdits: async (document, position, name, token, next) => {
+                    const edit = await next(document, position, name, token);
+                    renames?.schedule(document.uri.authority);
+                    return edit;
+                },
             },
-            provideCodeLenses: async (document, token, next) => {
-                const lenses = await next(document, token);
-                return lenses?.filter(lens => !lens.command || !nativeNavigationCommands.has(lens.command.command));
+            initializationOptions: {
+                readonlyDocuments: true,
+                mcpCommand, mcpArgs: current.get('mcpArgs'),
+                requestTimeoutMs: current.get('requestTimeoutMs'),
+                templateArguments: current.get('templateArguments'),
             },
-            provideRenameEdits: async (document, position, name, token, next) => {
-                const edit = await next(document, position, name, token);
-                renames?.schedule(document.uri.authority);
-                return edit;
-            },
-        },
-        initializationOptions: {
-            readonlyDocuments: true,
-            mcpCommand: config.get('mcpCommand'), mcpArgs: config.get('mcpArgs'),
-            requestTimeoutMs: config.get('requestTimeoutMs'),
-            templateArguments: config.get('templateArguments'),
-        },
+        };
     };
-    client = new LanguageClient('ghidraLsp', 'Ghidra LSP', server, options);
     let startup: Promise<void> | undefined;
     const requests = new Map<string, Set<Promise<unknown>>>();
     const call: Call = async <T>(command: string, args: object = {}): Promise<T> => {
@@ -196,7 +203,7 @@ export async function activate(extension: vscode.ExtensionContext): Promise<void
         status.text = `$(file-binary) ${context.name(md5)}${entry ? ` · ${entry}` : ''}${address ? ` · ${plainAddress(address)}` : ''}`;
         status.show();
     };
-    function log(error: unknown): void { client?.outputChannel.appendLine(String(error)); }
+    function log(error: unknown): void { output.appendLine(String(error)); }
     extension.subscriptions.push(status, analysisStatus, context.onDidChange(md5 => {
         if (md5 && !context.isClosing(md5)) { memory.reopen(md5); }
         updateStatus();
@@ -618,50 +625,100 @@ export async function activate(extension: vscode.ExtensionContext): Promise<void
     });
     register('saveAllRenames', async () => { await renames.saveAll(); });
     register('showPendingRename', async () => { await renames.showPending(); });
-    startup = client.start();
-    await startup;
     const changed = new Map<string, ReturnType<typeof setTimeout>>();
     const changedSeq = new Map<string, number>();
     const refreshedSeq = new Map<string, number>();
+    async function stopLanguageClient(): Promise<void> {
+        changedSub?.dispose();
+        changedSub = undefined;
+        const active = client;
+        client = undefined;
+        if (active) {
+            try { await active.stop(); } catch (error) { log(error); }
+        }
+    }
+    async function startLanguageClient(resolved: ResolvedBinaries): Promise<void> {
+        await stopLanguageClient();
+        const server: ServerOptions = { command: resolved.serverPath, args: [] };
+        const nextClient = new LanguageClient('ghidraLsp', 'Ghidra LSP', server, createClientOptions(resolved.mcpCommand));
+        client = nextClient;
+        await nextClient.start();
+        changedSub = nextClient.onNotification('ghidra/changed', (event: { md5: string }) => {
+            if (!event || typeof event.md5 !== 'string') { return; }
+            const md5 = event.md5.toLowerCase();
+            if (context.isClosing(md5)) { return; }
+            const seq = (changedSeq.get(md5) ?? 0) + 1;
+            changedSeq.set(md5, seq);
+            const previous = changed.get(md5);
+            if (previous) { clearTimeout(previous); }
+            changed.set(md5, setTimeout(() => {
+                changed.delete(md5);
+                if (context.isClosing(md5)) { return; }
+                memory.refresh(md5);
+                labels.refresh(md5);
+                references.refresh(md5);
+                stringFiles.refresh(md5);
+                listingFiles.refresh(md5);
+                byteFiles.refresh(md5);
+                const skipBrowser = (refreshedSeq.get(md5) ?? -1) >= seq;
+                void Promise.all([
+                    ...(skipBrowser ? [] : [browser.refresh(md5)]),
+                    workbench.refresh(md5),
+                    graphView.refresh(md5),
+                    renames.refresh(md5),
+                ]).catch(log);
+            }, 150));
+        });
+    }
+    async function resolveAndStart(): Promise<void> {
+        const current = vscode.workspace.getConfiguration('ghidraLsp');
+        const resolved = await resolveOrInstallBinaries({
+            serverPath: current.get<string>('serverPath', 'ghidra-lsp'),
+            mcpCommand: current.get<string>('mcpCommand', 'ghidra-mcp'),
+            autoInstall: current.get<boolean>('autoInstall', true),
+            output,
+        });
+        await startLanguageClient(resolved);
+    }
+    let restoredOnce = false;
+    async function restoreWorkspace(): Promise<void> {
+        if (restoredOnce) { return; }
+        restoredOnce = true;
+        try {
+            const restored = await context.restore();
+            const editor = vscode.window.activeTextEditor;
+            if (editor && ['ghidra', listingScheme, memoryScheme, typeScheme, 'ghidra-type-current', stringScheme, referenceScheme].includes(editor.document.uri.scheme)) { await context.activate(editor.document.uri.authority); }
+            else if (restored) { updateStatus(); }
+            sessionsView.refresh();
+        } catch (error) {
+            restoredOnce = false;
+            log(`Program restore: ${String(error)}`);
+        }
+    }
+    register('installBinaries', async () => {
+        await stopLanguageClient();
+        await installManagedBinaries(output);
+        const current = vscode.workspace.getConfiguration('ghidraLsp');
+        const resolved = await resolveOrInstallBinaries({
+            serverPath: current.get<string>('serverPath', 'ghidra-lsp'),
+            mcpCommand: current.get<string>('mcpCommand', 'ghidra-mcp'),
+            autoInstall: false,
+            output,
+        });
+        startup = startLanguageClient(resolved);
+        await startup;
+        await restoreWorkspace();
+        sessionsView.refresh();
+        void vscode.window.showInformationMessage('Installed ghidra-lsp and ghidra-mcp.');
+    });
     extension.subscriptions.push(browser.onWillRefresh(md5 => {
         refreshedSeq.set(md5, changedSeq.get(md5) ?? 0);
-    }), client.onNotification('ghidra/changed', (event: { md5: string }) => {
-        if (!event || typeof event.md5 !== 'string') { return; }
-        const md5 = event.md5.toLowerCase();
-        if (context.isClosing(md5)) { return; }
-        const seq = (changedSeq.get(md5) ?? 0) + 1;
-        changedSeq.set(md5, seq);
-        const previous = changed.get(md5);
-        if (previous) { clearTimeout(previous); }
-        changed.set(md5, setTimeout(() => {
-            changed.delete(md5);
-            if (context.isClosing(md5)) { return; }
-            memory.refresh(md5);
-            labels.refresh(md5);
-            references.refresh(md5);
-            stringFiles.refresh(md5);
-            listingFiles.refresh(md5);
-            byteFiles.refresh(md5);
-            const skipBrowser = (refreshedSeq.get(md5) ?? -1) >= seq;
-            void Promise.all([
-                ...(skipBrowser ? [] : [browser.refresh(md5)]),
-                workbench.refresh(md5),
-                graphView.refresh(md5),
-                renames.refresh(md5),
-            ]).catch(log);
-        }, 150));
     }), new vscode.Disposable(() => { for (const timer of changed.values()) { clearTimeout(timer); } }));
-    try {
-        const restored = await context.restore();
-        const editor = vscode.window.activeTextEditor;
-        if (editor && ['ghidra', listingScheme, memoryScheme, typeScheme, 'ghidra-type-current', stringScheme, referenceScheme].includes(editor.document.uri.scheme)) { await context.activate(editor.document.uri.authority); }
-        else if (restored) { updateStatus(); }
-        sessionsView.refresh();
-    } catch (error) { log(`Program restore: ${String(error)}`); }
 
     let busy = false;
     let last = 0;
     const timer = setInterval(async () => {
+        if (!client) { return; }
         const interval = vscode.workspace.getConfiguration('ghidraLsp').get<number>('liveRefreshIntervalMs', 2000);
         if (!interval || busy || Date.now() - last < interval) { return; }
         busy = true;
@@ -688,6 +745,28 @@ export async function activate(extension: vscode.ExtensionContext): Promise<void
         finally { busy = false; }
     }, 500);
     extension.subscriptions.push(new vscode.Disposable(() => clearInterval(timer)));
+
+    startup = resolveAndStart();
+    try {
+        await startup;
+    } catch (error) {
+        startup = undefined;
+        log(error);
+        void vscode.window.showErrorMessage(formatFriendlyError(error), 'Install Binaries', 'Open Settings').then(choice => {
+            if (choice === 'Install Binaries') {
+                void vscode.commands.executeCommand('ghidraLsp.installBinaries');
+            } else if (choice === 'Open Settings') {
+                void vscode.commands.executeCommand('workbench.action.openSettings', 'ghidraLsp');
+            }
+        });
+        return;
+    }
+    await restoreWorkspace();
 }
 /** Stop the running `ghidra-lsp` language client when the extension deactivates. */
-export async function deactivate(): Promise<void> { await client?.stop(); client = undefined; }
+export async function deactivate(): Promise<void> {
+    changedSub?.dispose();
+    changedSub = undefined;
+    await client?.stop();
+    client = undefined;
+}
