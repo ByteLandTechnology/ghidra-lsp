@@ -1,0 +1,36 @@
+{
+  "name": "@ghidra-lsp/cli",
+  "version": "0.1.0",
+  "description": "Language server for Ghidra decompilation through ghidra-mcp.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ByteLandTechnology/ghidra-lsp.git"
+  },
+  "homepage": "https://github.com/ByteLandTechnology/ghidra-lsp#readme",
+  "keywords": [
+    "ghidra",
+    "lsp",
+    "mcp",
+    "decompiler",
+    "disassembly",
+    "reverse-engineering"
+  ],
+  "bin": {
+    "ghidra-lsp": "bin/ghidra-lsp.js"
+  },
+  "files": [
+    "bin"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "optionalDependencies": {
+    "@ghidra-lsp/darwin-arm64": "0.1.0",
+    "@ghidra-lsp/darwin-x64": "0.1.0",
+    "@ghidra-lsp/linux-arm64": "0.1.0",
+    "@ghidra-lsp/linux-x64": "0.1.0",
+    "@ghidra-lsp/win32-arm64": "0.1.0",
+    "@ghidra-lsp/win32-x64": "0.1.0"
+  }
+}
