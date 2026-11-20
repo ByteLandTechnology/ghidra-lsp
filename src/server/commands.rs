@@ -11,7 +11,9 @@ use tower_lsp_server::ls_types::{Position, Uri};
 
 use super::Server;
 use crate::backend::{McpBackend, list_all};
-use crate::document::{Document, SHOW_TEMPLATE_ARGUMENTS, canonical_virtual_uri, same_address};
+use crate::document::{
+  Document, SHOW_TEMPLATE_ARGUMENTS, canonical_virtual_uri, matches_text, same_address,
+};
 use crate::workbench;
 
 impl Server {
@@ -119,9 +121,20 @@ impl Server {
           .get(&doc_uri)
           .or_else(|| e.docs.get(&uri))
           .context("Unknown virtual document")?;
+        let text = if arg.get("includePending").and_then(Value::as_bool) == Some(true)
+          && e
+            .pending
+            .get(&doc.md5)
+            .and_then(|plan| plan.expected.get(&doc.uri))
+            .is_some_and(|expected| matches_text(&doc.current, expected))
+        {
+          &doc.current
+        } else {
+          &doc.base
+        };
         Ok(json!({
           "uri": doc.uri,
-          "text": &doc.base,
+          "text": text,
           "md5": doc.md5,
           "entry": doc.entry,
           "warning": doc.warning,

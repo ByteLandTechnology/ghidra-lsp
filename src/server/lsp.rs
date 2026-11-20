@@ -10,19 +10,23 @@ use serde_json::{Value, json};
 use tower_lsp_server::ls_types::{
   CallHierarchyIncomingCall, CallHierarchyIncomingCallsParams, CallHierarchyItem,
   CallHierarchyOutgoingCall, CallHierarchyOutgoingCallsParams, CallHierarchyPrepareParams,
-  CallHierarchyServerCapability, CodeLens, CodeLensOptions, CodeLensParams, CompletionOptions,
-  CompletionParams, CompletionResponse, DeclarationCapability, DidChangeTextDocumentParams,
-  DidCloseTextDocumentParams, DidOpenTextDocumentParams, DocumentHighlight,
-  DocumentHighlightParams, DocumentLink, DocumentLinkOptions, DocumentLinkParams,
-  DocumentSymbolParams, DocumentSymbolResponse, ExecuteCommandOptions, ExecuteCommandParams,
-  FoldingRange, FoldingRangeParams, FoldingRangeProviderCapability, GotoDefinitionParams,
-  GotoDefinitionResponse, Hover, HoverContents, HoverParams, HoverProviderCapability,
-  ImplementationProviderCapability, InitializeParams, InitializeResult, InlayHint, InlayHintParams,
-  Location, MarkupContent, MarkupKind, OneOf, PositionEncodingKind, ReferenceParams,
-  SemanticTokens, SemanticTokensFullOptions, SemanticTokensOptions, SemanticTokensParams,
-  SemanticTokensResult, SemanticTokensServerCapabilities, ServerCapabilities, ServerInfo,
-  SignatureHelp, SignatureHelpOptions, SignatureHelpParams, TextDocumentSyncCapability,
-  TextDocumentSyncKind, TextDocumentSyncOptions, TypeDefinitionProviderCapability, WorkspaceSymbol,
+  CallHierarchyServerCapability, CodeAction, CodeActionDisabled, CodeActionKind, CodeActionOptions,
+  CodeActionOrCommand, CodeActionParams, CodeActionProviderCapability, CodeActionResponse,
+  CodeLens, CodeLensOptions, CodeLensParams, Command, CompletionOptions, CompletionParams,
+  CompletionResponse, DeclarationCapability, DidChangeTextDocumentParams,
+  DidCloseTextDocumentParams, DidOpenTextDocumentParams, DidSaveTextDocumentParams,
+  DocumentHighlight, DocumentHighlightParams, DocumentLink, DocumentLinkOptions,
+  DocumentLinkParams, DocumentSymbolParams, DocumentSymbolResponse, ExecuteCommandOptions,
+  ExecuteCommandParams, FoldingRange, FoldingRangeParams, FoldingRangeProviderCapability,
+  GotoDefinitionParams, GotoDefinitionResponse, Hover, HoverContents, HoverParams,
+  HoverProviderCapability, ImplementationProviderCapability, InitializeParams, InitializeResult,
+  InlayHint, InlayHintParams, Location, MarkupContent, MarkupKind, MessageType, OneOf,
+  PositionEncodingKind, PrepareRenameResponse, ReferenceParams, RenameOptions, RenameParams,
+  SaveOptions, SemanticTokens, SemanticTokensFullOptions, SemanticTokensOptions,
+  SemanticTokensParams, SemanticTokensResult, SemanticTokensServerCapabilities, ServerCapabilities,
+  ServerInfo, SignatureHelp, SignatureHelpOptions, SignatureHelpParams, TextDocumentPositionParams,
+  TextDocumentSyncCapability, TextDocumentSyncKind, TextDocumentSyncOptions,
+  TextDocumentSyncSaveOptions, TypeDefinitionProviderCapability, WorkspaceEdit, WorkspaceSymbol,
   WorkspaceSymbolOptions, WorkspaceSymbolParams, WorkspaceSymbolResponse,
   request::{GotoDeclarationParams, GotoDeclarationResponse},
   request::{GotoImplementationParams, GotoImplementationResponse},
@@ -31,12 +35,23 @@ use tower_lsp_server::{LanguageServer, jsonrpc};
 
 use super::{COMMANDS, Server, format_storage, rpc};
 use crate::backend::{Config, McpBackend};
-use crate::document::{Document, SHOW_TEMPLATE_ARGUMENTS, canonical_virtual_uri, data_type_name};
+use crate::document::{
+  Document, SHOW_TEMPLATE_ARGUMENTS, canonical_virtual_uri, data_type_name, matches_text, offset,
+};
 use crate::engine::Engine;
 use crate::workbench;
 
 impl LanguageServer for Server {
   async fn initialize(&self, params: InitializeParams) -> jsonrpc::Result<InitializeResult> {
+    self.readonly_documents.store(
+      params
+        .initialization_options
+        .as_ref()
+        .and_then(|options| options.get("readonlyDocuments"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false),
+      Ordering::Relaxed,
+    );
     self.lazy_symbols.store(
       params
         .capabilities
@@ -78,6 +93,9 @@ impl LanguageServer for Server {
           TextDocumentSyncOptions {
             open_close: Some(true),
             change: Some(TextDocumentSyncKind::FULL),
+            save: Some(TextDocumentSyncSaveOptions::SaveOptions(SaveOptions {
+              include_text: Some(true),
+            })),
             ..Default::default()
           },
         )),
@@ -91,6 +109,10 @@ impl LanguageServer for Server {
         document_symbol_provider: Some(OneOf::Left(true)),
         workspace_symbol_provider: Some(OneOf::Right(WorkspaceSymbolOptions {
           resolve_provider: Some(true),
+          work_done_progress_options: Default::default(),
+        })),
+        rename_provider: Some(OneOf::Right(RenameOptions {
+          prepare_provider: Some(true),
           work_done_progress_options: Default::default(),
         })),
         completion_provider: Some(CompletionOptions {
@@ -110,6 +132,11 @@ impl LanguageServer for Server {
             ..Default::default()
           },
         )),
+        code_action_provider: Some(CodeActionProviderCapability::Options(CodeActionOptions {
+          code_action_kinds: Some(vec![CodeActionKind::QUICKFIX, CodeActionKind::REFACTOR]),
+          resolve_provider: Some(false),
+          ..Default::default()
+        })),
         inlay_hint_provider: Some(OneOf::Left(true)),
         call_hierarchy_provider: Some(CallHierarchyServerCapability::Simple(true)),
         code_lens_provider: Some(CodeLensOptions {
@@ -201,15 +228,51 @@ impl LanguageServer for Server {
     let uri = canonical_virtual_uri(&params.text_document.uri);
     let removed = {
       let mut e = self.engine.lock().await;
+      let keep_preview = self.readonly_documents.load(Ordering::Relaxed)
+        && e.docs.get(&uri).is_some_and(|doc| {
+          e.pending
+            .get(&doc.md5)
+            .and_then(|plan| plan.expected.get(&uri))
+            .is_some_and(|expected| matches_text(&doc.current, expected))
+        });
       if let Some(doc) = e.docs.get_mut(&uri) {
-        doc.current = doc.base.clone();
+        if !keep_preview {
+          doc.current = doc.base.clone();
+        }
         doc.version = None;
       }
-      e.close_document(&uri);
-      !e.docs.contains_key(&uri)
+      if keep_preview {
+        false
+      } else {
+        e.close_document(&uri);
+        !e.docs.contains_key(&uri)
+      }
     };
     if removed {
       self.client.publish_diagnostics(uri, vec![], None).await;
+    }
+  }
+
+  async fn did_save(&self, params: DidSaveTextDocumentParams) {
+    let uri = canonical_virtual_uri(&params.text_document.uri);
+    let mut e = self.engine.lock().await;
+    let md5 = e.docs.get(&uri).map(|d| d.md5.clone());
+    let result = e.save(&uri, params.text).await;
+    drop(e);
+    let result = match result {
+      Ok(changes) => self.apply_refresh(changes).await,
+      Err(e) => Err(e),
+    };
+    if let Err(error) = result {
+      self
+        .client
+        .show_message(MessageType::ERROR, format!("Ghidra save: {error:#}"))
+        .await;
+    } else {
+      self.report(&uri).await;
+      if let Some(md5) = md5 {
+        self.changed(&md5).await;
+      }
     }
   }
 
@@ -413,6 +476,128 @@ impl LanguageServer for Server {
     })))
   }
 
+  async fn code_action(
+    &self,
+    params: CodeActionParams,
+  ) -> jsonrpc::Result<Option<CodeActionResponse>> {
+    let includes = |kind: &CodeActionKind| {
+      params.context.only.as_ref().is_none_or(|only| {
+        only.iter().any(|requested| {
+          requested.as_str().is_empty()
+            || kind.as_str() == requested.as_str()
+            || kind
+              .as_str()
+              .starts_with(&format!("{}.", requested.as_str()))
+        })
+      })
+    };
+    let uri = canonical_virtual_uri(&params.text_document.uri);
+    let e = self.engine.lock().await;
+    let Some(doc) = e.docs.get(&uri) else {
+      return Ok(None);
+    };
+    let Some(entry) = doc.entry.as_deref() else {
+      return Ok(Some(vec![]));
+    };
+    if !doc.clean() {
+      return Ok(Some(vec![]));
+    }
+    let Some(byte) = offset(&doc.base, params.range.start) else {
+      return Ok(Some(vec![]));
+    };
+    let mut actions = Vec::new();
+    if includes(&CodeActionKind::QUICKFIX) {
+      let location = doc.code_location(params.range.start);
+      let (title, disabled) = match location {
+        Ok(Some(location)) => match &location.code_unit_address {
+          Some(address) => (format!("Edit comments at {address}…"), None),
+          None => (
+            "Edit comments…".into(),
+            Some(CodeActionDisabled {
+              reason:
+                "The selected position has no CodeUnit. Select a code or data unit in Listing."
+                  .into(),
+            }),
+          ),
+        },
+        Ok(None) => (
+          "Edit comments…".into(),
+          Some(CodeActionDisabled {
+            reason:
+              "The cursor has no valid code context. Select a code token before editing comments."
+                .into(),
+          }),
+        ),
+        Err(error) => (
+          "Edit comments…".into(),
+          Some(CodeActionDisabled {
+            reason: error.to_string(),
+          }),
+        ),
+      };
+      let command = disabled.is_none().then(|| Command {
+        title: title.clone(),
+        command: "ghidraLsp.editComment".into(),
+        arguments: Some(vec![json!({
+          "md5": doc.md5,
+          "uri": doc.uri,
+          "position": params.range.start,
+          "version": doc.version,
+        })]),
+      });
+      actions.push(CodeActionOrCommand::CodeAction(CodeAction {
+        title,
+        kind: Some(CodeActionKind::QUICKFIX),
+        command,
+        disabled,
+        ..Default::default()
+      }));
+    }
+    if !includes(&CodeActionKind::REFACTOR) {
+      return Ok(Some(actions));
+    }
+    let address = doc
+      .spans
+      .iter()
+      .find(|span| span.start <= byte && byte < span.end)
+      .and_then(|span| span.token.address.as_deref())
+      .unwrap_or(entry);
+    let resource = json!({
+      "md5": doc.md5,
+      "uri": doc.uri,
+      "position": params.range.start,
+      "entry": entry,
+      "address": address,
+    });
+    actions.extend(
+      [
+        ("Inspect data type", "ghidraLsp.inspectType"),
+        ("Edit function signature", "ghidraLsp.editFunction"),
+        ("Edit variables and parameters", "ghidraLsp.editVariables"),
+        ("Show assembly listing", "ghidraLsp.showListing"),
+        ("Show control-flow graph", "ghidraLsp.showControlFlow"),
+        ("Show call graph", "ghidraLsp.showCallGraph"),
+        ("Show callers", "ghidraLsp.showCallers"),
+        ("Show callees", "ghidraLsp.showCallees"),
+        ("Show references", "ghidraLsp.showReferences"),
+      ]
+      .into_iter()
+      .map(|(title, command)| {
+        CodeActionOrCommand::CodeAction(CodeAction {
+          title: title.into(),
+          kind: Some(CodeActionKind::REFACTOR),
+          command: Some(Command {
+            title: title.into(),
+            command: command.into(),
+            arguments: Some(vec![resource.clone()]),
+          }),
+          ..Default::default()
+        })
+      }),
+    );
+    Ok(Some(actions))
+  }
+
   async fn signature_help(
     &self,
     params: SignatureHelpParams,
@@ -511,6 +696,34 @@ impl LanguageServer for Server {
     let uri = canonical_virtual_uri(&p.text_document.uri);
     let e = self.engine.lock().await;
     e.document_highlight(&uri, p.position).map_err(rpc)
+  }
+
+  async fn prepare_rename(
+    &self,
+    params: TextDocumentPositionParams,
+  ) -> jsonrpc::Result<Option<PrepareRenameResponse>> {
+    let uri = canonical_virtual_uri(&params.text_document.uri);
+    let e = self.engine.lock().await;
+    let Ok((_, symbol, range)) = e.target(&uri, params.position) else {
+      return Ok(None);
+    };
+    Ok(Some(PrepareRenameResponse::RangeWithPlaceholder {
+      range,
+      placeholder: symbol.name,
+    }))
+  }
+
+  async fn rename(&self, params: RenameParams) -> jsonrpc::Result<Option<WorkspaceEdit>> {
+    let p = params.text_document_position;
+    let uri = canonical_virtual_uri(&p.text_document.uri);
+    Ok(Some(
+      self
+        .engine
+        .lock()
+        .await
+        .rename(&uri, p.position, &params.new_name)
+        .map_err(rpc)?,
+    ))
   }
 
   async fn document_symbol(

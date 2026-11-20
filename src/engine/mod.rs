@@ -11,6 +11,8 @@ mod decorations;
 mod hierarchy;
 /// Symbol resolution, definitions, and cross-reference lookups.
 mod navigation;
+/// Scoped rename preview, origin save persistence, and document refresh.
+mod rename;
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -43,6 +45,34 @@ fn find_function_symbol<'a>(
     .find(|s| s.kind.eq_ignore_ascii_case("function") && (s.name == name || s.qualified() == name))
 }
 
+/// Planned symbol rename held in memory until the origin buffer saves to Ghidra.
+#[derive(Clone)]
+pub(crate) struct Pending {
+  /// Canonical URI of the virtual document where the rename started.
+  pub(crate) origin: Uri,
+  /// Resolved symbol identity snapshot captured when the rename began.
+  pub(crate) symbol: Symbol,
+  /// Validated replacement identifier requested by the user.
+  pub(crate) new_name: String,
+  /// Expected post-rename text per affected canonical document URI.
+  pub(crate) expected: HashMap<Uri, String>,
+  /// Whether a backend rename write has been sent or confirmed in this session.
+  pub(crate) patched: bool,
+}
+
+/// Regenerated virtual document text delta to push back to the editor client.
+#[derive(Clone)]
+pub(crate) struct Refresh {
+  /// Canonical URI of the virtual document to update.
+  pub(crate) uri: Uri,
+  /// Previous synchronized text replaced in the editor buffer.
+  pub(crate) old: String,
+  /// Newly generated text from the updated backend state.
+  pub(crate) new: String,
+  /// Last known LSP version of the client document.
+  pub(crate) version: Option<i32>,
+}
+
 /// Manages active Ghidra sessions, opened virtual buffers, and cached analysis state.
 pub(crate) struct Engine {
   /// Connected MCP child-process backend.
@@ -51,8 +81,12 @@ pub(crate) struct Engine {
   pub(crate) active: Option<String>,
   /// Virtual documents indexed by their canonical `ghidra://` URI.
   pub(crate) docs: HashMap<Uri, Document>,
+  /// Pending scoped rename plan keyed by lowercase session MD5.
+  pub(crate) pending: HashMap<String, Pending>,
   /// Cached symbol tables keyed by lowercase session MD5.
   pub(crate) symbols: HashMap<String, Vec<Symbol>>,
+  /// Pre-accepted document text after a confirmed backend save, keyed by URI.
+  pub(crate) refresh_allowed: HashMap<Uri, String>,
   /// Cached function JSON payloads indexed by session MD5 and entry address.
   pub(crate) functions: HashMap<(String, String), Value>,
   /// Cached local variable and parameter metadata keyed by synthetic symbol ID.
@@ -66,7 +100,9 @@ impl Engine {
       backend,
       active: None,
       docs: HashMap::new(),
+      pending: HashMap::new(),
       symbols: HashMap::new(),
+      refresh_allowed: HashMap::new(),
       functions: HashMap::new(),
       local_details: HashMap::new(),
     }
@@ -129,6 +165,16 @@ impl Engine {
 
   /// Decompiles `entry` in session `md5`, aligns GUI spans and comments, and resolves symbols.
   async fn generate(&mut self, md5: &str, entry: &str) -> Result<Document> {
+    self.generate_inner(md5, entry, None).await
+  }
+
+  /// Decompiles `entry` and drops cached symbols if `previous_base` differs from the new code.
+  pub(super) async fn generate_inner(
+    &mut self,
+    md5: &str,
+    entry: &str,
+    previous_base: Option<&str>,
+  ) -> Result<Document> {
     let params = json!({
       "selector": {"entry": entry},
       "scan": {"timeout_ms": 30000},
@@ -205,6 +251,10 @@ impl Engine {
     } else {
       None
     };
+    // Clear stale symbol caches before semantic resolution when refreshed C text changed.
+    if previous_base.is_some_and(|old| old != doc.base) {
+      self.symbols.remove(md5);
+    }
     let function = self
       .backend
       .call(
@@ -424,12 +474,19 @@ impl Engine {
     Ok(uri)
   }
 
-  /// Removes clean document `uri` when no uncommitted local edits remain.
+  /// Removes clean document `uri` when no uncommitted local edits or rename previews remain.
   pub(crate) fn close_document(&mut self, uri: &Uri) {
     let canon = canonical_virtual_uri(uri);
-    let keep = self.docs.get(&canon).is_some_and(|doc| !doc.clean());
+    let keep = self.docs.get(&canon).is_some_and(|doc| {
+      !doc.clean()
+        || self
+          .pending
+          .get(&doc.md5)
+          .is_some_and(|p| p.expected.contains_key(&canon))
+    });
     if !keep {
       self.docs.remove(&canon);
+      self.refresh_allowed.remove(&canon);
     }
   }
 

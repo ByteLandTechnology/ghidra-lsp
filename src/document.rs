@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tower_lsp_server::ls_types::{Position, Range, Uri};
+use tower_lsp_server::ls_types::{Position, Range, TextEdit, Uri};
 
 /// Display flag that controls whether full C++ template arguments appear in text.
 pub(crate) static SHOW_TEMPLATE_ARGUMENTS: AtomicBool = AtomicBool::new(false);
@@ -478,6 +478,60 @@ pub(crate) fn offset(text: &str, pos: Position) -> Option<usize> {
     units += c.len_utf16() as u32;
   }
   (units == pos.character).then_some(start + line.len())
+}
+
+/// Applies non-overlapping LSP `TextEdit` changes to `text` in reverse order.
+pub(crate) fn apply_edits(text: &str, edits: &[TextEdit]) -> Result<String> {
+  let mut ranges = edits
+    .iter()
+    .map(|e| {
+      Ok((
+        offset(text, e.range.start).context("invalid edit start")?,
+        offset(text, e.range.end).context("invalid edit end")?,
+        e.new_text.as_str(),
+      ))
+    })
+    .collect::<Result<Vec<_>>>()?;
+  ranges.sort_by_key(|e| e.0);
+  let mut out = text.to_owned();
+  let mut boundary = text.len();
+  for (start, end, replacement) in ranges.into_iter().rev() {
+    if end > boundary || start > end {
+      bail!("overlapping edits");
+    }
+    out.replace_range(start..end, replacement);
+    boundary = start;
+  }
+  Ok(out)
+}
+
+/// Returns true when `name` is a non-empty ASCII C identifier.
+pub(crate) fn valid_name(name: &str) -> bool {
+  let mut chars = name.chars();
+  chars
+    .next()
+    .is_some_and(|c| c == '_' || c.is_ascii_alphabetic())
+    && chars.all(|c| c == '_' || c.is_ascii_alphanumeric())
+}
+
+/// Compares `actual` and `expected` buffer contents ignoring CRLF and trailing whitespace differences.
+pub(crate) fn matches_text(actual: &str, expected: &str) -> bool {
+  if actual == expected {
+    return true;
+  }
+  let actual_lf = actual.replace("\r\n", "\n");
+  let expected_lf = expected.replace("\r\n", "\n");
+  if actual_lf == expected_lf {
+    return true;
+  }
+  let actual_trimmed = actual_lf.trim_end();
+  let expected_trimmed = expected_lf.trim_end();
+  if actual_trimmed == expected_trimmed {
+    return true;
+  }
+  let actual_lines: Vec<&str> = actual_lf.lines().map(str::trim_end).collect();
+  let expected_lines: Vec<&str> = expected_lf.lines().map(str::trim_end).collect();
+  actual_lines == expected_lines
 }
 
 /// Builds a percent-encoded `ghidra://` virtual document URI.

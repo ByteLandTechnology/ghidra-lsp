@@ -5,6 +5,8 @@
 
 /// Model Context Protocol child-process client and response normalization.
 mod backend;
+/// Binary loader import and export parsing.
+mod binary;
 /// Repeatable comment insertion inside virtual C documents.
 mod comments;
 /// Virtual document state, token alignment, and UTF-16 helpers.
