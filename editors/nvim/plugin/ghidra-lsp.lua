@@ -111,3 +111,13 @@ end, { desc = 'Show Ghidra program overview snapshot' })
 vim.api.nvim_create_user_command('GhidraCallHierarchy', function()
     ghidra.call_hierarchy()
 end, { desc = 'Show call hierarchy at cursor' })
+
+vim.api.nvim_create_user_command('GhidraInstall', function(opts)
+    ghidra.install(opts.args ~= '' and opts.args or nil)
+end, {
+    nargs = '?',
+    complete = function()
+        return { 'lsp', 'mcp' }
+    end,
+    desc = 'Install or update ghidra-lsp and ghidra-mcp binaries via npm',
+})

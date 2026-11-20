@@ -10,6 +10,7 @@ local M = {
         request_timeout_ms = 35000,
         template_arguments = 'omit',
         auto_attach = true,
+        auto_install = true,
     },
     client_id = nil,
     current_md5 = nil,
@@ -235,6 +236,20 @@ function M.get_client()
     return nil
 end
 
+--- Stop the active ghidra-lsp client and wait briefly for exit so binaries can update.
+function M.stop_client()
+    local client = M.get_client()
+    if not client then
+        return false
+    end
+    client:stop()
+    vim.wait(3000, function()
+        return client:is_stopped()
+    end, 50)
+    M.client_id = nil
+    return true
+end
+
 --- Start the ghidra-lsp child process and register command and notification handlers.
 function M.start_client()
     M.install_workspace_edit_wrapper()
@@ -245,19 +260,25 @@ function M.start_client()
         return existing.id
     end
 
+    local resolved, resolve_err = require('ghidra-lsp.installer').resolve_or_install(M.config)
+    if not resolved then
+        vim.notify('Ghidra LSP: ' .. tostring(resolve_err), vim.log.levels.ERROR)
+        return nil
+    end
+
     local init_options = {
         readonlyDocuments = true,
         requestTimeoutMs = M.config.request_timeout_ms,
         templateArguments = M.config.template_arguments,
     }
-    if M.config.mcp_command then
-        init_options.mcpCommand = M.config.mcp_command
+    if resolved.mcp_command and resolved.mcp_command ~= '' then
+        init_options.mcpCommand = resolved.mcp_command
         init_options.mcpArgs = M.config.mcp_args
     end
 
     local client_id = vim.lsp.start({
         name = 'ghidra-lsp',
-        cmd = { M.config.server_path },
+        cmd = { resolved.server_path },
         init_options = init_options,
         on_exit = function(_code, _signal, exited_client_id)
             if M.client_id == exited_client_id then
@@ -418,6 +439,9 @@ function M.ensure_client(timeout_ms)
     local client = M.get_client()
     if not client then
         local id = M.start_client()
+        if not id then
+            return nil
+        end
         client = vim.lsp.get_client_by_id(id)
     end
     if client and not client.initialized then

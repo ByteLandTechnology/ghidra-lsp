@@ -7,8 +7,10 @@ For the full walkthrough, virtual buffer controls, and troubleshooting, see the 
 ## Requirements
 
 - Neovim `>= 0.10`
-- `ghidra-lsp` binary on `PATH` (or configured with `server_path`)
-- `ghidra-mcp` and a configured Ghidra backend
+- Node.js and `npm` on `PATH` for automatic binary installation (`auto_install = true`, default), or pre-installed `ghidra-lsp` and `ghidra-mcp` binaries
+- A configured Ghidra installation used by `ghidra-mcp`
+
+Missing default binaries install automatically via `npm` (`@ghidra-lsp/cli` and `@ghidra-mcp/cli`) into the shared managed bin directory (`~/.local/share/ghidra-lsp/bin` on Linux and macOS, or `%LOCALAPPDATA%\ghidra-lsp\bin` on Windows). Run `:GhidraInstall` at any time to install or update them.
 
 ## Features
 
@@ -40,6 +42,7 @@ For the full walkthrough, virtual buffer controls, and troubleshooting, see the 
       request_timeout_ms = 35000,
       template_arguments = 'omit',
       auto_attach = true,
+      auto_install = true,
     })
   end,
 }
@@ -58,6 +61,7 @@ use({
       request_timeout_ms = 35000,
       template_arguments = 'omit',
       auto_attach = true,
+      auto_install = true,
     })
   end,
 })
@@ -74,6 +78,7 @@ require('ghidra-lsp').setup({
   server_path = 'ghidra-lsp',
   mcp_command = 'ghidra-mcp',
   template_arguments = 'omit',
+  auto_install = true,
 })
 ```
 
@@ -92,7 +97,9 @@ Verify installation with `:checkhealth ghidra-lsp`.
 - `K` / `<C-k>` / `gd` / `gD` / `gi` / `gy` / `gr` / `gO`: Native LSP Hover, Signature Help, Definition, Declaration, Implementation, Type Definition, References, and Document Symbols.
 - `q`: Close snapshot, Listing, Memory, String, CFG, or Call Graph splits.
 
-## Commands (24)
+## Commands (25)
+
+- `:GhidraInstall [lsp|mcp]`: Install or update managed `ghidra-lsp` and `ghidra-mcp` binaries via `npm`.
 
 - `:GhidraOpenBinary [path]`: Open a binary file (restores silently when analyzed, or asks to analyze).
 - `:GhidraSelectSession [md5]` / `:GhidraCloseSession [md5]` / `:GhidraReanalyze`: Manage active sessions and program analysis.

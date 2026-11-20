@@ -28,6 +28,38 @@ function M.setup(opts)
     end
 end
 
+--- Install or update managed `ghidra-lsp` and `ghidra-mcp` binaries via npm.
+function M.install(target)
+    local targets
+    if target == nil or target == '' then
+        targets = { 'ghidra-lsp', 'ghidra-mcp' }
+    elseif target == 'lsp' or target == 'ghidra-lsp' then
+        targets = { 'ghidra-lsp' }
+    elseif target == 'mcp' or target == 'ghidra-mcp' then
+        targets = { 'ghidra-mcp' }
+    else
+        vim.notify('Ghidra LSP: unknown install target `' .. tostring(target) .. '` (expected lsp or mcp)', vim.log.levels.ERROR)
+        return
+    end
+
+    local installer = require('ghidra-lsp.installer')
+    local was_running = client.stop_client()
+    vim.notify('Ghidra LSP: installing ' .. table.concat(targets, ' and ') .. ' via npm...', vim.log.levels.INFO)
+    installer.install_async(targets, function(ok, result)
+        if not ok then
+            vim.notify('Ghidra LSP install failed: ' .. tostring(result), vim.log.levels.ERROR)
+            return
+        end
+        vim.notify(
+            'Ghidra LSP: installed ' .. table.concat(targets, ' and ') .. ' into ' .. installer.managed_bin_dir(),
+            vim.log.levels.INFO
+        )
+        if was_running then
+            client.start_client()
+        end
+    end)
+end
+
 M.open_binary = commands.open_binary
 M.select_session = commands.select_session
 M.close_session = commands.close_session
@@ -52,6 +84,7 @@ M.edit_comment = edit.edit_comment
 M.edit_function = edit.edit_function
 M.edit_variables = edit.edit_variables
 M.start_client = client.start_client
+M.stop_client = client.stop_client
 M.get_client = client.get_client
 
 return M

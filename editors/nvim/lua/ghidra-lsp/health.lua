@@ -16,24 +16,28 @@ function M.check()
     end
 
     local client_mod = require('ghidra-lsp.client')
-    local server_path = client_mod.config.server_path
-    if not server_path or server_path == '' then
-        server_path = 'ghidra-lsp'
+    local installer = require('ghidra-lsp.installer')
+    health.info('Shared managed binary directory: ' .. installer.managed_bin_dir())
+    health.info('Automatic npm installation (auto_install): ' .. tostring(client_mod.config.auto_install ~= false))
+
+    if vim.fn.executable('npm') == 1 then
+        health.ok('npm found: ' .. vim.fn.exepath('npm'))
+    else
+        health.warn('npm not found on PATH (required for automatic installation and :GhidraInstall)')
     end
 
-    local resolved = vim.fn.exepath(server_path)
-    if resolved ~= '' or vim.fn.executable(server_path) == 1 then
-        health.ok('Ghidra LSP server binary found: ' .. (resolved ~= '' and resolved or server_path))
+    local server_resolved, server_source = installer.find_binary(client_mod.config.server_path, 'ghidra-lsp')
+    if server_resolved then
+        health.ok('Ghidra LSP server binary found (' .. server_source .. '): ' .. server_resolved)
     else
-        health.error('Ghidra LSP server binary not found or not executable: ' .. tostring(server_path))
+        health.error('Ghidra LSP server binary not found; run :GhidraInstall or set server_path')
     end
 
-    local mcp_cmd = client_mod.config.mcp_command or 'ghidra-mcp'
-    local mcp_resolved = vim.fn.exepath(mcp_cmd)
-    if mcp_resolved ~= '' or vim.fn.executable(mcp_cmd) == 1 then
-        health.ok('Ghidra MCP executable found: ' .. (mcp_resolved ~= '' and mcp_resolved or mcp_cmd))
+    local mcp_resolved, mcp_source = installer.find_binary(client_mod.config.mcp_command, 'ghidra-mcp')
+    if mcp_resolved then
+        health.ok('Ghidra MCP executable found (' .. mcp_source .. '): ' .. mcp_resolved)
     else
-        health.warn('Ghidra MCP executable not found in PATH: ' .. tostring(mcp_cmd))
+        health.warn('Ghidra MCP executable not found (' .. tostring(client_mod.config.mcp_command or 'ghidra-mcp') .. '); run :GhidraInstall or set mcp_command')
     end
 
     local client = client_mod.get_client()
