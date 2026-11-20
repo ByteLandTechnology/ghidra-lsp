@@ -1,6 +1,6 @@
 [package]
 name = "xtask"
-version = "0.1.0"
+version = "0.2.0"
 description = "Repository checks and CI runner for the ghidra-lsp workspace"
 publish = false
 edition.workspace = true
