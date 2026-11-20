@@ -44,6 +44,7 @@ The command `cargo xtask ci` makes sure that most of these rules are obeyed.
   `lua/ghidra-lsp/`).
 - `editors/vscode/` holds the Visual Studio Code client extension
   (`src/`, `schemas/`, `syntaxes/`, and `resources/`).
+- `npm/cli/` holds the `@ghidra-lsp/cli` npm launcher package.
 - Keep other editor plugins and all test suites outside this
   repository.
 

@@ -12,7 +12,22 @@ This guide describes the prerequisites, how to build `ghidra-lsp`, the command-l
 | Neovim | `>= 0.10` | Required only for the Neovim plugin (`:checkhealth ghidra-lsp`) |
 | `cargo-deny` | Optional for development | Required only when running full `cargo xtask ci` |
 
-## Build `ghidra-lsp`
+## Install with npm
+
+If you have Node.js 18 or later, install `@ghidra-lsp/cli` globally or invoke it with `npx`:
+
+```sh
+npm install --global @ghidra-lsp/cli
+ghidra-lsp --version
+```
+
+npm installs the matching platform package (`@ghidra-lsp/darwin-arm64`, `@ghidra-lsp/darwin-x64`, `@ghidra-lsp/linux-arm64`, `@ghidra-lsp/linux-x64`, `@ghidra-lsp/win32-arm64`, or `@ghidra-lsp/win32-x64`) as an optional dependency. Do not pass `--omit=optional`. Linux packages require glibc.
+
+## Use a prebuilt executable
+
+Download the binary for your platform from [GitHub Releases](https://github.com/ByteLandTechnology/ghidra-lsp/releases) (`ghidra-lsp-macos-x86_64`, `ghidra-lsp-macos-arm64`, `ghidra-lsp-linux-x86_64`, `ghidra-lsp-linux-arm64`, `ghidra-lsp-windows-x86_64.exe`, or `ghidra-lsp-windows-arm64.exe`), rename it to `ghidra-lsp` (`ghidra-lsp.exe` on Windows), run `chmod +x ghidra-lsp` on Unix, and place it on `PATH`.
+
+## Build `ghidra-lsp` from source
 
 Clone the repository and compile the release binary with locked dependencies:
 

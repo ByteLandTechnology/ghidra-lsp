@@ -46,7 +46,26 @@
 
 ---
 
-## 快速构建与检查
+## 快速安装与构建
+
+### 使用 npm 安装
+
+若系统已安装 Node.js 18 或更高版本，可通过 npm 直接安装对应平台的预编译可执行文件：
+
+```sh
+npm install --global @ghidra-lsp/cli
+ghidra-lsp --version
+```
+
+或使用 `npx` 直接运行：
+
+```sh
+npx @ghidra-lsp/cli --version
+```
+
+npm 会根据当前系统自动安装一个匹配的平台包（如 `@ghidra-lsp/linux-x64`）。平台包通过 `optionalDependencies` 分发，因此请勿使用 `--omit=optional`。Linux 平台包依赖 glibc；在 Alpine 等 musl 系统上请从源代码构建。
+
+### 从源代码构建
 
 使用 Cargo 构建发布版二进制文件（要求 Rust `1.88` 及以上）：
 
@@ -59,6 +78,8 @@ cargo build --locked --release
 ```sh
 cargo xtask ci
 ```
+
+通过 [CI 工作流](../../.github/workflows/ci.yml)（`release-please` + 6 平台构建 + GitHub OIDC Trusted Publishing），每次发布都会自动同步版本号、上传 GitHub Release 产物，并将 6 个平台包与 `@ghidra-lsp/cli` 发布到 npm。
 
 命令行启动参数速览（完整说明见[快速上手](getting-started.md)）：
 

@@ -26,7 +26,22 @@ ghidra-mcp call ghidra_session '{"operation":"list"}'
 
 ---
 
-## 构建 `ghidra-lsp`
+## 使用 npm 安装
+
+若已安装 Node.js 18 或更高版本，可通过 npm 全局安装 `@ghidra-lsp/cli`，或直接使用 `npx` 运行：
+
+```sh
+npm install --global @ghidra-lsp/cli
+ghidra-lsp --version
+```
+
+npm 会通过可选依赖安装匹配当前平台的包（`@ghidra-lsp/darwin-arm64`、`@ghidra-lsp/darwin-x64`、`@ghidra-lsp/linux-arm64`、`@ghidra-lsp/linux-x64`、`@ghidra-lsp/win32-arm64` 或 `@ghidra-lsp/win32-x64`），请勿传入 `--omit=optional`。Linux 平台包依赖 glibc。
+
+## 使用预构建的可执行文件
+
+也可以从 [GitHub Releases](https://github.com/ByteLandTechnology/ghidra-lsp/releases) 下载对应平台产物（`ghidra-lsp-macos-x86_64`、`ghidra-lsp-macos-arm64`、`ghidra-lsp-linux-x86_64`、`ghidra-lsp-linux-arm64`、`ghidra-lsp-windows-x86_64.exe`、`ghidra-lsp-windows-arm64.exe`），重命名为 `ghidra-lsp`（Windows 为 `ghidra-lsp.exe`），在 Unix 系统执行 `chmod +x ghidra-lsp` 并放入 `PATH`。
+
+## 从源代码构建 `ghidra-lsp`
 
 在仓库根目录执行锁定依赖的 Release 构建：
 

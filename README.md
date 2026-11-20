@@ -41,7 +41,26 @@ In Neovim, `:Ghidra*` commands open synchronized splits for disassembly listings
 
 ## Quick start
 
-### 1. Build the server
+### 1. Install with npm
+
+If you have Node.js 18 or later, npm can install the prebuilt executable for your platform:
+
+```sh
+npm install --global @ghidra-lsp/cli
+ghidra-lsp --version
+```
+
+Or run directly with `npx`:
+
+```sh
+npx @ghidra-lsp/cli --version
+```
+
+npm installs one matching platform package (`@ghidra-lsp/darwin-arm64`, `@ghidra-lsp/darwin-x64`, `@ghidra-lsp/linux-arm64`, `@ghidra-lsp/linux-x64`, `@ghidra-lsp/win32-arm64`, or `@ghidra-lsp/win32-x64`).
+Do not use `--omit=optional`, because the platform packages are optional dependencies.
+The Linux packages require glibc. On musl systems, build from source.
+
+### 2. Or build from source
 
 Building requires Rust `1.88` or newer, `ghidra-mcp`, and a configured Ghidra installation.
 
@@ -51,13 +70,13 @@ cargo build --locked --release
 
 Install or place `target/release/ghidra-lsp` and `ghidra-mcp` on `PATH`, or pass `--mcp-command <PATH>` to `ghidra-lsp`.
 
-### 2. Run repository checks
+### 3. Run repository checks
 
 ```sh
 cargo xtask ci
 ```
 
-### 3. Configure an editor
+### 4. Configure an editor
 
 - **Visual Studio Code**: See the [VS Code extension README](editors/vscode/README.md) and the [VS Code Guide](docs/en/vscode-guide.md).
 - **Neovim**: See the [Neovim plugin README](editors/nvim/README.md) and the [Neovim Guide](docs/en/neovim-guide.md).
@@ -78,10 +97,16 @@ Start with [Getting Started](docs/en/getting-started.md), or open a chapter dire
 ## Workspace layout
 
 - `src/`: Rust `ghidra-lsp` binary crate (`src/main.rs` entry point).
-- `xtask/`: Repository hygiene checks and CI runner (`cargo xtask ci`).
+- `xtask/`: Repository hygiene checks, license collection, npm packaging, and CI runner (`cargo xtask ci`).
+- `npm/cli/`: `@ghidra-lsp/cli` npm launcher package and version template.
 - `editors/vscode/`: Visual Studio Code extension (`package.json`, TypeScript sources, JSON schema, TextMate grammars).
 - `editors/nvim/`: Neovim client plugin (`plugin/ghidra-lsp.lua` and `lua/ghidra-lsp/`).
 - `docs/`: Trilingual documentation (`en`, `zh-CN`, `ja`) and SVG assets.
+
+## Releases and npm publishing
+
+The [CI workflow](.github/workflows/ci.yml) uses `release-please` to keep `Cargo.toml`, `xtask/Cargo.toml`, and `npm/cli/package.json` synchronized, builds release executables for six targets (`darwin-arm64`, `darwin-x64`, `linux-arm64`, `linux-x64`, `win32-arm64`, `win32-x64`), attaches binaries and license notices to the GitHub Release, and publishes the six platform packages followed by `@ghidra-lsp/cli` to npm using GitHub OIDC trusted publishing.
+Each of the seven `@ghidra-lsp/*` npm packages must have a trusted publisher configured for `ByteLandTechnology/ghidra-lsp` and `ci.yml`.
 
 ## License
 

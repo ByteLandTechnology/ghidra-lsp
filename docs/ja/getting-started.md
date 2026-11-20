@@ -17,7 +17,22 @@
 
 また、VS Code 拡張機能をソースからビルド・パッケージングする場合は **Node.js**（`npm`）が必要です。Neovim プラグインを使用する場合は **Neovim 0.10 以上** が必要です。
 
-## `ghidra-lsp` のビルド
+## npm でインストール
+
+Node.js 18 以上がある場合は、`@ghidra-lsp/cli` をグローバルインストールするか `npx` で実行できます。
+
+```sh
+npm install --global @ghidra-lsp/cli
+ghidra-lsp --version
+```
+
+npm はオプショナル依存関係として対応プラットフォームパッケージ（`@ghidra-lsp/darwin-arm64`、`@ghidra-lsp/darwin-x64`、`@ghidra-lsp/linux-arm64`、`@ghidra-lsp/linux-x64`、`@ghidra-lsp/win32-arm64`、`@ghidra-lsp/win32-x64`）のみを導入します。`--omit=optional` は指定しないでください。Linux パッケージには glibc が必要です。
+
+## ビルド済みバイナリの使用
+
+[GitHub Releases](https://github.com/ByteLandTechnology/ghidra-lsp/releases) から対象プラットフォームのバイナリ（`ghidra-lsp-macos-x86_64`、`ghidra-lsp-macos-arm64`、`ghidra-lsp-linux-x86_64`、`ghidra-lsp-linux-arm64`、`ghidra-lsp-windows-x86_64.exe`、`ghidra-lsp-windows-arm64.exe`）をダウンロードし、`ghidra-lsp`（Windows は `ghidra-lsp.exe`）にリネームして Unix では `chmod +x ghidra-lsp` を実行し、`PATH` の通った場所へ配置することもできます。
+
+## ソースから `ghidra-lsp` をビルド
 
 リポジトリのルートでロックファイルを厳守したリリースビルドを実行します。
 

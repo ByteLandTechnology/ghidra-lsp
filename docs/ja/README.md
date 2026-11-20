@@ -36,7 +36,26 @@
 
 ![Neovim Ghidra LSP ワークベンチ](../assets/screenshots/neovim-workbench.svg)
 
-## クイックビルドと検証
+## クイックインストール・ビルド
+
+### npm でインストール
+
+Node.js 18 以上が利用可能な環境では、npm から各プラットフォーム向けのビルド済みバイナリをインストールできます。
+
+```sh
+npm install --global @ghidra-lsp/cli
+ghidra-lsp --version
+```
+
+または `npx` で直接実行できます。
+
+```sh
+npx @ghidra-lsp/cli --version
+```
+
+npm は現在の環境に一致するプラットフォームパッケージ（`@ghidra-lsp/linux-x64` など）を 1 つだけインストールします。プラットフォームパッケージは `optionalDependencies` のため、`--omit=optional` は指定しないでください。Linux パッケージは glibc が必要です。musl 環境ではソースからビルドしてください。
+
+### ソースからビルド・検証
 
 前提条件として **Rust 1.88 以上**、**Ghidra**、および実行可能な `ghidra-mcp` が必要です。
 
@@ -49,6 +68,8 @@ cargo build --locked --release
 ```sh
 cargo xtask ci
 ```
+
+リリース時には [CI ワークフロー](../../.github/workflows/ci.yml) が `release-please` によるバージョン同期、6 プラットフォームのバイナリ生成、GitHub Release への公開、および GitHub OIDC Trusted Publishing を用いた 6 つのプラットフォームパッケージと `@ghidra-lsp/cli` の npm 公開を実行します。
 
 CLI オプションの概要は次のとおりです（詳細は [クイックスタート](getting-started.md) を参照してください）。
 
