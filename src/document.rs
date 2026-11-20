@@ -72,6 +72,8 @@ fn name_has_operator_at(chars: &[char], i: usize) -> bool {
 /// Program symbol metadata returned by `ghidra-mcp` or inferred for local items.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub(crate) struct Symbol {
+  /// Stable symbol identifier from `ghidra-mcp` or a synthetic local identifier.
+  pub(crate) id: String,
   /// Short symbol name without namespace prefix.
   #[serde(default)]
   pub(crate) name: String,
@@ -116,6 +118,11 @@ impl Symbol {
       || self.kind.eq_ignore_ascii_case("label")
       || self.kind.eq_ignore_ascii_case("constant")
       || self.kind.eq_ignore_ascii_case("global")
+  }
+
+  /// Returns true when this symbol represents a function-local variable or parameter.
+  pub(crate) fn local(&self) -> bool {
+    self.kind == "Local" || self.kind == "Parameter"
   }
 
   /// Returns the name prefixed with its namespace when it is not in `Global`.
@@ -196,12 +203,33 @@ impl Document {
     self.current == self.base
   }
 
+  /// Finds the token span containing `pos` when the buffer is clean.
+  pub(crate) fn span_at(&self, pos: Position) -> Option<&Span> {
+    if self.current != self.base {
+      return None;
+    }
+    let offset = offset(&self.base, pos)?;
+    self
+      .spans
+      .iter()
+      .find(|s| s.start <= offset && offset < s.end)
+  }
+
   /// Converts the byte span of `span` into an LSP UTF-16 `Range`.
   pub(crate) fn range(&self, span: &Span) -> Range {
     Range::new(
       position(&self.base, span.start),
       position(&self.base, span.end),
     )
+  }
+
+  /// Returns the UTF-8 byte offset of the opening `{` of the function body.
+  pub(crate) fn body_start(&self) -> usize {
+    self
+      .spans
+      .iter()
+      .find(|span| span.token.kind != "comment" && span.token.text == "{")
+      .map_or(self.base.len(), |span| span.start)
   }
 
   /// Maps an LSP cursor position on a clean document to its native GUI [`CodeLocation`].
@@ -481,6 +509,28 @@ pub(crate) fn canonical_virtual_uri(uri: &Uri) -> Uri {
     }
   }
   uri.clone()
+}
+
+/// Extracts the ASCII identifier word and its UTF-16 `Range` around `pos`.
+pub(crate) fn word_at(text: &str, pos: Position) -> Option<(&str, Range)> {
+  let offset = offset(text, pos)?;
+  let start = text[..offset]
+    .rfind(|c: char| !c.is_ascii_alphanumeric() && c != '_')
+    .map(|i| i + 1)
+    .unwrap_or(0);
+  let end = text[offset..]
+    .find(|c: char| !c.is_ascii_alphanumeric() && c != '_')
+    .map(|i| offset + i)
+    .unwrap_or(text.len());
+  if start >= end {
+    return None;
+  }
+  let word = &text[start..end];
+  if word.is_empty() {
+    return None;
+  }
+  let range = Range::new(position(text, start), position(text, end));
+  Some((word, range))
 }
 
 /// Parses an address string into an optional space name and hexadecimal offset.

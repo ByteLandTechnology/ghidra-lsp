@@ -1,7 +1,7 @@
 // Copyright 2026 ByteLand Technology Limited
 // SPDX-License-Identifier: MIT
 
-//! Custom `workspace/executeCommand` handlers for session, function, document, and location views.
+//! Custom `workspace/executeCommand` handlers for session, function, document, symbol, and location actions.
 
 use std::sync::atomic::Ordering;
 
@@ -58,6 +58,24 @@ impl Server {
         let uri = self.engine.lock().await.open(&md5, entry).await?;
         self.report(&uri).await;
         Ok(json!({"uri": uri}))
+      }
+      "ghidra.openSymbol" => {
+        let md5 = self.scoped_md5(&arg).await?;
+        let id = arg
+          .get("id")
+          .and_then(Value::as_str)
+          .context("symbol id is required")?;
+        let mut e = self.engine.lock().await;
+        let symbol = e
+          .symbols(&md5)
+          .await?
+          .into_iter()
+          .find(|s| s.id == id)
+          .context("symbol no longer exists")?;
+        let location = e.symbol_location(&md5, &symbol).await?;
+        drop(e);
+        self.changed(&md5).await;
+        Ok(json!({"uri": location.uri}))
       }
       "ghidra.document" => {
         let raw_uri: Uri = arg
@@ -214,6 +232,31 @@ impl Server {
           "entry": entry,
           "address": canonical,
         }))
+      }
+      "ghidra.typeAtPosition" => {
+        let raw_uri: Uri = arg
+          .get("uri")
+          .and_then(Value::as_str)
+          .context("uri is required")?
+          .parse()?;
+        let uri = canonical_virtual_uri(&raw_uri);
+        let p: Position = serde_json::from_value(
+          arg
+            .get("position")
+            .cloned()
+            .context("position is required")?,
+        )?;
+        let mut e = self.engine.lock().await;
+        let md5 = e
+          .docs
+          .get(&uri)
+          .context("Unknown virtual document")?
+          .md5
+          .clone();
+        match e.type_definition(&uri, p).await? {
+          Some(data_type) => Ok(json!({"md5": md5, "type": data_type})),
+          None => Ok(Value::Null),
+        }
       }
       _ => bail!("Unknown command: {command}"),
     }

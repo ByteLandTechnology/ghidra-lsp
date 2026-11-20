@@ -1,7 +1,16 @@
 // Copyright 2026 ByteLand Technology Limited
 // SPDX-License-Identifier: MIT
 
-//! Session selection, virtual document generation, and symbol resolution engine.
+//! Session selection, virtual document generation, and code intelligence engine.
+
+/// Completion, signature help, and type-definition lookups.
+mod assist;
+/// Highlights, inlay hints, code lenses, folding ranges, and document links.
+mod decorations;
+/// Incoming and outgoing call hierarchy builders.
+mod hierarchy;
+/// Symbol resolution, definitions, and cross-reference lookups.
+mod navigation;
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -34,7 +43,7 @@ fn find_function_symbol<'a>(
     .find(|s| s.kind.eq_ignore_ascii_case("function") && (s.name == name || s.qualified() == name))
 }
 
-/// Manages active Ghidra sessions, opened virtual buffers, and cached program symbols.
+/// Manages active Ghidra sessions, opened virtual buffers, and cached analysis state.
 pub(crate) struct Engine {
   /// Connected MCP child-process backend.
   pub(crate) backend: Arc<McpBackend>,
@@ -44,6 +53,10 @@ pub(crate) struct Engine {
   pub(crate) docs: HashMap<Uri, Document>,
   /// Cached symbol tables keyed by lowercase session MD5.
   pub(crate) symbols: HashMap<String, Vec<Symbol>>,
+  /// Cached function JSON payloads indexed by session MD5 and entry address.
+  pub(crate) functions: HashMap<(String, String), Value>,
+  /// Cached local variable and parameter metadata keyed by synthetic symbol ID.
+  local_details: HashMap<String, Value>,
 }
 
 impl Engine {
@@ -54,6 +67,8 @@ impl Engine {
       active: None,
       docs: HashMap::new(),
       symbols: HashMap::new(),
+      functions: HashMap::new(),
+      local_details: HashMap::new(),
     }
   }
 
@@ -83,6 +98,14 @@ impl Engine {
       .collect::<std::result::Result<Vec<Symbol>, _>>()?;
     self.symbols.insert(md5.into(), symbols.clone());
     Ok(symbols)
+  }
+
+  /// Returns cached parameter or local variable detail for `symbol` when present.
+  pub(crate) fn local_detail(&self, symbol: &Symbol) -> Option<Value> {
+    symbol
+      .local()
+      .then(|| self.local_details.get(&symbol.id).cloned())
+      .flatten()
   }
 
   /// Verifies that session `md5` is ready and marks it as active.
@@ -231,6 +254,11 @@ impl Engine {
       resolve(&mut spans, &symbols, &locals);
       let mut local_symbols = vec![];
       let entry_str = doc.entry.as_deref().unwrap_or(entry);
+      let param_prefix = format!("Parameter:{md5}:{entry_str}:");
+      let local_prefix = format!("Local:{md5}:{entry_str}:");
+      self
+        .local_details
+        .retain(|k, _| !k.starts_with(&param_prefix) && !k.starts_with(&local_prefix));
       for (key, kind) in [("parameters", "Parameter"), ("local_variables", "Local")] {
         for variable in function
           .get(key)
@@ -244,13 +272,29 @@ impl Engine {
           if name.is_empty() {
             continue;
           }
-          if kind == "Parameter" && variable.get("ordinal").and_then(Value::as_u64).is_none() {
-            continue;
-          }
+          let identity = if kind == "Parameter" {
+            let Some(ordinal) = variable.get("ordinal").and_then(Value::as_u64) else {
+              continue;
+            };
+            json!({"ordinal": ordinal})
+          } else if let Some(storage) = variable.get("storage").filter(|s| !s.is_null()) {
+            json!({"storage": storage, "name": name})
+          } else {
+            json!({"name": name})
+          };
+          let id = format!(
+            "{kind}:{md5}:{}:{identity}",
+            doc.entry.as_deref().unwrap_or(entry)
+          );
+          let mut detail = variable.clone();
+          detail["entry"] = json!(doc.entry.as_deref().unwrap_or(entry));
+          detail["kind"] = json!(kind);
+          self.local_details.insert(id.clone(), detail);
           local_symbols.push(Symbol {
             demangled_name: None,
+            id,
             name: name.into(),
-            address: entry_str.to_owned(),
+            address: doc.entry.clone().unwrap_or_else(|| entry.into()),
             namespace: String::new(),
             kind: kind.into(),
           });
@@ -259,6 +303,7 @@ impl Engine {
       resolve_locals(&mut spans, &local_symbols);
       for span in &mut spans {
         if span.symbol.is_none() && matches!(span.token.kind.as_str(), "variable" | "parameter") {
+          let entry_str = doc.entry.as_deref().unwrap_or(entry);
           let kind = if span.token.kind == "parameter" {
             "Parameter"
           } else {
@@ -266,6 +311,7 @@ impl Engine {
           };
           span.symbol = Some(Symbol {
             demangled_name: None,
+            id: format!("{kind}:{md5}:{entry_str}:name={}", span.token.text),
             name: span.token.text.clone(),
             address: entry_str.to_owned(),
             namespace: String::new(),
@@ -275,6 +321,7 @@ impl Engine {
           && (span.token.kind == "label"
             || is_label_token(&span.token.text, span.start, span.end, &doc.base))
         {
+          let entry_str = doc.entry.as_deref().unwrap_or(entry);
           let addr = span
             .token
             .address
@@ -284,6 +331,7 @@ impl Engine {
             .unwrap_or_else(|| entry_str.to_owned());
           span.symbol = Some(Symbol {
             demangled_name: None,
+            id: format!("Label:{md5}:{addr}"),
             name: span.token.text.clone(),
             address: addr,
             namespace: String::new(),
@@ -300,18 +348,27 @@ impl Engine {
         .find(|s| s.token.kind == "function" && s.start < body_start)
         && decl_span.symbol.is_none()
       {
-        if let Some(sym) = find_function_symbol(&symbols, Some(entry_str), &decl_span.token.text) {
+        let entry_addr = doc.entry.as_deref().unwrap_or(entry);
+        if let Some(sym) = find_function_symbol(&symbols, Some(entry_addr), &decl_span.token.text) {
           decl_span.symbol = Some(sym.clone());
         } else {
           decl_span.symbol = Some(Symbol {
             demangled_name: None,
+            id: format!("Function:{md5}:{entry_addr}"),
             name: decl_span.token.text.clone(),
-            address: entry_str.to_owned(),
+            address: entry_addr.to_owned(),
             namespace: String::new(),
             kind: "Function".into(),
           });
         }
       }
+      self.functions.insert(
+        (
+          md5.into(),
+          doc.entry.clone().unwrap_or_else(|| entry.into()),
+        ),
+        function.clone(),
+      );
       Ok::<_, anyhow::Error>(spans)
     }
     .await;

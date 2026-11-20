@@ -1,9 +1,109 @@
 // Copyright 2026 ByteLand Technology Limited
 // SPDX-License-Identifier: MIT
 
-//! Bridge resource coverage reporting helpers.
+//! Semantic token generation and bridge resource coverage reporting.
 
 use serde_json::{Value, json};
+use tower_lsp_server::ls_types::{
+  SemanticToken, SemanticTokenModifier, SemanticTokenType, SemanticTokensLegend,
+};
+
+use crate::document::Document;
+
+/// Returns the LSP semantic token legend used for decompiled virtual documents.
+pub(crate) fn semantic_legend() -> SemanticTokensLegend {
+  SemanticTokensLegend {
+    token_types: vec![
+      SemanticTokenType::KEYWORD,
+      SemanticTokenType::COMMENT,
+      SemanticTokenType::TYPE,
+      SemanticTokenType::FUNCTION,
+      SemanticTokenType::VARIABLE,
+      SemanticTokenType::PARAMETER,
+      SemanticTokenType::NUMBER,
+      SemanticTokenType::STRING,
+    ],
+    token_modifiers: vec![SemanticTokenModifier::READONLY],
+  }
+}
+
+/// Splits aligned Ghidra token spans into single-line UTF-16 LSP semantic tokens.
+pub(crate) fn semantic_tokens(doc: &Document) -> Vec<SemanticToken> {
+  if !doc.clean() {
+    return vec![];
+  }
+  let mut tokens = Vec::new();
+  let mut previous = (0, 0);
+  let (mut byte, mut line, mut character) = (0, 0, 0);
+  for span in &doc.spans {
+    let kind = if matches!(span.token.kind.as_str(), "default" | "identifier" | "label") {
+      span
+        .symbol
+        .as_ref()
+        .map(|s| s.kind.to_ascii_lowercase())
+        .unwrap_or_else(|| span.token.kind.clone())
+    } else {
+      span.token.kind.clone()
+    };
+    let (token_type, modifiers) = match kind.as_str() {
+      "keyword" => (0, 0),
+      "comment" => (1, 0),
+      "type" => (2, 0),
+      "function" => (3, 0),
+      "variable" | "global" | "label" => (4, 0),
+      "parameter" => (5, 0),
+      "constant" => (
+        if span.token.text.trim_start().starts_with(['"', '\''])
+          || ["L\"", "u\"", "U\"", "u8\"", "L'", "u'", "U'"]
+            .iter()
+            .any(|prefix| span.token.text.trim_start().starts_with(prefix))
+        {
+          7
+        } else {
+          6
+        },
+        1,
+      ),
+      _ => continue,
+    };
+    advance_position(&doc.base[byte..span.start], &mut line, &mut character);
+    byte = span.start;
+    for segment in doc.base[span.start..span.end].split_inclusive('\n') {
+      let content = segment.trim_end_matches(['\r', '\n']);
+      let length = content.encode_utf16().count() as u32;
+      if length > 0 {
+        let delta_line = line - previous.0;
+        tokens.push(SemanticToken {
+          delta_line,
+          delta_start: if delta_line == 0 {
+            character - previous.1
+          } else {
+            character
+          },
+          length,
+          token_type,
+          token_modifiers_bitset: modifiers,
+        });
+        previous = (line, character);
+      }
+      advance_position(segment, &mut line, &mut character);
+      byte += segment.len();
+    }
+  }
+  tokens
+}
+
+/// Advances zero-based `line` and UTF-16 `character` coordinates across `text`.
+fn advance_position(text: &str, line: &mut u32, character: &mut u32) {
+  for c in text.chars() {
+    if c == '\n' {
+      *line += 1;
+      *character = 0;
+    } else {
+      *character += c.len_utf16() as u32;
+    }
+  }
+}
 
 /// Builds a coverage summary describing the scan scope and completeness for `domain`.
 pub(crate) fn coverage(domain: &str, params: &Value, count: usize, complete: bool) -> Value {
