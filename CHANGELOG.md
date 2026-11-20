@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.0](https://github.com/ByteLandTechnology/ghidra-lsp/compare/v0.2.0...v0.3.0) (2026-11-20)
+
+
+### Features
+
+* **nvim:** auto-install ghidra-lsp and ghidra-mcp via npm ([b63049e](https://github.com/ByteLandTechnology/ghidra-lsp/commit/b63049e0cf30d15b258eae20312bf747922ceee7))
+* **vscode:** auto-install ghidra-lsp and ghidra-mcp via npm ([56e7ce4](https://github.com/ByteLandTechnology/ghidra-lsp/commit/56e7ce410de9d4854bb3ad72886b88f819bba7c3))
+
 ## [0.2.0](https://github.com/ByteLandTechnology/ghidra-lsp/compare/v0.1.0...v0.2.0) (2026-11-20)
 
 
