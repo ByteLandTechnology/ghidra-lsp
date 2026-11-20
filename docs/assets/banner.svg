@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 220" width="1200" height="220">
+  <desc>Flat dual-theme banner for ghidra-lsp.</desc>
+  <rect x="1" y="1" width="1198" height="218" rx="12" fill="#64748b" fill-opacity="0.06" stroke="#64748b" stroke-opacity="0.22" stroke-width="1"/>
+
+  <g transform="translate(438 110) scale(1.02)">
+    <path fill="#007aff" d="M-39.48 -42.59A13 13 0 0 1 -21.20 -40.63L-17.43 -35.96A3 3 0 0 1 -17.89 -31.74L-33.99 -18.76A3 3 0 0 0 -34.37 -14.45L-29.97 -9.39A12 12 0 0 1 -31.15 7.54L-36.43 12.13A3 3 0 0 1 -40.67 11.83L-58.46 -8.63A14 14 0 0 1 -56.68 -28.72Z"/>
+    <path fill="#ff3b30" d="M10.42 -46.88A14 14 0 0 1 29.25 -53.00L35.49 -49.82A3 3 0 0 1 36.80 -45.78L-10.42 46.88A14 14 0 0 1 -29.25 53.00L-35.49 49.82A3 3 0 0 1 -36.80 45.78Z"/>
+    <path fill="#34c759" d="M39.48 42.59A13 13 0 0 1 21.20 40.63L17.43 35.96A3 3 0 0 1 17.89 31.74L33.99 18.76A3 3 0 0 0 34.37 14.45L29.97 9.39A12 12 0 0 1 31.15 -7.54L36.43 -12.13A3 3 0 0 1 40.67 -11.83L58.46 8.63A14 14 0 0 1 56.68 28.72Z"/>
+  </g>
+
+  <text x="531" y="119" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Arial, sans-serif" font-size="64" font-weight="800" letter-spacing="-1.6" fill="#187ef2">ghidra-lsp</text>
+  <text x="533" y="153" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Arial, sans-serif" font-size="19.5" font-weight="500" fill="#687a92">Ghidra decompilation over LSP</text>
+</svg>

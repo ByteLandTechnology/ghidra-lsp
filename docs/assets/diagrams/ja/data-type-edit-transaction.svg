@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 584" width="1200" height="584">
+  <desc>JSON Schema で保護された JSONC バッファとグラフィカルフォームの双方向同期、および差分・競合ゲート・all_or_none 原子的保存・読戻整合の流れを示します。</desc>
+  <defs>
+<marker id="a-blue" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto"><path d="M 0 1 L 9 5 L 0 9 z" fill="#187ef2" /></marker>
+    <marker id="as-blue" viewBox="0 0 10 10" refX="1.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto"><path d="M 10 1 L 1 5 L 10 9 z" fill="#187ef2" /></marker>
+    <marker id="a-green" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto"><path d="M 0 1 L 9 5 L 0 9 z" fill="#179247" /></marker>
+    <marker id="as-green" viewBox="0 0 10 10" refX="1.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto"><path d="M 10 1 L 1 5 L 10 9 z" fill="#179247" /></marker>
+    <marker id="a-red" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto"><path d="M 0 1 L 9 5 L 0 9 z" fill="#e54538" /></marker>
+    <marker id="as-red" viewBox="0 0 10 10" refX="1.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto"><path d="M 10 1 L 1 5 L 10 9 z" fill="#e54538" /></marker>
+    <marker id="a-slate" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto"><path d="M 0 1 L 9 5 L 0 9 z" fill="#64748b" /></marker>
+    <marker id="as-slate" viewBox="0 0 10 10" refX="1.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto"><path d="M 10 1 L 1 5 L 10 9 z" fill="#64748b" /></marker>
+    <marker id="a-amber" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto"><path d="M 0 1 L 9 5 L 0 9 z" fill="#bd6d06" /></marker>
+    <marker id="as-amber" viewBox="0 0 10 10" refX="1.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto"><path d="M 10 1 L 1 5 L 10 9 z" fill="#bd6d06" /></marker>
+  <mask id="mask-neq-badge" maskUnits="userSpaceOnUse" x="0" y="0" width="1200" height="660"><rect x="0" y="0" width="1200" height="660" fill="#ffffff" /><rect x="513.0" y="412.0" width="42.0" height="22.0" rx="6.0" fill="#000000" /></mask></defs>
+  <g transform="translate(0, -56)">
+  <rect x="34" y="88" width="420" height="222" rx="12" fill="#64748b" stroke="#187ef2" stroke-width="1.8" fill-opacity="0.08" />
+  <path d="M 34 100 Q 34 88 46 88 H 442 Q 454 88 454 100 V 120 H 34 Z" fill="#007aff" fill-opacity="0.10" />
+  <text x="52.0" y="109.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', 'Noto Sans CJK SC', 'Noto Sans CJK JP', 'Hiragino Sans', 'Microsoft YaHei', Arial, sans-serif" font-size="13.0" fill="#187ef2" font-weight="700">JSONC バッファ</text>
+  <rect x="308.0" y="92.0" width="128.0" height="22.0" rx="10.0" fill="#64748b" stroke="#187ef2" stroke-width="1.4" fill-opacity="0.08" />
+  <text x="372.0" y="106.6" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace" font-size="10.2" fill="#687a92" font-weight="700" text-anchor="middle">ghidra-type://</text>
+  <rect x="50" y="130" width="388" height="126" rx="8" fill="#64748b" fill-opacity="0.12" stroke="#64748b" stroke-opacity="0.26" stroke-width="1" />
+  <text x="64.0" y="152.0" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace" font-size="11.5" fill="#187ef2" font-weight="600">{ "kind":</text>
+  <text x="150.0" y="152.0" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace" font-size="11.5" fill="#179247" font-weight="700">"struct" }</text>
+  <rect x="78.0" y="168.0" width="48.0" height="6.0" rx="2.5" fill="#187ef2" />
+  <rect x="131.0" y="168.0" width="130.0" height="6.0" rx="2.5" fill="#64748b" fill-opacity="0.40" />
+  <rect x="266.0" y="168.0" width="54.0" height="6.0" rx="2.5" fill="#179247" />
+  <rect x="78.0" y="188.0" width="48.0" height="6.0" rx="2.5" fill="#187ef2" />
+  <rect x="131.0" y="188.0" width="108.0" height="6.0" rx="2.5" fill="#64748b" fill-opacity="0.40" />
+  <rect x="244.0" y="188.0" width="76.0" height="6.0" rx="2.5" fill="#bd6d06" />
+  <rect x="78.0" y="208.0" width="48.0" height="6.0" rx="2.5" fill="#187ef2" />
+  <rect x="131.0" y="208.0" width="144.0" height="6.0" rx="2.5" fill="#64748b" fill-opacity="0.40" />
+  <rect x="280.0" y="208.0" width="46.0" height="6.0" rx="2.5" fill="#179247" />
+  <rect x="64.0" y="228.0" width="24.0" height="6.0" rx="2.5" fill="#187ef2" />
+  <path d="M 164 282 A 10 10 0 1 1 178 292" fill="none" stroke="#187ef2" stroke-width="2.2" stroke-linecap="round" />
+  <polygon points="158,280 168,274 168,286" fill="#187ef2" />
+  <path d="M 224 282 A 10 10 0 1 0 210 292" fill="none" stroke="#187ef2" stroke-width="2.2" stroke-linecap="round" />
+  <polygon points="230,280 220,274 220,286" fill="#187ef2" />
+  <text x="294.0" y="288.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', 'Noto Sans CJK SC', 'Noto Sans CJK JP', 'Hiragino Sans', 'Microsoft YaHei', Arial, sans-serif" font-size="11.5" fill="#187ef2" font-weight="700" text-anchor="middle">戻す / 再実行</text>
+  <polyline points="458.0,196.0 558.0,196.0" fill="none" stroke="#187ef2" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" marker-start="url(#as-blue)" marker-end="url(#a-blue)" />
+  <polyline points="642.0,196.0 742.0,196.0" fill="none" stroke="#187ef2" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" marker-start="url(#as-blue)" marker-end="url(#a-blue)" />
+  <path d="M 600.0 167.0 L 624.0 177.8 V 196.7 Q 624.0 214.2 600.0 221.0 Q 576.0 214.2 576.0 196.7 V 177.8 Z" fill="#34c759" stroke="#179247" stroke-width="2.2" fill-opacity="0.10" />
+  <path d="M 592.0 195.0 L 598.0 201.0 L 609.0 188.0" fill="none" stroke="#179247" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" />
+  <rect x="538.0" y="234.0" width="124.0" height="26.0" rx="10.0" fill="#34c759" stroke="#179247" stroke-width="1.4" fill-opacity="0.10" />
+  <text x="600.0" y="250.8" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', 'Noto Sans CJK SC', 'Noto Sans CJK JP', 'Hiragino Sans', 'Microsoft YaHei', Arial, sans-serif" font-size="11.0" fill="#179247" font-weight="700" text-anchor="middle">JSON Schema</text>
+  <rect x="746" y="88" width="420" height="222" rx="12" fill="#64748b" stroke="#187ef2" stroke-width="1.8" fill-opacity="0.08" />
+  <path d="M 746 100 Q 746 88 758 88 H 1154 Q 1166 88 1166 100 V 120 H 746 Z" fill="#007aff" fill-opacity="0.10" />
+  <text x="764.0" y="109.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', 'Noto Sans CJK SC', 'Noto Sans CJK JP', 'Hiragino Sans', 'Microsoft YaHei', Arial, sans-serif" font-size="13.0" fill="#187ef2" font-weight="700">グラフィカル編集</text>
+  <rect x="762" y="132" width="388" height="26" rx="5" fill="#64748b" fill-opacity="0.13" />
+  <rect x="802" y="142" width="42" height="6" rx="2" fill="#64748b" />
+  <rect x="868" y="142" width="42" height="6" rx="2" fill="#64748b" />
+  <rect x="976" y="142" width="42" height="6" rx="2" fill="#64748b" />
+  <rect x="1072" y="142" width="42" height="6" rx="2" fill="#64748b" />
+  <rect x="762" y="166" width="388" height="26" rx="5" fill="#64748b" stroke="#64748b" stroke-width="1.2" fill-opacity="0.08" stroke-opacity="0.32" />
+  <circle cx="776" cy="173" r="1.4" fill="#64748b" fill-opacity="0.52" />
+  <circle cx="781" cy="173" r="1.4" fill="#64748b" fill-opacity="0.52" />
+  <circle cx="776" cy="179" r="1.4" fill="#64748b" fill-opacity="0.52" />
+  <circle cx="781" cy="179" r="1.4" fill="#64748b" fill-opacity="0.52" />
+  <circle cx="776" cy="185" r="1.4" fill="#64748b" fill-opacity="0.52" />
+  <circle cx="781" cy="185" r="1.4" fill="#64748b" fill-opacity="0.52" />
+  <rect x="802" y="174" width="32" height="10" rx="3" fill="#007aff" stroke="#187ef2" fill-opacity="0.10" stroke-opacity="0.52" />
+  <rect x="868" y="175" width="84" height="8" rx="3" fill="#6e8098" />
+  <rect x="976" y="175" width="66" height="8" rx="3" fill="#179247" />
+  <rect x="1072" y="175" width="40" height="8" rx="3" fill="#64748b" fill-opacity="0.52" />
+  <rect x="762" y="198" width="388" height="26" rx="5" fill="#64748b" stroke="#64748b" stroke-width="1.2" fill-opacity="0.08" stroke-opacity="0.32" />
+  <circle cx="776" cy="205" r="1.4" fill="#64748b" fill-opacity="0.52" />
+  <circle cx="781" cy="205" r="1.4" fill="#64748b" fill-opacity="0.52" />
+  <circle cx="776" cy="211" r="1.4" fill="#64748b" fill-opacity="0.52" />
+  <circle cx="781" cy="211" r="1.4" fill="#64748b" fill-opacity="0.52" />
+  <circle cx="776" cy="217" r="1.4" fill="#64748b" fill-opacity="0.52" />
+  <circle cx="781" cy="217" r="1.4" fill="#64748b" fill-opacity="0.52" />
+  <rect x="802" y="206" width="32" height="10" rx="3" fill="#007aff" stroke="#187ef2" fill-opacity="0.10" stroke-opacity="0.52" />
+  <rect x="868" y="207" width="84" height="8" rx="3" fill="#6e8098" />
+  <rect x="976" y="207" width="66" height="8" rx="3" fill="#179247" />
+  <rect x="1072" y="207" width="40" height="8" rx="3" fill="#64748b" fill-opacity="0.52" />
+  <rect x="762" y="230" width="388" height="26" rx="5" fill="#64748b" stroke="#64748b" stroke-width="1.2" fill-opacity="0.08" stroke-opacity="0.32" />
+  <circle cx="776" cy="237" r="1.4" fill="#64748b" fill-opacity="0.52" />
+  <circle cx="781" cy="237" r="1.4" fill="#64748b" fill-opacity="0.52" />
+  <circle cx="776" cy="243" r="1.4" fill="#64748b" fill-opacity="0.52" />
+  <circle cx="781" cy="243" r="1.4" fill="#64748b" fill-opacity="0.52" />
+  <circle cx="776" cy="249" r="1.4" fill="#64748b" fill-opacity="0.52" />
+  <circle cx="781" cy="249" r="1.4" fill="#64748b" fill-opacity="0.52" />
+  <rect x="802" y="238" width="32" height="10" rx="3" fill="#007aff" stroke="#187ef2" fill-opacity="0.10" stroke-opacity="0.52" />
+  <rect x="868" y="239" width="84" height="8" rx="3" fill="#6e8098" />
+  <rect x="976" y="239" width="66" height="8" rx="3" fill="#179247" />
+  <rect x="1072" y="239" width="40" height="8" rx="3" fill="#64748b" fill-opacity="0.52" />
+  <rect x="762" y="268" width="42" height="24" rx="6" fill="#007aff" stroke="#187ef2" stroke-width="1.5" fill-opacity="0.10" />
+  <path d="M 783 274 V 286 M 777 280 H 789" stroke="#187ef2" stroke-width="2.2" stroke-linecap="round" />
+  <polyline points="156.0,312.0 156.0,376.0" fill="none" stroke="#187ef2" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#a-blue)" />
+  <rect x="110.0" y="332.0" width="92.0" height="26.0" rx="6.0" fill="#187ef2" stroke="#187ef2" stroke-width="1.4" />
+  <text x="156.0" y="349.0" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace" font-size="11.5" fill="#ffffff" font-weight="700" text-anchor="middle">Ctrl+S</text>
+  <rect x="34" y="380" width="246" height="224" rx="12" fill="#64748b" stroke="#187ef2" stroke-width="1.8" fill-opacity="0.08" />
+  <text x="157.0" y="408.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', 'Noto Sans CJK SC', 'Noto Sans CJK JP', 'Hiragino Sans', 'Microsoft YaHei', Arial, sans-serif" font-size="13.0" fill="#187ef2" font-weight="700" text-anchor="middle">1. 差分スタック</text>
+  <polygon points="157,426 184,474 130,474" fill="#007aff" stroke="#187ef2" stroke-width="2.4" fill-opacity="0.10" />
+  <rect x="53.0" y="514.0" width="62.0" height="32.0" rx="8.0" fill="#007aff" stroke="#187ef2" stroke-width="1.4" fill-opacity="0.10" />
+  <text x="84.0" y="534.0" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace" font-size="11.5" fill="#687a92" font-weight="700" text-anchor="middle">op1</text>
+  <rect x="126.0" y="514.0" width="62.0" height="32.0" rx="8.0" fill="#007aff" stroke="#187ef2" stroke-width="1.4" fill-opacity="0.10" />
+  <text x="157.0" y="534.0" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace" font-size="11.5" fill="#687a92" font-weight="700" text-anchor="middle">op2</text>
+  <rect x="199.0" y="514.0" width="62.0" height="32.0" rx="8.0" fill="#007aff" stroke="#187ef2" stroke-width="1.4" fill-opacity="0.10" />
+  <text x="230.0" y="534.0" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace" font-size="11.5" fill="#687a92" font-weight="700" text-anchor="middle">op3</text>
+  <polyline points="282.0,492.0 310.0,492.0" fill="none" stroke="#e54538" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#a-red)" />
+  <rect x="314" y="380" width="268" height="224" rx="12" fill="#64748b" stroke="#e54538" stroke-width="1.8" fill-opacity="0.08" />
+  <text x="448.0" y="408.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', 'Noto Sans CJK SC', 'Noto Sans CJK JP', 'Hiragino Sans', 'Microsoft YaHei', Arial, sans-serif" font-size="13.0" fill="#e54538" font-weight="700" text-anchor="middle">2. 競合ゲート</text>
+  <rect x="340" y="454" width="46" height="58" rx="6" fill="#007aff" stroke="#187ef2" stroke-width="1.6" fill-opacity="0.10" />
+  <rect x="350.0" y="470.0" width="26.0" height="5.0" rx="2.5" fill="#187ef2" />
+  <rect x="350.0" y="484.0" width="22.0" height="5.0" rx="2.5" fill="#64748b" fill-opacity="0.52" />
+  <path d="M 497.0 464.0 A 27.0 9.0 0 0 0 551.0 464.0 V 500.0 A 27.0 9.0 0 0 1 497.0 500.0 Z" fill="#34c759" stroke="#179247" stroke-width="2" fill-opacity="0.10" />
+  <ellipse cx="524.0" cy="464.0" rx="27.0" ry="9.0" fill="#64748b" stroke="#179247" stroke-width="2" fill-opacity="0.08" />
+  <path d="M 497.0 480.9 A 27.0 9.0 0 0 0 551.0 480.9" fill="none" stroke="#179247" stroke-width="1.5" stroke-opacity="0.7" />
+  <path d="M 497.0 493.9 A 27.0 9.0 0 0 0 551.0 493.9" fill="none" stroke="#179247" stroke-width="1.5" stroke-opacity="0.7" />
+  <circle cx="448" cy="482" r="20" fill="#007aff" stroke="#187ef2" stroke-width="2" fill-opacity="0.10" />
+  <text x="448.0" y="487.5" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace" font-size="15.0" fill="#187ef2" font-weight="700" text-anchor="middle">==</text>
+  <polyline points="448.0,460.0 448.0,424.0 600.0,424.0 600.0,368.0" fill="none" stroke="#e54538" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="6 4" marker-end="url(#a-red)" mask="url(#mask-neq-badge)" />
+  <rect x="513.0" y="412.0" width="42.0" height="22.0" rx="6.0" fill="#ff3b30" stroke="#e54538" stroke-width="1.4" fill-opacity="0.10" />
+  <text x="534.0" y="426.9" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace" font-size="11.0" fill="#e54538" font-weight="700" text-anchor="middle">!=</text>
+  <rect x="556" y="294" width="88" height="68" rx="8" fill="#64748b" stroke="#e54538" stroke-width="1.6" fill-opacity="0.08" />
+  <rect x="564" y="302" width="32" height="32" rx="4" fill="#ff3b30" stroke="#e54538" fill-opacity="0.10" stroke-opacity="0.52" />
+  <rect x="604" y="302" width="32" height="32" rx="4" fill="#34c759" stroke="#179247" fill-opacity="0.10" stroke-opacity="0.52" />
+  <text x="600.0" y="353.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', 'Noto Sans CJK SC', 'Noto Sans CJK JP', 'Hiragino Sans', 'Microsoft YaHei', Arial, sans-serif" font-size="10.5" fill="#e54538" font-weight="700" text-anchor="middle">比較表示</text>
+  <polyline points="584.0,492.0 614.0,492.0" fill="none" stroke="#179247" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#a-green)" />
+  <rect x="618" y="380" width="268" height="224" rx="12" fill="#64748b" stroke="#187ef2" stroke-width="1.8" fill-opacity="0.08" />
+  <text x="752.0" y="408.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', 'Noto Sans CJK SC', 'Noto Sans CJK JP', 'Hiragino Sans', 'Microsoft YaHei', Arial, sans-serif" font-size="13.0" fill="#187ef2" font-weight="700" text-anchor="middle">3. 原子的実行</text>
+  <rect x="646" y="438" width="212" height="96" rx="48" fill="#007aff" stroke="#187ef2" stroke-width="2.4" fill-opacity="0.10" />
+  <rect x="684.0" y="452.0" width="136.0" height="28.0" rx="10.0" fill="#187ef2" stroke="#187ef2" stroke-width="1.4" />
+  <text x="752.0" y="470.2" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace" font-size="12.0" fill="#ffffff" font-weight="700" text-anchor="middle">all_or_none</text>
+  <text x="752.0" y="506.0" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace" font-size="12.0" fill="#687a92" font-weight="700" text-anchor="middle">ghidra-mcp</text>
+  <rect x="679.0" y="554.0" width="146.0" height="28.0" rx="10.0" fill="#34c759" stroke="#179247" stroke-width="1.4" fill-opacity="0.10" />
+  <text x="752.0" y="572.0" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace" font-size="11.5" fill="#179247" font-weight="700" text-anchor="middle">program.save</text>
+  <polyline points="888.0,492.0 916.0,492.0" fill="none" stroke="#179247" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#a-green)" />
+  <rect x="920" y="380" width="246" height="224" rx="12" fill="#64748b" stroke="#179247" stroke-width="1.8" fill-opacity="0.08" />
+  <text x="1043.0" y="408.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', 'Noto Sans CJK SC', 'Noto Sans CJK JP', 'Hiragino Sans', 'Microsoft YaHei', Arial, sans-serif" font-size="13.0" fill="#179247" font-weight="700" text-anchor="middle">4. 読戻整合</text>
+  <polyline points="1018.0,446.0 1068.0,446.0" fill="none" stroke="#179247" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" marker-start="url(#as-green)" marker-end="url(#a-green)" />
+  <rect x="944" y="486" width="58" height="72" rx="8" fill="#34c759" stroke="#179247" stroke-width="1.8" fill-opacity="0.10" />
+  <text x="973.0" y="526.0" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace" font-size="14.0" fill="#179247" font-weight="700" text-anchor="middle">+0</text>
+  <rect x="1012" y="486" width="58" height="72" rx="8" fill="#34c759" stroke="#179247" stroke-width="1.8" fill-opacity="0.10" />
+  <text x="1041.0" y="526.0" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace" font-size="14.0" fill="#179247" font-weight="700" text-anchor="middle">+4</text>
+  <rect x="1080" y="486" width="58" height="72" rx="8" fill="#34c759" stroke="#179247" stroke-width="1.8" fill-opacity="0.10" />
+  <text x="1109.0" y="526.0" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace" font-size="14.0" fill="#179247" font-weight="700" text-anchor="middle">+8</text>
+  </g>
+</svg>

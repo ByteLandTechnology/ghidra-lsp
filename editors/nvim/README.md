@@ -2,6 +2,8 @@
 
 Native Neovim integration for live Ghidra decompilation through `ghidra-lsp` and `ghidra-mcp`.
 
+For the full walkthrough, virtual buffer controls, and troubleshooting, see the [Neovim Guide](../../docs/en/neovim-guide.md).
+
 ## Requirements
 
 - Neovim `>= 0.10`
