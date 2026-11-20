@@ -3,9 +3,11 @@
 
 //! Canonical address parsing, structured type references, and defined string queries.
 
+use std::cmp::Ordering;
 use std::collections::HashSet;
 
 use anyhow::{Context, Result, bail, ensure};
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::backend::McpBackend;
@@ -17,6 +19,40 @@ pub(crate) struct ParsedAddress {
   pub(crate) space: String,
   /// Unsigned 64-bit byte offset within `space`.
   pub(crate) offset: u64,
+  /// Minimum hexadecimal digit width preserved from the source address.
+  pub(crate) width: usize,
+  /// Normalized `space:offset` hexadecimal representation.
+  pub(crate) canonical: String,
+}
+
+/// Metadata describing a single Ghidra program memory block.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct MemoryBlockInfo {
+  /// Block name such as `.text` or `.data`.
+  pub(crate) name: String,
+  /// Inclusive canonical start address of the block.
+  pub(crate) start: String,
+  /// Inclusive canonical end address of the block.
+  pub(crate) end: String,
+  /// Total size of the block in bytes.
+  pub(crate) length: u64,
+  /// Whether read access is enabled on this block.
+  pub(crate) read: bool,
+  /// Whether write access is enabled on this block.
+  pub(crate) write: bool,
+  /// Whether execute permission is enabled on this block.
+  pub(crate) execute: bool,
+  /// Whether bytes in this block are initialized in the program image.
+  pub(crate) initialized: bool,
+  /// Whether this block is marked volatile.
+  pub(crate) volatile: bool,
+  /// Whether this block is an overlay memory block.
+  pub(crate) overlay: bool,
+  /// Backend block kind classification string.
+  pub(crate) kind: String,
+  /// Optional user or loader block comment.
+  pub(crate) comment: String,
 }
 
 /// Returns true when `trimmed` starts with a synthetic non-memory Ghidra prefix.
@@ -75,10 +111,20 @@ pub(crate) fn parse_address(raw: &str, default_space: &str) -> Option<ParsedAddr
   }
 
   let offset = u64::from_str_radix(hex_part, 16).ok()?;
+  let width = hex_part.len().max(1);
+  let canonical = format_address(space, offset, width);
   Some(ParsedAddress {
     space: space.to_owned(),
     offset,
+    width,
+    canonical,
   })
+}
+
+/// Formats an address space and 64-bit offset into zero-padded `space:hex` form.
+pub(crate) fn format_address(space: &str, offset: u64, width: usize) -> String {
+  let w = width.max(1);
+  format!("{space}:{offset:0w$x}")
 }
 
 /// Formats `raw` for UI display by stripping a leading `ram:` hex prefix only.
@@ -93,6 +139,38 @@ pub(crate) fn display_address(raw: &str) -> String {
   }
 }
 
+/// Adds signed `delta` bytes to `raw` using checked 64-bit address arithmetic.
+pub(crate) fn add_address_offset(raw: &str, delta: i128) -> Option<String> {
+  let parsed = parse_address(raw, "ram")?;
+  let next = (parsed.offset as i128).checked_add(delta)?;
+  if next < 0 || next > u64::MAX as i128 {
+    return None;
+  }
+  Some(format_address(&parsed.space, next as u64, parsed.width))
+}
+
+/// Orders two addresses with `ram` first and unsigned 64-bit offsets ascending.
+pub(crate) fn compare_addresses(a: &str, b: &str) -> Ordering {
+  match (parse_address(a, "ram"), parse_address(b, "ram")) {
+    (None, None) => a.cmp(b),
+    (None, Some(_)) => Ordering::Greater,
+    (Some(_), None) => Ordering::Less,
+    (Some(left), Some(right)) => {
+      if left.space != right.space {
+        if left.space == "ram" {
+          Ordering::Less
+        } else if right.space == "ram" {
+          Ordering::Greater
+        } else {
+          left.space.cmp(&right.space)
+        }
+      } else {
+        left.offset.cmp(&right.offset)
+      }
+    }
+  }
+}
+
 /// Compares two address strings canonically with `"ram"` as default space, unlike [`crate::document::same_address`].
 pub(crate) fn same_address(a: &str, b: &str) -> bool {
   match (parse_address(a, "ram"), parse_address(b, "ram")) {
@@ -101,6 +179,186 @@ pub(crate) fn same_address(a: &str, b: &str) -> bool {
     }
     _ => false,
   }
+}
+
+/// Checks whether `address` falls inside inclusive bounds `[start, end]` in the same space.
+pub(crate) fn address_in_range(address: &str, start: &str, end: &str) -> bool {
+  match (
+    parse_address(address, "ram"),
+    parse_address(start, "ram"),
+    parse_address(end, "ram"),
+  ) {
+    (Some(target), Some(lo), Some(hi)) => {
+      target.space.eq_ignore_ascii_case(&lo.space)
+        && target.space.eq_ignore_ascii_case(&hi.space)
+        && target.offset >= lo.offset
+        && target.offset <= hi.offset
+    }
+    _ => false,
+  }
+}
+
+/// Aligns `address` down to a multiple of `bytes_per_row`.
+pub(crate) fn align_row_address(address: &str, bytes_per_row: u64) -> String {
+  let Some(parsed) = parse_address(address, "ram") else {
+    return address.to_owned();
+  };
+  if bytes_per_row <= 1 {
+    return parsed.canonical;
+  }
+  let aligned = parsed.offset - (parsed.offset % bytes_per_row);
+  format_address(&parsed.space, aligned, parsed.width)
+}
+
+/// Clamps `candidate` to inclusive `[min, max]` when all three share the same space.
+pub(crate) fn clamp_address(candidate: &str, min: &str, max: &str) -> String {
+  let (Some(c), Some(lo), Some(hi)) = (
+    parse_address(candidate, "ram"),
+    parse_address(min, "ram"),
+    parse_address(max, "ram"),
+  ) else {
+    return candidate.to_owned();
+  };
+  if !c.space.eq_ignore_ascii_case(&lo.space) || !c.space.eq_ignore_ascii_case(&hi.space) {
+    return candidate.to_owned();
+  }
+  if c.offset < lo.offset {
+    format_address(&lo.space, lo.offset, c.width.max(lo.width))
+  } else if c.offset > hi.offset {
+    format_address(&hi.space, hi.offset, c.width.max(hi.width))
+  } else {
+    format_address(&c.space, c.offset, c.width.max(lo.width))
+  }
+}
+
+/// Extracts or derives a memory block byte length from JSON or `[start, end]` addresses.
+fn as_u64_length(value: Option<&Value>, start: &str, end: &str) -> u64 {
+  if let Some(val) = value {
+    if let Some(n) = val.as_u64() {
+      return n;
+    }
+    if let Some(s) = val.as_str()
+      && let Ok(n) = s.trim().parse::<u64>()
+    {
+      return n;
+    }
+  }
+  if let (Some(lo), Some(hi)) = (parse_address(start, "ram"), parse_address(end, "ram"))
+    && hi.offset >= lo.offset
+  {
+    return (hi.offset - lo.offset).saturating_add(1);
+  }
+  0
+}
+
+/// Parses and sorts backend `memory_block.list` records by start address.
+pub(crate) fn parse_memory_blocks(raw: &[Value]) -> Vec<MemoryBlockInfo> {
+  let mut blocks = Vec::new();
+  for item in raw {
+    let start = item
+      .get("start")
+      .and_then(Value::as_str)
+      .unwrap_or("")
+      .to_owned();
+    let end = item
+      .get("end")
+      .and_then(Value::as_str)
+      .unwrap_or("")
+      .to_owned();
+    if start.is_empty() || end.is_empty() {
+      continue;
+    }
+    let name = item
+      .get("name")
+      .and_then(Value::as_str)
+      .filter(|s| !s.is_empty())
+      .unwrap_or("block")
+      .to_owned();
+    let length = as_u64_length(item.get("length"), &start, &end);
+    blocks.push(MemoryBlockInfo {
+      name,
+      start,
+      end,
+      length,
+      read: item.get("read").and_then(Value::as_bool) == Some(true),
+      write: item.get("write").and_then(Value::as_bool) == Some(true),
+      execute: item.get("execute").and_then(Value::as_bool) == Some(true),
+      initialized: item.get("initialized").and_then(Value::as_bool) != Some(false),
+      volatile: item.get("volatile").and_then(Value::as_bool) == Some(true),
+      overlay: item.get("overlay").and_then(Value::as_bool) == Some(true),
+      kind: item
+        .get("kind")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_owned(),
+      comment: item
+        .get("comment")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_owned(),
+    });
+  }
+  blocks.sort_by(|a, b| compare_addresses(&a.start, &b.start));
+  blocks
+}
+
+/// Finds the memory block containing `address`, preferring non-overlay readable blocks.
+pub(crate) fn find_memory_block<'a>(
+  blocks: &'a [MemoryBlockInfo],
+  address: &str,
+) -> Option<&'a MemoryBlockInfo> {
+  let mut fallback: Option<&'a MemoryBlockInfo> = None;
+  for block in blocks {
+    if !address_in_range(address, &block.start, &block.end) {
+      continue;
+    }
+    if !block.overlay && block.read {
+      return Some(block);
+    }
+    if fallback.is_none() {
+      fallback = Some(block);
+    }
+  }
+  fallback
+}
+
+/// Finds the adjacent memory block before (`direction < 0`) or after `address`.
+pub(crate) fn adjacent_memory_block<'a>(
+  blocks: &'a [MemoryBlockInfo],
+  address: &str,
+  direction: i32,
+) -> Option<&'a MemoryBlockInfo> {
+  if blocks.is_empty() || direction == 0 {
+    return None;
+  }
+  if let Some(current) = find_memory_block(blocks, address) {
+    let index = blocks.iter().position(|b| std::ptr::eq(b, current))?;
+    return if direction > 0 {
+      blocks.get(index + 1)
+    } else {
+      index.checked_sub(1).and_then(|prev| blocks.get(prev))
+    };
+  }
+  if direction > 0 {
+    blocks
+      .iter()
+      .find(|block| compare_addresses(&block.start, address) == Ordering::Greater)
+  } else {
+    blocks
+      .iter()
+      .rev()
+      .find(|block| compare_addresses(&block.end, address) == Ordering::Less)
+  }
+}
+
+/// Formats `block` permissions as a three-character triplet with Unicode minus signs.
+pub(crate) fn permissions_label(block: &MemoryBlockInfo) -> String {
+  format!(
+    "{}{}{}",
+    if block.read { 'R' } else { '\u{2212}' },
+    if block.write { 'W' } else { '\u{2212}' },
+    if block.execute { 'X' } else { '\u{2212}' }
+  )
 }
 
 /// Parses C-like type notation (`int`, `/pkg/Type`, `char *`, `int[4]`, `pointer`) into bridge JSON.

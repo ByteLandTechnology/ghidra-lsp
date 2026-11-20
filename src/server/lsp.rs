@@ -80,6 +80,7 @@ impl LanguageServer for Server {
       }
       let config: Config = serde_json::from_value(config).map_err(rpc)?;
       *self.engine.lock().await = Engine::new(Arc::new(McpBackend::new(config)));
+      self.view_cache.invalidate_all().await;
     }
     Ok(InitializeResult {
       offset_encoding: None,

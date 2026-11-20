@@ -13,6 +13,8 @@ mod edit_commands;
 mod lsp;
 /// Document and workspace symbol search handlers.
 mod symbols;
+/// Bounded view-command handlers for listing, memory, inspector, and graph views.
+mod view_commands;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -51,6 +53,13 @@ const COMMANDS: &[&str] = &[
   "ghidra.typeDocument",
   "ghidra.validateTypeDocument",
   "ghidra.saveTypeDocument",
+  "ghidra.programMeta",
+  "ghidra.resolveTarget",
+  "ghidra.listingWindow",
+  "ghidra.memoryWindow",
+  "ghidra.inspectBytes",
+  "ghidra.controlFlowGraph",
+  "ghidra.callGraph",
   "ghidra.commentsAt",
   "ghidra.saveComment",
   "ghidra.functionPrototype",
@@ -146,6 +155,8 @@ pub(crate) struct Server {
   client: Client,
   /// Active engine holding backend state, session selection, and opened buffers.
   engine: Mutex<Engine>,
+  /// Shared cache of program metadata and call-graph lookups.
+  pub(super) view_cache: crate::views::ViewCache,
   /// Baseline transport configuration merged with client `initializationOptions`.
   default_config: Config,
   /// Whether the client resolves workspace symbol ranges lazily.
@@ -164,6 +175,7 @@ impl Server {
     Self {
       client,
       engine: Mutex::new(Engine::new(Arc::new(McpBackend::new(config.clone())))),
+      view_cache: crate::views::ViewCache::new(),
       default_config: config,
       lazy_symbols: AtomicBool::new(false),
       readonly_documents: AtomicBool::new(false),
@@ -188,6 +200,7 @@ impl Server {
 
   /// Notifies the client that state for session `md5` changed.
   async fn changed(&self, md5: &str) {
+    self.view_cache.invalidate(md5).await;
     self
       .client
       .send_notification::<Changed>(json!({"md5": md5}))
@@ -413,6 +426,17 @@ impl Server {
       | "ghidra.saveVariables" => {
         self
           .execute_edit_command(&params.command, arg, backend.as_ref())
+          .await
+      }
+      "ghidra.programMeta"
+      | "ghidra.resolveTarget"
+      | "ghidra.listingWindow"
+      | "ghidra.memoryWindow"
+      | "ghidra.inspectBytes"
+      | "ghidra.controlFlowGraph"
+      | "ghidra.callGraph" => {
+        self
+          .execute_view_command(&params.command, arg, backend.as_ref())
           .await
       }
       _ => {

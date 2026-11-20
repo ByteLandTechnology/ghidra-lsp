@@ -15,6 +15,8 @@ mod comments;
 mod document;
 /// Session selection, symbol table, and decompilation engine.
 mod engine;
+/// Control-flow graph and bounded call-graph queries.
+mod graph;
 /// Native Ghidra GUI layout validation.
 mod gui;
 /// Comment, function prototype, and variable mutation planning.
@@ -23,6 +25,8 @@ mod mutations;
 mod server;
 /// Virtual `.ghidra-type` JSONC documents, validation, and save coordination.
 mod types_doc;
+/// Listing, memory hex, and byte data inspector views.
+mod views;
 /// Bridge resource coverage helpers.
 mod workbench;
 

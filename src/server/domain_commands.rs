@@ -55,6 +55,7 @@ impl Server {
       }
       "ghidra.refresh" | "ghidra.discardRename" => {
         let md5 = self.scoped_md5(&arg).await?;
+        self.view_cache.invalidate(&md5).await;
         let mut e = self.engine.lock().await;
         let changes = if command == "ghidra.refresh" {
           e.refresh_session(&md5, None).await?
@@ -214,6 +215,7 @@ impl Server {
       workbench::persist(backend, &progress.md5)
         .await
         .context("Analysis completed, but project persistence failed")?;
+      self.view_cache.invalidate(&progress.md5).await;
       let mut e = self.engine.lock().await;
       // Preserve in-flight rename previews started while analysis ran in the background.
       let changes = if e.pending.contains_key(&progress.md5) {
@@ -268,6 +270,7 @@ impl Server {
       workbench::persist(backend, &md5)
         .await
         .context("Analysis completed, but project persistence failed")?;
+      self.view_cache.invalidate(&md5).await;
       analysis = self.program_analysis(&md5).await?;
     }
     self.engine.lock().await.select(&md5).await?;
@@ -296,6 +299,7 @@ impl Server {
       .await?;
     e.forget_session(&md5);
     drop(e);
+    self.view_cache.invalidate(&md5).await;
     for progress in self
       .open_jobs
       .lock()
@@ -333,6 +337,7 @@ impl Server {
       workbench::persist(backend, &md5)
         .await
         .context("Analysis completed, but project persistence failed")?;
+      self.view_cache.invalidate(&md5).await;
       let changes = self.engine.lock().await.refresh_session(&md5, None).await?;
       self.apply_refresh(changes).await?;
     }
