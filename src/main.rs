@@ -5,8 +5,18 @@
 
 /// Model Context Protocol child-process client and response normalization.
 mod backend;
+/// Repeatable comment insertion inside virtual C documents.
+mod comments;
+/// Virtual document state, token alignment, and UTF-16 helpers.
+mod document;
+/// Session selection, symbol table, and decompilation engine.
+mod engine;
+/// Native Ghidra GUI layout validation.
+mod gui;
 /// Language Server Protocol state and handlers.
 mod server;
+/// Bridge resource coverage helpers.
+mod workbench;
 
 use backend::Config;
 use clap::Parser;

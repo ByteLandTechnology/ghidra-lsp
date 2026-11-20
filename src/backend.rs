@@ -3,6 +3,7 @@
 
 //! Model Context Protocol child-process transport for `ghidra-mcp`.
 
+use std::collections::HashSet;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
@@ -254,4 +255,39 @@ pub(crate) fn normalize(value: Value) -> Result<Value> {
     return Ok(response.get("result").unwrap_or(response).clone());
   }
   Ok(value)
+}
+
+/// Fetches all pages from a list operation on `domain` for `md5` and rejects incomplete scans.
+pub(crate) async fn list_all(
+  backend: &McpBackend,
+  domain: &str,
+  md5: &str,
+  mut params: Value,
+) -> Result<Vec<Value>> {
+  let mut items = Vec::new();
+  let mut seen = HashSet::new();
+  loop {
+    let value = backend
+      .call(domain, "list", Some(md5), params.clone())
+      .await?;
+    items.extend(
+      value
+        .get("items")
+        .and_then(Value::as_array)
+        .context("list response lacks items")?
+        .iter()
+        .cloned(),
+    );
+    if let Some(cursor) = value.get("next_cursor").and_then(Value::as_str) {
+      if !seen.insert(cursor.to_owned()) {
+        bail!("backend repeated a pagination cursor");
+      }
+      params["page"] = json!({"cursor": cursor, "limit": 1000});
+    } else {
+      if value.pointer("/scan/complete").and_then(Value::as_bool) == Some(false) {
+        bail!("backend scan is incomplete; refresh after analysis finishes");
+      }
+      return Ok(items);
+    }
+  }
 }
