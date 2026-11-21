@@ -59,10 +59,10 @@ When saving through `ghidra.saveFunctionPrototype` or `ghidra.saveVariables`, th
 
 ## Write-timeout state-read recovery
 
-`McpBackend::call` (`src/backend.rs`) classifies every MCP call using `is_read_only_operation`:
+`McpBackend::call` (`src/backend.rs`) classifies every MCP call with `is_read_only_operation`, sends reads to `ghidra_<domain>`, and sends mutations to `ghidra_<domain>_write`:
 
-- **Read-only timeouts** (`get`, `list`, `read`, `wait`, `resolve`, `status`, `inspect`, `capabilities`, `describe`, `search` outside `batch`) drop the transport session and fail cleanly so retrying is safe.
-- **Write and `batch` timeouts** drop the transport session and raise `"MCP <domain>.<operation> timed out; a write may have completed. Refresh before retrying."`
+- **Read-only timeouts** (`batch.query` and `get`, `list`, `read`, `wait`, `resolve`, `status`, `inspect`, `capabilities`, `describe`, `search` outside `batch`) drop the transport session and fail cleanly so a retry is safe.
+- **Write and `batch.execute` timeouts** drop the transport session and raise `"MCP <domain>.<operation> timed out; a write may have completed. Refresh before retrying."`
 
 Recovery behavior across subsystems:
 
