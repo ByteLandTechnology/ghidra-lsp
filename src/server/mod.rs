@@ -348,7 +348,10 @@ impl Server {
       let job = state.get("job").unwrap_or(&state);
       match job.get("status").and_then(Value::as_str) {
         Some("completed") => return Ok(()),
-        Some("failed" | "cancelled") => bail!("Ghidra job failed: {job}"),
+        Some("failed" | "cancelled") => match job_error(job) {
+          Some(reason) => bail!("Ghidra job failed: {reason}"),
+          None => bail!("Ghidra job did not complete"),
+        },
         _ => {}
       }
       ensure!(
@@ -480,6 +483,21 @@ fn job_id(response: &Value) -> Option<String> {
     .or_else(|| response.get("id"))
     .and_then(Value::as_str)
     .map(str::to_owned)
+}
+
+/// Extracts a non-empty error message from a backend job or analysis snapshot.
+pub(super) fn job_error(job: &Value) -> Option<String> {
+  [
+    job.get("error"),
+    job.pointer("/result/analysis/error"),
+    job.pointer("/analysis/error"),
+  ]
+  .into_iter()
+  .flatten()
+  .find_map(Value::as_str)
+  .map(str::trim)
+  .filter(|error| !error.is_empty())
+  .map(str::to_owned)
 }
 
 /// Converts any displayable error into a JSON-RPC `INVALID_PARAMS` error.

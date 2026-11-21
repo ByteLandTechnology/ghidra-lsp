@@ -59,7 +59,7 @@
 | `ghidra.pollOpenBinary` | `{ token }` | 非同期オープン／再解析ジョブの進捗（`opening` / `analysis` / `ready` / `failed`）をポーリング |
 | `ghidra.beginReanalyze` | `{ md5?, analyzers? }` | 非同期でプログラム再解析ジョブを開始し、ポーリング用 `token` を返却 |
 | `ghidra.reanalyze` | `{ md5?, analyzers?, wait? }` | プログラム再解析を開始（既定で `wait: true`、完了後 `program.save` と文書更新） |
-| `ghidra.cancelJob` | `{}` | 現在の `ghidra-mcp` に `job.cancel` がないことを明示通知（解析自体の中断は不可） |
+| `ghidra.cancelJob` | `{ token? \| jobId?, md5?, wait?, timeoutMs? }` | `job.cancel` または `analysis.cancel` で実行中の解析ジョブをキャンセルし、`job.error` を反映して `ghidra/changed` を通知 |
 | `ghidra.closeSession` | `{ md5?, force? }` | 保留中リネームや未保存編集がないことを確認してセッションを閉じ、キャッシュを破棄 |
 | `ghidra.configure` | `{ templateArguments? }` | 表示設定（`"omit"` / `"show"`）を動的更新 |
 
