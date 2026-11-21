@@ -10,8 +10,8 @@ use tower_lsp_server::ls_types::{Location, Position, Range, Uri};
 use super::{Engine, find_function_symbol};
 use crate::backend::list_all;
 use crate::document::{
-  Document, Symbol, canonical_virtual_uri, extract_label_address, in_address_range, is_label_token,
-  offset, same_address, virtual_uri, word_at,
+  Document, Symbol, canonical_virtual_uri, extract_label_address, is_label_token, offset,
+  same_address, virtual_uri, word_at,
 };
 
 impl Engine {
@@ -373,17 +373,6 @@ impl Engine {
       json!({"filter": {"direction": "to", "to": symbol.address}, "page": {"limit": 1000}}),
     )
     .await?;
-    let functions = list_all(
-      self.backend.as_ref(),
-      "function",
-      md5,
-      json!({
-        "page": {"limit": 1000},
-        "scan": {"timeout_ms": 60000},
-        "projection": {"fields": ["entry", "body"]},
-      }),
-    )
-    .await?;
     let mut locations = vec![];
     let mut unmapped = vec![];
     for reference in refs {
@@ -391,20 +380,11 @@ impl Engine {
         .get("from")
         .and_then(Value::as_str)
         .context("reference lacks from address")?;
-      let containing: Vec<_> = functions
-        .iter()
-        .filter(|f| {
-          let start = f.pointer("/body/start").and_then(Value::as_str);
-          let end = f.pointer("/body/end").and_then(Value::as_str);
-          match (start, end) {
-            (Some(s), Some(e)) => in_address_range(from, s, e),
-            _ => false,
-          }
-        })
-        .collect();
       let mut found = false;
-      if containing.len() == 1
-        && let Some(entry) = containing[0].get("entry").and_then(Value::as_str)
+      if let Some(entry) = reference
+        .pointer("/from_function/entry")
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
         && let Ok(uri) = self.open(md5, entry).await
       {
         let doc = &self.docs[&uri];

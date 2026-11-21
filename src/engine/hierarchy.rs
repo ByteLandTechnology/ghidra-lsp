@@ -14,9 +14,7 @@ use tower_lsp_server::ls_types::{
 
 use super::Engine;
 use crate::backend::list_all;
-use crate::document::{
-  canonical_virtual_uri, in_address_range, position, same_address, virtual_uri,
-};
+use crate::document::{canonical_virtual_uri, position, same_address, virtual_uri};
 
 impl Engine {
   /// Builds the root [`CallHierarchyItem`] for the function or call expression at `pos`.
@@ -196,34 +194,16 @@ impl Engine {
       refs = extra;
     }
 
-    let functions = list_all(
-      self.backend.as_ref(),
-      "function",
-      md5,
-      json!({
-        "page": {"limit": 1000},
-        "scan": {"timeout_ms": 60000},
-        "projection": {"fields": ["entry", "name", "namespace", "body"]},
-      }),
-    )
-    .await?;
-
     let mut callers: HashMap<String, (Value, Vec<Range>)> = HashMap::new();
     for reference in refs {
       let Some(from) = reference.get("from").and_then(Value::as_str) else {
         continue;
       };
-      let caller_func = functions.iter().find(|f| {
-        let start = f.pointer("/body/start").and_then(Value::as_str);
-        let end = f.pointer("/body/end").and_then(Value::as_str);
-        match (start, end) {
-          (Some(s), Some(e)) => in_address_range(from, s, e),
-          _ => false,
-        }
-      });
-
-      if let Some(func) = caller_func
-        && let Some(caller_entry) = func.get("entry").and_then(Value::as_str)
+      if let Some(func) = reference.get("from_function").filter(|v| v.is_object())
+        && let Some(caller_entry) = func
+          .get("entry")
+          .and_then(Value::as_str)
+          .filter(|s| !s.is_empty())
       {
         let entry_slot = callers
           .entry(caller_entry.to_owned())
