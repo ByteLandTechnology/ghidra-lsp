@@ -360,57 +360,32 @@ impl Engine {
           .ok(),
       );
     }
+    match self
+      .backend
+      .call(
+        "data_type",
+        "get",
+        Some(&md5),
+        json!({"selector": {"name": name}}),
+      )
+      .await
+    {
+      Ok(found) => return Ok(Some(found)),
+      Err(err) if err.to_string().to_ascii_lowercase().contains("ambiguous") => {}
+      Err(_) => return Ok(None),
+    }
     let types = list_all(
       self.backend.as_ref(),
       "data_type",
       &md5,
-      json!({"filter": {"query": name}, "page": {"limit": 1000}}),
+      json!({"filter": {"query": name, "include_details": true}, "page": {"limit": 200}}),
     )
     .await?;
-    let candidates: Vec<_> = types
-      .iter()
-      .filter(|v| {
-        v.get("name").and_then(Value::as_str) == Some(name)
-          || v.get("path").and_then(Value::as_str) == Some(name)
-      })
-      .collect();
-    let selected = if let Some(first) = candidates
-      .iter()
-      .find(|v| v.get("name").and_then(Value::as_str) == Some(name))
-    {
-      first
-    } else if let Some(first) = candidates.first() {
-      first
-    } else {
-      if let Ok(builtin) = self
-        .backend
-        .call(
-          "data_type",
-          "get",
-          Some(&md5),
-          json!({"selector": {"path": format!("/{name}")}}),
-        )
-        .await
-      {
-        return Ok(Some(builtin));
-      }
-      return Ok(None);
-    };
-    let path = selected
-      .get("path")
-      .and_then(Value::as_str)
-      .context("Type lacks its full path")?;
-    Ok(Some(
-      self
-        .backend
-        .call(
-          "data_type",
-          "get",
-          Some(&md5),
-          json!({"selector": {"path": path}}),
-        )
-        .await?,
-    ))
+    Ok(
+      types
+        .into_iter()
+        .find(|v| v.get("name").and_then(Value::as_str) == Some(name)),
+    )
   }
 
   /// Opens a virtual Markdown document describing the resolved data type at `pos`.

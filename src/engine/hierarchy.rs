@@ -13,10 +13,8 @@ use tower_lsp_server::ls_types::{
 };
 
 use super::Engine;
-use crate::backend::list_all;
-use crate::document::{
-  canonical_virtual_uri, in_address_range, position, same_address, virtual_uri,
-};
+use crate::address::paginate_operation;
+use crate::document::{canonical_virtual_uri, position, same_address, virtual_uri};
 
 impl Engine {
   /// Builds the root [`CallHierarchyItem`] for the function or call expression at `pos`.
@@ -159,7 +157,7 @@ impl Engine {
     Ok(Some(vec![item]))
   }
 
-  /// Resolves incoming call hierarchy edges from references targeting `item`.
+  /// Resolves incoming call hierarchy edges from `function.call.list` caller records.
   pub(crate) async fn incoming_calls(
     &mut self,
     item: &CallHierarchyItem,
@@ -174,82 +172,49 @@ impl Engine {
       .and_then(Value::as_str)
       .context("Missing entry")?;
 
-    let mut refs = list_all(
-      self.backend.as_ref(),
-      "reference",
-      md5,
-      json!({"filter": {"direction": "to", "to": entry}, "page": {"limit": 1000}}),
-    )
-    .await
-    .unwrap_or_default();
-
-    if refs.is_empty()
-      && let Some((_, raw)) = entry.split_once(':')
-      && let Ok(extra) = list_all(
-        self.backend.as_ref(),
-        "reference",
-        md5,
-        json!({"filter": {"direction": "to", "to": raw}, "page": {"limit": 1000}}),
-      )
-      .await
-    {
-      refs = extra;
-    }
-
-    let functions = list_all(
+    let records = paginate_operation(
       self.backend.as_ref(),
       "function",
+      "call.list",
       md5,
       json!({
-        "page": {"limit": 1000},
-        "scan": {"timeout_ms": 60000},
-        "projection": {"fields": ["entry", "name", "namespace", "body"]},
+        "filter": { "entry": entry, "direction": "callers" },
+        "page": { "limit": 1000 }
       }),
     )
     .await?;
 
-    let mut callers: HashMap<String, (Value, Vec<Range>)> = HashMap::new();
-    for reference in refs {
-      let Some(from) = reference.get("from").and_then(Value::as_str) else {
+    let mut callers: HashMap<String, (Value, Vec<String>)> = HashMap::new();
+    let mut order: Vec<String> = Vec::new();
+    for record in records {
+      let Some(caller_entry) = record
+        .get("entry")
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+      else {
         continue;
       };
-      let caller_func = functions.iter().find(|f| {
-        let start = f.pointer("/body/start").and_then(Value::as_str);
-        let end = f.pointer("/body/end").and_then(Value::as_str);
-        match (start, end) {
-          (Some(s), Some(e)) => in_address_range(from, s, e),
-          _ => false,
-        }
-      });
-
-      if let Some(func) = caller_func
-        && let Some(caller_entry) = func.get("entry").and_then(Value::as_str)
+      if !callers.contains_key(caller_entry) {
+        order.push(caller_entry.to_owned());
+      }
+      let slot = callers
+        .entry(caller_entry.to_owned())
+        .or_insert_with(|| (record.clone(), Vec::new()));
+      if let Some(site) = record
+        .get("call_site")
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+        && !slot.1.iter().any(|existing| same_address(existing, site))
       {
-        let entry_slot = callers
-          .entry(caller_entry.to_owned())
-          .or_insert_with(|| (func.clone(), Vec::new()));
-        let caller_uri = virtual_uri(md5, "function", caller_entry)?;
-        let range = if let Some(caller_doc) = self.docs.get(&caller_uri) {
-          caller_doc
-            .spans
-            .iter()
-            .find(|s| {
-              s.token
-                .address
-                .as_deref()
-                .is_some_and(|a| same_address(a, from))
-            })
-            .map(|s| caller_doc.range(s))
-            .unwrap_or_default()
-        } else {
-          Range::default()
-        };
-        entry_slot.1.push(range);
+        slot.1.push(site.to_owned());
       }
     }
 
     let mut result = Vec::new();
-    for (caller_entry, (func, ranges)) in callers {
+    for caller_entry in order {
+      let Some((func, call_sites)) = callers.remove(&caller_entry) else {
+        continue;
+      };
       let caller_uri = match self.open(md5, &caller_entry).await {
         Ok(u) => u,
         Err(_) => virtual_uri(md5, "function", &caller_entry)?,
@@ -277,9 +242,26 @@ impl Engine {
             Position::new(0, 0),
             position(&caller_doc.base, caller_doc.base.len()),
           );
-          let clean_ranges: Vec<Range> = ranges.into_iter().filter(|r| r.start != r.end).collect();
-          let final_ranges = if !clean_ranges.is_empty() {
-            clean_ranges
+          let site_ranges: Vec<Range> = call_sites
+            .iter()
+            .filter_map(|site| {
+              caller_doc
+                .spans
+                .iter()
+                .find(|s| {
+                  s.start >= body_start
+                    && s
+                      .token
+                      .address
+                      .as_deref()
+                      .is_some_and(|a| same_address(a, site))
+                })
+                .map(|s| caller_doc.range(s))
+            })
+            .filter(|r| r.start != r.end)
+            .collect();
+          let final_ranges = if !site_ranges.is_empty() {
+            site_ranges
           } else {
             let item_name = data.get("name").and_then(Value::as_str);
             let found_ranges: Vec<Range> = caller_doc
@@ -309,7 +291,7 @@ impl Engine {
             .and_then(Value::as_str)
             .unwrap_or(&caller_entry)
             .to_owned();
-          (Range::default(), Range::default(), name, ranges)
+          (Range::default(), Range::default(), name, Vec::new())
         };
       let caller_item = CallHierarchyItem {
         name: caller_name,

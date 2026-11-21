@@ -476,42 +476,7 @@ pub(crate) async fn paginate_operation(
   }
 }
 
-/// Returns true when lowercase `lower` contains `utf` followed by an optional separator and digit.
-fn has_utf_digit(lower: &str) -> bool {
-  let bytes = lower.as_bytes();
-  let mut i = 0;
-  while i + 3 < bytes.len() {
-    if &bytes[i..i + 3] == b"utf" {
-      let next = bytes[i + 3];
-      if next.is_ascii_digit() {
-        return true;
-      }
-      if matches!(next, b'-' | b'_' | b' ') && i + 4 < bytes.len() && bytes[i + 4].is_ascii_digit()
-      {
-        return true;
-      }
-    }
-    i += 1;
-  }
-  false
-}
-
-/// Returns true when a Ghidra data-type name denotes string data.
-fn is_string_type_name(type_name: &str) -> bool {
-  let lower = type_name.to_ascii_lowercase();
-  lower.contains("string") || lower.contains("unicode") || has_utf_digit(&lower)
-}
-
-/// Returns true when a data-unit representation renders as a string literal.
-fn is_string_representation(representation: &str) -> bool {
-  representation.starts_with('"')
-    || representation.starts_with("u8\"")
-    || representation.starts_with("u\"")
-    || representation.starts_with("U\"")
-    || representation.starts_with("L\"")
-}
-
-/// Extracts scalar JSON content as a string, returning an empty string for null or composite types.
+/// Extracts scalar JSON content as a string, or returns an empty string for null or composite types.
 fn json_string_or_empty(value: Option<&Value>) -> String {
   match value {
     Some(Value::String(s)) => s.clone(),
@@ -521,15 +486,16 @@ fn json_string_or_empty(value: Option<&Value>) -> String {
   }
 }
 
-/// Paginates `listing.data_unit.list` for session `md5` and extracts defined string items.
+/// Paginates `listing.data_unit.list` with `string_only` for session `md5`.
 pub(crate) async fn defined_strings(backend: &McpBackend, md5: &str) -> Result<Value> {
   let params = json!({
+    "filter": { "string_only": true },
     "page": { "limit": 1000 },
     "scan": { "timeout_ms": 60000 }
   });
   let units = paginate_operation(backend, "listing", "data_unit.list", md5, params).await?;
   let scanned = units.len();
-  let mut items = Vec::new();
+  let mut items = Vec::with_capacity(units.len());
   for unit in &units {
     let Some(address) = unit
       .get("address")
@@ -542,13 +508,6 @@ pub(crate) async fn defined_strings(backend: &McpBackend, md5: &str) -> Result<V
       .pointer("/data_type/name")
       .and_then(Value::as_str)
       .unwrap_or("");
-    let representation = unit
-      .get("representation")
-      .and_then(Value::as_str)
-      .unwrap_or("");
-    if !is_string_type_name(type_name) && !is_string_representation(representation) {
-      continue;
-    }
     let value = json_string_or_empty(
       unit
         .get("value")

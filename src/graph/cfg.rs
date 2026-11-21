@@ -8,7 +8,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use anyhow::Result;
 use serde_json::{Value, json};
 
-use super::{BatchRequest, batch_query, format_function_label, resolve_entry};
+use super::{format_function_label, resolve_entry};
 use crate::address::{display_address, paginate_operation, parse_address, same_address};
 use crate::backend::McpBackend;
 
@@ -92,68 +92,7 @@ fn empty_control_flow(
   })
 }
 
-/// Removes instructions outside the owning function when the body span has multiple ranges.
-async fn filter_body_instructions(
-  backend: &McpBackend,
-  md5: &str,
-  entry: &str,
-  bounds: Option<&serde_json::Map<String, Value>>,
-  start: &str,
-  end: &str,
-  mut instructions: Vec<Value>,
-) -> Result<Vec<Value>> {
-  let Some(body_start) = parse_address(start, "ram") else {
-    return Ok(instructions);
-  };
-  let Some(body_end) = parse_address(end, "ram") else {
-    return Ok(instructions);
-  };
-  let Some(num_addresses) = bounds
-    .and_then(|b| b.get("num_addresses"))
-    .and_then(Value::as_u64)
-  else {
-    return Ok(instructions);
-  };
-  if body_end.offset < body_start.offset {
-    return Ok(instructions);
-  }
-  let span = u128::from(body_end.offset) - u128::from(body_start.offset) + 1;
-  if u128::from(num_addresses) == span || instructions.is_empty() {
-    return Ok(instructions);
-  }
-
-  let resolve_requests: Vec<BatchRequest> = instructions
-    .iter()
-    .enumerate()
-    .map(|(index, instr)| BatchRequest {
-      id: format!("resolve:{index}"),
-      domain: "address",
-      operation: "resolve",
-      method: "address.resolve",
-      params: json!({
-        "selector": {
-          "address": instr.get("address").and_then(Value::as_str).unwrap_or("")
-        }
-      }),
-      all: false,
-    })
-    .collect();
-  let resolved_map = batch_query(backend, md5, &resolve_requests).await?;
-  let mut filtered = Vec::with_capacity(instructions.len());
-  for (index, instr) in instructions.drain(..).enumerate() {
-    let owns = resolved_map
-      .get(&format!("resolve:{index}"))
-      .and_then(|val| val.pointer("/function/entry"))
-      .and_then(Value::as_str)
-      .is_some_and(|resolved_entry| same_address(resolved_entry, entry));
-    if owns {
-      filtered.push(instr);
-    }
-  }
-  Ok(filtered)
-}
-
-/// Output produced by partitioning instructions into basic blocks.
+/// Output produced when instructions are divided into basic blocks.
 struct PartitionResult {
   /// Sorted start instruction indexes for each basic block.
   starts: Vec<usize>,
@@ -163,11 +102,8 @@ struct PartitionResult {
   unresolved: usize,
 }
 
-/// Analyzes instruction flow and branch references to determine block leaders and edges.
-fn partition_blocks(
-  instructions: &[Value],
-  branch_refs: &HashMap<String, Value>,
-) -> PartitionResult {
+/// Analyzes instruction `flows` and `fall_through` fields to find block leaders and edges.
+fn partition_blocks(instructions: &[Value]) -> PartitionResult {
   let mut exact_index = HashMap::with_capacity(instructions.len());
   let mut canon_index = HashMap::with_capacity(instructions.len());
   for (index, instr) in instructions.iter().enumerate() {
@@ -186,21 +122,13 @@ fn partition_blocks(
     let flow = instr.get("flow_type").and_then(Value::as_str).unwrap_or("");
     let mut outgoing: Vec<(String, String)> = Vec::new();
     if flow.contains("JUMP") || flow.contains("BRANCH") {
-      if let Some(refs) = branch_refs
-        .get(&format!("ref:{index}"))
-        .and_then(|v| v.get("items"))
-        .and_then(Value::as_array)
-      {
-        for ref_item in refs {
-          let ref_type = ref_item.get("type").and_then(Value::as_str).unwrap_or("");
-          if ref_type.contains("JUMP") || ref_type.contains("BRANCH") {
-            let to = ref_item
-              .get("to")
-              .and_then(Value::as_str)
-              .unwrap_or("")
-              .to_owned();
-            outgoing.push((to, ref_type.to_owned()));
-          }
+      if let Some(flows) = instr.get("flows").and_then(Value::as_array) {
+        for to in flows
+          .iter()
+          .filter_map(Value::as_str)
+          .filter(|s| !s.is_empty())
+        {
+          outgoing.push((to.to_owned(), flow.to_owned()));
         }
       }
       if outgoing.is_empty() {
@@ -437,14 +365,19 @@ pub(crate) async fn control_flow_graph(
   address_opt: Option<&str>,
   show_template_arguments: bool,
 ) -> Result<Value> {
-  let initial_entry = resolve_entry(backend, md5, entry_opt, address_opt).await?;
+  let selector = if let Some(entry) = entry_opt.map(str::trim).filter(|s| !s.is_empty()) {
+    json!({ "entry": entry })
+  } else {
+    let resolved = resolve_entry(backend, md5, None, address_opt).await?;
+    json!({ "entry": resolved })
+  };
   let fn_val = backend
     .call(
       "function",
       "get",
       Some(md5),
       json!({
-        "selector": { "entry": initial_entry },
+        "selector": selector,
         "projection": { "fields": ["entry", "name", "namespace", "demangled_name", "body"] }
       }),
     )
@@ -453,20 +386,17 @@ pub(crate) async fn control_flow_graph(
     .get("entry")
     .and_then(Value::as_str)
     .filter(|s| !s.is_empty())
-    .unwrap_or(&initial_entry)
+    .or(entry_opt)
+    .unwrap_or("")
     .to_owned();
   let name = format_function_label(&fn_val, &entry, show_template_arguments);
 
   let bounds = fn_val.get("body").and_then(Value::as_object);
-  let start_str = bounds
+  let has_body_bounds = bounds
     .and_then(|b| b.get("start"))
     .and_then(Value::as_str)
-    .filter(|s| !s.is_empty());
-  let end_str = bounds
-    .and_then(|b| b.get("end"))
-    .and_then(Value::as_str)
-    .filter(|s| !s.is_empty());
-  let (Some(start), Some(end)) = (start_str, end_str) else {
+    .is_some_and(|s| !s.is_empty());
+  if !has_body_bounds {
     return Ok(empty_control_flow(
       md5,
       &entry,
@@ -474,18 +404,20 @@ pub(crate) async fn control_flow_graph(
       "This function has no instruction body.",
       "External functions do not have a local control-flow graph.",
     ));
-  };
+  }
 
-  let raw_instructions = paginate_operation(
+  let instructions = paginate_operation(
     backend,
     "listing",
     "instruction.list",
     md5,
-    json!({ "scan": { "range": { "start": start, "end": end }, "timeout_ms": 60000 } }),
+    json!({
+      "filter": { "function": entry },
+      "page": { "limit": 1000 },
+      "scan": { "timeout_ms": 60000 }
+    }),
   )
   .await?;
-  let instructions =
-    filter_body_instructions(backend, md5, &entry, bounds, start, end, raw_instructions).await?;
   if instructions.is_empty() {
     return Ok(empty_control_flow(
       md5,
@@ -496,30 +428,7 @@ pub(crate) async fn control_flow_graph(
     ));
   }
 
-  let branch_requests: Vec<BatchRequest> = instructions
-    .iter()
-    .enumerate()
-    .filter(|(_, instr)| {
-      let flow = instr.get("flow_type").and_then(Value::as_str).unwrap_or("");
-      flow.contains("JUMP") || flow.contains("BRANCH")
-    })
-    .map(|(index, instr)| BatchRequest {
-      id: format!("ref:{index}"),
-      domain: "reference",
-      operation: "list",
-      method: "reference.list",
-      params: json!({
-        "filter": {
-          "direction": "from",
-          "from": instr.get("address").and_then(Value::as_str).unwrap_or("")
-        }
-      }),
-      all: true,
-    })
-    .collect();
-  let branch_refs = batch_query(backend, md5, &branch_requests).await?;
-
-  let partitioned = partition_blocks(&instructions, &branch_refs);
+  let partitioned = partition_blocks(&instructions);
   let payload = build_cfg_graph_payload(
     &instructions,
     &entry,
