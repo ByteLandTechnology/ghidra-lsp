@@ -134,6 +134,7 @@ const READ: &[(&str, &str)] = &[
   ("job", "get"),
   ("job", "wait"),
   ("memory", "read"),
+  ("memory", "search"),
   ("memory_block", "get"),
   ("memory_block", "list"),
   ("program", "get"),
@@ -329,6 +330,7 @@ pub(crate) fn coverage(domain: &str, params: &Value, count: usize, complete: boo
       | "data_unit"
       | "instruction"
       | "comment"
+      | "memory"
   );
   let scope = if address_scan {
     if scoped {
@@ -409,8 +411,8 @@ pub(crate) async fn query(backend: &McpBackend, md5: Option<&str>, arg: &Value) 
   allow_read(domain, operation, &params)?;
   let all = arg.get("all").and_then(Value::as_bool).unwrap_or(false);
   ensure!(
-    !all || verb == "list",
-    "all is only valid for list operations"
+    !all || matches!(verb, "list" | "search"),
+    "all is only valid for list or search operations"
   );
   let (domain, operation) = mcp_operation(domain, operation);
   if all && session_required(domain, &operation) {
@@ -449,7 +451,7 @@ pub(crate) async fn query(backend: &McpBackend, md5: Option<&str>, arg: &Value) 
   let mut value = backend
     .call(domain, &operation, md5, params.clone())
     .await?;
-  if verb == "list"
+  if matches!(verb, "list" | "search")
     && let Some(items) = value.get("items").and_then(Value::as_array)
   {
     let complete = value.get("next_cursor").is_none_or(Value::is_null)

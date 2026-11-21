@@ -74,7 +74,19 @@ export async function callGraph(graph: CallGraph): Promise<string> {
     const layout = await layoutCalls(graph);
     const path = (edge: PlacedEdge): string => roundedOrthogonalPath(edge.points, 8);
     const functions = new Map(graph.nodes.map(node => [node.id, node.name]));
-    const edgeSvg = layout.edges.map(edge => `<g class="call-edge" tabindex="0" role="button" aria-pressed="false" aria-label="${escapeHtml(`${functions.get(edge.from)} calls ${functions.get(edge.to)}`)}" data-from="${escapeHtml(edge.from)}" data-to="${escapeHtml(edge.to)}"><path class="call-edge-hit" d="${path(edge)}"/><path class="edge" d="${path(edge)}" marker-end="url(#call-arrow)"/><title>${escapeHtml(edge.sites.length ? `Known static call sites: ${edge.sites.join(', ')}` : 'Static call relationship; call-site address not reported')}</title></g>`).join('');
+    const midpoint = (points: { x: number; y: number }[]): { x: number; y: number } => {
+        if (!points.length) { return { x: 0, y: 0 }; }
+        const mid = Math.floor(points.length / 2);
+        return points.length % 2 === 1 ? points[mid] : { x: Math.round((points[mid - 1].x + points[mid].x) / 2), y: Math.round((points[mid - 1].y + points[mid].y) / 2) };
+    };
+    const edgeSvg = layout.edges.map(edge => {
+        const formattedSites = edge.sites.map(displayAddress);
+        const siteSummary = formattedSites.length ? `Known static call sites: ${formattedSites.join(', ')}` : 'Static call relationship; call-site address not reported';
+        const badgeText = formattedSites.length === 1 ? `@ ${formattedSites[0]}` : formattedSites.length > 1 ? `@ ${formattedSites[0]} (+${formattedSites.length - 1})` : '';
+        const mid = midpoint(edge.points);
+        const badgeSvg = badgeText ? `<text class="call-edge-label" x="${mid.x}" y="${mid.y - 6}" text-anchor="middle">${escapeHtml(badgeText)}</text>` : '';
+        return `<g class="call-edge" tabindex="0" role="button" aria-pressed="false" aria-label="${escapeHtml(`${functions.get(edge.from)} calls ${functions.get(edge.to)}. ${siteSummary}`)}" data-from="${escapeHtml(edge.from)}" data-to="${escapeHtml(edge.to)}" data-sites="${escapeHtml(formattedSites.join(','))}"><path class="call-edge-hit" d="${path(edge)}"/><path class="edge" d="${path(edge)}" marker-end="url(#call-arrow)"/>${badgeSvg}<title>${escapeHtml(siteSummary)}</title></g>`;
+    }).join('');
     const nodeSvg = layout.nodes.map(node => {
         const root = node.id === graph.root;
         const relation = root ? 'Current function' : node.callerDistance && node.calleeDistance ? 'Caller / callee' : node.callerDistance ? `Caller · ${node.callerDistance} ${node.callerDistance === 1 ? 'level' : 'levels'}` : `Callee · ${node.calleeDistance} ${node.calleeDistance === 1 ? 'level' : 'levels'}`;

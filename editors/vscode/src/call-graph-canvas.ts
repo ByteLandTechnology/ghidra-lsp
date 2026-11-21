@@ -78,6 +78,7 @@ body.vscode-dark .call-page .node-branch:hover,body.vscode-dark .call-page .node
 .call-edge{cursor:pointer;outline:none}
 .call-edge-hit{fill:none;stroke:transparent;stroke-width:14;vector-effect:non-scaling-stroke;pointer-events:stroke}
 .call-canvas .call-edge .edge{pointer-events:none}
+.call-canvas .call-edge-label{fill:currentColor;font:10.5px var(--vscode-editor-font-family,ui-monospace,monospace);pointer-events:none}
 .call-canvas .call-node.edge-endpoint .call-node-body{stroke:var(--vscode-focusBorder);stroke-width:2}
 .call-page .call-canvas:focus-visible{outline:1px solid var(--vscode-focusBorder);outline-offset:-3px}
 .call-page .call-zoom{position:absolute;z-index:2;bottom:16px;right:16px;display:flex;gap:0;border:1px solid var(--vscode-panel-border);border-radius:8px;background:var(--vscode-editor-background);box-shadow:0 2px 8px var(--vscode-widget-shadow);overflow:visible}
