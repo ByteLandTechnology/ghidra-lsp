@@ -68,7 +68,7 @@ impl McpBackend {
     }
   }
 
-  /// Invokes `ghidra_<domain>` with `operation`, optional `md5`, and JSON `params`.
+  /// Invokes `ghidra_<domain>` or `ghidra_<domain>_write` with `operation`, optional `md5`, and JSON `params`.
   pub(crate) async fn call(
     &self,
     domain: &str,
@@ -113,7 +113,13 @@ impl McpBackend {
       .as_object()
       .cloned()
       .context("MCP tool arguments must be a JSON object")?;
-    let request = CallToolRequestParams::new(format!("ghidra_{domain}")).with_arguments(args_obj);
+    let read_only = is_read_only_operation(domain, operation);
+    let tool = if read_only || domain == "upload" || domain.ends_with("_write") {
+      format!("ghidra_{domain}")
+    } else {
+      format!("ghidra_{domain}_write")
+    };
+    let request = CallToolRequestParams::new(tool).with_arguments(args_obj);
     let response = tokio::time::timeout(deadline, peer.call_tool(request)).await;
     match response {
       Ok(Ok(result)) => {
@@ -160,7 +166,7 @@ impl McpBackend {
         if guard.as_ref().is_some_and(|s| s.id == session_id) {
           *guard = None;
         }
-        if is_read_only_operation(domain, operation) {
+        if read_only {
           bail!("MCP {domain}.{operation} timed out");
         }
         bail!(
@@ -174,7 +180,7 @@ impl McpBackend {
 /// Returns true when `(domain, operation)` is known to be read-only.
 fn is_read_only_operation(domain: &str, operation: &str) -> bool {
   if domain == "batch" {
-    return false;
+    return operation == "query";
   }
   let verb = operation.rsplit('.').next().unwrap_or(operation);
   matches!(

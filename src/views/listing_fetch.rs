@@ -160,7 +160,7 @@ pub(crate) async fn listing_window(
     let overlay_res = backend
       .call(
         "batch",
-        "execute",
+        "query",
         Some(&meta.md5),
         json!({
           "transaction_mode": "per_item",
@@ -282,7 +282,7 @@ pub(crate) async fn listing_window(
       let ref_res = backend
         .call(
           "batch",
-          "execute",
+          "query",
           Some(&meta.md5),
           json!({
             "transaction_mode": "per_item",

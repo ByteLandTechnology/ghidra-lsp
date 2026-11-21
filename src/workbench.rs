@@ -357,7 +357,7 @@ pub(crate) fn coverage(domain: &str, params: &Value, count: usize, complete: boo
 /// Verifies that `(domain, operation)` and any read batch items are read-only workbench queries.
 pub(crate) fn allow_read(domain: &str, operation: &str, params: &Value) -> Result<()> {
   let (domain, operation) = resource_operation(domain, operation);
-  if (domain, operation) == ("batch", "execute") {
+  if (domain, operation) == ("batch", "query") {
     let mode = params.get("transaction_mode").and_then(Value::as_str);
     ensure!(
       matches!(mode, None | Some("per_item") | Some("all_or_none")),

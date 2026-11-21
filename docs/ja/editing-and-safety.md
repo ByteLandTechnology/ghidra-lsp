@@ -32,6 +32,8 @@
 
 ### 書き込みタイムアウト時の安全ガード
 
+`McpBackend::call`（`src/backend.rs`）は読み取り専用操作（`batch.query` を含む）を `ghidra_<domain>` へ、変更操作（`batch.execute` を含む）を `ghidra_<domain>_write` へ振り分けます。読み取りタイムアウトは `"MCP <domain>.<operation> timed out"` として安全に失敗し、書き込みタイムアウトは `"MCP <domain>.<operation> timed out; a write may have completed. Refresh before retrying."` を返します。
+
 リネームパッチ送信直前に、サーバーは `pending.patched = true` を記録します（`src/engine/rename.rs`）。もしバックエンド呼び出しがタイムアウトした場合、`patched` は `true` のまま維持され、再試行前に必ずバックエンドの実際の状態を読み直します（`resolve_rename_target`）。
 
 - バックエンド側で**すでに新しい名前に変わっていた場合**: 二重パッチを避け、そのまま `program.save` による永続化と画面更新のみを完了させます。

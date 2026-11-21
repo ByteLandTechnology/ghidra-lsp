@@ -26,7 +26,7 @@
 在分布式或高负载 Ghidra 后端场景下，写操作可能在后端成功生效后才在客户端超时。`ghidra-lsp` 通过三道防线防止重复提交或覆盖状态：
 
 1. **写前标记 `patched` 标志**：`Engine::save` 在调用后端 `patch` 前即置位 `pending.patched = true`。若遇普通验证错误则清零允许修正；若捕获超时错误（消息包含 `timed out`），则保留 `patched = true`。
-2. **传输层读写区分（`src/backend.rs`）**：`McpBackend::call` 将只读查询与写操作（及 `batch`）显式区分；写操作一旦超时，立即销毁旧子进程会话并返回明确提示：`"MCP <domain>.<operation> timed out; a write may have completed. Refresh before retrying."`。
+2. **传输层读写区分（`src/backend.rs`）**：`McpBackend::call` 将只读查询（含 `batch.query`，路由至 `ghidra_<domain>`）与写操作（含 `batch.execute`，路由至 `ghidra_<domain>_write`）显式区分；写操作一旦超时，立即销毁旧子进程会话并返回明确提示：`"MCP <domain>.<operation> timed out; a write may have completed. Refresh before retrying."`。
 3. **重读后端状态后再重试**：在重新触发保存前，`resolve_rename_target` 会重新查询符号/函数真实名称；若发现后端已变为 `new_name`，则跳过重复 `patch` 并直接执行 `program.save` 持久化与文档刷新。同理，所有注释、原型与类型编辑器在收到不确定保存错误（`POST_SEND_WARNING` / `uncertain`）后会锁定提交按钮，要求先刷新或对比再继续。
 
 ---

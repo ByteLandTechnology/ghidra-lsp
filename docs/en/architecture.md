@@ -67,6 +67,6 @@ To avoid redundant decompiler runs and out-of-sync line maps, `Engine::generate_
 2. **Unified payload extraction**: That single response carries the C text, GUI line layout (`lines`), decompiler tokens, native `CodeLocation` bindings (`address`, `code_unit_address`, `token_max_address`, `exact`), and supplemental `repeatable` comments together with inline `plate`, `pre`, `eol`, and `post` comments.
 3. **Comment alignment (`src/comments.rs`)**: `comments::include` inserts supplemental repeatable comments into the buffer and shifts every following `Span` byte range before symbol resolution runs.
 4. **Legacy fallback**: Only if an older `ghidra-mcp` rejects `"format": "document"` does the server fall back to `"format": "text"` plus `"format": "tokens"` and emit a warning diagnostic requesting a `ghidra-mcp` upgrade.
-5. **Batched auxiliary reads**: Listing windows, CFGs, and call graphs batch multi-item reads through `ghidra_batch` (`batch.execute` with `transaction_mode: "per_item"`) or bounded `list_all` cursor pagination (`page.limit <= 1000`).
+5. **Batched auxiliary reads**: Listing windows, CFGs, and call graphs batch multi-item reads through `ghidra_batch` (`batch.query` with `transaction_mode: "per_item"`) or bounded `list_all` cursor pagination (`page.limit <= 1000`).
 
 Next chapter: [VS Code Guide](vscode-guide.md) or [Neovim Guide](neovim-guide.md).
