@@ -28,7 +28,7 @@ code --install-extension editors/vscode/ghidra-lsp-0.1.0.vsix
 | --- | --- | --- | --- |
 | `ghidra.sessions` | Sessions | 折りたたみ | アクティブセッション、進行中の解析タスク（`AnalysisTracker`）、最近開いたプログラムの管理 |
 | `ghidra.symbols` | Symbols | 表示 | C++ 名前空間階層で整理された関数・グローバルシンボル一覧と Program Overview 等のツールバー操作 |
-| `ghidra.strings` | Strings | 折りたたみ | デフォルトアドレス空間から抽出された定義済み文字列一覧（クリックで `ghidra-string://` を表示） |
+| `ghidra.strings` | Strings | 表示 | デフォルトアドレス空間から抽出された定義済み文字列一覧（クリックで `ghidra-string://` を表示） |
 | `ghidra.types` | Data Types | 表示 | カテゴリ別のデータ型ツリー。型の作成（`ghidraLsp.createType`）・編集（`ghidraLsp.editType`）・削除（`ghidraLsp.deleteType`）に対応 |
 
 ファイルエクスプローラ上の任意の実行ファイルを右クリックして **Ghidra: Open Binary** を選択するか、各ビューの Welcome 画面からバイナリを開くことができます。
