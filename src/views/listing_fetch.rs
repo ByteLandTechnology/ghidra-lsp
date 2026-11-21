@@ -4,18 +4,16 @@
 //! Bounded MCP batch pipeline for fetching and assembling listing windows.
 
 use std::cmp::Ordering;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use anyhow::Result;
 use serde_json::{Value, json};
 
-use super::format::{
-  canonical_key, decode_bytes_vec, extract_batch_items, opt_nonempty_str, value_str,
-};
+use super::format::{decode_bytes_vec, extract_batch_items, opt_nonempty_str, value_str};
 use super::listing_build::{ListingBuildInput, build_listing_window};
 use super::meta::get_or_load_meta;
-use super::{COLLAPSE_THRESHOLD, DEFAULT_LISTING_LIMIT, MAX_XREF_BATCH, ProgramMetaCache};
-use crate::address::{add_address_offset, compare_addresses, find_memory_block, same_address};
+use super::{COLLAPSE_THRESHOLD, DEFAULT_LISTING_LIMIT, ProgramMetaCache};
+use crate::address::{add_address_offset, compare_addresses, find_memory_block};
 use crate::backend::McpBackend;
 
 /// Parameters controlling a bounded listing window fetch.
@@ -32,27 +30,6 @@ pub(crate) struct ListingWindowRequest<'a> {
   pub(crate) show_template_arguments: bool,
   /// Whether to scan directly from `address` instead of backing up 32 bytes for context.
   pub(crate) exact_start: bool,
-}
-
-/// Checks whether an instruction mnemonic typically receives incoming cross-references.
-fn is_xref_target_mnemonic(mnemonic: &str) -> bool {
-  let upper = mnemonic.to_ascii_uppercase();
-  upper.starts_with("CALL")
-    || upper.starts_with('J')
-    || upper.starts_with('B')
-    || upper.starts_with("RET")
-    || upper.starts_with("ADR")
-    || upper.starts_with("LEA")
-}
-
-/// Checks whether an instruction mnemonic typically originates outgoing references.
-fn is_xref_source_mnemonic(mnemonic: &str) -> bool {
-  let upper = mnemonic.to_ascii_uppercase();
-  upper.starts_with("CALL")
-    || upper.starts_with('J')
-    || upper.starts_with('B')
-    || upper.starts_with("MOV")
-    || upper.starts_with("LEA")
 }
 
 /// Fetches a bounded listing window with overlay symbols, comments, and cross-references.
@@ -166,11 +143,6 @@ pub(crate) async fn listing_window(
           "transaction_mode": "per_item",
           "items": [
             {
-              "id": "dataUnits",
-              "method": "data_unit.list",
-              "arguments": { "page": { "limit": 400 }, "scan": { "range": range, "timeout_ms": 15000 } }
-            },
-            {
               "id": "symbols",
               "method": "symbol.list",
               "arguments": { "page": { "limit": 500 }, "scan": { "range": range, "timeout_ms": 15000 } }
@@ -184,6 +156,24 @@ pub(crate) async fn listing_window(
               "id": "comments",
               "method": "comment.list",
               "arguments": { "page": { "limit": 500 }, "scan": { "range": range, "timeout_ms": 15000 } }
+            },
+            {
+              "id": "inRefs",
+              "method": "reference.list",
+              "arguments": {
+                "filter": { "direction": "to" },
+                "page": { "limit": 1000 },
+                "scan": { "range": range, "timeout_ms": 15000 }
+              }
+            },
+            {
+              "id": "outRefs",
+              "method": "reference.list",
+              "arguments": {
+                "filter": { "direction": "from" },
+                "page": { "limit": 1000 },
+                "scan": { "range": range, "timeout_ms": 15000 }
+              }
             }
           ]
         }),
@@ -199,122 +189,30 @@ pub(crate) async fn listing_window(
         .cloned()
         .unwrap_or_default()
     };
-    let data_units = extract_array("dataUnits");
     let symbols = extract_array("symbols");
     let functions = extract_array("functions");
     let comments = extract_array("comments");
-
-    let mut target_set = HashSet::new();
-    for sym in &symbols {
-      let addr = value_str(&sym["address"]);
-      if !addr.is_empty() {
-        target_set.insert(canonical_key(&addr, &meta.default_space));
-      }
-    }
-    for f in &functions {
-      let entry = value_str(&f["entry"]);
-      if !entry.is_empty() {
-        target_set.insert(canonical_key(&entry, &meta.default_space));
-      }
-    }
-    for unit in &units {
-      let addr = value_str(&unit["address"]);
-      if addr.is_empty() {
-        continue;
-      }
-      if unit.get("kind").and_then(Value::as_str) == Some("instruction")
-        && is_xref_target_mnemonic(&value_str(&unit["mnemonic"]))
-      {
-        target_set.insert(canonical_key(&addr, &meta.default_space));
-      }
-    }
-
-    let mut xref_addresses = Vec::new();
-    let mut seen_raw = HashSet::new();
-    let mut push_addr = |raw: String| {
-      if raw.is_empty() || xref_addresses.len() >= MAX_XREF_BATCH {
-        return;
-      }
-      let key = canonical_key(&raw, &meta.default_space);
-      if seen_raw.insert(key) {
-        xref_addresses.push(raw);
-      }
-    };
-    for f in &functions {
-      push_addr(value_str(&f["entry"]));
-    }
-    for sym in &symbols {
-      push_addr(value_str(&sym["address"]));
-    }
-    for unit in &units {
-      if unit.get("kind").and_then(Value::as_str) == Some("instruction")
-        && is_xref_source_mnemonic(&value_str(&unit["mnemonic"]))
-      {
-        push_addr(value_str(&unit["address"]));
-      }
-    }
-
-    let mut ref_requests = Vec::new();
-    for (idx, addr) in xref_addresses.iter().enumerate() {
-      if target_set.contains(&canonical_key(addr, &meta.default_space)) {
-        ref_requests.push(json!({
-          "id": format!("in:{idx}"),
-          "method": "reference.list",
-          "arguments": { "filter": { "direction": "to", "to": addr }, "page": { "limit": 25 } }
-        }));
-      }
-      let has_insn = units.iter().any(|u| {
-        u.get("kind").and_then(Value::as_str) == Some("instruction")
-          && same_address(&value_str(&u["address"]), addr)
-      });
-      if has_insn {
-        ref_requests.push(json!({
-          "id": format!("out:{idx}"),
-          "method": "reference.list",
-          "arguments": { "filter": { "direction": "from", "from": addr }, "page": { "limit": 10 } }
-        }));
-      }
-    }
+    let in_refs = extract_array("inRefs");
+    let out_refs = extract_array("outRefs");
 
     let mut incoming_refs: HashMap<String, Vec<Value>> = HashMap::new();
+    for item in in_refs {
+      let to = value_str(&item["to"]);
+      if !to.is_empty() {
+        incoming_refs.entry(to).or_default().push(item);
+      }
+    }
+
     let mut outgoing_refs: HashMap<String, Vec<Value>> = HashMap::new();
-    if !ref_requests.is_empty() {
-      let ref_res = backend
-        .call(
-          "batch",
-          "execute",
-          Some(&meta.md5),
-          json!({
-            "transaction_mode": "per_item",
-            "items": ref_requests,
-          }),
-        )
-        .await
-        .unwrap_or_else(|_| json!({}));
-      let ref_map = extract_batch_items(&ref_res);
-      for (idx, addr) in xref_addresses.into_iter().enumerate() {
-        if let Some(items) = ref_map
-          .get(&format!("in:{idx}"))
-          .and_then(|v| v.get("items"))
-          .and_then(Value::as_array)
-          .filter(|a| !a.is_empty())
-        {
-          incoming_refs.insert(addr.clone(), items.clone());
-        }
-        if let Some(items) = ref_map
-          .get(&format!("out:{idx}"))
-          .and_then(|v| v.get("items"))
-          .and_then(Value::as_array)
-          .filter(|a| !a.is_empty())
-        {
-          outgoing_refs.insert(addr, items.clone());
-        }
+    for item in out_refs {
+      let from = value_str(&item["from"]);
+      if !from.is_empty() {
+        outgoing_refs.entry(from).or_default().push(item);
       }
     }
 
     build_listing_window(ListingBuildInput {
       units,
-      data_units,
       symbols,
       functions,
       demangled_functions,
@@ -329,7 +227,6 @@ pub(crate) async fn listing_window(
   } else {
     build_listing_window(ListingBuildInput {
       units: Vec::new(),
-      data_units: Vec::new(),
       symbols: Vec::new(),
       functions: Vec::new(),
       demangled_functions,
