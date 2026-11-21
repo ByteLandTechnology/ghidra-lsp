@@ -89,11 +89,19 @@ export class StringFiles implements vscode.TextDocumentContentProvider, vscode.C
         }
     }
 
-    /** Load decoded string text from `global_variable.get` for a `ghidra-string://` document. */
+    /** Load decoded string text from `string.list` for a `ghidra-string://` document. */
     async provideTextDocumentContent(uri: vscode.Uri): Promise<string> {
         if (this.context.isClosing(uri.authority)) { throw vscode.FileSystemError.FileNotFound(uri); }
         const address = stringAddress(uri);
         this.entries.set(uri.toString(), this.entries.get(uri.toString()) || { address });
+        const listed = await this.call<{ items?: Data[] }>('ghidra.query', {
+            md5: uri.authority,
+            domain: 'string',
+            operation: 'list',
+            params: { scan: { range: { start: address, end: address } }, page: { limit: 1 } },
+        });
+        const first = listed.items?.[0];
+        if (first && typeof first.value === 'string') { return first.value; }
         const data = await this.call<Data>('ghidra.query', { md5: uri.authority, domain: 'global_variable', operation: 'get', params: { selector: { address } } });
         const value = data.value ?? data.representation;
         if (typeof value !== 'string') { throw new Error(`No defined string at ${address}`); }

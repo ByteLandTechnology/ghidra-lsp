@@ -45,7 +45,7 @@ When `ghidraLsp.serverPath` (`"ghidra-lsp"`) and `ghidraLsp.mcpCommand` (`"ghidr
 - **Sidebar views (`Ghidra` Activity Bar container)**:
   - **Sessions** (`ghidra.sessions`, collapsed by default): Open sessions, recent/stale programs, and background import or analysis tasks.
   - **Symbols** (`ghidra.symbols`): Functions, namespace-grouped symbols, and quick-start welcome actions.
-  - **Strings** (`ghidra.strings`, collapsed by default): Defined strings across the active program.
+  - **Strings** (`ghidra.strings`): Defined strings across the active program.
   - **Data Types** (`ghidra.types`): Category hierarchy for project data types.
 - **Custom editors**:
   - **Ghidra Control Flow** (`ghidra.analysisControlFlow` on `ghidra-listing:/listing/*`): Interactive basic-block CFG webview sharing tabs with Listing and Bytes views.

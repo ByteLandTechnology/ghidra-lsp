@@ -986,8 +986,7 @@
         },
         {
           "id": "ghidra.strings",
-          "name": "Strings",
-          "visibility": "collapsed"
+          "name": "Strings"
         },
         {
           "id": "ghidra.types",

@@ -51,7 +51,7 @@ code --install-extension editors/vscode/ghidra-lsp-0.1.0.vsix
 | --- | --- | --- | --- |
 | `ghidra.sessions` | **Sessions** | 默认折叠 | 列出当前活跃会话与后台打开/分析任务，支持切换会话、查看任务进度与触发重分析或关闭。 |
 | `ghidra.symbols` | **Symbols** | 默认展开 | 按 C++ 命名空间折叠分组展示函数与全局符号；未打开程序时提供 **Open Binary**、**Open Recent Program** 与 **Select an open session** 欢迎入口。 |
-| `ghidra.strings` | **Strings** | 默认折叠 | 浏览 Ghidra 已定义字符串；点击可在只读 `ghidra-string://` 标签页中以精确纯文本查看内容并通过 `Shift+F12` 或 CodeLens 查找交叉引用。 |
+| `ghidra.strings` | **Strings** | 默认展开 | 浏览 Ghidra 已定义字符串；点击可在只读 `ghidra-string://` 标签页中以精确纯文本查看内容并通过 `Shift+F12` 或 CodeLens 查找交叉引用。 |
 | `ghidra.types` | **Data Types** | 默认展开 | 按分类目录浏览项目数据类型，支持新建、编辑、删除与应用数据类型。 |
 
 扩展同时注册了 2 个自定义编辑器（绑定在 `package.json` 的 `customEditors` 上，支持通过 **Ghidra: Switch Analysis View…** 在不同视图模式间切换）：
