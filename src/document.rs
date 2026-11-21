@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Value, json};
 use tower_lsp_server::ls_types::{Position, Range, TextEdit, Uri};
 
 /// Display flag that controls whether full C++ template arguments appear in text.
@@ -337,8 +337,11 @@ pub(crate) fn resolve(spans: &mut [Span], symbols: &[Symbol], locals: &HashSet<S
   let resolved: Vec<Option<Symbol>> = spans
     .iter()
     .map(|s| {
-      // Native function tokens carry the GUI target, including C++ overloads.
-      if s.location.is_some() && s.token.kind == "function" && s.symbol.is_some() {
+      // Native GUI tokens carry the target symbol for functions, parameters, and locals.
+      if s.location.is_some()
+        && matches!(s.token.kind.as_str(), "function" | "variable" | "parameter")
+        && s.symbol.is_some()
+      {
         return s.symbol.clone();
       }
       if !matches!(
@@ -413,20 +416,103 @@ pub(crate) fn resolve(spans: &mut [Span], symbols: &[Symbol], locals: &HashSet<S
   }
 }
 
-/// Resolves variable and parameter spans when `locals` contains a unique matching name.
-pub(crate) fn resolve_locals(spans: &mut [Span], locals: &[Symbol]) {
+/// Structured binding metadata for a function parameter or local variable symbol.
+pub(crate) struct LocalBinding {
+  /// Canonical LSP symbol entry for the parameter or local variable.
+  pub(crate) symbol: Symbol,
+  /// Zero-based parameter ordinal when `symbol` is a parameter.
+  pub(crate) ordinal: Option<u64>,
+  /// Raw storage serialization or register name when known.
+  pub(crate) storage: Option<String>,
+}
+
+/// Resolves variable and parameter spans from native GUI symbol tags or unique local names.
+pub(crate) fn resolve_locals(code: &str, spans: &mut [Span], locals: &[LocalBinding]) {
   for span in spans {
     if !matches!(span.token.kind.as_str(), "variable" | "parameter") {
       continue;
     }
-    let mut candidates = locals.iter().filter(|s| s.name == span.token.text);
+    if is_field_access(code, span.start) {
+      span.symbol = None;
+      continue;
+    }
+    if let Some(raw) = span.symbol.as_ref() {
+      if let Some(ord_text) = raw.id.strip_prefix("parameter:")
+        && let Ok(ord) = ord_text.parse::<u64>()
+        && let Some(bound) = locals.iter().find(|b| b.ordinal == Some(ord))
+      {
+        span.symbol = Some(bound.symbol.clone());
+        continue;
+      }
+      if let Some(rest) = raw.id.strip_prefix("local:")
+        && let Some((_, storage_ser)) = rest.split_once(':')
+        && let Some(bound) = locals
+          .iter()
+          .find(|b| {
+            b.symbol.kind == "Local"
+              && b.storage.as_deref() == Some(storage_ser)
+              && b.symbol.name == raw.name
+          })
+          .or_else(|| {
+            locals
+              .iter()
+              .find(|b| b.symbol.kind == "Local" && b.storage.as_deref() == Some(storage_ser))
+          })
+      {
+        span.symbol = Some(bound.symbol.clone());
+        continue;
+      }
+    }
+    let mut candidates = locals.iter().filter(|b| b.symbol.name == span.token.text);
     let candidate = candidates.next();
     span.symbol = if candidates.next().is_none() {
-      candidate.cloned()
+      candidate.map(|b| b.symbol.clone())
     } else {
       None
     };
   }
+}
+
+/// Returns true when `code` immediately before `span_start` ends with `.` or `->`.
+pub(crate) fn is_field_access(code: &str, span_start: usize) -> bool {
+  let before = code.get(..span_start).unwrap_or("").trim_end();
+  before.ends_with('.') || before.ends_with("->")
+}
+
+/// Formats variable storage JSON returned by `ghidra-mcp` into display text.
+pub(crate) fn format_storage_value(value: Option<&Value>) -> String {
+  let Some(value) = value.filter(|v| !v.is_null()) else {
+    return String::new();
+  };
+  if let Some(s) = value.as_str() {
+    return s.to_owned();
+  }
+  if let Some(obj) = value.as_object() {
+    let mut parts = Vec::new();
+    if let Some(r) = obj.get("register").and_then(Value::as_str) {
+      parts.push(r.to_owned());
+    }
+    if let Some(off) = obj.get("stack_offset").and_then(Value::as_i64) {
+      parts.push(format!("stack {off:+#x}"));
+    }
+    if !parts.is_empty() {
+      return parts.join(", ");
+    }
+    if let Some(ser) = obj.get("serialization").and_then(Value::as_str) {
+      return ser.to_owned();
+    }
+  }
+  value.to_string()
+}
+
+/// Converts a backend storage value into a valid `selector.storage` wire object when present.
+pub(crate) fn storage_selector(value: Option<&Value>) -> Option<Value> {
+  let value = value.filter(|v| !v.is_null())?;
+  if value.is_object() && value.get("kind").and_then(Value::as_str).is_some() {
+    return Some(value.clone());
+  }
+  let text = value.as_str().map(str::trim).filter(|s| !s.is_empty())?;
+  Some(json!({ "kind": "serialization", "serialization": text }))
 }
 
 /// Formats a structured or string Ghidra data type reference into C-style text.

@@ -11,6 +11,7 @@ use serde_json::{Value, json};
 use super::CONFLICT_FORM;
 use crate::address::{format_type_ref, parse_type_ref};
 use crate::backend::McpBackend;
+use crate::document::{format_storage_value, storage_selector};
 use crate::workbench;
 
 /// Formats the `data_type` field of a parameter or local variable JSON entry.
@@ -62,7 +63,7 @@ pub(crate) async fn function_prototype(
         "ordinal": param.get("ordinal").and_then(Value::as_u64).unwrap_or(index as u64),
         "name": param.get("name").and_then(Value::as_str).unwrap_or(""),
         "type": format_variable_type(param),
-        "storage": param.get("storage").and_then(Value::as_str).unwrap_or(""),
+        "storage": format_storage_value(param.get("storage")),
       })
     })
     .collect();
@@ -75,7 +76,7 @@ pub(crate) async fn function_prototype(
       json!({
         "name": local.get("name").and_then(Value::as_str).unwrap_or(""),
         "type": format_variable_type(local),
-        "storage": local.get("storage").and_then(Value::as_str).unwrap_or(""),
+        "storage": format_storage_value(local.get("storage")),
       })
     })
     .collect();
@@ -192,13 +193,22 @@ fn resolve_indexed_identity(
   {
     return Ok(Some(pos));
   }
-  if !match_by_ordinal
-    && let Some(orig_name) = row.get("originalName").and_then(Value::as_str)
-    && let Some(pos) = originals
+  if !match_by_ordinal && let Some(orig_name) = row.get("originalName").and_then(Value::as_str) {
+    let row_storage = format_storage_value(row.get("storage"));
+    if !row_storage.is_empty()
+      && let Some(pos) = originals.iter().position(|l| {
+        l.get("name").and_then(Value::as_str) == Some(orig_name)
+          && format_storage_value(l.get("storage")) == row_storage
+      })
+    {
+      return Ok(Some(pos));
+    }
+    if let Some(pos) = originals
       .iter()
       .position(|l| l.get("name").and_then(Value::as_str) == Some(orig_name))
-  {
-    return Ok(Some(pos));
+    {
+      return Ok(Some(pos));
+    }
   }
   if allow_fallback_index && row_index < originals.len() {
     return Ok(Some(row_index));
@@ -405,10 +415,14 @@ fn compile_variables_ops(entry: &str, original: &Value, payload: &Value) -> Resu
       if name == prev_name && data_type == previous["data_type"] {
         continue;
       }
+      let mut selector = json!({ "entry": entry, "name": prev_name });
+      if let Some(storage) = storage_selector(previous.get("storage")) {
+        selector["storage"] = storage;
+      }
       ops.push(json!({
         "method": "function_local_variable.patch",
         "arguments": {
-          "selector": { "entry": entry, "name": prev_name },
+          "selector": selector,
           "patch": { "name": name, "data_type": data_type }
         }
       }));
