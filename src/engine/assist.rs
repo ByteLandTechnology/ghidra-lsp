@@ -305,6 +305,44 @@ impl Engine {
     } else if let Some(symbol) = &span.symbol {
       if let Some(detail) = self.local_detail(symbol) {
         detail["data_type"].clone()
+      } else if symbol.local() {
+        let cached = self
+          .functions
+          .get(&(md5.clone(), symbol.address.clone()))
+          .cloned();
+        let function = match cached {
+          Some(f) => f,
+          None => {
+            self
+              .backend
+              .call(
+                "function",
+                "get",
+                Some(&md5),
+                json!({"selector": {"entry": symbol.address}}),
+              )
+              .await?
+          }
+        };
+        let key = if symbol.kind == "Parameter" {
+          "parameters"
+        } else {
+          "local_variables"
+        };
+        let Some(dt) = function
+          .get(key)
+          .and_then(Value::as_array)
+          .and_then(|items| {
+            items
+              .iter()
+              .find(|v| v.get("name").and_then(Value::as_str) == Some(&symbol.name))
+          })
+          .and_then(|v| v.get("data_type"))
+          .cloned()
+        else {
+          return Ok(None);
+        };
+        dt
       } else if symbol.kind.eq_ignore_ascii_case("function") {
         self
           .backend
@@ -340,6 +378,7 @@ impl Engine {
       reference = match reference.get("kind").and_then(Value::as_str) {
         Some("pointer") => reference["target"].clone(),
         Some("array") => reference["element"].clone(),
+        Some("untyped_pointer") => json!({"kind": "named", "name": "/pointer"}),
         _ => break,
       };
     }

@@ -15,7 +15,7 @@ use tower_lsp_server::ls_types::{
 use super::{Engine, Pending, Refresh};
 use crate::document::{
   Document, Span, Symbol, apply_edits, canonical_virtual_uri, matches_text, position, same_address,
-  valid_name,
+  storage_selector, valid_name,
 };
 
 impl Engine {
@@ -483,7 +483,18 @@ impl Engine {
       .and_then(Value::as_array)
       .and_then(|vars| {
         expected_storage
-          .and_then(|st| vars.iter().find(|v| v.get("storage") == Some(st)))
+          .and_then(|st| {
+            vars
+              .iter()
+              .find(|v| {
+                v.get("storage") == Some(st)
+                  && v
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .is_some_and(|n| n == pending.symbol.name || n == pending.new_name)
+              })
+              .or_else(|| vars.iter().find(|v| v.get("storage") == Some(st)))
+          })
           .or_else(|| {
             vars.iter().find(|v| {
               let n = v.get("name").and_then(Value::as_str);
@@ -500,11 +511,13 @@ impl Engine {
     } else {
       pending.symbol.name.as_str()
     };
-    (
-      "function_local_variable",
-      json!({"entry": pending.symbol.address, "name": selector_name}),
-      current_name,
-    )
+    let mut selector = json!({"entry": pending.symbol.address, "name": selector_name});
+    if let Some(storage) =
+      storage_selector(matched.and_then(|v| v.get("storage")).or(expected_storage))
+    {
+      selector["storage"] = storage;
+    }
+    ("function_local_variable", selector, current_name)
   }
 
   /// Resolves a synthetic label symbol ID and live name by address or name query.

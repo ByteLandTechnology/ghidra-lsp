@@ -23,8 +23,9 @@ use tower_lsp_server::ls_types::Uri;
 
 use crate::backend::{McpBackend, list_all};
 use crate::document::{
-  Document, Symbol, Token, align, canonical_virtual_uri, data_type_name, extract_label_address,
-  is_label_token, resolve, resolve_locals, same_address, virtual_uri,
+  Document, LocalBinding, Symbol, Token, align, canonical_virtual_uri, data_type_name,
+  extract_label_address, format_storage_value, is_field_access, is_label_token, resolve,
+  resolve_locals, same_address, virtual_uri,
 };
 
 /// Finds a function symbol by address first and by name or qualified name second.
@@ -287,9 +288,13 @@ impl Engine {
           serde_json::from_value(tokens.get("tokens").context("missing tokens")?.clone())?;
         align(&doc.base, tokens)?
       };
-      let function = function
-        .as_ref()
-        .map_err(|error| anyhow::anyhow!("{error:#}"))?;
+      let function = merge_decompilation_locals(
+        function
+          .as_ref()
+          .map_err(|error| anyhow::anyhow!("{error:#}"))?,
+        &text,
+      );
+      let has_native_locals = native.is_some() && text.get("local_variables").is_some();
       let locals: HashSet<String> = ["parameters", "local_variables"]
         .iter()
         .flat_map(|key| {
@@ -322,38 +327,47 @@ impl Engine {
           if name.is_empty() {
             continue;
           }
-          let identity = if kind == "Parameter" {
-            let Some(ordinal) = variable.get("ordinal").and_then(Value::as_u64) else {
-              continue;
-            };
-            json!({"ordinal": ordinal})
-          } else if let Some(storage) = variable.get("storage").filter(|s| !s.is_null()) {
+          let ordinal = (kind == "Parameter")
+            .then(|| variable.get("ordinal").and_then(Value::as_u64))
+            .flatten();
+          if kind == "Parameter" && ordinal.is_none() {
+            continue;
+          }
+          let storage_val = variable.get("storage").filter(|s| !s.is_null());
+          let identity = if let Some(ord) = ordinal {
+            json!({"ordinal": ord})
+          } else if let Some(storage) = storage_val {
             json!({"storage": storage, "name": name})
           } else {
             json!({"name": name})
           };
-          let id = format!(
-            "{kind}:{md5}:{}:{identity}",
-            doc.entry.as_deref().unwrap_or(entry)
-          );
+          let id = format!("{kind}:{md5}:{entry_str}:{identity}");
           let mut detail = variable.clone();
-          detail["entry"] = json!(doc.entry.as_deref().unwrap_or(entry));
+          detail["entry"] = json!(entry_str);
           detail["kind"] = json!(kind);
           self.local_details.insert(id.clone(), detail);
-          local_symbols.push(Symbol {
-            demangled_name: None,
-            id,
-            name: name.into(),
-            address: doc.entry.clone().unwrap_or_else(|| entry.into()),
-            namespace: String::new(),
-            kind: kind.into(),
+          let storage_text = format_storage_value(storage_val);
+          local_symbols.push(LocalBinding {
+            symbol: Symbol {
+              demangled_name: None,
+              id,
+              name: name.into(),
+              address: entry_str.to_owned(),
+              namespace: String::new(),
+              kind: kind.into(),
+            },
+            ordinal,
+            storage: (!storage_text.is_empty()).then_some(storage_text),
           });
         }
       }
-      resolve_locals(&mut spans, &local_symbols);
+      resolve_locals(&doc.base, &mut spans, &local_symbols);
       for span in &mut spans {
-        if span.symbol.is_none() && matches!(span.token.kind.as_str(), "variable" | "parameter") {
-          let entry_str = doc.entry.as_deref().unwrap_or(entry);
+        if span.symbol.is_none()
+          && !has_native_locals
+          && matches!(span.token.kind.as_str(), "variable" | "parameter")
+          && !is_field_access(&doc.base, span.start)
+        {
           let kind = if span.token.kind == "parameter" {
             "Parameter"
           } else {
@@ -417,7 +431,7 @@ impl Engine {
           md5.into(),
           doc.entry.clone().unwrap_or_else(|| entry.into()),
         ),
-        function.clone(),
+        function,
       );
       Ok::<_, anyhow::Error>(spans)
     }
@@ -711,6 +725,42 @@ fn append_warning(doc: &mut Document, message: &str) {
     || message.into(),
     |previous| format!("{previous}; {message}"),
   ));
+}
+
+/// Merges `local_variables` from `decompilation` into `function` without duplicating entries.
+fn merge_decompilation_locals(function: &Value, decompilation: &Value) -> Value {
+  let mut merged = function.clone();
+  let Some(extra) = decompilation
+    .get("local_variables")
+    .and_then(Value::as_array)
+  else {
+    return merged;
+  };
+  let mut locals = merged
+    .get("local_variables")
+    .and_then(Value::as_array)
+    .cloned()
+    .unwrap_or_default();
+  let mut seen: HashSet<(String, String)> = locals
+    .iter()
+    .filter_map(|v| {
+      Some((
+        v.get("name")?.as_str()?.to_owned(),
+        format_storage_value(v.get("storage")),
+      ))
+    })
+    .collect();
+  for item in extra {
+    let Some(name) = item.get("name").and_then(Value::as_str) else {
+      continue;
+    };
+    let key = (name.to_owned(), format_storage_value(item.get("storage")));
+    if seen.insert(key) {
+      locals.push(item.clone());
+    }
+  }
+  merged["local_variables"] = Value::Array(locals);
+  merged
 }
 
 /// Returns true when an error indicates `ghidra-mcp` does not support document decompile format.
