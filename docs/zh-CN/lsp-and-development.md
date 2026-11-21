@@ -53,7 +53,7 @@
 | `ghidra.beginReanalyze` | `{"md5?", "analyzers?"}` | 启动异步重分析作业并返回轮询 `token` |
 | `ghidra.reanalyze` | `{"md5?", "analyzers?", "wait?"}` | 触发重分析，可选等待完成（默认 `true`）、持久化并刷新打开文档 |
 | `ghidra.closeSession` | `{"md5?", "force?"}` | 关闭干净的会话（拒绝存在待决重命名或未保存改动的会话）并清理缓存 |
-| `ghidra.cancelJob` | `{}` | 返回明确指引：已安装的 `ghidra-mcp` 仅暴露 `job.get`/`job.wait` 而无 `job.cancel` |
+| `ghidra.cancelJob` | `{"token?" \| "jobId?", "md5?", "wait?", "timeoutMs?"}` | 通过 `job.cancel` 或 `analysis.cancel` 取消正在运行的分析作业，记录 `job.error` 并发送 `ghidra/changed` |
 
 ### 程序目录与虚拟文档
 
