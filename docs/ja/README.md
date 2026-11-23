@@ -69,7 +69,7 @@ cargo build --locked --release
 cargo xtask ci
 ```
 
-リリース時には [CI ワークフロー](../../.github/workflows/ci.yml) が `release-please` によるバージョン同期、6 プラットフォームのバイナリ生成、GitHub Release への公開、および GitHub OIDC Trusted Publishing を用いた 6 つのプラットフォームパッケージと `@ghidra-lsp/cli` の npm 公開を実行します。
+リリース時には [CI ワークフロー](../../.github/workflows/ci.yml) が `release-please` による Rust・npm・VS Code 拡張機能のバージョン同期、6 プラットフォームのバイナリと VS Code `.vsix` パッケージの生成、GitHub Release への公開、GitHub OIDC Trusted Publishing を用いた 6 つのプラットフォームパッケージと `@ghidra-lsp/cli` の npm 公開および Visual Studio Marketplace への公開（`OVSX_PAT` 設定時は Open VSX への公開を含む）を実行します。
 
 CLI オプションの概要は次のとおりです（詳細は [クイックスタート](getting-started.md) を参照してください）。
 

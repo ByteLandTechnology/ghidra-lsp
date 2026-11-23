@@ -103,10 +103,10 @@ Start with [Getting Started](docs/en/getting-started.md), or open a chapter dire
 - `editors/nvim/`: Neovim client plugin (`plugin/ghidra-lsp.lua` and `lua/ghidra-lsp/`).
 - `docs/`: Trilingual documentation (`en`, `zh-CN`, `ja`) and SVG assets.
 
-## Releases and npm publishing
+## Releases and publishing
 
-The [CI workflow](.github/workflows/ci.yml) uses `release-please` to keep `Cargo.toml`, `xtask/Cargo.toml`, and `npm/cli/package.json` synchronized, builds release executables for six targets (`darwin-arm64`, `darwin-x64`, `linux-arm64`, `linux-x64`, `win32-arm64`, `win32-x64`), attaches binaries and license notices to the GitHub Release, and publishes the six platform packages followed by `@ghidra-lsp/cli` to npm using GitHub OIDC trusted publishing.
-Each of the seven `@ghidra-lsp/*` npm packages must have a trusted publisher configured for `ByteLandTechnology/ghidra-lsp` and `ci.yml`.
+The [CI workflow](.github/workflows/ci.yml) uses `release-please` to keep `Cargo.toml`, `xtask/Cargo.toml`, `npm/cli/package.json`, `editors/vscode/package.json`, and `editors/vscode/package-lock.json` synchronized. It builds release executables for six targets (`darwin-arm64`, `darwin-x64`, `linux-arm64`, `linux-x64`, `win32-arm64`, `win32-x64`), packages the VS Code `.vsix` extension, and attaches those artifacts and license notices to the GitHub Release. It then publishes the six platform packages and `@ghidra-lsp/cli` to npm, publishes the VS Code extension to Visual Studio Marketplace with GitHub OIDC trusted publishing, and publishes to Open VSX when `OVSX_PAT` is set.
+Each of the seven `@ghidra-lsp/*` npm packages and the Visual Studio Marketplace publisher `byteland-app` must have a trusted publisher configured for `ByteLandTechnology/ghidra-lsp` and `ci.yml`.
 
 ## License
 

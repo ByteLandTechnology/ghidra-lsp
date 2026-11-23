@@ -109,7 +109,7 @@ npm --prefix editors/vscode run package
 2. 通过命令行或 VS Code UI 安装生成的 `.vsix` 包：
 
 ```sh
-code --install-extension editors/vscode/ghidra-lsp-0.1.0.vsix
+code --install-extension editors/vscode/ghidra-lsp-<version>.vsix
 ```
 
 3. 配置 `settings.json`（若 `ghidra-lsp` 或 `ghidra-mcp` 不在系统默认 `PATH` 中，请填写绝对路径；若希望手动确认每次重命名与类型保存，请关闭自动保存）：

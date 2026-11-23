@@ -2,7 +2,7 @@
   "name": "ghidra-lsp",
   "displayName": "Ghidra LSP",
   "description": "Browse and rename Ghidra symbols through ghidra-mcp",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "publisher": "byteland-app",
   "license": "MIT",
   "icon": "resources/icon.png",
