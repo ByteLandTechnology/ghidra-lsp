@@ -20,10 +20,10 @@ export const controlFlowStyles = `
 .flow-canvas.panning,.flow-canvas.panning .graph-node{cursor:grabbing}
 .flow-canvas svg{display:block;width:100%;height:100%;overflow:hidden;user-select:none}
 .flow-canvas .graph-node{outline:none;box-shadow:none;background:none}
-.flow-canvas .graph-node .block-body{fill:var(--vscode-editor-background);stroke:var(--vscode-editorWidget-border,var(--vscode-panel-border));stroke-width:1.2}
+.flow-canvas .graph-node .block-body{fill:var(--vscode-editor-background);stroke:var(--vscode-contrastBorder,var(--vscode-editorWidget-border,var(--hc-surface-border)));stroke-width:1.2}
 .flow-canvas .graph-node .block-header{fill:var(--vscode-editor-inactiveSelectionBackground,var(--vscode-list-inactiveSelectionBackground));stroke:none}
-.flow-canvas .graph-node.selected .block-body,.flow-canvas .graph-node:focus-visible .block-body{stroke:var(--vscode-focusBorder);stroke-width:2.5}
-.flow-canvas .graph-node:hover .block-body,.flow-canvas .graph-node.search-match .block-body{stroke:var(--vscode-focusBorder);stroke-width:2}
+.flow-canvas .graph-node.selected .block-body,.flow-canvas .graph-node:focus-visible .block-body{stroke:var(--hc-focus-border);stroke-width:2.5}
+.flow-canvas .graph-node:hover .block-body,.flow-canvas .graph-node.search-match .block-body{stroke:var(--hc-focus-border);stroke-width:2}
 .flow-canvas .node-title{font:600 13px var(--vscode-editor-font-family,monospace);font-variant-numeric:tabular-nums}
 .flow-canvas .node-subtitle{font-size:11px;fill:var(--vscode-descriptionForeground)}
 .flow-canvas .cfg-entry-badge{font-size:11px;font-weight:600;fill:var(--vscode-textLink-foreground,var(--vscode-focusBorder))}
@@ -32,13 +32,18 @@ export const controlFlowStyles = `
 .flow-page .taken{color:var(--vscode-charts-green,#5fa77f)}
 .flow-page .fallthrough{color:var(--vscode-charts-red,#e47777)}
 .flow-page .flow{color:var(--vscode-charts-blue,#64a8eb)}
-.flow-canvas .edge{stroke:currentColor;stroke-width:1.6;stroke-linejoin:round;fill:none}
-.flow-canvas .backward .edge{stroke-dasharray:5 3}
+.flow-canvas .edge{stroke:currentColor;stroke-width:1.4;stroke-linejoin:round;fill:none}
+.flow-canvas .cfg-edge.taken:not(.backward) .edge{stroke-dasharray:8 3;stroke-width:2}
+.flow-canvas .cfg-edge.fallthrough:not(.backward) .edge{stroke-dasharray:3 3;stroke-width:1.6}
+.flow-canvas .cfg-edge.flow:not(.backward) .edge{stroke-dasharray:none;stroke-width:1.4}
+.flow-canvas .backward .edge{stroke-dasharray:5 3;stroke-width:1.8}
 .flow-canvas .cfg-edge.dimmed{opacity:.55}
 .flow-canvas .cfg-edge.connected .edge{stroke-width:2.5}
-#cfg-arrow-taken path{fill:var(--vscode-charts-green,#5fa77f)}
-#cfg-arrow-fallthrough path{fill:var(--vscode-charts-red,#e47777)}
-#cfg-arrow-flow path{fill:var(--vscode-charts-blue,#64a8eb)}
+#cfg-arrow-taken path{fill:var(--vscode-charts-green,#5fa77f);fill:context-stroke}
+#cfg-arrow-fallthrough path{fill:var(--vscode-charts-red,#e47777);fill:context-stroke}
+#cfg-arrow-flow path{fill:var(--vscode-charts-blue,#64a8eb);fill:context-stroke}
+@media(prefers-contrast:more){.flow-canvas .graph-node .block-body{stroke:var(--hc-surface-border)}.flow-page .cfg-edge{opacity:1!important}}
+@media(forced-colors:active){.flow-page .flow-canvas .graph-node .block-body{fill:Canvas;stroke:CanvasText;stroke-width:1.5}.flow-page .flow-canvas .graph-node .block-header,.flow-page .flow-canvas .graph-node.selected .block-header{fill:Canvas;stroke:CanvasText;stroke-width:1}.flow-page .flow-canvas .graph-node.selected .block-body,.flow-page .flow-canvas .graph-node:focus-visible .block-body{stroke:Highlight;stroke-width:2.5}.flow-page .flow-canvas .graph-node:hover .block-body,.flow-page .flow-canvas .graph-node.search-match .block-body,.flow-page .graph-node.edge-endpoint .block-body{stroke:Highlight;stroke-width:2}.flow-page .flow-canvas .graph-node text,.flow-page .flow-canvas .graph-node tspan{fill:CanvasText}.flow-page .taken,.flow-page .fallthrough,.flow-page .flow{color:CanvasText}.flow-page .cfg-edge{opacity:1!important}.flow-page .cfg-edge.is-hovered,.flow-page .cfg-edge.is-active,.flow-page .cfg-edge:focus-visible{color:Highlight}#cfg-arrow-taken path,#cfg-arrow-fallthrough path,#cfg-arrow-flow path{fill:CanvasText;fill:context-stroke}}
 `;
 
 /** Runs inside the existing nonce-protected page and uses its persisted view state. */

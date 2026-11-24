@@ -8,6 +8,10 @@ export const pageStyles = `${syntaxStyles}
 html{scrollbar-color:var(--vscode-scrollbarSlider-background) var(--vscode-editor-background)}
 body.vscode-dark,body.vscode-high-contrast{color-scheme:dark}
 body.vscode-light,body.vscode-high-contrast-light{color-scheme:light}
+:root,body{--hc-border:transparent;--hc-surface-border:var(--vscode-contrastBorder,var(--vscode-panel-border));--hc-active-border:transparent;--hc-focus-border:var(--vscode-contrastActiveBorder,var(--vscode-focusBorder,Highlight))}
+.vscode-high-contrast,.vscode-high-contrast-light,body.vscode-high-contrast,body.vscode-high-contrast-light{--hc-border:var(--vscode-contrastBorder,var(--vscode-foreground,ButtonText));--hc-surface-border:var(--vscode-contrastBorder,var(--vscode-foreground,CanvasText));--hc-active-border:var(--vscode-contrastActiveBorder,var(--vscode-focusBorder,Highlight));--hc-focus-border:var(--vscode-contrastActiveBorder,var(--vscode-focusBorder,Highlight))}
+@media(prefers-contrast:more){:root,body{--hc-border:var(--vscode-contrastBorder,var(--vscode-foreground,ButtonText));--hc-surface-border:var(--vscode-contrastBorder,var(--vscode-foreground,CanvasText));--hc-active-border:var(--vscode-contrastActiveBorder,var(--vscode-foreground,Highlight));--hc-focus-border:var(--vscode-contrastActiveBorder,var(--vscode-foreground,Highlight))}}
+@media(forced-colors:active){:root,body,.vscode-high-contrast,.vscode-high-contrast-light,body.vscode-high-contrast,body.vscode-high-contrast-light{--hc-border:ButtonText;--hc-surface-border:CanvasText;--hc-active-border:Highlight;--hc-focus-border:Highlight}}
 ::selection{background:var(--vscode-editor-selectionBackground);color:var(--vscode-editor-selectionForeground,var(--vscode-foreground))}
 body{margin:0;color:var(--vscode-foreground);background:var(--vscode-editor-background);font:var(--vscode-font-size,13px)/1.5 var(--vscode-font-family)}
 main{max-width:1160px;margin:0 auto;padding:24px 28px 40px;min-width:0}
@@ -22,7 +26,7 @@ p{margin:8px 0;overflow-wrap:anywhere}
 section{margin:20px 0;padding-top:16px;border-top:1px solid var(--vscode-panel-border);min-width:0}
 .toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:0 0 16px;min-width:0}
 .toolbar>*{max-width:100%}
-button{font:inherit;line-height:1.4;min-height:28px;padding:4px 10px;border:1px solid var(--vscode-contrastBorder,var(--vscode-button-border,var(--vscode-panel-border)));border-radius:2px;cursor:pointer;color:var(--vscode-button-secondaryForeground,var(--vscode-foreground));background:var(--vscode-button-secondaryBackground,var(--vscode-input-background))}
+button{font:inherit;line-height:1.4;min-height:28px;padding:4px 10px;border:1px solid var(--vscode-contrastBorder,var(--vscode-button-border,var(--hc-surface-border)));border-radius:2px;cursor:pointer;color:var(--vscode-button-secondaryForeground,var(--vscode-foreground));background:var(--vscode-button-secondaryBackground,var(--vscode-input-background))}
 button:hover:enabled{background:var(--vscode-button-secondaryHoverBackground,var(--vscode-list-hoverBackground))}
 button.primary{color:var(--vscode-button-foreground,var(--vscode-foreground));background:var(--vscode-button-background,var(--vscode-editor-background))}
 button.primary:hover:enabled{background:var(--vscode-button-hoverBackground,var(--vscode-list-hoverBackground))}
@@ -30,22 +34,27 @@ button:disabled{opacity:.5;cursor:default}
 button.link{min-height:0;padding:0;border:0;background:transparent;color:var(--vscode-textLink-foreground);text-align:left;text-decoration:underline;text-underline-offset:3px;overflow-wrap:anywhere}
 button.link:hover{color:var(--vscode-textLink-activeForeground);background:transparent}
 button.danger{color:var(--vscode-errorForeground)}
-input,select,textarea{font:inherit;border:1px solid var(--vscode-input-border,transparent);border-radius:2px;color:var(--vscode-input-foreground);background:var(--vscode-input-background);padding:5px 8px;min-width:0;max-width:100%}
+button:not(.node-branch)[aria-pressed="true"],button:not(.node-branch)[aria-expanded="true"]{outline:2px solid var(--hc-active-border);outline-offset:-2px}
+.vscode-high-contrast button:not(.node-branch)[aria-pressed="true"],.vscode-high-contrast-light button:not(.node-branch)[aria-pressed="true"],.vscode-high-contrast button:not(.node-branch)[aria-expanded="true"],.vscode-high-contrast-light button:not(.node-branch)[aria-expanded="true"]{border-color:var(--hc-active-border)}
+input,select,textarea{font:inherit;border:1px solid var(--vscode-input-border,var(--hc-border));border-radius:2px;color:var(--vscode-input-foreground);background:var(--vscode-input-background);padding:5px 8px;min-width:0;max-width:100%}
+body:is(.vscode-high-contrast,.vscode-high-contrast-light) :is(input,select,textarea){border-color:var(--hc-border)}
+@media(prefers-contrast:more){button:not(.node-branch)[aria-pressed="true"],button:not(.node-branch)[aria-expanded="true"]{border-color:var(--hc-active-border)}input,select,textarea{border-color:var(--hc-border)}}
 input,textarea{caret-color:var(--vscode-editorCursor-foreground,var(--vscode-foreground))}
 input::placeholder,textarea::placeholder{color:var(--vscode-input-placeholderForeground);opacity:1}
 input:disabled,select:disabled,textarea:disabled{opacity:.6;cursor:default}
 input:read-only{color:var(--vscode-descriptionForeground)}
 textarea{min-height:88px;resize:vertical}
-:focus-visible{outline:2px solid var(--vscode-focusBorder);outline-offset:2px}
-input:focus,select:focus,textarea:focus{outline:1px solid var(--vscode-focusBorder);outline-offset:0}
-.table-wrap{max-width:100%;overflow:auto;border:1px solid var(--vscode-panel-border);border-radius:2px}
+:focus-visible{outline:2px solid var(--hc-focus-border);outline-offset:2px}
+input:focus,select:focus,textarea:focus{outline:1px solid var(--hc-focus-border);outline-offset:0}
+.table-wrap{max-width:100%;overflow:auto;border:1px solid var(--hc-surface-border);border-radius:2px}
 table{width:100%;border-collapse:collapse;text-align:left;font-size:inherit;font-variant-numeric:tabular-nums}
 th,td{padding:7px 10px;border-bottom:1px solid var(--vscode-panel-border);vertical-align:top}
 th{font-size:12px;font-weight:600;color:var(--vscode-descriptionForeground);background:var(--vscode-editor-background)}
 td{overflow-wrap:anywhere}
 tr:last-child td{border-bottom:0}
 tbody tr:hover{background:var(--vscode-list-hoverBackground)}
-.selected{background:var(--vscode-list-inactiveSelectionBackground);color:var(--vscode-list-inactiveSelectionForeground,var(--vscode-foreground));box-shadow:inset 2px 0 var(--vscode-focusBorder)}
+.selected{background:var(--vscode-list-inactiveSelectionBackground);color:var(--vscode-list-inactiveSelectionForeground,var(--vscode-foreground));box-shadow:inset 2px 0 var(--vscode-focusBorder);outline:2px solid var(--hc-active-border);outline-offset:-2px}
+@media(forced-colors:active){button:not(.link):not(.node-branch){border-color:ButtonText}input,select,textarea{border-color:ButtonText;background:Field;color:FieldText}button:not(.node-branch)[aria-pressed="true"],button:not(.node-branch)[aria-expanded="true"]{forced-color-adjust:none;transition:none!important;background:Highlight!important;color:HighlightText!important;border-color:Highlight!important;outline:2px solid Highlight;outline-offset:-2px}button:not(.node-branch)[aria-pressed="true"] *,button:not(.node-branch)[aria-expanded="true"] *{color:inherit!important}button:not(.node-branch)[aria-pressed="true"]:focus-visible,button:not(.node-branch)[aria-expanded="true"]:focus-visible{outline-offset:2px}.selected{outline:2px solid Highlight;outline-offset:-2px}}
 dl{margin:0}
 dl>div{display:grid;grid-template-columns:150px minmax(0,1fr);gap:16px;padding:6px 0;border-bottom:1px solid var(--vscode-panel-border)}
 dl>div:last-child{border:0}

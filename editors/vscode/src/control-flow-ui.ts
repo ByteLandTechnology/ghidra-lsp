@@ -21,9 +21,9 @@ export const controlFlowUiStyles = `
 .cfg-heading{display:flex;align-items:center;gap:10px;flex:1;min-width:0}.cfg-identity{display:flex;flex-direction:column;gap:1px;min-width:0}
 .cfg-page .cfg-heading h1{font-size:13px;line-height:1.25;font-weight:600;color:var(--cfg-ink)}
 .cfg-function-name{font-size:11px;line-height:1.25;font-weight:400;color:var(--cfg-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
-.cfg-page .cfg-icon-button{display:flex;align-items:center;justify-content:center;flex-shrink:0;width:32px;height:32px;min-height:0;padding:6px;border:0;border-radius:6px;background:transparent;color:var(--vscode-foreground);cursor:pointer}
+.cfg-page .cfg-icon-button{display:flex;align-items:center;justify-content:center;flex-shrink:0;width:32px;height:32px;min-height:0;padding:5px;border:1px solid var(--hc-border);border-radius:6px;background:transparent;color:var(--vscode-foreground);cursor:pointer}
 .cfg-page button:hover{background:var(--vscode-toolbar-hoverBackground,var(--vscode-list-hoverBackground))}
-.cfg-page .cfg-topbar [aria-pressed="true"],.cfg-page .cfg-topbar [aria-expanded="true"]{background:var(--vscode-toolbar-activeBackground,var(--vscode-list-hoverBackground));color:var(--vscode-focusBorder)}
+.cfg-page .cfg-topbar [aria-pressed="true"],.cfg-page .cfg-topbar [aria-expanded="true"]{background:var(--vscode-toolbar-activeBackground,var(--vscode-list-hoverBackground));color:var(--vscode-focusBorder);outline:2px solid var(--hc-active-border);outline-offset:-2px}
 .cfg-search{flex:0 1 230px;min-width:0}
 .cfg-page .cfg-search input{width:100%;height:32px;min-width:0;border-radius:6px}
 .cfg-page .flow-canvas:focus-visible{outline:1px solid var(--vscode-focusBorder);outline-offset:-1px}
@@ -31,30 +31,30 @@ export const controlFlowUiStyles = `
 .cfg-page .scope{position:absolute;bottom:19px;left:16px;z-index:2;max-width:calc(100% - 180px);margin:0;padding:3px 6px;background:var(--vscode-editor-background);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none}
 .cfg-page #filter-status{position:absolute;top:60px;left:16px;z-index:2;padding:3px 6px;background:var(--vscode-editor-background);font-size:11px}
 .cfg-page [hidden]{display:none!important}
-.cfg-page .cfg-zoom{position:absolute;bottom:16px;right:16px;z-index:2;display:flex;gap:0;border:1px solid var(--vscode-panel-border);border-radius:8px;background:var(--vscode-editor-background);box-shadow:0 2px 8px var(--vscode-widget-shadow)}
-.cfg-page .cfg-zoom button{height:32px;min-width:32px;min-height:0;padding:5px 8px;border:0;border-radius:0;background:transparent;color:var(--vscode-foreground)}
-.cfg-page .cfg-zoom #graph-zoom{min-width:52px;font-size:12px;font-variant-numeric:tabular-nums;border-inline:1px solid var(--vscode-panel-border)}
+.cfg-page .cfg-zoom{position:absolute;bottom:16px;right:16px;z-index:2;display:flex;gap:0;border:1px solid var(--hc-surface-border);border-radius:8px;background:var(--vscode-editor-background);box-shadow:0 2px 8px var(--vscode-widget-shadow)}
+.cfg-page .cfg-zoom button{height:32px;min-width:32px;min-height:0;padding:4px 7px;border:1px solid var(--hc-border);border-radius:0;background:transparent;color:var(--vscode-foreground)}
+.cfg-page .cfg-zoom #graph-zoom{min-width:52px;font-size:12px;font-variant-numeric:tabular-nums;border-inline:1px solid var(--hc-surface-border)}
 .cfg-page .cfg-zoom button:first-child{border-radius:7px 0 0 7px}.cfg-page .cfg-zoom button:last-child{border-radius:0 7px 7px 0}
 .cfg-page .cfg-edge{cursor:pointer;outline:none;transition:opacity 120ms ease}
 .cfg-edge-hit{fill:none;stroke:transparent;stroke-width:14;vector-effect:non-scaling-stroke;pointer-events:stroke}
-.cfg-page .cfg-edge .edge{pointer-events:none;vector-effect:non-scaling-stroke;stroke-width:1.3}
+.cfg-page .cfg-edge .edge{pointer-events:none;vector-effect:non-scaling-stroke}
 .cfg-page .cfg-edge.dimmed{opacity:.4}
 .cfg-page .cfg-edge.connected{opacity:.9}
-.cfg-page .cfg-edge.connected .edge{stroke-width:1.8}
+.cfg-page .cfg-edge.connected .edge{stroke-width:2.3}
 .cfg-page .cfg-edge.is-hovered,.cfg-page .cfg-edge.is-active,.cfg-page .cfg-edge:focus-visible{opacity:1!important}
-.cfg-page .cfg-edge.is-hovered .edge{stroke-width:2.5}
+.cfg-page .cfg-edge.is-hovered .edge{stroke-width:2.6}
 .cfg-page .cfg-edge.is-active .edge,.cfg-page .cfg-edge:focus-visible .edge{stroke-width:3}
 .cfg-page .flow-canvas.is-tracing .cfg-edge:not(.is-hovered):not(.is-active){opacity:.25}
-.cfg-page .graph-node.edge-endpoint .block-body{stroke:var(--vscode-focusBorder);stroke-width:2}
-.cfg-page .flow-canvas .block-body{stroke-width:1;vector-effect:non-scaling-stroke}
+.cfg-page .graph-node.edge-endpoint .block-body{stroke:var(--hc-focus-border);stroke-width:2}
+.cfg-page .flow-canvas .block-body{stroke-width:1.2;vector-effect:non-scaling-stroke}
 .cfg-page .flow-canvas .block-header{fill:color-mix(in srgb,var(--cfg-ink) 7%,var(--cfg-ground))}
 .cfg-page .flow-canvas .tok-mnemonic{font-weight:500}
 .cfg-page .flow-canvas .node-title{font-weight:500}
 .cfg-page .flow-canvas .graph-node.selected .block-header{fill:color-mix(in srgb,var(--vscode-focusBorder) 10%,var(--vscode-editor-background))}
-.cfg-overview{position:absolute;right:16px;bottom:58px;z-index:2;width:160px;padding:0;margin:0;border:1px solid var(--vscode-editorWidget-border,var(--vscode-panel-border));border-radius:8px;background:var(--vscode-editor-background);box-shadow:0 2px 8px var(--vscode-widget-shadow);overflow:hidden}
+.cfg-overview{position:absolute;right:16px;bottom:58px;z-index:2;width:160px;padding:0;margin:0;border:1px solid var(--vscode-contrastBorder,var(--vscode-editorWidget-border,var(--hc-surface-border)));border-radius:8px;background:var(--vscode-editor-background);box-shadow:0 2px 8px var(--vscode-widget-shadow);overflow:hidden}
 .cfg-page .cfg-overview summary{touch-action:none;user-select:none;cursor:grab;display:flex;align-items:center;gap:6px;margin:0;padding:6px 8px;font-size:11px;font-weight:500;list-style:none}
 .cfg-overview summary::-webkit-details-marker{display:none}
-.cfg-overview summary .call-icon{font-size:13px}.cfg-page .cfg-overview-close{display:inline-flex;align-items:center;justify-content:center;margin-left:auto;width:24px;height:24px;min-height:0;padding:4px;border:0;border-radius:4px;background:transparent;color:var(--vscode-foreground);cursor:pointer}
+.cfg-overview summary .call-icon{font-size:13px}.cfg-page .cfg-overview-close{display:inline-flex;align-items:center;justify-content:center;margin-left:auto;width:24px;height:24px;min-height:0;padding:3px;border:1px solid var(--hc-border);border-radius:4px;background:transparent;color:var(--vscode-foreground);cursor:pointer}
 .cfg-overview summary:active{cursor:grabbing}
 .cfg-page .cfg-overview svg{display:block;height:110px;border-top:1px solid var(--cfg-rule);background:var(--cfg-surface);cursor:crosshair}
 .cfg-overview path{fill:none;stroke:var(--vscode-descriptionForeground);stroke-width:2}
@@ -62,10 +62,13 @@ export const controlFlowUiStyles = `
 .cfg-overview .cfg-map-selected{fill:var(--vscode-focusBorder)}
 .cfg-overview #cfg-overview-window{fill:var(--vscode-focusBorder);fill-opacity:.12;stroke:var(--vscode-focusBorder);stroke-width:1;vector-effect:non-scaling-stroke;pointer-events:none}
 .cfg-page .empty{margin:auto;padding:24px;color:var(--vscode-descriptionForeground)}
-.cfg-page button:focus-visible,.cfg-page summary:focus-visible,.cfg-page .cfg-overview-close:focus-visible,.cfg-page #cfg-overview-map:focus-visible{outline:2px solid var(--cfg-focus);outline-offset:-2px}.cfg-page button:disabled{opacity:.5;cursor:not-allowed}
+.cfg-page button:focus-visible,.cfg-page summary:focus-visible,.cfg-page .cfg-overview-close:focus-visible,.cfg-page #cfg-overview-map:focus-visible{outline:2px solid var(--hc-focus-border);outline-offset:-2px}.cfg-page button:disabled{opacity:.5;cursor:not-allowed}
+.cfg-page button[aria-pressed="true"]:focus-visible,.cfg-page button[aria-expanded="true"]:focus-visible{outline-offset:2px}
 .cfg-page button,.cfg-page summary{transition:background-color 120ms ease,color 120ms ease}
 @media(prefers-reduced-motion:reduce){.cfg-page *{animation:none!important;transition:none!important}}
 .vscode-high-contrast .cfg-edge,.vscode-high-contrast-light .cfg-edge{opacity:1!important}
+body:is(.vscode-high-contrast,.vscode-high-contrast-light).cfg-page .cfg-topbar :is([aria-pressed="true"],[aria-expanded="true"]){color:var(--vscode-foreground)}
+@media(prefers-contrast:more){.cfg-page .cfg-topbar :is([aria-pressed="true"],[aria-expanded="true"]){color:var(--vscode-foreground)}}
 @media(max-width:640px){.cfg-topbar{min-height:48px;padding:8px 10px;gap:3px}.cfg-heading{gap:6px}.cfg-page .cfg-heading h1{font-size:12px}.cfg-function-name{font-size:11px}.cfg-search{position:absolute;top:52px;left:10px;right:10px;z-index:4;background:var(--vscode-editor-background)}.cfg-page .scope{left:10px;bottom:15px;font-size:10px}.cfg-page .cfg-zoom{right:10px;bottom:12px}.cfg-overview{width:130px;right:10px;bottom:54px}.cfg-page .cfg-overview svg{height:90px}}
 `;
 

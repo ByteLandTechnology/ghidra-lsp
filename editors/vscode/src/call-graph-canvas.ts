@@ -8,14 +8,14 @@ export const callGraphStyles = `
 .call-page .call-topbar{display:flex;align-items:center;gap:10px;min-height:56px;padding:10px 20px;border-bottom:1px solid var(--vscode-panel-border);flex-shrink:0}
 .call-page .call-topbar h1{font-size:14px;letter-spacing:.01em;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin:0}
 .call-page .call-topbar .call-function-title{display:flex;align-items:center}
-.call-page .call-topbar #call-function-picker{display:flex;align-items:center;gap:8px;max-width:100%;min-width:0;padding:4px 6px;margin-left:-6px;border:0;border-radius:3px;color:inherit;font:inherit;letter-spacing:inherit;text-align:left}
+.call-page .call-topbar #call-function-picker{display:flex;align-items:center;gap:8px;max-width:100%;min-width:0;padding:3px 5px;margin-left:-6px;border:1px solid var(--hc-border);border-radius:3px;color:inherit;font:inherit;letter-spacing:inherit;text-align:left}
 .call-function-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .call-function-title .call-icon:first-child{color:var(--vscode-descriptionForeground)}
 .call-function-title .call-icon:last-child{font-size:12px;color:var(--vscode-descriptionForeground)}
 .call-icon{font:16px call-icons;display:inline-block;line-height:1;vertical-align:middle}
-.call-page .call-icon-button,.call-page #call-menu>summary{width:32px;height:32px;padding:7px;border:0;background:transparent;text-align:center;cursor:pointer;flex-shrink:0}
-.call-page .call-topbar button{background:transparent;border:1px solid var(--vscode-panel-border);height:32px}
-.call-page .call-topbar .call-icon-button{border:0}
+.call-page .call-icon-button,.call-page #call-menu>summary{width:32px;height:32px;padding:6px;border:1px solid var(--hc-border);border-radius:3px;background:transparent;text-align:center;cursor:pointer;flex-shrink:0}
+.call-page .call-topbar button{background:transparent;border:1px solid var(--hc-surface-border);height:32px}
+.call-page .call-topbar .call-icon-button{border:1px solid var(--hc-border)}
 .call-page button:hover,.call-page #call-menu>summary:hover{background:var(--vscode-toolbar-hoverBackground,var(--vscode-list-hoverBackground))}
 .call-page #call-menu{margin:0;border:0;padding:0;flex-shrink:0}
 .call-page #call-menu>summary{list-style:none;display:block;margin:0}
@@ -25,10 +25,10 @@ export const callGraphStyles = `
 .call-page .selection-tools{display:flex;flex-direction:column;gap:4px;margin:0;padding:4px 0 8px;border-bottom:1px solid var(--vscode-panel-border)}
 .call-page #selection-label{display:flex;flex-direction:column;font-size:12px;line-height:1.6;padding:2px 8px 8px;overflow-wrap:anywhere;color:var(--vscode-descriptionForeground)}
 .call-page .selection-buttons{display:flex;flex-direction:column;gap:2px;width:100%}
-.call-page .selection-buttons button,.call-page .call-controls button{display:flex;align-items:center;gap:10px;width:100%;border:0;text-align:left;padding:6px 8px;min-height:32px;border-radius:3px;font-size:13px;font-weight:400;background:transparent;color:inherit}
+.call-page .selection-buttons button,.call-page .call-controls button{display:flex;align-items:center;gap:10px;width:100%;border:1px solid var(--hc-border);text-align:left;padding:5px 7px;min-height:32px;border-radius:3px;font-size:13px;font-weight:400;background:transparent;color:inherit}
 .call-page .selection-buttons button.primary{background:transparent;color:inherit}
 .call-page .selection-buttons button:hover,.call-page .call-controls button:hover{background:var(--vscode-menu-selectionBackground,var(--vscode-list-hoverBackground));color:var(--vscode-menu-selectionForeground,var(--vscode-foreground))}
-.call-page #more-summary{font-size:13px;background:transparent;color:inherit;border:0;padding:6px 8px;min-height:32px}
+.call-page #more-summary{font-size:13px;background:transparent;color:inherit;border:1px solid var(--hc-border);padding:5px 7px;min-height:32px}
 .call-page .more-actions[open]>summary{margin-bottom:4px}
 .call-page #selection-label strong{font-size:13px;font-weight:600;color:var(--vscode-foreground)}
 .call-page #selection-label>span{font:11px var(--vscode-editor-font-family,monospace)}
@@ -37,13 +37,13 @@ export const callGraphStyles = `
 .call-menu-footer{border-top:1px solid var(--vscode-panel-border);margin-top:6px;padding-top:6px}
 .call-page .call-controls label>span{display:flex;gap:10px;align-items:center}
 .call-page .call-controls select{min-width:100px}
-.call-page .call-topbar [aria-pressed="true"],.call-page .call-topbar [aria-expanded="true"]{color:var(--vscode-focusBorder);background:var(--vscode-toolbar-activeBackground,var(--vscode-list-hoverBackground))}
+.call-page .call-topbar [aria-pressed="true"],.call-page .call-topbar [aria-expanded="true"]{color:var(--vscode-focusBorder);background:var(--vscode-toolbar-activeBackground,var(--vscode-list-hoverBackground));outline:2px solid var(--hc-active-border);outline-offset:-2px}
 .call-page .call-controls{display:flex;flex-direction:column;gap:2px;padding-top:8px;font-size:13px}
 .call-page .call-controls label{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:5px 8px}
 .call-page .call-controls button{text-align:left}
 .call-page .call-icon-row,.call-page .selection-buttons{flex-direction:row;flex-wrap:wrap;align-items:center;gap:2px;padding:4px}
-.call-page .call-icon-row button,.call-page .selection-buttons button{width:32px;min-width:32px;justify-content:center;padding:6px}
-.call-page .call-icon-row [aria-pressed="true"]{color:var(--vscode-focusBorder);background:var(--vscode-toolbar-activeBackground,var(--vscode-list-hoverBackground))}
+.call-page .call-icon-row button,.call-page .selection-buttons button{width:32px;min-width:32px;justify-content:center;padding:5px}
+.call-page .call-icon-row [aria-pressed="true"]{color:var(--vscode-focusBorder);background:var(--vscode-toolbar-activeBackground,var(--vscode-list-hoverBackground));outline:2px solid var(--hc-active-border);outline-offset:-2px}
 .call-divider{width:1px;align-self:stretch;margin:6px 3px;background:var(--vscode-panel-border)}
 .call-page .call-search{flex:0 1 240px;min-width:0}
 .call-page .call-search input{width:100%;height:32px;border-radius:3px}
@@ -55,11 +55,11 @@ export const callGraphStyles = `
 .call-node:hover .call-node-controls,.call-node:focus-within .call-node-controls{opacity:1;pointer-events:auto}
 .node-control-content{display:flex;align-items:center;justify-content:center;width:100%;height:100%;font:12px var(--vscode-font-family);color:var(--vscode-foreground);cursor:default}
 .call-node-controls .call-icon{font-size:16px;flex-shrink:0}
-.call-page .node-decompile{display:flex;align-items:center;justify-content:center;width:28px;height:28px;min-height:0;padding:3px;background:transparent;border:0;border-radius:3px;color:var(--vscode-descriptionForeground)}
+.call-page .node-decompile{display:flex;align-items:center;justify-content:center;width:28px;height:28px;min-height:0;padding:2px;background:transparent;border:1px solid var(--hc-border);border-radius:3px;color:var(--vscode-descriptionForeground)}
 .call-node:hover .node-decompile,.call-node:focus-within .node-decompile{color:var(--vscode-foreground)}
 .call-node .node-decompile:hover{background:var(--vscode-list-hoverBackground)}
 .call-node.is-root .node-decompile{color:var(--vscode-list-activeSelectionForeground,var(--vscode-foreground))}
-.call-page .node-branch{display:inline-flex;align-items:center;justify-content:center;width:52px;height:12px;min-height:0;padding:0;border:0;border-radius:6px;background:transparent;color:color-mix(in srgb,var(--vscode-foreground) 32%,transparent);box-shadow:none;cursor:pointer;box-sizing:border-box;transition:color 150ms ease,transform 100ms ease-out}
+.call-page .node-branch{display:inline-flex;align-items:center;justify-content:center;width:52px;height:12px;min-height:0;padding:0;border:1px solid var(--hc-border);border-radius:6px;background:transparent;color:color-mix(in srgb,var(--vscode-foreground) 32%,transparent);box-shadow:none;cursor:pointer;box-sizing:border-box;transition:color 150ms ease,transform 100ms ease-out}
 .call-node.is-root .node-branch{color:color-mix(in srgb,var(--vscode-list-activeSelectionForeground,var(--vscode-foreground)) 36%,transparent)}
 .call-page .node-branch[aria-expanded="true"]{color:color-mix(in srgb,var(--vscode-focusBorder) 55%,transparent)}
 .call-node.is-root .node-branch[aria-expanded="true"]{color:color-mix(in srgb,var(--vscode-list-activeSelectionForeground,var(--vscode-foreground)) 38%,transparent)}
@@ -80,18 +80,18 @@ body.vscode-dark .call-page .node-branch:hover,body.vscode-dark .call-page .node
 .call-canvas .call-edge .edge{pointer-events:none}
 .call-canvas .call-node.edge-endpoint .call-node-body{stroke:var(--vscode-focusBorder);stroke-width:2}
 .call-page .call-canvas:focus-visible{outline:1px solid var(--vscode-focusBorder);outline-offset:-3px}
-.call-page .call-zoom{position:absolute;z-index:2;bottom:16px;right:16px;display:flex;gap:0;border:1px solid var(--vscode-panel-border);border-radius:8px;background:var(--vscode-editor-background);box-shadow:0 2px 8px var(--vscode-widget-shadow);overflow:visible}
-.call-page .call-zoom button{height:32px;background:transparent;border:0;border-radius:0;min-width:32px}
-.call-page .call-zoom #graph-zoom{font-size:12px;border-inline:1px solid var(--vscode-panel-border);font-variant-numeric:tabular-nums;min-width:52px}
+.call-page .call-zoom{position:absolute;z-index:2;bottom:16px;right:16px;display:flex;gap:0;border:1px solid var(--hc-surface-border);border-radius:8px;background:var(--vscode-editor-background);box-shadow:0 2px 8px var(--vscode-widget-shadow);overflow:visible}
+.call-page .call-zoom button{height:32px;background:transparent;border:1px solid var(--hc-border);border-radius:0;min-width:32px}
+.call-page .call-zoom #graph-zoom{font-size:12px;border-inline:1px solid var(--hc-surface-border);font-variant-numeric:tabular-nums;min-width:52px}
 .call-page .call-zoom button:first-child{border-radius:7px 0 0 7px}
 .call-page .call-zoom button:last-child{border-radius:0 7px 7px 0}
 .call-page .scope,.call-page #filter-status{position:absolute;z-index:2;top:58px;left:20px;margin:0;font-size:11px;background:var(--vscode-editor-background)}
 .call-page:has([data-call-columns]) #filter-status{top:104px}
 .call-page .scope{top:80px;color:var(--vscode-descriptionForeground)}
 .call-page [hidden]{display:none!important}
-.call-canvas .call-node-body{fill:var(--vscode-editor-background);stroke:var(--vscode-editorWidget-border,var(--vscode-panel-border));stroke-width:1;vector-effect:non-scaling-stroke;transition:stroke-width 120ms ease}
-.call-canvas .is-root .call-node-body{fill:var(--vscode-list-activeSelectionBackground);stroke:var(--vscode-focusBorder);stroke-width:2}
-.call-canvas .call-node.selected .call-node-body,.call-canvas .call-node:focus-visible .call-node-body{stroke:var(--vscode-focusBorder);stroke-width:2}
+.call-canvas .call-node-body{fill:var(--vscode-editor-background);stroke:var(--vscode-contrastBorder,var(--vscode-editorWidget-border,var(--hc-surface-border)));stroke-width:1;vector-effect:non-scaling-stroke;transition:stroke-width 120ms ease}
+.call-canvas .is-root .call-node-body{fill:var(--vscode-list-activeSelectionBackground,var(--vscode-editor-background));stroke:var(--hc-focus-border);stroke-width:2}
+.call-canvas .call-node.selected .call-node-body,.call-canvas .call-node:focus-visible .call-node-body{stroke:var(--hc-focus-border);stroke-width:2}
 .call-canvas .call-node .node-title{font:500 14px var(--vscode-font-family);fill:var(--vscode-foreground)}
 .call-canvas .is-root .node-title{font-size:15px;font-weight:600}
 .call-canvas .is-root .call-root-address{font:500 11.5px var(--vscode-editor-font-family,monospace);font-variant-numeric:tabular-nums;opacity:.85}
@@ -126,8 +126,14 @@ body.vscode-dark .call-page .node-branch:hover,body.vscode-dark .call-page .node
 .call-page button,.call-page summary{transition:background-color 120ms ease,color 120ms ease}
 @keyframes call-reveal{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:translateY(0)}}
 @media(prefers-reduced-motion:reduce){.call-page *{animation:none!important;transition:none!important}}
-.vscode-high-contrast .call-canvas .call-edge,.vscode-high-contrast-light .call-canvas .call-edge{opacity:1!important}
-@media(forced-colors:active){.call-canvas .call-node-body{stroke:CanvasText}.call-canvas .is-root .call-node-body{fill:Highlight;stroke:Highlight}.call-canvas .call-node.selected .call-node-body,.call-canvas .call-node:focus-visible .call-node-body{stroke:Highlight}.call-canvas .call-edge{color:CanvasText}.call-page .call-menu-content,.call-page .call-zoom{border-color:CanvasText}.call-page .node-branch{color:ButtonText}}
+body:is(.vscode-high-contrast,.vscode-high-contrast-light) .call-canvas .call-edge{opacity:1!important}
+body:is(.vscode-high-contrast,.vscode-high-contrast-light) .call-node .call-node-controls{opacity:1;pointer-events:auto}
+body:is(.vscode-high-contrast,.vscode-high-contrast-light).call-page :is(.node-decompile,.node-branch),body:is(.vscode-high-contrast,.vscode-high-contrast-light).call-page :is(.node-decompile,.node-branch):is(:hover,:focus-visible){color:var(--vscode-foreground)}
+body:is(.vscode-high-contrast,.vscode-high-contrast-light).call-page .node-branch[aria-expanded="true"],body:is(.vscode-high-contrast,.vscode-high-contrast-light).call-page .node-branch[aria-expanded="true"]:is(:hover,:focus-visible){color:var(--hc-active-border);border-color:var(--hc-active-border);outline:2px solid var(--hc-active-border);outline-offset:-2px}
+body:is(.vscode-high-contrast,.vscode-high-contrast-light).call-page .call-node.is-root :is(.node-decompile,.node-branch),body:is(.vscode-high-contrast,.vscode-high-contrast-light).call-page .call-node.is-root :is(.node-decompile,.node-branch):is(:hover,:focus-visible){color:var(--vscode-list-activeSelectionForeground,var(--vscode-foreground));border-color:currentColor}
+body:is(.vscode-high-contrast,.vscode-high-contrast-light).call-page .call-node.is-root .node-branch[aria-expanded="true"]{outline:2px solid currentColor;outline-offset:-2px}
+@media(prefers-contrast:more){.call-canvas .call-node-body{stroke:var(--hc-surface-border)}.call-canvas .call-edge{opacity:1!important}.call-node .call-node-controls{opacity:1;pointer-events:auto}.call-page :is(.node-decompile,.node-branch),.call-page :is(.node-decompile,.node-branch):is(:hover,:focus-visible){color:var(--vscode-foreground)}.call-page .node-branch[aria-expanded="true"],.call-page .node-branch[aria-expanded="true"]:is(:hover,:focus-visible){color:var(--hc-active-border);border-color:var(--hc-active-border);outline:2px solid var(--hc-active-border);outline-offset:-2px}.call-page .call-node.is-root :is(.node-decompile,.node-branch),.call-page .call-node.is-root :is(.node-decompile,.node-branch):is(:hover,:focus-visible){color:var(--vscode-list-activeSelectionForeground,var(--vscode-foreground));border-color:currentColor}.call-page .call-node.is-root .node-branch[aria-expanded="true"]{outline:2px solid currentColor;outline-offset:-2px}}
+@media(forced-colors:active){.call-node .call-node-controls{opacity:1;pointer-events:auto}.call-canvas .call-node-body{fill:Canvas;stroke:CanvasText}.call-canvas .call-node text{fill:CanvasText}.call-canvas .is-root .call-node-body{fill:Highlight;stroke:Highlight}.call-canvas .is-root text,.call-canvas .is-root .call-root-address{fill:HighlightText!important;opacity:1}.call-canvas .call-node.selected:not(.is-root) .call-node-body,.call-canvas .call-node:focus-visible:not(.is-root) .call-node-body{fill:Canvas;stroke:Highlight;stroke-width:2.5}.call-canvas .call-edge{color:CanvasText;opacity:1!important}.call-canvas .call-edge.is-hovered,.call-canvas .call-edge.is-active,.call-canvas .call-edge:focus-visible{color:Highlight}#call-arrow path{fill:CanvasText;fill:context-stroke}.call-page .call-menu-content,.call-page .call-zoom,.call-page .call-zoom #graph-zoom{border-color:CanvasText}body.call-page :is(.node-decompile,.node-branch),body.call-page :is(.node-decompile,.node-branch):is(:hover,:focus-visible){forced-color-adjust:none;background:Canvas;color:CanvasText;border:1px solid ButtonText}body.call-page .node-branch[aria-expanded="true"],body.call-page .node-branch[aria-expanded="true"]:is(:hover,:focus-visible){background:Highlight;color:HighlightText;border-color:Highlight;outline:2px solid Highlight;outline-offset:-2px}body.call-page .call-node.is-root :is(.node-decompile,.node-branch),body.call-page .call-node.is-root :is(.node-decompile,.node-branch):is(:hover,:focus-visible){forced-color-adjust:none;background:Highlight;color:HighlightText;border:1px solid HighlightText}body.call-page .call-node.is-root .node-branch[aria-expanded="true"]{outline:2px solid HighlightText;outline-offset:-2px}body.call-page .call-node.is-root .node-branch .branch-bar-path{stroke:HighlightText}}
 @media(max-width:640px){.call-page .call-topbar{padding:8px 10px;gap:5px;min-height:48px}.call-page .call-topbar h1{font-size:13px}.call-page .call-search{position:absolute;z-index:4;top:52px;left:10px;right:10px;background:var(--vscode-editor-background)}.call-page .call-overview{width:120px;right:10px;bottom:54px}.call-page .call-overview svg{height:82px}.call-page .call-zoom{bottom:12px;right:10px}}
 
 @media(hover:none) and (pointer:coarse){.call-node.is-root .call-node-controls,.call-node.selected .call-node-controls{opacity:1;pointer-events:auto}}

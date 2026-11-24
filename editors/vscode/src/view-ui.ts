@@ -15,15 +15,15 @@ export const viewStyles = `
 .inspector-page .subtitle,.edit-page .subtitle{font-size:12px;overflow-wrap:anywhere}
 .inspector-actions{display:flex;align-items:center;gap:2px;flex-shrink:0}
 .inspector-actions>button,.inspector-page .recovery>button,.inspector-menu-content button,.edit-page .form-actions button,.edit-page [data-add-row]{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:32px;font-size:12px;border-radius:3px}
-.inspector-page .icon-button,.browser-page .icon-button{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;min-height:0;padding:7px;border:0;background:transparent;color:var(--vscode-foreground);border-radius:3px;flex-shrink:0}
+.inspector-page .icon-button,.browser-page .icon-button{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;min-height:0;padding:6px;border:1px solid var(--hc-border);background:transparent;color:var(--vscode-foreground);border-radius:3px;flex-shrink:0}
 .inspector-page .icon-button:hover:enabled,.browser-page .icon-button:hover:enabled{background:var(--vscode-toolbar-hoverBackground,var(--vscode-list-hoverBackground))}
 .inspector-menu{position:relative;margin:0;padding:0;border:0;flex-shrink:0}
-.inspector-menu>summary{display:flex;align-items:center;justify-content:center;width:32px;height:32px;padding:7px;list-style:none;border-radius:3px;cursor:pointer;font-weight:400}
+.inspector-menu>summary{display:flex;align-items:center;justify-content:center;width:32px;height:32px;padding:6px;border:1px solid var(--hc-border);list-style:none;border-radius:3px;cursor:pointer;font-weight:400}
 .inspector-menu>summary:hover{background:var(--vscode-toolbar-hoverBackground,var(--vscode-list-hoverBackground))}
 .inspector-menu>summary::-webkit-details-marker{display:none}
 .inspector-menu[open]>summary{margin:0}
-.inspector-menu-content{position:absolute;z-index:10;right:0;top:calc(100% + 5px);width:230px;max-width:calc(100vw - 32px);padding:6px;border:1px solid var(--vscode-menu-border,var(--vscode-panel-border));background:var(--vscode-menu-background,var(--vscode-editor-background));color:var(--vscode-menu-foreground,var(--vscode-foreground));box-shadow:0 4px 12px var(--vscode-widget-shadow)}
-.inspector-menu-content button{width:100%;justify-content:flex-start;text-align:left;border:0;background:transparent;color:inherit;padding:7px 9px}
+.inspector-menu-content{position:absolute;z-index:10;right:0;top:calc(100% + 5px);width:230px;max-width:calc(100vw - 32px);padding:6px;border:1px solid var(--vscode-menu-border,var(--hc-surface-border));background:var(--vscode-menu-background,var(--vscode-editor-background));color:var(--vscode-menu-foreground,var(--vscode-foreground));box-shadow:0 4px 12px var(--vscode-widget-shadow)}
+.inspector-menu-content button{width:100%;justify-content:flex-start;text-align:left;border:1px solid var(--hc-border);background:transparent;color:inherit;padding:6px 8px}
 .inspector-menu-content button:hover:enabled{background:var(--vscode-menu-selectionBackground,var(--vscode-list-hoverBackground));color:var(--vscode-menu-selectionForeground,var(--vscode-foreground))}
 .inspector-menu-content .danger{color:var(--vscode-errorForeground);border-top:1px solid var(--vscode-panel-border);margin-top:4px;padding-top:10px}
 /* Hallmark · data type editor · the definition is the work surface. */
@@ -41,10 +41,10 @@ export const viewStyles = `
 .inspector-page[data-view-kind="type-editor"] .type-status:empty{display:none}
 .inspector-page[data-view-kind="type-editor"] .type-status[data-state="dirty"]{color:var(--vscode-editorWarning-foreground,#cca700);border-color:color-mix(in srgb,var(--vscode-editorWarning-foreground,#cca700) 45%,transparent)}
 .inspector-page[data-view-kind="type-editor"] .type-status[data-state="saving"]{color:var(--vscode-focusBorder);border-color:color-mix(in srgb,var(--vscode-focusBorder) 45%,transparent)}
-.inspector-page[data-view-kind="type-editor"] .type-actions [data-open-jsonc]{display:inline-flex;align-items:center;gap:6px;min-height:28px;padding:4px 10px;border:1px solid var(--vscode-panel-border);border-radius:6px;background:var(--vscode-button-secondaryBackground,var(--vscode-input-background));color:var(--vscode-button-secondaryForeground,var(--vscode-foreground));font-size:12px;font-weight:500;cursor:pointer;white-space:nowrap}
+.inspector-page[data-view-kind="type-editor"] .type-actions [data-open-jsonc]{display:inline-flex;align-items:center;gap:6px;min-height:28px;padding:4px 10px;border:1px solid var(--hc-surface-border);border-radius:6px;background:var(--vscode-button-secondaryBackground,var(--vscode-input-background));color:var(--vscode-button-secondaryForeground,var(--vscode-foreground));font-size:12px;font-weight:500;cursor:pointer;white-space:nowrap}
 .inspector-page[data-view-kind="type-editor"] .type-actions [data-open-jsonc]:hover:enabled{background:var(--vscode-button-secondaryHoverBackground,var(--vscode-list-hoverBackground));border-color:var(--vscode-focusBorder)}
 .inspector-page[data-view-kind="type-editor"] .type-actions [data-open-jsonc] .call-icon{font-size:14px}
-.inspector-page[data-view-kind="type-editor"] .type-icon{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;min-height:0;padding:6px;border:0;background:transparent;color:var(--vscode-descriptionForeground);border-radius:3px}
+.inspector-page[data-view-kind="type-editor"] .type-icon{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;min-height:0;padding:5px;border:1px solid var(--hc-border);background:transparent;color:var(--vscode-descriptionForeground);border-radius:3px}
 .inspector-page[data-view-kind="type-editor"] .type-icon:hover{background:var(--vscode-toolbar-hoverBackground,var(--vscode-list-hoverBackground));color:var(--vscode-foreground)}
 .inspector-page[data-view-kind="type-editor"] .type-list{margin:0 0 20px;padding-top:12px}
 .inspector-page[data-view-kind="type-editor"] .type-list:first-of-type{border-top:0;padding-top:0}
@@ -52,7 +52,7 @@ export const viewStyles = `
 .inspector-page[data-view-kind="type-editor"] .type-table-wrap{max-width:100%;overflow:auto}
 .inspector-page[data-view-kind="type-editor"] .type-table{table-layout:fixed;min-width:520px}
 .inspector-page[data-view-kind="type-editor"] .type-table th{position:sticky;top:0;z-index:1;padding:6px 8px;font-weight:500;background:var(--vscode-editor-background)}
-.inspector-page[data-view-kind="type-editor"] .type-sort{display:inline-flex;align-items:center;gap:5px;min-height:0;padding:0;border:0;background:transparent;color:inherit;font:inherit;text-align:left}
+.inspector-page[data-view-kind="type-editor"] .type-sort{display:inline-flex;align-items:center;gap:5px;min-height:0;padding:0;border:1px solid transparent;border-radius:2px;background:transparent;color:inherit;font:inherit;text-align:left}
 .inspector-page[data-view-kind="type-editor"] .type-sort:hover{color:var(--vscode-foreground)}
 .inspector-page[data-view-kind="type-editor"] th[aria-sort="none"] .type-sort:hover span::after,.inspector-page[data-view-kind="type-editor"] th[aria-sort="none"] .type-sort:focus-visible span::after{content:'↕';opacity:.7}
 .inspector-page[data-view-kind="type-editor"] th[aria-sort="ascending"] .type-sort span::after{content:'↑'}
@@ -60,9 +60,9 @@ export const viewStyles = `
 .inspector-page[data-view-kind="type-editor"] .type-table td{padding:3px 4px;vertical-align:middle}
 .inspector-page[data-view-kind="type-editor"] .type-table tbody tr:hover:not([data-new]){background:var(--vscode-list-hoverBackground,var(--vscode-editor-background))}
 .inspector-page[data-view-kind="type-editor"] .type-table tbody tr:focus-within:not([data-new]){background:color-mix(in srgb,var(--vscode-focusBorder) 14%,var(--vscode-list-inactiveSelectionBackground,var(--vscode-editor-background)));box-shadow:inset 2px 0 var(--vscode-focusBorder),inset 0 0 0 1px color-mix(in srgb,var(--vscode-focusBorder) 48%,transparent)}
-.inspector-page[data-view-kind="type-editor"] .type-table input{width:100%;height:32px;min-width:0;border:1px solid transparent;border-radius:2px;background:transparent;cursor:text}
-.inspector-page[data-view-kind="type-editor"] .type-table input:hover{background:var(--vscode-input-background);border-color:var(--vscode-input-border,transparent)}
-.inspector-page[data-view-kind="type-editor"] .type-table input:focus{background:var(--vscode-input-background);outline:2px solid var(--vscode-focusBorder);outline-offset:-2px}
+.inspector-page[data-view-kind="type-editor"] .type-table input{width:100%;height:32px;min-width:0;border:1px solid var(--hc-border);border-radius:2px;background:transparent;cursor:text}
+.inspector-page[data-view-kind="type-editor"] .type-table input:hover{background:var(--vscode-input-background);border-color:var(--vscode-input-border,var(--hc-border))}
+.inspector-page[data-view-kind="type-editor"] .type-table input:focus{background:var(--vscode-input-background);outline:2px solid var(--hc-focus-border);outline-offset:-2px}
 .inspector-page[data-view-kind="type-editor"] .type-table td[data-field="offset"] input,.inspector-page[data-view-kind="type-editor"] .type-table td[data-field="length"] input,.inspector-page[data-view-kind="type-editor"] .type-table td[data-field="value"] input{font-variant-numeric:tabular-nums}
 .inspector-page[data-view-kind="type-editor"] .type-table th[data-field="offset"]{width:88px}
 .inspector-page[data-view-kind="type-editor"] .type-table th[data-field="length"]{width:100px}
@@ -148,7 +148,7 @@ export const viewStyles = `
 .edit-page .form-hint{font-size:11px;line-height:1.65}
 .edit-page .table-wrap{scrollbar-width:thin}
 .edit-page .success:not(:empty){font-size:12px;padding:10px 0}
-.edit-page .row-remove{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;min-height:0;padding:6px;border:0;background:transparent;color:var(--vscode-descriptionForeground)}
+.edit-page .row-remove{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;min-height:0;padding:5px;border:1px solid var(--hc-border);background:transparent;color:var(--vscode-descriptionForeground)}
 .edit-page .row-remove:hover:enabled{background:var(--vscode-toolbar-hoverBackground,var(--vscode-list-hoverBackground));color:var(--vscode-foreground)}
 .browser-page main{max-width:1450px;margin:0;padding:20px 24px 32px}
 .browser-page h1{font-size:16px;line-height:1.4;margin:0 0 2px}
@@ -163,7 +163,7 @@ export const viewStyles = `
 .browser-page .scope{font-size:11px;line-height:1.6;margin:10px 0 12px;color:var(--vscode-descriptionForeground)}
 .browser-page #filter-status{font-size:11px;margin:8px 0;color:var(--vscode-descriptionForeground)}
 .browser-page #filter-status.sr-filter-status{position:absolute;width:1px;height:1px;padding:0;margin:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
-.browser-page .selection-tools{position:fixed;z-index:4;left:50%;bottom:16px;transform:translateX(-50%);width:calc(100% - 32px);max-width:760px;box-shadow:0 3px 12px var(--vscode-widget-shadow);display:flex;align-items:center;gap:10px;padding:8px 10px;margin-bottom:10px;border:1px solid var(--vscode-panel-border);border-radius:4px;background:var(--vscode-sideBar-background,var(--vscode-editor-background))}
+.browser-page .selection-tools{position:fixed;z-index:4;left:50%;bottom:16px;transform:translateX(-50%);width:calc(100% - 32px);max-width:760px;box-shadow:0 3px 12px var(--vscode-widget-shadow);display:flex;align-items:center;gap:10px;padding:8px 10px;margin-bottom:10px;border:1px solid var(--hc-surface-border);border-radius:4px;background:var(--vscode-sideBar-background,var(--vscode-editor-background))}
 .browser-page .selection-tools[hidden]{display:none!important}
 .browser-page #selection-label{flex:1;min-width:0;margin:0;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .browser-page .selection-buttons{gap:4px}
@@ -171,22 +171,23 @@ export const viewStyles = `
 .browser-page .selection-buttons button.primary{color:var(--vscode-button-foreground,var(--vscode-foreground));background:var(--vscode-button-background,var(--vscode-editor-background))}
 .browser-page .selection-buttons button.primary:hover:enabled{background:var(--vscode-button-hoverBackground,var(--vscode-list-hoverBackground))}
 .browser-page .selection-buttons .icon-only{width:32px;min-width:32px;justify-content:center;padding:6px}
-.browser-page .more-actions>summary{display:flex;align-items:center;justify-content:center;list-style:none;width:30px;height:30px;min-height:0;padding:6px;border:0;background:transparent;border-radius:3px}
+.browser-page .more-actions>summary{display:flex;align-items:center;justify-content:center;list-style:none;width:30px;height:30px;min-height:0;padding:5px;border:1px solid var(--hc-border);background:transparent;border-radius:3px}
 .browser-page .more-actions>summary::-webkit-details-marker{display:none}
 .browser-page .more-actions{position:relative;overflow:visible;margin:0;padding:0;border:0}
 .browser-page .more-actions[open]{flex-basis:auto}
 .browser-page .more-actions[open]>summary{margin:0}
-.browser-page #selection-more{position:absolute;z-index:5;right:0;bottom:calc(100% + 6px);width:240px;max-width:calc(100vw - 32px);display:flex;flex-direction:column;gap:2px;padding:6px;border:1px solid var(--vscode-menu-border,var(--vscode-panel-border));background:var(--vscode-menu-background,var(--vscode-editor-background));box-shadow:0 4px 12px var(--vscode-widget-shadow)}
-.browser-page #selection-more button{width:100%;justify-content:flex-start;border:0;background:transparent}
+.browser-page #selection-more{position:absolute;z-index:5;right:0;bottom:calc(100% + 6px);width:240px;max-width:calc(100vw - 32px);display:flex;flex-direction:column;gap:2px;padding:6px;border:1px solid var(--vscode-menu-border,var(--hc-surface-border));background:var(--vscode-menu-background,var(--vscode-editor-background));box-shadow:0 4px 12px var(--vscode-widget-shadow)}
+.browser-page #selection-more button{width:100%;justify-content:flex-start;border:1px solid var(--hc-border);background:transparent}
 .browser-page .table-wrap{scroll-padding:36px 4px 4px;max-height:max(120px,min(620px,calc(100vh - 200px)));border:0;border-radius:0;scrollbar-width:thin}
 .browser-page table{font-size:12px}
 .browser-page.has-selection .table-wrap{padding-bottom:56px;scroll-padding-bottom:56px}
 .browser-page th{position:sticky;top:0;z-index:1;background:var(--vscode-editor-background);font-size:11px;padding:8px 10px}
 .browser-page td{padding:8px 10px;line-height:1.55;font-size:12px}
 .browser-page td.addr{font-family:var(--vscode-editor-font-family,monospace);font-size:11px;font-variant-numeric:tabular-nums;white-space:nowrap;overflow-wrap:normal}
-.browser-page tbody tr.selected{background:var(--vscode-list-inactiveSelectionBackground);color:var(--vscode-list-inactiveSelectionForeground,var(--vscode-foreground))}
-.browser-page tbody tr.selected:focus{background:var(--vscode-list-activeSelectionBackground);color:var(--vscode-list-activeSelectionForeground,var(--vscode-foreground))}
-.browser-page tr:focus-visible{outline:1px solid var(--vscode-focusBorder);outline-offset:-1px}
+.browser-page tbody tr.selected{background:var(--vscode-list-inactiveSelectionBackground);color:var(--vscode-list-inactiveSelectionForeground,var(--vscode-foreground));outline:2px solid var(--hc-active-border);outline-offset:-2px}
+.browser-page tbody tr.selected:focus{background:var(--vscode-list-activeSelectionBackground);color:var(--vscode-list-activeSelectionForeground,var(--vscode-foreground));outline:2px solid var(--hc-active-border);outline-offset:-2px}
+.browser-page tr:focus-visible{outline:1px solid var(--hc-focus-border);outline-offset:-1px}
+.browser-page tr.selected:focus-visible{outline:2px solid var(--hc-focus-border);outline-offset:-2px}
 .browser-page .table-empty{margin:0;padding:12px 0;color:var(--vscode-descriptionForeground);font-size:12px}
 .browser-page .no-results{display:flex;align-items:center;gap:12px;margin:12px 0;padding:8px 0;color:var(--vscode-descriptionForeground);font-size:12px}
 .browser-page .no-results[hidden]{display:none}
@@ -203,7 +204,7 @@ export const viewStyles = `
 .browser-page .pagination{gap:6px;margin-top:12px}
 .browser-page .pagination button{display:flex;align-items:center;gap:6px;font-size:12px}
 .browser-page .empty{font-size:12px}
-.browser-page :is(button,summary,input):focus-visible,.inspector-page :is(button,summary,input):focus-visible,.edit-page :is(button,summary,input,select,textarea):focus-visible{outline:2px solid var(--vscode-focusBorder);outline-offset:2px}
+.browser-page :is(button,summary,input):focus-visible,.inspector-page :is(button,summary,input):focus-visible,.edit-page :is(button,summary,input,select,textarea):focus-visible{outline:2px solid var(--hc-focus-border);outline-offset:2px}
 .browser-page button,.inspector-page button,.edit-page button{transition:background-color 100ms ease,color 100ms ease}
 @media(prefers-reduced-motion:reduce){.browser-page *,.inspector-page *,.edit-page *{animation:none!important;transition:none!important}}
 @media(max-width:760px){.inspector-page header{position:relative;align-items:flex-start;flex-wrap:wrap;gap:14px}.inspector-page .inspector-title{flex:1 1 220px}.inspector-page .inspector-tools{margin-left:auto}}
@@ -222,10 +223,11 @@ export const viewStyles = `
 /* Keep the first screen focused on the object and its primary task. */
 .browser-page .page-context{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
 .page-options{position:relative;flex:none;margin:0;padding:0;border:0}
-.page-options>summary{display:flex;align-items:center;justify-content:center;list-style:none;width:32px;height:32px;cursor:pointer}
+.page-options>summary{display:flex;align-items:center;justify-content:center;list-style:none;width:32px;height:32px;border:1px solid var(--hc-border);border-radius:3px;cursor:pointer}
 .page-options>summary::-webkit-details-marker{display:none}
-.page-options-content{position:absolute;right:0;top:36px;z-index:10;width:260px;padding:8px;background:var(--vscode-menu-background,var(--vscode-editor-background));border:1px solid var(--vscode-menu-border,var(--vscode-panel-border));box-shadow:0 2px 8px var(--vscode-widget-shadow)}
-.page-options-content>button,.page-options-content>label{display:flex;align-items:center;gap:8px;width:100%;padding:7px;text-align:left;background:transparent;color:var(--vscode-foreground);border:0}
+.page-options-content{position:absolute;right:0;top:36px;z-index:10;width:260px;padding:8px;background:var(--vscode-menu-background,var(--vscode-editor-background));border:1px solid var(--vscode-menu-border,var(--hc-surface-border));box-shadow:0 2px 8px var(--vscode-widget-shadow)}
+.page-options-content>button,.page-options-content>label{display:flex;align-items:center;gap:8px;width:100%;padding:6px;text-align:left;background:transparent;color:var(--vscode-foreground);border:1px solid transparent}
+.page-options-content>button{border-color:var(--hc-border);border-radius:3px}
 .page-options-content>p{font-size:11px;color:var(--vscode-descriptionForeground);padding:0 7px;line-height:1.6}
 .browser-page:not(.show-extra-columns)[data-view-kind="strings"] :is(th,td):nth-child(2),
 .browser-page:not(.show-extra-columns)[data-view-kind="strings"] :is(th,td):nth-child(3),
@@ -251,6 +253,11 @@ export const viewStyles = `
 .edit-page .editable:has(tbody:empty){display:none}
 .edit-page .table-wrap:has(.editable tbody:empty){display:none}
 @media(hover:hover){.edit-page .row-remove,.inspector-page[data-view-kind="type-editor"] .type-row-handle{opacity:0}.edit-page tr:hover .row-remove,.edit-page tr:focus-within .row-remove{opacity:1}}
+body:is(.vscode-high-contrast,.vscode-high-contrast-light).inspector-page[data-view-kind="type-editor"] :is(.type-row-action,.type-row-handle),body:is(.vscode-high-contrast,.vscode-high-contrast-light).edit-page .row-remove{opacity:1;color:var(--vscode-foreground)}
+body:is(.vscode-high-contrast,.vscode-high-contrast-light).inspector-page[data-view-kind="type-editor"] .type-icon{color:var(--vscode-foreground)}
+body:is(.vscode-high-contrast,.vscode-high-contrast-light).inspector-page[data-view-kind="type-editor"] .type-table tr[data-new] td[data-field="name"] input{border-color:var(--hc-border)}
+@media(prefers-contrast:more){.inspector-page[data-view-kind="type-editor"] .type-row-action,.inspector-page[data-view-kind="type-editor"] .type-row-handle,.edit-page .row-remove{opacity:1;color:var(--vscode-foreground)}.inspector-page[data-view-kind="type-editor"] .type-icon{color:var(--vscode-foreground)}.inspector-page[data-view-kind="type-editor"] .type-table tr[data-new] td[data-field="name"] input{border-color:var(--hc-border)}}
+@media(forced-colors:active){.inspector-page[data-view-kind="type-editor"] .type-row-action,.inspector-page[data-view-kind="type-editor"] .type-row-handle,.edit-page .row-remove{opacity:1;color:ButtonText}.inspector-page[data-view-kind="type-editor"] .type-icon{color:ButtonText}.inspector-page[data-view-kind="type-editor"] .type-table input,.inspector-page[data-view-kind="type-editor"] .type-table tr[data-new] td[data-field="name"] input{border-color:ButtonText;background:Field;color:FieldText}.browser-page tbody tr.selected,.browser-page tbody tr.selected:focus{outline:2px solid Highlight;outline-offset:-2px}}
 
 /* Inspector identity: code-face values, history navigation and native-style loading (critique 2026-11-02). */
 .inspector-page code.mono,.edit-page code.mono{font-family:var(--vscode-editor-font-family,monospace);font-size:inherit;font-variant-numeric:tabular-nums;color:inherit;background:none;padding:0;overflow-wrap:anywhere}
