@@ -86,7 +86,7 @@ export const viewStyles = `
 .inspector-page[data-view-kind="type-editor"] .type-table tr[data-new] input::placeholder{color:var(--vscode-descriptionForeground);opacity:1}
 .inspector-page[data-view-kind="type-editor"] .type-raw pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.5 var(--vscode-editor-font-family,monospace)}
 .inspector-page[data-view-kind="type-editor"] .type-empty{margin:0;padding:12px 8px;color:var(--vscode-descriptionForeground);border-top:1px solid var(--vscode-panel-border)}
-.inspector-page[data-view-kind="type-editor"] .type-sr-only{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.inspector-page .type-sr-only,.edit-page .type-sr-only{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .inspector-page[data-view-kind="type-editor"] .form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr));gap:12px}
 .inspector-page[data-view-kind="type-editor"] .form-grid label:not(.type-flag){display:flex;flex-direction:column;gap:4px;min-width:0}
 .inspector-page[data-view-kind="type-editor"] .form-grid input:not([type="checkbox"]){width:100%;min-width:0}
@@ -115,6 +115,13 @@ export const viewStyles = `
 .inspector-page[data-view-kind="type-editor"] .type-table[data-kind="struct"] td[data-field="name"],.inspector-page[data-view-kind="type-editor"] .type-table td[data-field="value"],.inspector-page[data-view-kind="type-editor"] .type-table:not([data-kind="struct"]) td[data-field="type"]{grid-column:3;grid-row:1}
 .inspector-page[data-view-kind="type-editor"] .type-table[data-kind="struct"] td[data-field="type"],.inspector-page[data-view-kind="type-editor"] .type-table:not([data-kind="struct"]) td[data-field="length"]{grid-column:2;grid-row:2}
 .inspector-page[data-view-kind="type-editor"] .type-table[data-kind="struct"] td[data-field="length"]{grid-column:3;grid-row:2}
+.edit-page .editable,.edit-page .editable thead,.edit-page .editable tbody{display:block;min-width:0}
+.edit-page .editable tr{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 8px;align-items:center;padding:6px;border-bottom:1px solid var(--vscode-panel-border)}
+.edit-page .editable tr:has(.row-remove,.editable-action-col){grid-template-columns:repeat(2,minmax(0,1fr)) 32px}
+.edit-page .editable tbody tr:last-child{border-bottom:0}
+.edit-page .editable th,.edit-page .editable td,.edit-page .editable td:last-child:has(.row-remove){display:block;width:auto;min-width:0;padding:0;border:0;overflow-wrap:anywhere}
+.edit-page .editable th:not(.editable-action-col){padding:2px 4px}
+.edit-page .editable .row-remove{opacity:1}
 }
 
 .inspector-page h2{font-size:13px;font-weight:600;margin-bottom:8px}
@@ -148,6 +155,7 @@ export const viewStyles = `
 .edit-page .form-hint{font-size:11px;line-height:1.65}
 .edit-page .table-wrap{scrollbar-width:thin}
 .edit-page .success:not(:empty){font-size:12px;padding:10px 0}
+.edit-page .editable .editable-action-col{position:relative}
 .edit-page .row-remove{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;min-height:0;padding:6px;border:0;background:transparent;color:var(--vscode-descriptionForeground)}
 .edit-page .row-remove:hover:enabled{background:var(--vscode-toolbar-hoverBackground,var(--vscode-list-hoverBackground));color:var(--vscode-foreground)}
 .browser-page main{max-width:1450px;margin:0;padding:20px 24px 32px}
