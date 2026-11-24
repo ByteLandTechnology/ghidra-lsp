@@ -473,7 +473,10 @@ pub(crate) async fn call_graph_with_cache(
           "filter": {
             "entry": item.source_entry,
             "direction": item.direction.as_str(),
-          }
+          },
+          "page": {
+            "limit": 1000,
+          },
         }),
       )
       .await

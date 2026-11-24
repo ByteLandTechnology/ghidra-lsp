@@ -122,7 +122,7 @@ impl Symbol {
 
   /// Returns true when this symbol represents a function-local variable or parameter.
   pub(crate) fn local(&self) -> bool {
-    self.kind == "Local" || self.kind == "Parameter"
+    matches!(self.kind.as_str(), "Local" | "Local Var" | "Parameter")
   }
 
   /// Returns the name prefixed with its namespace when it is not in `Global`.
@@ -337,8 +337,14 @@ pub(crate) fn resolve(spans: &mut [Span], symbols: &[Symbol], locals: &HashSet<S
   let resolved: Vec<Option<Symbol>> = spans
     .iter()
     .map(|s| {
-      // Native function tokens carry the GUI target, including C++ overloads.
-      if s.location.is_some() && s.token.kind == "function" && s.symbol.is_some() {
+      // Native GUI tokens keep their attached function, variable, parameter, or global symbol.
+      if s.location.is_some()
+        && matches!(
+          s.token.kind.as_str(),
+          "function" | "variable" | "parameter" | "global"
+        )
+        && s.symbol.is_some()
+      {
         return s.symbol.clone();
       }
       if !matches!(
@@ -413,10 +419,10 @@ pub(crate) fn resolve(spans: &mut [Span], symbols: &[Symbol], locals: &HashSet<S
   }
 }
 
-/// Resolves variable and parameter spans when `locals` contains a unique matching name.
+/// Resolves variable and parameter spans without a symbol when `locals` has one match.
 pub(crate) fn resolve_locals(spans: &mut [Span], locals: &[Symbol]) {
   for span in spans {
-    if !matches!(span.token.kind.as_str(), "variable" | "parameter") {
+    if !matches!(span.token.kind.as_str(), "variable" | "parameter") || span.symbol.is_some() {
       continue;
     }
     let mut candidates = locals.iter().filter(|s| s.name == span.token.text);

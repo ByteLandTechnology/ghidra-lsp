@@ -350,6 +350,49 @@ impl Engine {
           });
         }
       }
+      for span in &mut spans {
+        if !matches!(span.token.kind.as_str(), "variable" | "parameter") {
+          continue;
+        }
+        let Some(native) = &mut span.symbol else {
+          continue;
+        };
+        if !native.local() {
+          continue;
+        }
+        let kind = if native.kind == "Parameter" || span.token.kind == "parameter" {
+          "Parameter"
+        } else {
+          "Local"
+        };
+        let prefix = format!("{kind}:{md5}:{entry_str}:");
+        let scoped_id = if native.id.starts_with(&prefix) {
+          native.id.clone()
+        } else {
+          format!("{prefix}symbol={}", native.id)
+        };
+        if !self.local_details.contains_key(&scoped_id) {
+          let target_name = if native.name.is_empty() {
+            span.token.text.as_str()
+          } else {
+            native.name.as_str()
+          };
+          if let Some(matched) = local_symbols
+            .iter()
+            .find(|sym| sym.kind == kind && sym.name == target_name)
+            .and_then(|sym| self.local_details.get(&sym.id).cloned())
+          {
+            self.local_details.insert(scoped_id.clone(), matched);
+          }
+        }
+        if native.name.is_empty() {
+          native.name = span.token.text.clone();
+        }
+        native.id = scoped_id;
+        native.address = entry_str.to_owned();
+        native.namespace = String::new();
+        native.kind = kind.into();
+      }
       resolve_locals(&mut spans, &local_symbols);
       for span in &mut spans {
         if span.symbol.is_none() && matches!(span.token.kind.as_str(), "variable" | "parameter") {

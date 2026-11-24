@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/ByteLandTechnology/ghidra-lsp/compare/v0.3.0...v0.3.1) (2026-11-23)
+
+
+### Bug Fixes
+
+* **build:** upgrade url to 2.5.9 and remove stale advisory ([6695365](https://github.com/ByteLandTechnology/ghidra-lsp/commit/6695365743cc26784fe832fa0f1c39e45a898716))
+
 ## [0.3.0](https://github.com/ByteLandTechnology/ghidra-lsp/compare/v0.2.0...v0.3.0) (2026-11-20)
 
 
