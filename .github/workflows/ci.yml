@@ -68,6 +68,520 @@ jobs:
       - name: Check advisories, licenses, bans, and sources
         run: cargo deny --locked --workspace check
 
+  contrast:
+    name: Webview Contrast Audit
+    needs: release-please
+    if: >-
+      always() && !cancelled() &&
+      (needs.release-please.result == 'success' || needs.release-please.result == 'skipped')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release-please.outputs.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Install Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: editors/vscode/package-lock.json
+
+      - name: Install dependencies
+        working-directory: editors/vscode
+        run: npm ci
+
+      - name: Typecheck and compile extension
+        working-directory: editors/vscode
+        run: |
+          npm run check
+          npm run compile
+
+      - name: Stage headless Chromium audit tools in /tmp
+        run: |
+          rm -rf /tmp/ghidra-contrast
+          mkdir -p /tmp/ghidra-contrast
+          npm install --prefix /tmp/ghidra-contrast --no-save --no-audit --no-fund axe-core@4.10.2 playwright-core@1.52.0
+          if ! command -v google-chrome >/dev/null 2>&1 && ! command -v google-chrome-stable >/dev/null 2>&1 && ! command -v chromium >/dev/null 2>&1 && ! command -v chromium-browser >/dev/null 2>&1; then
+            npx --prefix /tmp/ghidra-contrast playwright-core install --with-deps chromium
+          fi
+
+      - name: Render snapshots and audit WCAG 2.2 AA contrast
+        run: |
+          cat <<'EOF' > /tmp/ghidra-contrast/audit.cjs
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const assert = require('node:assert/strict');
+          const { chromium } = require('playwright-core');
+          const axe = require('axe-core');
+
+          const repoRoot = process.env.REPO_ROOT || process.cwd();
+          const outDir = path.join(repoRoot, 'editors/vscode/out');
+          const snapDir = '/tmp/ghidra-contrast/snapshots';
+          fs.mkdirSync(snapDir, { recursive: true });
+
+          const web = require(path.join(outDir, 'web.js'));
+          const workbenchPage = require(path.join(outDir, 'workbench-page.js'));
+          const programListingUi = require(path.join(outDir, 'program-listing-ui.js'));
+          const programHexUi = require(path.join(outDir, 'program-hex-ui.js'));
+          const callGraphMod = require(path.join(outDir, 'call-graph.js'));
+          const callIconsMod = require(path.join(outDir, 'call-graph-icons.js'));
+          const callColumnsMod = require(path.join(outDir, 'call-columns.js'));
+          const cfgMod = require(path.join(outDir, 'control-flow-graph.js'));
+          const syntaxMod = require(path.join(outDir, 'syntax.js'));
+          const pageStylesMod = require(path.join(outDir, 'page-styles.js'));
+
+          const THEMES = {
+            'light-plus': {
+              bodyClass: 'vscode-light',
+              vars: {
+                '--vscode-editor-background': '#ffffff', '--vscode-foreground': '#616161', '--vscode-editor-foreground': '#000000',
+                '--vscode-descriptionForeground': '#717171', '--vscode-focusBorder': '#0090f1', '--vscode-panel-border': 'rgba(128, 128, 128, 0.35)',
+                '--vscode-editorWidget-border': '#c8c8c8', '--vscode-sideBar-background': '#f3f3f3', '--vscode-input-background': '#ffffff',
+                '--vscode-input-foreground': '#616161', '--vscode-input-border': '#cecece', '--vscode-input-placeholderForeground': '#767676',
+                '--vscode-dropdown-background': '#ffffff', '--vscode-dropdown-foreground': '#616161', '--vscode-button-background': '#007acc',
+                '--vscode-button-foreground': '#ffffff', '--vscode-button-hoverBackground': '#0062a3', '--vscode-button-secondaryBackground': '#5f6a79',
+                '--vscode-button-secondaryForeground': '#ffffff', '--vscode-button-secondaryHoverBackground': '#4c5561', '--vscode-menu-background': '#ffffff',
+                '--vscode-menu-foreground': '#616161', '--vscode-menu-selectionBackground': '#0060c0', '--vscode-menu-selectionForeground': '#ffffff',
+                '--vscode-list-hoverBackground': '#e8e8e8', '--vscode-list-inactiveSelectionBackground': '#e4e6f1', '--vscode-list-inactiveSelectionForeground': '#616161',
+                '--vscode-list-activeSelectionBackground': '#0060c0', '--vscode-list-activeSelectionForeground': '#ffffff',
+                '--vscode-toolbar-hoverBackground': 'rgba(184, 184, 184, 0.31)', '--vscode-toolbar-activeBackground': 'rgba(166, 166, 166, 0.31)',
+                '--vscode-textLink-foreground': '#006ab1', '--vscode-textLink-activeForeground': '#006ab1', '--vscode-errorForeground': '#a1260d',
+                '--vscode-inputValidation-errorBorder': '#be1100', '--vscode-editorWarning-foreground': '#cca700', '--vscode-testing-iconPassed': '#388a34',
+                '--vscode-symbolIcon-keywordForeground': '#007acc', '--vscode-symbolIcon-variableForeground': '#007acc', '--vscode-symbolIcon-functionForeground': '#652d90',
+                '--vscode-debugTokenExpression-number': '#098658', '--vscode-debugTokenExpression-string': '#a31515',
+              },
+            },
+            'dark-plus': {
+              bodyClass: 'vscode-dark',
+              vars: {
+                '--vscode-editor-background': '#1e1e1e', '--vscode-foreground': '#cccccc', '--vscode-editor-foreground': '#d4d4d4',
+                '--vscode-descriptionForeground': 'rgba(204, 204, 204, 0.7)', '--vscode-focusBorder': '#007fd4', '--vscode-panel-border': 'rgba(128, 128, 128, 0.35)',
+                '--vscode-editorWidget-border': '#454545', '--vscode-sideBar-background': '#252526', '--vscode-input-background': '#3c3c3c',
+                '--vscode-input-foreground': '#cccccc', '--vscode-input-placeholderForeground': '#a6a6a6', '--vscode-dropdown-background': '#3c3c3c',
+                '--vscode-dropdown-foreground': '#f0f0f0', '--vscode-button-background': '#0e639c', '--vscode-button-foreground': '#ffffff',
+                '--vscode-button-hoverBackground': '#1177bb', '--vscode-button-secondaryBackground': '#3a3d41', '--vscode-button-secondaryForeground': '#ffffff',
+                '--vscode-button-secondaryHoverBackground': '#45494e', '--vscode-menu-background': '#252526', '--vscode-menu-foreground': '#cccccc',
+                '--vscode-menu-selectionBackground': '#04395e', '--vscode-menu-selectionForeground': '#ffffff', '--vscode-list-hoverBackground': '#2a2d2e',
+                '--vscode-list-inactiveSelectionBackground': '#37373d', '--vscode-list-inactiveSelectionForeground': '#cccccc',
+                '--vscode-list-activeSelectionBackground': '#04395e', '--vscode-list-activeSelectionForeground': '#ffffff',
+                '--vscode-toolbar-hoverBackground': 'rgba(90, 93, 94, 0.31)', '--vscode-toolbar-activeBackground': 'rgba(99, 102, 103, 0.31)',
+                '--vscode-textLink-foreground': '#3794ff', '--vscode-textLink-activeForeground': '#3794ff', '--vscode-errorForeground': '#f48771',
+                '--vscode-inputValidation-errorBorder': '#be1100', '--vscode-editorWarning-foreground': '#cca700', '--vscode-testing-iconPassed': '#73c991',
+                '--vscode-symbolIcon-keywordForeground': '#569cd6', '--vscode-symbolIcon-variableForeground': '#75beff', '--vscode-symbolIcon-functionForeground': '#b180d7',
+                '--vscode-debugTokenExpression-number': '#b5cea8', '--vscode-debugTokenExpression-string': '#ce9178',
+              },
+            },
+            'low-contrast-srgb': {
+              bodyClass: 'vscode-light',
+              vars: {
+                '--vscode-editor-background': 'color(srgb 0.95 0.95 0.97)', '--vscode-foreground': 'rgb(138 140 150)', '--vscode-editor-foreground': 'rgb(132, 134, 144)',
+                '--vscode-descriptionForeground': 'color(srgb 0.66 0.67 0.72)', '--vscode-focusBorder': 'color(srgb 0.44 0.62 0.88)', '--vscode-panel-border': 'color(srgb 0.84 0.85 0.89)',
+                '--vscode-editorWidget-border': '#d8dae2', '--vscode-sideBar-background': 'color(srgb 0.92 0.93 0.96)', '--vscode-input-background': 'color(srgb 0.96 0.96 0.98)',
+                '--vscode-input-foreground': '#8b8e9b', '--vscode-input-placeholderForeground': 'rgb(176 178 188)', '--vscode-dropdown-background': '#f4f5f8',
+                '--vscode-dropdown-foreground': '#888b98', '--vscode-button-background': 'color(srgb 0.48 0.66 0.9)', '--vscode-button-foreground': '#f8faff',
+                '--vscode-button-secondaryBackground': '#e5e7ef', '--vscode-button-secondaryForeground': '#8a8d9a', '--vscode-menu-background': 'color(srgb 0.94 0.95 0.97)',
+                '--vscode-menu-foreground': '#858896', '--vscode-menu-selectionBackground': 'color(srgb 0.82 0.86 0.95)', '--vscode-menu-selectionForeground': '#787e92',
+                '--vscode-list-hoverBackground': 'rgb(230 232 240)', '--vscode-list-inactiveSelectionBackground': 'color(srgb 0.85 0.88 0.95)', '--vscode-list-inactiveSelectionForeground': '#7d8296',
+                '--vscode-list-activeSelectionBackground': 'color(srgb 0.42 0.6 0.88)', '--vscode-list-activeSelectionForeground': '#f4f7ff',
+                '--vscode-toolbar-activeBackground': 'rgb(220 224 236 / 75%)', '--vscode-textLink-foreground': 'color(srgb 0.38 0.58 0.86)', '--vscode-textLink-activeForeground': 'color(srgb 0.34 0.54 0.84)',
+                '--vscode-errorForeground': 'rgb(206 118 112)', '--vscode-inputValidation-errorBorder': 'rgb(212 122 116)', '--vscode-editorWarning-foreground': 'hsl(46 68% 54%)',
+                '--vscode-testing-iconPassed': 'color(srgb 0.45 0.72 0.5)', '--vscode-symbolIcon-keywordForeground': 'color(srgb 0.42 0.6 0.88)',
+                '--vscode-symbolIcon-variableForeground': 'rgb(112 158 214)', '--vscode-symbolIcon-functionForeground': 'color(srgb 0.62 0.48 0.78)',
+                '--vscode-debugTokenExpression-number': 'rgb(108 172 142)', '--vscode-debugTokenExpression-string': 'color(srgb 0.78 0.46 0.42)',
+              },
+            },
+          };
+
+          async function buildSnapshots() {
+            const md5 = '0123456789abcdef0123456789abcdef';
+            const typeBody = `<div class="type-validation" role="alert">Duplicate field offset 0x04.</div><section class="type-definition"><div class="type-table-wrap"><table class="type-table" data-kind="struct"><thead><tr><th class="type-handle-col"></th><th data-field="offset">Offset</th><th data-field="name">Name</th><th data-field="type">Type</th><th data-field="length">Length</th><th class="type-action-col"></th></tr></thead><tbody><tr><td class="type-row-handle"><button type="button" class="type-icon type-move" aria-label="Move field">⋮</button></td><td data-field="offset"><input aria-label="Offset" value="0x0"></td><td data-field="name"><input aria-label="Field name" value="magic"></td><td data-field="type"><input aria-label="Field type" value="uint32_t"></td><td data-field="length"><input aria-label="Length" value="4" readonly></td><td class="type-row-action"><button type="button" class="type-icon" aria-label="Delete field">×</button></td></tr><tr data-new><td class="type-row-handle"></td><td data-field="offset"></td><td data-field="name"><input aria-label="Add field" placeholder="Add field…"></td><td data-field="type"></td><td data-field="length"></td><td class="type-row-action"></td></tr></tbody></table></div><div class="form-grid"><label>Category<input value="/headers" readonly></label><label>Notes<textarea placeholder="Describe structure layout…"></textarea></label></div></section><div class="form-actions">${web.button('Save', 'save', undefined, 'primary')}${web.button('Reset', 'reset', undefined, 'secondary')}${web.button('Delete', 'delete', undefined, 'danger')}<button type="button" class="link" data-action="jump">Jump to definition</button></div>`;
+            const typeSubtitle = `<span class="type-kind-badge">struct</span><span class="type-kind-badge is-readonly">readonly</span><span class="type-meta-sep">·</span><span class="type-meta-path">/elf/Elf64_Ehdr</span><span class="type-status">Saved</span><span class="type-status" data-state="dirty">Unsaved</span><span class="type-status" data-state="saving">Saving…</span>`;
+            const typeActions = `<div class="type-actions"><button type="button" data-open-jsonc><span>Open JSONC</span></button>${web.actionsMenu(web.iconButton('refresh', 'Reload', 'reload') + web.iconButton('close', 'Delete type', 'delete', undefined, 'danger'))}</div>`;
+            const inspectorHtml = web.page('Elf64_Ehdr', 'Data Type', 'struct · /elf/Elf64_Ehdr', typeBody, `document.getElementById('inspector-more').open = true;`, { kind: 'type-editor', md5 }, typeActions, { subtitleHtml: typeSubtitle, titleHtml: syntaxMod.highlightName('elf::Elf64_Ehdr(uint64_t flags)'), error: 'Backend warning: alignment padded.' });
+
+            const editFormBody = `<div class="success" role="status">Saved prototype changes.</div><form id="edit-form"><div class="form-grid"><label>Function name<input name="name" value="parse_args"></label><label>Entry<input name="entry" value="ram:00401100" readonly></label><label>Signature<input name="signature" placeholder="int parse_args(int argc, char **argv)"></label><label class="checkbox"><input type="checkbox" name="noreturn" checked>Non-returning function</label></div><fieldset class="check-group"><legend>Flags</legend><label class="checkbox"><input type="checkbox" checked>Inline</label><label class="checkbox"><input type="checkbox">Varargs</label></fieldset><table class="edit-rows"><thead><tr><th>Name</th><th>Type</th><th></th></tr></thead><tbody><tr><td><input aria-label="Param name" value="argc"></td><td><input aria-label="Param type" value="int"></td><td><button type="button" class="row-remove" aria-label="Remove parameter">Remove</button></td></tr></tbody></table><div class="form-actions"><button type="submit">Apply</button><button type="button" class="secondary" data-action="cancel">Cancel</button><button type="button" class="icon-submit danger" aria-label="Delete comment" title="Delete comment">${callIconsMod.callIcon('close')}</button></div></form>`;
+            const editFormHtml = web.page('Edit Function', 'Mutation', 'main · 00401100', editFormBody, '', { kind: 'edit-function', md5 });
+
+            const browserHtml = workbenchPage.page({
+              title: 'Defined Strings', subtitle: 'Program app.bin', viewKind: 'strings', address: 'ram:00401000', actions: true, next: true, previous: false,
+              scopeSummary: '2 strings', scope: 'Showing 2 strings in .rodata', state: { kind: 'strings', md5, selected: 'ram:00402000' },
+              body: workbenchPage.table(['Address', 'Length', 'Type', 'Value'], [
+                { cells: ['ram:00402000', '12', 'ds', '"hello world"'], address: 'ram:00402000', kind: 'data', detail: 'ds · 12 bytes' },
+                { cells: ['ram:00402010', '8', 'ds', '"ghidra"'], address: 'ram:00402010', kind: 'data', detail: 'ds · 8 bytes' },
+              ]),
+            });
+
+            const cgModel = {
+              root: 'ram:00401000', limited: false, warnings: [],
+              nodes: [
+                { id: 'ram:00400900', entry: 'ram:00400900', name: '_start', callerDistance: 1, branches: { callers: { expanded: true, count: 1 }, callees: { expanded: true, count: 1 } } },
+                { id: 'ram:00401000', entry: 'ram:00401000', name: 'main', branches: { callers: { expanded: true, count: 1 }, callees: { expanded: true, count: 2 } } },
+                { id: 'ram:00401100', entry: 'ram:00401100', name: 'parse_args', calleeDistance: 1, branches: { callers: { expanded: false, count: 1 }, callees: { expanded: false, count: 2 } } },
+                { id: 'ram:00401200', entry: 'ram:00401200', name: 'run_task', calleeDistance: 1, branches: { callers: { expanded: false, count: 1 }, callees: { expanded: false, count: 0 } } },
+              ],
+              edges: [
+                { from: 'ram:00400900', to: 'ram:00401000', sites: ['ram:00400914'] },
+                { from: 'ram:00401000', to: 'ram:00401100', sites: ['ram:00401004', 'ram:00401018'] },
+                { from: 'ram:00401000', to: 'ram:00401200', sites: ['ram:0040102c'] },
+              ],
+            };
+            const cgTools = `<div class="call-controls call-icon-row" role="group" aria-label="Call graph exploration"><button id="call-center" aria-label="Center current function">${callIconsMod.callIcon('center')}</button><button id="call-focus" data-action="focusCallGraph" aria-label="Focus selected function">${callIconsMod.callIcon('focus')}</button><span class="call-divider" aria-hidden="true"></span><button id="call-menu-overview" aria-pressed="true" aria-label="Overview">${callIconsMod.callIcon('overview')}</button><button id="call-details-toggle" aria-pressed="false" aria-label="Call sites">${callIconsMod.callIcon('details')}</button><span class="call-divider" aria-hidden="true"></span><button data-action="refresh" aria-label="Refresh graph">${callIconsMod.callIcon('refresh')}</button></div>`;
+            const callGraphPageHtml = workbenchPage.page({
+              title: 'Call graph', subtitle: 'app.bin · 00401000', graph: true, callGraph: true, callView: 'graph', callName: 'main', callBack: true, callTools: cgTools, actions: true, viewKind: 'callGraph',
+              scope: 'Graph limit reached; fold branches for a smaller neighborhood.', state: { kind: 'callGraph', md5, entry: 'ram:00401000' },
+              body: await callGraphMod.callGraph(cgModel) + `<details class="call-details" hidden><summary>Call relationships and sites (3)</summary>${workbenchPage.table(['Caller', 'Callee', 'Call site'], [{ cells: ['main', 'parse_args', 'ram:00401004'], address: 'ram:00401004', entry: 'ram:00401100', kind: 'function' }])}</details>`,
+            });
+
+            const columnsBody = callColumnsMod.callColumns({
+              root: { entry: 'ram:00401000', name: 'main' }, direction: 'callees', path: ['ram:00401100'],
+              columns: [
+                { source: { entry: 'ram:00401000', name: 'main' }, selected: 'ram:00401100', limited: false, rows: [
+                  { entry: 'ram:00401100', name: 'parse_args', sites: ['ram:00401004'] },
+                  { entry: 'ram:00401200', name: 'run_task', sites: ['ram:0040102c'], cycleAt: 0 },
+                ] },
+                { source: { entry: 'ram:00401100', name: 'parse_args' }, limited: true, rows: [{ entry: 'ram:00401300', name: 'strtol_wrap', sites: ['ram:00401120'] }] },
+              ],
+            });
+            const callColumnsPageHtml = workbenchPage.page({
+              title: 'Call graph', subtitle: 'app.bin · 00401000', graph: true, callGraph: true, callView: 'columns', callName: 'main', callBack: true, actions: true, viewKind: 'callGraph',
+              callTools: `<div class="call-controls call-icon-row" role="group" aria-label="Column view options"><button id="call-column-home" aria-label="Return to current function">${callIconsMod.callIcon('back')}</button></div>`,
+              state: { kind: 'callGraph', callView: 'columns', md5, entry: 'ram:00401000' }, body: columnsBody,
+            });
+
+            const cfgBody = await cfgMod.controlFlowGraph([
+              { id: 'b0', title: '00401000', address: 'ram:00401000', entry: 'ram:00401000', lines: ['PUSH RBP', 'MOV RBP, RSP', 'CMP EDI, 0x2', 'JZ 0x401020'] },
+              { id: 'b1', title: '00401010', address: 'ram:00401010', entry: 'ram:00401000', lines: ['LEA RDI, ["usage"]', 'CALL puts'] },
+              { id: 'b2', title: '00401020', address: 'ram:00401020', entry: 'ram:00401000', subtitle: 'Empty return block', lines: [] },
+            ], [{ from: 'b0', to: 'b2', label: 'CONDITIONAL_JUMP' }, { from: 'b0', to: 'b1', label: 'FALL_THROUGH' }]);
+            const cfgPageHtml = workbenchPage.page({
+              title: 'Control flow', subtitle: 'main · app.bin', graph: true, controlFlow: true, actions: true, viewKind: 'controlFlow',
+              scope: '3 basic blocks', state: { kind: 'controlFlow', md5, entry: 'ram:00401000', selected: 'ram:00401010' }, body: cfgBody,
+            });
+
+            const blockInfo = { name: '.text', start: 'ram:00401000', end: 'ram:00401fff', length: 4096, initialized: true, read: true, write: false, execute: true, permissions: 'r-x', kind: 'ram', comment: 'code' };
+            const bssInfo = { name: '.bss', start: 'ram:00403000', end: 'ram:004030ff', length: 256, initialized: false, read: true, write: true, execute: false, permissions: 'rw-' };
+            const listingItems = [
+              {
+                kind: 'instruction', address: 'ram:00401000', byteLength: 4, bytesText: '48 89 e5 90', bytesShort: '48 89 e5 90',
+                mnemonic: 'MOV', operandsText: 'RBP, qword ptr [RSP + 0x10], "fmt", symbol_fn', entry: 'ram:00401000', functionName: 'demo::main',
+                blockHeader: blockInfo, plateComment: 'Entry point banner',
+                functionHeader: { displaySignature: 'int demo::main(int argc, char **argv)', rawSignature: 'int main(int argc, char **argv)', callingConvention: '__sysv', flags: ['entry'], variables: [{ kind: 'param', dataType: 'int', name: 'argc', storage: 'EDI', rawStorage: 'EDI:4' }] },
+                labels: [{ name: 'demo::main', fullTooltip: 'demo::main' }], xrefTotal: 2,
+                xrefs: [{ from: 'ram:00400900', label: '_start+0x14', suffix: '(c)', type: 'CALL', navigable: true }, { from: 'EXTERNAL:00000001', label: 'entry', suffix: '', type: 'ENTRY', navigable: false }],
+                preComment: 'Prologue setup', eolComment: 'save frame pointer', postComment: 'frame active',
+                targets: [{ to: 'ram:00401010', label: '00401010', kind: 'call', inlineOnly: false }],
+              },
+              { kind: 'instruction', address: 'ram:00401004', byteLength: 5, bytesText: 'e8 07 00 00 00', bytesShort: 'e8 07 00 00 00', mnemonic: 'CALL', operandsText: '0x401010, RAX', entry: 'ram:00401000', functionName: 'demo::main', labels: [], xrefTotal: 0, xrefs: [], eolComment: 'invoke helper', targets: [{ to: 'ram:00401010', label: 'helper', kind: 'call', inlineOnly: true }] },
+              { kind: 'undefinedRun', startAddress: 'ram:00401020', endAddress: 'ram:0040103f', byteLength: 32, uninitialized: false, units: [] },
+            ];
+            const listingHtml = programListingUi.renderProgramListingPage({
+              md5, programName: 'app.bin', title: 'Program Listing — app.bin', blocks: [blockInfo, bssInfo], currentBlock: '.text',
+              cursorAddress: 'ram:00401000', selectedAddress: 'ram:00401000', window: { startAddress: 'ram:00401000', endAddress: 'ram:0040103f', items: listingItems, collapsedItems: listingItems },
+              hasMoreBefore: true, hasMoreAfter: true, canBack: true, canForward: false, syncEnabled: true, totalUnitsLabel: '2 instructions in window',
+            });
+
+            const hexRows = [
+              { rowAddress: 'ram:00401000', firstInBlockAddress: 'ram:00401000', cells: Array.from({ length: 16 }, (_, i) => ({ inBlock: true, address: `ram:0040100${i.toString(16)}`, value: i === 1 || i >= 12 ? null : 0x41 + i, symbol: i === 0 ? 'main' : undefined })) },
+              { rowAddress: 'ram:00401010', firstInBlockAddress: 'ram:00401010', cells: Array.from({ length: 16 }, (_, i) => ({ inBlock: i < 14, address: i < 14 ? `ram:0040101${i.toString(16)}` : '', value: i < 8 ? 0x30 + i : null })) },
+            ];
+            const hexHtml = programHexUi.renderProgramHexPage({
+              md5, programName: 'app.bin', title: 'Memory — app.bin', endian: 'big', addressSizeBits: 64, defaultSpace: 'ram', addressWidth: 8,
+              blocks: [blockInfo, bssInfo], currentBlock: blockInfo, cursorAddress: 'ram:00401000', selectionLength: 2, cursorSymbol: 'main',
+              chunk: { start: 'ram:00401000', end: 'ram:0040101d', byteLength: 30, rows: hexRows },
+              hasMoreBefore: false, hasMoreAfter: true, canBack: true, canForward: true, syncEnabled: true, bytesPerRow: 16,
+              initialInspector: [{ label: 'uint32', value: '1094861636', rawTitle: '0x41424344' }, { label: 'Pointer', value: '0x00401010', jumpAddress: 'ram:00401010' }],
+            });
+
+            const files = {
+              'inspector-type.html': inspectorHtml, 'edit-form.html': editFormHtml, 'workbench-browser.html': browserHtml, 'call-graph.html': callGraphPageHtml,
+              'call-columns.html': callColumnsPageHtml, 'control-flow.html': cfgPageHtml, 'program-listing.html': listingHtml, 'program-hex.html': hexHtml,
+            };
+            for (const [name, html] of Object.entries(files)) fs.writeFileSync(path.join(snapDir, name), html, 'utf8');
+            return files;
+          }
+
+          function injectThemeAndShim(rawHtml, theme, dualSwitchThemes = false) {
+            const nonceMatch = /style-src 'nonce-([^']+)'/.exec(rawHtml);
+            assert(nonceMatch, 'Expected CSP style-src nonce in snapshot HTML');
+            const nonce = nonceMatch[1];
+            const cssBlock = dualSwitchThemes
+              ? `body.vscode-light{${Object.entries(THEMES['light-plus'].vars).map(([k, v]) => `${k}:${v}`).join(';')}}body.vscode-dark{${Object.entries(THEMES['dark-plus'].vars).map(([k, v]) => `${k}:${v}`).join(';')}}`
+              : `:root,body{${Object.entries(theme.vars).map(([k, v]) => `${k}:${v}`).join(';')}}`;
+            const themeStyle = `<style id="theme-fixture" nonce="${nonce}">${cssBlock}</style>`;
+            const shim = `<script nonce="${nonce}">window.__cspViolations=[];document.addEventListener('securitypolicyviolation',e=>window.__cspViolations.push(e.violatedDirective+':'+e.blockedURI));window.acquireVsCodeApi=()=>{let st={};return{getState:()=>st,setState:s=>{st=s},postMessage:()=>{}}};</script>`;
+            return rawHtml
+              .replace('</head>', `${themeStyle}</head>`)
+              .replace('<script nonce=', `${shim}<script nonce=`)
+              .replace(/<body class="([^"]*)"/, `<body class="${theme.bodyClass} $1"`)
+              .replace(/<body data-/, `<body class="${theme.bodyClass}" data-`);
+          }
+
+          const BROWSER_HELPERS = `window.__contrastHelpers=(()=>{const parse=s=>{const m=/^rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)(?:,\\s*([\\d.]+))?\\)$/.exec(String(s||'').trim());return m?[+m[1],+m[2],+m[3],m[4]===undefined?1:+m[4]]:null};const over=(fg,bg)=>[Math.round(fg[0]*fg[3]+bg[0]*(1-fg[3])),Math.round(fg[1]*fg[3]+bg[1]*(1-fg[3])),Math.round(fg[2]*fg[3]+bg[2]*(1-fg[3]))];const lin=v=>{const s=v/255;return s<=0.04045?s/12.92:Math.pow((s+0.055)/1.055,2.4)};const lum=([r,g,b])=>0.2126*lin(r)+0.7152*lin(g)+0.0722*lin(b);const ratio=(a,b)=>{const l1=lum(a),l2=lum(b);return(Math.max(l1,l2)+0.05)/(Math.min(l1,l2)+0.05)};const effectiveBg=el=>{const chain=[];for(let cur=el;cur&&cur.nodeType===1;cur=cur.parentElement){const c=parse(getComputedStyle(cur).backgroundColor);if(c&&c[3]>0)chain.unshift(c)}let bg=[255,255,255];for(const c of chain)bg=over(c,bg);return bg};const ringColor=bs=>{if(!bs||bs==='none')return null;const matches=bs.match(/rgba?\\([^)]+\\)/g);return matches&&matches.length?parse(matches[matches.length-1]):null};return{parse,over,ratio,effectiveBg,ringColor}})();`;
+
+          async function verifySnapshot(page, name, rawHtml, themeName, theme) {
+            const pageErrors = [];
+            const onError = err => pageErrors.push(err.stack || err.message || String(err));
+            page.on('pageerror', onError);
+            try {
+              await page.goto('about:blank');
+              await page.setContent(injectThemeAndShim(rawHtml, theme), { waitUntil: 'load' });
+              await page.waitForFunction(() => document.body.dataset.viewReady === 'true');
+              if (name === 'workbench-browser.html') {
+                await page.evaluate(() => { document.body.classList.add('show-extra-columns'); document.querySelector('tbody tr.selected')?.focus(); });
+              } else if (name === 'program-listing.html') {
+                await page.evaluate(() => { const cb = document.getElementById('listing-vars'); cb.checked = true; cb.dispatchEvent(new Event('change')); });
+              } else if (name === 'program-hex.html') {
+                await page.evaluate(() => { const mm = document.querySelector('.memory-map'); if (mm) mm.open = true; });
+              } else if (name === 'call-graph.html') {
+                await page.evaluate(() => {
+                  document.getElementById('call-search-toggle')?.click();
+                  const menu = document.getElementById('call-menu'); if (menu) menu.open = true;
+                  document.querySelector('.call-node:not(.is-root)')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+                });
+              } else if (name === 'call-columns.html') {
+                await page.evaluate(() => { document.getElementById('call-search-toggle')?.click(); const menu = document.getElementById('call-menu'); if (menu) menu.open = true; });
+              } else if (name === 'control-flow.html') {
+                await page.evaluate(() => { document.getElementById('cfg-overview-toggle')?.click(); });
+              }
+              assert.deepEqual(pageErrors, [], `[${themeName}/${name}] pageerror:\n${pageErrors.join('\n')}`);
+              assert.deepEqual(await page.evaluate(() => window.__cspViolations), [], `[${themeName}/${name}] CSP violations`);
+              const rootCheck = await page.evaluate(() => {
+                const rule = document.styleSheets[0].cssRules[0];
+                return { inlineStyle: document.documentElement.getAttribute('style'), selector: rule.selectorText, hasGhidraBg: !!rule.style.getPropertyValue('--ghidra-bg').trim() };
+              });
+              assert.equal(rootCheck.inlineStyle, null, `[${themeName}/${name}] documentElement.style must stay empty`);
+              assert.equal(rootCheck.selector, ':root', `[${themeName}/${name}] styleSheets[0].cssRules[0] must be :root`);
+              assert(rootCheck.hasGhidraBg, `[${themeName}/${name}] :root must hold solved --ghidra-* properties`);
+
+              const axeRes = await page.evaluate(() => window.axe.run(document, { runOnly: { type: 'rule', values: ['color-contrast'] } }));
+              if (axeRes.violations.length > 0) {
+                const details = axeRes.violations.flatMap(v => v.nodes.map(n => `${n.html} -> ${n.failureSummary}`)).join('\n');
+                assert.fail(`[${themeName}/${name}] axe color-contrast violations:\n${details}`);
+              }
+
+              const customFailures = await page.evaluate(snapName => {
+                const H = window.__contrastHelpers;
+                const failures = [];
+                const pageBg = H.effectiveBg(document.body);
+                const checkFg = (el, bgRgb, min, label) => {
+                  const cs = getComputedStyle(el);
+                  const raw = H.parse(cs.color);
+                  if (!raw) return;
+                  const op = parseFloat(cs.opacity || '1');
+                  const fg = H.over([raw[0], raw[1], raw[2], raw[3] * op], bgRgb);
+                  const r = H.ratio(fg, bgRgb);
+                  if (r + 1e-3 < min) failures.push(`${label}: ratio ${r.toFixed(2)} < ${min}`);
+                };
+                for (const input of document.querySelectorAll('input[placeholder], textarea[placeholder]')) {
+                  if (input.offsetParent === null) continue;
+                  const bg = H.effectiveBg(input);
+                  const raw = H.parse(getComputedStyle(input, '::placeholder').color);
+                  if (raw && H.ratio(H.over(raw, bg), bg) + 1e-3 < 4.5) failures.push(`placeholder(${input.getAttribute('placeholder')})`);
+                }
+                for (const pressed of document.querySelectorAll('.program-view .icon-button[aria-pressed="true"], .call-topbar [aria-expanded="true"], .call-icon-row [aria-pressed="true"], .cfg-topbar [aria-pressed="true"], .call-direction [aria-pressed="true"]')) {
+                  if (pressed.offsetParent === null) continue;
+                  const parentBg = H.effectiveBg(pressed.parentElement);
+                  const selfBg = H.effectiveBg(pressed);
+                  checkFg(pressed, selfBg, 4.5, `pressed-fg(${pressed.id || pressed.className})`);
+                  const cs = getComputedStyle(pressed);
+                  const ring = H.ringColor(cs.boxShadow) || H.parse(cs.borderTopColor);
+                  const fillRatio = H.ratio(selfBg, parentBg);
+                  const ringRatio = ring ? H.ratio(H.over(ring, parentBg), parentBg) : 1;
+                  if (Math.max(fillRatio, ringRatio) + 1e-3 < 3.0) failures.push(`pressed-indicator(${pressed.id || pressed.className}): ${Math.max(fillRatio, ringRatio).toFixed(2)} < 3.0`);
+                }
+                for (const sw of document.querySelectorAll('.call-view-switch [aria-pressed="true"]')) {
+                  if (sw.offsetParent === null) continue;
+                  const parentBg = H.effectiveBg(sw.parentElement);
+                  const selfBg = H.effectiveBg(sw);
+                  checkFg(sw, selfBg, 4.5, 'call-view-switch-fg');
+                  if (H.ratio(selfBg, parentBg) + 1e-3 < 3.0) failures.push('call-view-switch-fill < 3.0');
+                }
+                if (snapName === 'call-columns.html') {
+                  for (const row of document.querySelectorAll('.call-column-row.is-selected')) {
+                    const bg = H.effectiveBg(row);
+                    for (const el of row.querySelectorAll('.call-column-name, .call-column-addr, .call-column-chevron')) checkFg(el, bg, 4.5, `call-col-sel(${el.className})`);
+                  }
+                }
+                if (snapName === 'program-listing.html') {
+                  const selRow = document.querySelector('tr.listing-unit-row.selected');
+                  if (selRow) {
+                    for (const state of ['selected', 'focused']) {
+                      if (state === 'focused') selRow.focus();
+                      const bg = H.effectiveBg(selRow);
+                      for (const span of selRow.querySelectorAll('.addr, .col-bytes, .tok-mnemonic, .tok-register, .tok-number, .tok-string, .tok-keyword, .tok-symbol, .target-link, .col-comment')) {
+                        checkFg(span, bg, 4.5, `listing-${state}(${span.className})`);
+                      }
+                    }
+                  }
+                }
+                if (snapName === 'program-hex.html') {
+                  for (const nullCell of document.querySelectorAll('.hb.is-null')) {
+                    const bg = H.effectiveBg(nullCell);
+                    const op = parseFloat(getComputedStyle(nullCell).opacity || '1');
+                    if (op < 0.99) failures.push(`.hb.is-null opacity ${op} !== 1`);
+                    checkFg(nullCell, bg, 4.5, `hex-null(${nullCell.dataset.address})`);
+                  }
+                  const hexSel = document.querySelector('tr.hex-row.selected');
+                  if (hexSel) {
+                    hexSel.focus();
+                    const bg = H.effectiveBg(hexSel);
+                    for (const el of hexSel.querySelectorAll('td.addr, .hb:not(.is-pad):not(.is-selected)')) checkFg(el, bg, 4.5, `hex-row-focused(${el.className})`);
+                  }
+                }
+                if (snapName === 'call-graph.html') {
+                  for (const node of document.querySelectorAll('.call-node')) {
+                    const fillRgb = H.parse(getComputedStyle(node.querySelector('.call-node-body')).fill);
+                    const bg = fillRgb ? H.over(fillRgb, pageBg) : pageBg;
+                    for (const txt of node.querySelectorAll('text')) {
+                      const tf = H.parse(getComputedStyle(txt).fill);
+                      const op = parseFloat(getComputedStyle(txt).opacity || '1');
+                      if (H.ratio(H.over([tf[0], tf[1], tf[2], tf[3] * op], bg), bg) + 1e-3 < 4.5) failures.push(`call-node-text(${node.dataset.label})`);
+                    }
+                    for (const br of node.querySelectorAll('.node-branch')) {
+                      const stroke = H.parse(getComputedStyle(br.querySelector('.branch-bar-path')).stroke);
+                      const r = H.ratio(H.over(stroke, bg), bg);
+                      if (r + 1e-3 < 3.0) failures.push(`node-branch(${node.className.baseVal}, expanded=${br.getAttribute('aria-expanded')}): ${r.toFixed(2)} < 3.0`);
+                    }
+                  }
+                }
+                if (snapName === 'control-flow.html') {
+                  for (const node of document.querySelectorAll('.graph-node')) {
+                    const bodyFill = H.over(H.parse(getComputedStyle(node.querySelector('.block-body')).fill), pageBg);
+                    const headFill = H.over(H.parse(getComputedStyle(node.querySelector('.block-header')).fill), bodyFill);
+                    for (const t of node.querySelectorAll('.node-title, .cfg-entry-badge')) {
+                      if (H.ratio(H.over(H.parse(getComputedStyle(t).fill), headFill), headFill) + 1e-3 < 4.5) failures.push(`cfg-header(${t.className.baseVal})`);
+                    }
+                    for (const t of node.querySelectorAll('.node-line tspan, .node-subtitle:not(.cfg-entry-badge)')) {
+                      if (H.ratio(H.over(H.parse(getComputedStyle(t).fill), bodyFill), bodyFill) + 1e-3 < 4.5) failures.push(`cfg-body(${t.className.baseVal || 'tspan'})`);
+                    }
+                  }
+                }
+                return failures;
+              }, name);
+              assert.deepEqual(customFailures, [], `[${themeName}/${name}] contrast failures:\n${customFailures.join('\n')}`);
+
+              if (name === 'call-graph.html') {
+                await page.locator('.call-node:not(.is-root):not(.selected)').first().hover({ force: true });
+                const hoverFailures = await page.evaluate(() => {
+                  const H = window.__contrastHelpers;
+                  const pageBg = H.effectiveBg(document.body);
+                  const node = document.querySelector('.call-node:not(.is-root):not(.selected):hover');
+                  if (!node) return [];
+                  const bg = H.over(H.parse(getComputedStyle(node.querySelector('.call-node-body')).fill), pageBg);
+                  return Array.from(node.querySelectorAll('.node-branch')).flatMap(br => {
+                    const r = H.ratio(H.over(H.parse(getComputedStyle(br.querySelector('.branch-bar-path')).stroke), bg), bg);
+                    return r + 1e-3 < 3.0 ? [`hover node-branch ${r.toFixed(2)} < 3.0`] : [];
+                  });
+                });
+                assert.deepEqual(hoverFailures, [], `[${themeName}/call-graph.html] hover branch contrast failed`);
+              }
+            } finally {
+              page.off('pageerror', onError);
+            }
+          }
+
+          async function run() {
+            assert(
+              pageStylesMod.pageStyles.includes('var(--ghidra-fg,var(--vscode-foreground))') &&
+              pageStylesMod.pageStyles.includes('var(--ghidra-input-placeholder,var(--vscode-input-placeholderForeground))'),
+              'page-styles.ts must preserve static --vscode-* fallbacks'
+            );
+            const snapshots = await buildSnapshots();
+            const chromePath = [process.env.CHROME_PATH, '/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/usr/bin/chromium', '/usr/bin/chromium-browser']
+              .filter(Boolean)
+              .find(p => fs.existsSync(p));
+            const browser = await chromium.launch({ executablePath: chromePath || undefined, headless: true, args: ['--no-sandbox', '--disable-gpu'] });
+            try {
+              const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+              await context.addInitScript({ content: axe.source + '\n' + BROWSER_HELPERS });
+              const page = await context.newPage();
+              for (const [themeName, theme] of Object.entries(THEMES)) {
+                for (const [name, rawHtml] of Object.entries(snapshots)) {
+                  await verifySnapshot(page, name, rawHtml, themeName, theme);
+                }
+                console.log(`PASS theme=${themeName} (${Object.keys(snapshots).length} snapshots)`);
+              }
+
+              await page.goto('about:blank');
+              await page.setContent(injectThemeAndShim(snapshots['program-listing.html'], THEMES['light-plus'], true), { waitUntil: 'load' });
+              const beforeBg = await page.evaluate(() => document.styleSheets[0].cssRules[0].style.getPropertyValue('--ghidra-bg').trim());
+              await page.evaluate(() => { document.body.classList.remove('vscode-light'); document.body.classList.add('vscode-dark'); });
+              await page.waitForFunction(prev => document.styleSheets[0].cssRules[0].style.getPropertyValue('--ghidra-bg').trim() !== prev, beforeBg);
+              const switchCheck = await page.evaluate(async () => {
+                const axeRes = await window.axe.run(document, { runOnly: { type: 'rule', values: ['color-contrast'] } });
+                return { violations: window.__cspViolations, inlineStyle: document.documentElement.getAttribute('style'), axeCount: axeRes.violations.length };
+              });
+              assert.deepEqual(switchCheck, { violations: [], inlineStyle: null, axeCount: 0 }, 'Live theme switch failed');
+              console.log('PASS live theme switch + document.styleSheets[0] :root + zero CSP violations');
+              await context.close();
+
+              const noCanvasCtx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+              await noCanvasCtx.addInitScript({
+                content: `HTMLCanvasElement.prototype.getContext=()=>({clearRect(){},fillRect(){},getImageData(){return{data:new Uint8ClampedArray([0,0,0,0])}},set fillStyle(_v){}});\n` + axe.source + '\n' + BROWSER_HELPERS,
+              });
+              const noCanvasPage = await noCanvasCtx.newPage();
+              await verifySnapshot(noCanvasPage, 'program-listing.html', snapshots['program-listing.html'], 'low-contrast-srgb', THEMES['low-contrast-srgb']);
+              await verifySnapshot(noCanvasPage, 'call-graph.html', snapshots['call-graph.html'], 'low-contrast-srgb', THEMES['low-contrast-srgb']);
+              console.log('PASS 2D canvas readback restriction fallback');
+              await noCanvasCtx.close();
+
+              const fcCtx = await browser.newContext({ viewport: { width: 1280, height: 900 }, forcedColors: 'active' });
+              const fcPage = await fcCtx.newPage();
+              await fcPage.setContent(injectThemeAndShim(snapshots['call-graph.html'], THEMES['light-plus']), { waitUntil: 'load' });
+              const fcResult = await fcPage.evaluate(() => {
+                const probe = document.createElement('div');
+                document.body.appendChild(probe);
+                const sysColor = kw => {
+                  const s = document.styleSheets[0];
+                  const idx = s.insertRule(`#__fc_probe{color:${kw}}`, s.cssRules.length);
+                  probe.id = '__fc_probe';
+                  const val = getComputedStyle(probe).color;
+                  s.deleteRule(idx);
+                  return val;
+                };
+                const expected = { CanvasText: sysColor('CanvasText'), Highlight: sysColor('Highlight'), HighlightText: sysColor('HighlightText'), ButtonText: sysColor('ButtonText') };
+                probe.remove();
+                const rule = document.styleSheets[0].cssRules[0];
+                let ghidraCount = 0;
+                for (let i = 0; i < rule.style.length; i++) if (rule.style[i].startsWith('--ghidra-')) ghidraCount++;
+                return {
+                  ghidraCount, expected, violations: window.__cspViolations,
+                  actual: {
+                    nodeStroke: getComputedStyle(document.querySelector('.call-node:not(.is-root) .call-node-body')).stroke,
+                    rootFill: getComputedStyle(document.querySelector('.call-node.is-root .call-node-body')).fill,
+                    rootTextFill: getComputedStyle(document.querySelector('.call-node.is-root text')).fill,
+                    branchColor: getComputedStyle(document.querySelector('.call-node .node-branch')).color,
+                  },
+                };
+              });
+              assert.equal(fcResult.ghidraCount, 0);
+              assert.deepEqual(fcResult.actual, {
+                nodeStroke: fcResult.expected.CanvasText,
+                rootFill: fcResult.expected.Highlight,
+                rootTextFill: fcResult.expected.HighlightText,
+                branchColor: fcResult.expected.ButtonText,
+              });
+              assert.deepEqual(fcResult.violations, []);
+              console.log('PASS forced-colors: active bypass');
+              await fcCtx.close();
+            } finally {
+              await browser.close();
+            }
+          }
+
+          run().catch(err => { console.error(err); process.exit(1); });
+          EOF
+          REPO_ROOT="$PWD" NODE_PATH=/tmp/ghidra-contrast/node_modules node /tmp/ghidra-contrast/audit.cjs
+
+      - name: Clean temporary contrast artifacts
+        if: always()
+        run: rm -rf /tmp/ghidra-contrast
+
   build:
     name: release (${{ matrix.target }})
     needs: release-please
@@ -222,7 +736,7 @@ jobs:
 
   publish:
     name: Publish verified release
-    needs: [release-please, build, security-audit, vscode]
+    needs: [release-please, build, security-audit, contrast, vscode]
     if: needs.release-please.outputs.release_created == 'true'
     runs-on: ubuntu-24.04
     concurrency:

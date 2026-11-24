@@ -7,6 +7,7 @@
 import { randomBytes } from 'node:crypto';
 import { MemoryBlockInfo, permissionsLabel } from './address-math';
 import { callIcon, callIcons } from './call-graph-icons';
+import { contrastScript, contrastStyles } from './contrast';
 import { DataInspectorEntry, HexChunk, ProgramEndian } from './hex-model';
 import { iconFontStyles } from './icon-font';
 import { displayAddress } from './names';
@@ -152,6 +153,7 @@ export function renderProgramHexPage(payload: HexViewPayload): string {
     const scopeText = `${payload.currentBlock.name} · ${displayAddress(payload.chunk.start)}–${displayAddress(payload.chunk.end)} (${payload.chunk.byteLength} bytes)`;
 
     return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; font-src data:; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}';"><title>${escape(payload.title)}</title><style nonce="${nonce}">
+${contrastStyles}
 ${pageStyles}
 ${iconFontStyles}
 ${viewStyles}
@@ -205,6 +207,7 @@ ${renderMemoryMapHtml(payload.blocks)}
 </div>
 </main>
 <script nonce="${nonce}">
+${contrastScript}
 const vscode = acquireVsCodeApi();
 const state = ${stateJson};
 const previous = vscode.getState() || {};

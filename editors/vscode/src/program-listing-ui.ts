@@ -7,6 +7,7 @@
 import { randomBytes } from 'node:crypto';
 import { MemoryBlockInfo, parseAddress } from './address-math';
 import { callIcon, callIcons } from './call-graph-icons';
+import { contrastScript, contrastStyles } from './contrast';
 import { iconFontStyles } from './icon-font';
 import { ListingRenderItem, ListingTarget, ListingUnit, ListingUndefinedRun, ListingWindowModel } from './listing-model';
 import { displayAddress } from './names';
@@ -145,6 +146,7 @@ export function renderProgramListingPage(payload: ListingViewPayload): string {
     }).replace(/</g, '\\u003c');
 
     return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; font-src data:; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}';"><title>${escape(payload.title)}</title><style nonce="${nonce}">
+${contrastStyles}
 ${pageStyles}
 ${iconFontStyles}
 ${viewStyles}
@@ -194,6 +196,7 @@ ${programViewStyles}
 </div>
 </main>
 <script nonce="${nonce}">
+${contrastScript}
 const vscode = acquireVsCodeApi();
 const state = ${stateJson};
 const previous = vscode.getState() || {};

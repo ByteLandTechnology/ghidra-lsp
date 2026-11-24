@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { randomBytes } from 'node:crypto';
+import { contrastScript, contrastStyles } from './contrast';
 import { pageStyles } from './page-styles';
 import { iconFontStyles } from './icon-font';
 import { viewStyles } from './view-ui';
@@ -91,10 +92,12 @@ export function page(title: string, eyebrow: string, subtitle: unknown, body: st
     const kind = String(state?.kind || (form ? 'edit' : 'inspector'));
     const subtitleMarkup = extras.subtitleHtml ?? escape(subtitle);
     return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; font-src data:; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}';"><title>${escape(title)}</title><style nonce="${nonce}">
+    ${contrastStyles}
     ${pageStyles}
     ${iconFontStyles}
     ${viewStyles}
     </style></head><body class="${form ? 'edit-page' : 'inspector-page'}${extras.busy ? ' is-busy' : ''}" data-view-kind="${escape(kind)}"${extras.busy ? ' aria-busy="true"' : ''}><main><header><div class="inspector-title"><div><div class="eyebrow">${escape(eyebrow)}</div><h1 tabindex="-1"${extras.titleHint ? ` title="${escape(extras.titleHint)}"` : ''}>${extras.titleHtml ?? breakable(title)}</h1>${subtitle ? `<p class="subtitle" title="${escape(subtitle)}">${subtitleMarkup}</p>` : ''}</div></div>${extras.nav || actions ? `<div class="inspector-tools">${extras.nav ? `<nav class="inspector-nav" aria-label="Inspector history">${extras.nav}</nav>` : ''}${actions ? `<div class="inspector-actions" role="group" aria-label="${escape(eyebrow)} actions">${actions}</div>` : ''}</div>` : ''}</header><p id="error" class="error" role="alert">${escape(extras.error ?? '')}</p><p id="busy-status" class="sr-status" role="status">${extras.busy ? 'Loading' : ''}</p>${body}</main><script nonce="${nonce}">
+    ${contrastScript}
     const vscode=acquireVsCodeApi();
     const inspectorState=${stateJson},inspectorPrevious=vscode.getState()||{};
     const inspectorSame=!!inspectorState.kind&&['kind','md5','path','entry','id'].every(key=>inspectorState[key]===inspectorPrevious[key]);

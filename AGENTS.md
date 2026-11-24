@@ -179,3 +179,7 @@ Run `cargo xtask ci`. It runs these checks in order:
 - `cargo doc --locked --workspace --no-deps --document-private-items`
 - `cargo build --locked --workspace`
 - `cargo deny --locked --workspace check`
+
+If you change `editors/vscode/`, run `npm run check` and
+`npm run compile` in `editors/vscode/`, and run the headless Chromium
+contrast check from `/tmp`.

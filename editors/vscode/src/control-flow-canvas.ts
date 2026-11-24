@@ -20,14 +20,14 @@ export const controlFlowStyles = `
 .flow-canvas.panning,.flow-canvas.panning .graph-node{cursor:grabbing}
 .flow-canvas svg{display:block;width:100%;height:100%;overflow:hidden;user-select:none}
 .flow-canvas .graph-node{outline:none;box-shadow:none;background:none}
-.flow-canvas .graph-node .block-body{fill:var(--vscode-editor-background);stroke:var(--vscode-editorWidget-border,var(--vscode-panel-border));stroke-width:1.2}
-.flow-canvas .graph-node .block-header{fill:var(--vscode-editor-inactiveSelectionBackground,var(--vscode-list-inactiveSelectionBackground));stroke:none}
-.flow-canvas .graph-node.selected .block-body,.flow-canvas .graph-node:focus-visible .block-body{stroke:var(--vscode-focusBorder);stroke-width:2.5}
-.flow-canvas .graph-node:hover .block-body,.flow-canvas .graph-node.search-match .block-body{stroke:var(--vscode-focusBorder);stroke-width:2}
-.flow-canvas .node-title{font:600 13px var(--vscode-editor-font-family,monospace);font-variant-numeric:tabular-nums}
-.flow-canvas .node-subtitle{font-size:11px;fill:var(--vscode-descriptionForeground)}
-.flow-canvas .cfg-entry-badge{font-size:11px;font-weight:600;fill:var(--vscode-textLink-foreground,var(--vscode-focusBorder))}
-.flow-canvas .node-line{font:14px var(--vscode-editor-font-family,monospace);font-variant-numeric:tabular-nums;fill:var(--vscode-editor-foreground,var(--vscode-foreground));white-space:pre}
+.flow-canvas .graph-node .block-body{fill:var(--ghidra-bg,var(--vscode-editor-background));stroke:var(--ghidra-node-border,var(--vscode-editorWidget-border,var(--vscode-panel-border)));stroke-width:1.2}
+.flow-canvas .graph-node .block-header{fill:var(--ghidra-cfg-header-bg,var(--vscode-editor-inactiveSelectionBackground,var(--vscode-list-inactiveSelectionBackground)));stroke:none}
+.flow-canvas .graph-node.selected .block-body,.flow-canvas .graph-node:focus-visible .block-body{stroke:var(--ghidra-focus-border,var(--vscode-focusBorder));stroke-width:2.5}
+.flow-canvas .graph-node:hover .block-body,.flow-canvas .graph-node.search-match .block-body{stroke:var(--ghidra-focus-border,var(--vscode-focusBorder));stroke-width:2}
+.flow-canvas .node-title{font:600 13px var(--vscode-editor-font-family,monospace);font-variant-numeric:tabular-nums;fill:var(--ghidra-cfg-header-fg,var(--vscode-foreground))}
+.flow-canvas .node-subtitle{font-size:11px;fill:var(--ghidra-muted,var(--vscode-descriptionForeground))}
+.flow-canvas .cfg-entry-badge{font-size:11px;font-weight:600;fill:var(--ghidra-cfg-header-link,var(--vscode-textLink-foreground,var(--vscode-focusBorder)))}
+.flow-canvas .node-line{font:14px var(--vscode-editor-font-family,monospace);font-variant-numeric:tabular-nums;fill:var(--ghidra-editor-fg,var(--vscode-editor-foreground,var(--vscode-foreground)));white-space:pre}
 .flow-canvas .tok-mnemonic{font-weight:600}
 .flow-page .taken{color:var(--vscode-charts-green,#5fa77f)}
 .flow-page .fallthrough{color:var(--vscode-charts-red,#e47777)}
