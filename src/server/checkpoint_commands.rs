@@ -22,9 +22,7 @@ impl Server {
     match command {
       "ghidra.checkpoints" => {
         let md5 = self.scoped_md5(&arg).await?;
-        backend
-          .call("session", "checkpoint.list", Some(&md5), json!({}))
-          .await
+        call_session_checkpoint_op(backend, "checkpoint.list", &md5, json!({})).await
       }
       "ghidra.createCheckpoint" => self.handle_create_checkpoint(&arg, backend).await,
       "ghidra.restoreCheckpoint" => self.handle_restore_checkpoint(&arg, backend).await,
@@ -47,20 +45,12 @@ impl Server {
     {
       parameters["name"] = Value::String(name.to_owned());
     }
-    backend
-      .call("session", "checkpoint.create", Some(&md5), parameters)
-      .await
+    call_session_checkpoint_op(backend, "checkpoint.create", &md5, parameters).await
   }
 
   /// Restores a saved project checkpoint, waits for session relaunch, and refreshes open views.
   async fn handle_restore_checkpoint(&self, arg: &Value, backend: &McpBackend) -> Result<Value> {
     let md5 = self.scoped_md5(arg).await?;
-    self
-      .fail_pending_open_jobs(
-        &md5,
-        "The program was restored to an earlier checkpoint while this operation was pending",
-      )
-      .await;
     let mut parameters = json!({"wait": false});
     if let Some(id) = arg
       .get("id")
@@ -78,9 +68,14 @@ impl Server {
     {
       parameters["name"] = Value::String(name.to_owned());
     }
-    let restored = backend
-      .call("session", "checkpoint.restore", Some(&md5), parameters)
-      .await?;
+    let restored =
+      call_session_checkpoint_op(backend, "checkpoint.restore", &md5, parameters).await?;
+    self
+      .fail_pending_open_jobs(
+        &md5,
+        "The program was restored to an earlier checkpoint while this operation was pending",
+      )
+      .await;
     if let Some(job) = restored.get("job") {
       self.wait_job(job).await?;
     } else if let Some(id) = restored.get("jobId") {
@@ -107,20 +102,19 @@ impl Server {
     let md5 = self.scoped_md5(arg).await?;
     let reopen = arg.get("reopen").and_then(Value::as_bool).unwrap_or(true);
     let analyze = reopen && arg.get("analyze").and_then(Value::as_bool).unwrap_or(false);
+    let reset = call_session_checkpoint_op(
+      backend,
+      "reset",
+      &md5,
+      json!({"open": reopen, "wait": false}),
+    )
+    .await?;
     self
       .fail_pending_open_jobs(
         &md5,
         "The program session was reset while this operation was pending",
       )
       .await;
-    let reset = backend
-      .call(
-        "session",
-        "reset",
-        Some(&md5),
-        json!({"open": reopen, "wait": false}),
-      )
-      .await?;
     if !reopen {
       self.engine.lock().await.forget_session(&md5);
       self.view_cache.invalidate(&md5).await;
@@ -197,5 +191,30 @@ impl Server {
     }
     self.changed(md5).await;
     Ok(())
+  }
+}
+
+/// Calls a checkpoint or reset `ghidra_session` operation and maps older-backend errors clearly.
+async fn call_session_checkpoint_op(
+  backend: &McpBackend,
+  operation: &str,
+  md5: &str,
+  parameters: Value,
+) -> Result<Value> {
+  match backend
+    .call("session", operation, Some(md5), parameters)
+    .await
+  {
+    Ok(value) => {
+      backend.set_checkpoint_create_supported(true).await;
+      Ok(value)
+    }
+    Err(error) if crate::engine::unsupported_session_operation(&error, operation) => {
+      backend.set_checkpoint_create_supported(false).await;
+      bail!(
+        "ghidra-mcp does not support session.{operation}; update ghidra-mcp and restart the daemon"
+      )
+    }
+    Err(error) => Err(error),
   }
 }

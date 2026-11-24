@@ -16,7 +16,7 @@ mod navigation;
 /// Scoped rename preview, origin save persistence, and document refresh.
 mod rename;
 
-pub(crate) use checkpoints::record_checkpoint;
+pub(crate) use checkpoints::{record_checkpoint, unsupported_session_operation};
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;

@@ -12,6 +12,9 @@ use crate::document::Document;
 
 /// Records a named project checkpoint in `ghidra-mcp` before a committed edit.
 pub(crate) async fn record_checkpoint(backend: &McpBackend, md5: &str, name: &str) -> Result<()> {
+  if !backend.supports_checkpoint_create().await? {
+    return Ok(());
+  }
   match backend
     .call(
       "session",
@@ -22,25 +25,31 @@ pub(crate) async fn record_checkpoint(backend: &McpBackend, md5: &str, name: &st
     .await
   {
     Ok(_) => Ok(()),
-    Err(error) if unsupported_checkpoint_operation(&error) => Ok(()),
+    Err(error) if unsupported_session_operation(&error, "checkpoint.create") => {
+      backend.set_checkpoint_create_supported(false).await;
+      Ok(())
+    }
     Err(error) => Err(error),
   }
 }
 
-/// Returns true when an older `ghidra-mcp` binary does not implement `checkpoint.create`.
-fn unsupported_checkpoint_operation(error: &anyhow::Error) -> bool {
+/// Returns true when `error` shows that `ghidra_session` does not implement `operation`.
+pub(crate) fn unsupported_session_operation(error: &anyhow::Error, operation: &str) -> bool {
   let message = format!("{error:#}").to_ascii_lowercase();
-  message.contains("checkpoint.create")
+  let target = operation.to_ascii_lowercase();
+  message.contains(&target)
     && [
-      "unknown",
-      "unsupported",
-      "invalid",
+      "unknown operation",
+      "unknown variant",
+      "unsupported operation",
+      "unrecognized operation",
+      "invalid operation",
       "not allowed",
+      "not one of",
       "enum",
-      "unrecognized",
     ]
     .iter()
-    .any(|word| message.contains(word))
+    .any(|phrase| message.contains(phrase))
 }
 
 impl Engine {

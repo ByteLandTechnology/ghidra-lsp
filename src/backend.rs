@@ -5,12 +5,13 @@
 
 use std::collections::HashSet;
 use std::process::Stdio;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 use rmcp::model::CallToolRequestParams;
-use rmcp::service::RunningService;
+use rmcp::service::{Peer, RunningService};
 use rmcp::transport::TokioChildProcess;
 use rmcp::{RoleClient, ServiceExt};
 use serde::{Deserialize, Serialize};
@@ -46,6 +47,10 @@ struct ClientSession {
   id: u64,
   /// Running `rmcp` client service attached to the child process.
   service: RunningService<RoleClient, ()>,
+  /// Whether the child `ghidra-mcp` tool schema advertises `checkpoint.create`.
+  schema_supports_checkpoints: bool,
+  /// Whether `checkpoint.create` is active for pre-edit checkpoints on this connection.
+  checkpoint_create_supported: Arc<AtomicBool>,
 }
 
 /// Concrete MCP stdio transport client managing a lazy child `ghidra-mcp` process.
@@ -68,6 +73,58 @@ impl McpBackend {
     }
   }
 
+  /// Connects to `ghidra-mcp` if needed and returns the active session handle.
+  async fn ensure_client(
+    &self,
+    deadline: Duration,
+  ) -> Result<(u64, Peer<RoleClient>, Arc<AtomicBool>)> {
+    let mut guard = self.client.lock().await;
+    if guard.is_none() {
+      let mut command = Command::new(&self.config.mcp_command);
+      command
+        .args(&self.config.mcp_args)
+        .stderr(Stdio::inherit())
+        .kill_on_drop(true);
+      let transport = TokioChildProcess::new(command).context("start ghidra-mcp")?;
+      let service = tokio::time::timeout(deadline, ().serve(transport))
+        .await
+        .context("MCP handshake timed out")??;
+      let schema_supports_checkpoints = probe_checkpoint_create_support(&service, deadline).await;
+      let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+      *guard = Some(ClientSession {
+        id,
+        service,
+        schema_supports_checkpoints,
+        checkpoint_create_supported: Arc::new(AtomicBool::new(schema_supports_checkpoints)),
+      });
+    }
+    let session = guard.as_ref().context("MCP client session is not active")?;
+    Ok((
+      session.id,
+      session.service.peer().clone(),
+      Arc::clone(&session.checkpoint_create_supported),
+    ))
+  }
+
+  /// Returns true when the connected `ghidra-mcp` backend supports `checkpoint.create`.
+  pub(crate) async fn supports_checkpoint_create(&self) -> Result<bool> {
+    let deadline = Duration::from_millis(self.config.request_timeout_ms.clamp(100, 300_000));
+    let (_, _, supported) = self.ensure_client(deadline).await?;
+    Ok(supported.load(Ordering::Relaxed))
+  }
+
+  /// Updates the cached `checkpoint.create` capability flag for the active client session.
+  pub(crate) async fn set_checkpoint_create_supported(&self, supported: bool) {
+    let guard = self.client.lock().await;
+    if let Some(session) = guard.as_ref()
+      && (!supported || session.schema_supports_checkpoints)
+    {
+      session
+        .checkpoint_create_supported
+        .store(supported, Ordering::Relaxed);
+    }
+  }
+
   /// Invokes `ghidra_<domain>` with `operation`, optional `md5`, and JSON `params`.
   pub(crate) async fn call(
     &self,
@@ -87,24 +144,7 @@ impl McpBackend {
         .max(scan_ms)
         .clamp(100, 300_000),
     );
-    let (session_id, peer) = {
-      let mut guard = self.client.lock().await;
-      if guard.is_none() {
-        let mut command = Command::new(&self.config.mcp_command);
-        command
-          .args(&self.config.mcp_args)
-          .stderr(Stdio::inherit())
-          .kill_on_drop(true);
-        let transport = TokioChildProcess::new(command).context("start ghidra-mcp")?;
-        let service = tokio::time::timeout(deadline, ().serve(transport))
-          .await
-          .context("MCP handshake timed out")??;
-        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
-        *guard = Some(ClientSession { id, service });
-      }
-      let session = guard.as_ref().context("MCP client session is not active")?;
-      (session.id, session.service.peer().clone())
-    };
+    let (session_id, peer, _) = self.ensure_client(deadline).await?;
     let mut args = json!({ "operation": operation, "params": params });
     if let Some(md5) = md5 {
       args["md5"] = json!(md5);
@@ -171,6 +211,33 @@ impl McpBackend {
   }
 }
 
+/// Returns false only when `tools/list` explicitly omits `checkpoint.create` from `ghidra_session`.
+async fn probe_checkpoint_create_support(
+  service: &RunningService<RoleClient, ()>,
+  deadline: Duration,
+) -> bool {
+  let Ok(Ok(tools)) = tokio::time::timeout(deadline, service.peer().list_all_tools()).await else {
+    return true;
+  };
+  let Some(session_tool) = tools
+    .iter()
+    .find(|tool| tool.name.as_ref() == "ghidra_session")
+  else {
+    return true;
+  };
+  let schema = Value::Object(session_tool.input_schema.as_ref().clone());
+  let Some(operations) = schema
+    .pointer("/properties/operation/enum")
+    .and_then(Value::as_array)
+    .filter(|items| !items.is_empty())
+  else {
+    return true;
+  };
+  operations
+    .iter()
+    .any(|item| item.as_str() == Some("checkpoint.create"))
+}
+
 /// Returns true when `(domain, operation)` is known to be read-only.
 fn is_read_only_operation(domain: &str, operation: &str) -> bool {
   if domain == "batch" {
@@ -224,6 +291,7 @@ pub(crate) fn format_error_value(val: &Value) -> Option<String> {
       if let Some(reason) = reason {
         if err_type == Some("missing_target")
           && let Some(target) = target
+          && !reason.starts_with("unknown operation")
         {
           return Some(format!(
             "Binary target `{target}` is not available in Ghidra: {reason}"
