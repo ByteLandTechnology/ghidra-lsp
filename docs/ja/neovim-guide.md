@@ -47,9 +47,9 @@
 
 ![Neovim Ghidra LSP ワークベンチ](../assets/screenshots/neovim-workbench.svg)
 
-## 全 25 個の `:Ghidra*` ユーザーコマンド
+## 全 26 個の `:Ghidra*` ユーザーコマンド
 
-`editors/nvim/plugin/ghidra-lsp.lua` に登録されている全 25 個のコマンドは次のとおりです。
+`editors/nvim/plugin/ghidra-lsp.lua` に登録されている全 26 個のコマンドは次のとおりです。
 
 | コマンド | 引数 | 動作 |
 | --- | --- | --- |
@@ -73,6 +73,7 @@
 | `:GhidraControlFlow` | なし | 現在の関数の基本ブロック制御フローグラフ（`ghidra-cfg://`）を開きます |
 | `:GhidraCallGraph` | `[entry\|address]` | 指定または現在関数の境界付きコールグラフ（`ghidra-callgraph://`）を開きます |
 | `:GhidraEditType` | `[path]` | 指定データ型の編集可能 `.ghidra-type` JSONC バッファ（`ghidra-type://`）を開きます |
+| `:GhidraParseC` | `[category]` | C ヘッダ宣言用のフローティングバッファ（`ghidra-parse-c://`）を開き、`:w` で `data_type.parse_c` により一括取り込みます |
 | `:GhidraRefresh` | なし | 現在の Ghidra 仮想バッファ（C 擬似コード、型、Listing、Hex、グラフ）を再取得・更新します |
 | `:GhidraDiscardRename` | なし | 保留中のスコープ付きシンボルリネームプレビューを破棄します |
 | `:GhidraOrigin` | なし | 保留中リネームを開始したオリジンバッファへジャンプします |

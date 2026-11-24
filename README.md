@@ -17,7 +17,7 @@ It serves Ghidra decompiled pseudocode, disassembly listings, hexadecimal byte w
 - **Single-decompile request budget**: Fetches GUI lines, decompiler tokens, native cursor bindings, and all five Ghidra comment kinds (`plate`, `pre`, `eol`, `post`, `repeatable`) in one `decompilation.get` call.
 - **UTF-16 and checked `u64` safety**: Computes every LSP `Position` and `Range` in UTF-16 code units, slices UTF-8 strings only at character boundaries, and computes memory addresses with checked 64-bit math.
 - **Controlled persistence**: Keeps decompiled C text read-only except for scoped `<F2>` rename previews that require saving the origin buffer, and guards mutations with optimistic conflict checks and write-timeout state verification.
-- **Full editor integrations**: Provides custom editors, synchronized webviews, horizontal 5-kind comment badge tabs, and interactive call graphs in Visual Studio Code, and 25 `:Ghidra*` commands and virtual buffers in Neovim. Both editor integrations can install missing `ghidra-lsp` and `ghidra-mcp` binaries automatically via `npm`.
+- **Full editor integrations**: Provides custom editors, synchronized webviews, horizontal 5-kind comment badge tabs, and interactive call graphs in Visual Studio Code, and 26 `:Ghidra*` commands and virtual buffers in Neovim. Both editor integrations can install missing `ghidra-lsp` and `ghidra-mcp` binaries automatically through `npm`.
 
 ## Architecture overview
 
@@ -90,7 +90,7 @@ Start with [Getting Started](docs/en/getting-started.md), or open a chapter dire
 | [Getting Started](docs/en/getting-started.md) | Prerequisites, Rust build, CLI flags, verification steps, and troubleshooting |
 | [Architecture](docs/en/architecture.md) | Process model, zero-disk-leak policy, 6 URI schemes, alignment, and single-decompile budget |
 | [VS Code Guide](docs/en/vscode-guide.md) | Installation, sidebar views, custom editors, all `ghidraLsp.*` settings, and commands |
-| [Neovim Guide](docs/en/neovim-guide.md) | Plugin setup, all 25 `:Ghidra*` commands, keymaps, comment float, and windows |
+| [Neovim Guide](docs/en/neovim-guide.md) | Plugin setup, all 26 `:Ghidra*` commands, keymaps, comment float, and windows |
 | [Editing and Safety](docs/en/editing-and-safety.md) | Scoped `<F2>` renames, 5 comment kinds, prototypes, JSONC `.ghidra-type` schema, and timeouts |
 | [LSP and Development](docs/en/lsp-and-development.md) | LSP capability matrix, all 45 `workspace/executeCommand` APIs, layout, and `cargo xtask ci` |
 

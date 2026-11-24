@@ -41,7 +41,7 @@ const pendingTitle = (state: PanelState): string => state.name || (state.path ? 
 /** Type links read as the type's name; a non-root category follows in muted text and the full path stays in the tooltip and link value. */
 function linkedType(value: unknown, home = ''): string {
     const full = reference(value);
-    const suffix = /(?:\s*\*|\[[0-9]+\])+$/.exec(full)?.[0] ?? '';
+    const suffix = /(?:\s*\(\*+\)(?:\[[0-9]+\])+|\s*\*|\[[0-9]+\])+$/.exec(full)?.[0] ?? '';
     const base = full.slice(0, full.length - suffix.length);
     const slash = base.lastIndexOf('/');
     const name = slash >= 0 ? base.slice(slash + 1) : base, category = slash > 0 ? base.slice(0, slash) : '';

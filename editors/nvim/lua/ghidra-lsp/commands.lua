@@ -39,6 +39,7 @@ function M.get_active_md5()
         or cur_name:match('^ghidra%-string://([a-fA-F0-9]+)/')
         or cur_name:match('^ghidra%-cfg://([a-fA-F0-9]+)/')
         or cur_name:match('^ghidra%-callgraph://([a-fA-F0-9]+)/')
+        or cur_name:match('^ghidra%-parse%-c://([a-fA-F0-9]+)')
     if md5 then
         client.current_md5 = md5:lower()
         return client.current_md5
@@ -625,11 +626,22 @@ function M.types()
             vim.notify('Failed to load data types: ' .. format_error(err), vim.log.levels.ERROR)
             return
         end
-        ui.pick(res.items, {
+        local items = {
+            { _parse_c = true, name = '+ Import C Header...', kind = 'c_header', path = '/' },
+        }
+        for _, item in ipairs(res.items) do
+            table.insert(items, item)
+        end
+        ui.pick(items, {
             prompt = 'Data Types:',
             format_item = format_type_item,
         }, function(choice)
-            if not choice or not choice.path then return end
+            if not choice then return end
+            if choice._parse_c then
+                require('ghidra-lsp.edit').parse_c({ md5 = md5 })
+                return
+            end
+            if not choice.path then return end
             ui.pick({ 'Edit Type (.ghidra-type)', 'Inspect Type (snapshot)' }, {
                 prompt = 'Data Type Action · ' .. tostring(choice.path) .. ':',
             }, function(action)

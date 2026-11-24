@@ -72,8 +72,9 @@ input[type=checkbox]{width:auto;margin:0;accent-color:var(--vscode-checkbox-sele
 .editable{min-width:460px}
 .editable td{padding:6px}
 .editable input{width:100%;min-width:90px;margin:0}
-.editable td:last-child:has(.row-remove){width:1%;white-space:nowrap}
-.row-remove{min-height:26px;padding:3px 7px}
+.editable td:last-child:has(.row-remove,.row-move){width:1%;white-space:nowrap}
+.row-actions{display:inline-flex;align-items:center;gap:4px}
+.row-remove,.row-move{min-height:26px;padding:3px 7px}
 [data-add-row]{margin-top:8px}
 .hex{font:13px/1.6 var(--vscode-editor-font-family,monospace);white-space:pre-wrap;overflow-wrap:anywhere}
 .error{color:var(--vscode-errorForeground);white-space:pre-wrap;overflow-wrap:anywhere}

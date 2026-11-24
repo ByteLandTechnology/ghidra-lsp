@@ -103,29 +103,14 @@ pub(super) fn normalize_type_ref(value: &Value) -> String {
   }
 }
 
-/// Strips leading Ghidra category segments from `full` while keeping pointer and array suffixes.
+/// Strips leading Ghidra category segments from `full` while keeping C declarator suffixes.
 pub(super) fn short_type_name(full: &str) -> String {
   if full.is_empty() {
     return String::new();
   }
-  let mut split = full.len();
-  loop {
-    let prefix = &full[..split];
-    if let Some(without_star) = prefix.strip_suffix('*') {
-      split = without_star.trim_end().len();
-      continue;
-    }
-    if let Some(without_close) = prefix.strip_suffix(']')
-      && let Some(open) = without_close.rfind('[')
-    {
-      let digits = &without_close[open + 1..];
-      if !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()) {
-        split = open;
-        continue;
-      }
-    }
-    break;
-  }
+  let split = full
+    .find(['*', '(', '['])
+    .map_or(full.len(), |idx| full[..idx].trim_end().len());
   let base = &full[..split];
   let suffix = &full[split..];
   let leaf = base.rsplit_once('/').map_or(base, |(_, r)| r);

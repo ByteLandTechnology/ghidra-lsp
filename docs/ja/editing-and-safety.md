@@ -58,7 +58,7 @@
 
 ### 関数プロトタイプとローカル変数のバッチ変更
 
-`ghidra.saveFunctionPrototype` と `ghidra.saveVariables`（`src/mutations/prototype.rs`）は、フォームを開いた時点の `original` スナップショットと現在の Ghidra 状態を照合し、外部変更があれば保存を拒否します。差分がない場合は何もしない、単一操作の場合は直接実行、複数操作（最大 1000 件）の場合は `batch.execute` に `"transaction_mode": "all_or_none"` を指定して複数変更（関数名、戻り値型、呼び出し規約、可変長引数、`noreturn`、`inline`、コメント、パラメータ追加・削除・変更、ローカル変数変更）をまとめて実行し、成功後に `program.save` とセッション再描画を行います。
+`ghidra.saveFunctionPrototype` と `ghidra.saveVariables`（`src/mutations/prototype.rs`）は、フォームを開いた時点の `original` スナップショットと現在の Ghidra 状態を照合し、外部変更があれば保存を拒否します。関数名、1 行 C `signature`（`return_type`・`calling_convention`・`parameters` と排他）、戻り値型、呼び出し規約、可変長引数、`noreturn`、`inline`、およびパラメータの追加・削除・並び替え・型変更（カスタムストレージ関数での互換 `VariableStorageReference` 維持を含む）は単一の原子的な `function.patch` としてコンパイルされ、コメントやローカル変数変更とともに `batch.execute`（`"transaction_mode": "all_or_none"`）および `program.save` で永続化されます。また C ヘッダ宣言は `data_type.parse_c`（VS Code の **Import C header** または Neovim の `:GhidraParseC`）によりメモリ上で一括インポートできます。
 
 ## データ型編集（`ghidra-type://`）と JSONC スキーマ
 

@@ -8,7 +8,7 @@ use std::collections::HashSet;
 use serde_json::{Map, Value, json};
 
 use super::{MAX_SAFE_INTEGER, MIN_SAFE_INTEGER};
-use crate::address::format_type_ref;
+use crate::address::{format_type_ref, is_array_type_ref};
 
 /// Extracts a lossless JSON integer from `value` inside the IEEE-754 safe range.
 pub(super) fn safe_i64_from_value(value: Option<&Value>) -> Option<i64> {
@@ -203,7 +203,7 @@ pub(super) fn type_model(data: &Value) -> Value {
         );
         let dt = field.get("data_type").unwrap_or(&Value::Null);
         m.insert("type".into(), json!(format_type_ref(dt)));
-        if dt.get("kind").and_then(Value::as_str) != Some("array")
+        if !is_array_type_ref(dt)
           && let Some(len) = field.get("length").filter(|v| !v.is_null())
         {
           m.insert("length".into(), len.clone());

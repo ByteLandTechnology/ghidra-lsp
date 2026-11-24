@@ -153,6 +153,7 @@ const WRITE: &[(&str, &str)] = &[
   ("comment", "upsert"),
   ("data_type", "create"),
   ("data_type", "delete"),
+  ("data_type", "parse_c"),
   ("data_type", "patch"),
   ("data_type", "upsert"),
   ("flow_override", "patch"),

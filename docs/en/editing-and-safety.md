@@ -53,9 +53,12 @@ Before writing a comment, `prepare_comment_mutation` queries current comments at
 
 ### Function signatures and local variables (`src/mutations/prototype.rs`)
 
-`ghidra.functionPrototype` captures the current function name, return type, calling convention, `hasVarArgs`, `hasNoReturn`, `isInline`, function comment, parameters, locals, and an `original` snapshot.
+`ghidra.functionPrototype` captures the current function name, return type, calling convention, `hasVarArgs`, `hasNoReturn`, `isInline`, function comment, return storage, `hasCustomVariableStorage`, parameters (with structured `VariableStorageReference` values), locals, and an `original` snapshot.
 
-When saving through `ghidra.saveFunctionPrototype` or `ghidra.saveVariables`, the server checks `original` against live Ghidra state and compiles every rename, type change, attribute update, and parameter change into a single `batch.execute` request with `transaction_mode: "all_or_none"`. Either every operation succeeds and persists together, or Ghidra rolls back the batch.
+When saving through `ghidra.saveFunctionPrototype` or `ghidra.saveVariables`, the server checks `original` against live Ghidra state and compiles changes into a single `batch.execute` request with `transaction_mode: "all_or_none"`:
+
+- **Atomic prototype updates**: Function renames, calling conventions, flags, one-line C `signature` declarations (mutually exclusive with `return_type`, `calling_convention`, and `parameters`), and ordered `parameters` arrays (including pure parameter swaps and compatible custom `VariableStorageReference` preservation) execute in one atomic `function.patch` operation.
+- **C type strings and header imports**: Data type fields, function parameters, global symbols, and local variables accept C type declarations directly (such as `const struct Packet *`, `int (*)[4]`, or `void (*)(int)`), and multi-declaration C headers (`struct`, `union`, `enum`, `typedef`, and function definitions) import atomically in memory through `data_type.parse_c` (`:GhidraParseC` in Neovim or **Create Data Type -> Import C header** in VS Code).
 
 ## Write-timeout state-read recovery
 
