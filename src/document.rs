@@ -611,7 +611,7 @@ pub(crate) fn same_address(a: &str, b: &str) -> bool {
 }
 
 /// Returns true when `addr` falls within the inclusive `[start, end]` address range.
-fn in_address_range(addr: &str, start: &str, end: &str) -> bool {
+pub(crate) fn in_address_range(addr: &str, start: &str, end: &str) -> bool {
   match (address(addr), address(start), address(end)) {
     (Some((sa, na)), Some((ss, ns)), Some((se, ne))) => {
       (sa.is_empty() || ss.is_empty() || sa == ss)

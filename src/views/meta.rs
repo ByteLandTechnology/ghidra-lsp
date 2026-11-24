@@ -249,6 +249,7 @@ pub(super) async fn get_or_load_meta(
     default_space,
     address_width,
     blocks,
+    scoped_listing_unsupported: false,
     default_address,
     functions,
   };

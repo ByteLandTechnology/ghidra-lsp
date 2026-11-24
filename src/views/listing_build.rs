@@ -26,6 +26,8 @@ use crate::address::{
 pub(super) struct ListingBuildInput<'a> {
   /// Code units sorted or returned by `listing.code_unit.list`.
   pub(super) units: Vec<Value>,
+  /// Detailed data units overlapping the listing range when `code_unit.list` omits values.
+  pub(super) data_units: Vec<Value>,
   /// Symbols overlapping the listing range.
   pub(super) symbols: Vec<Value>,
   /// Function records overlapping the listing range.
@@ -228,6 +230,12 @@ pub(super) fn build_listing_window(input: ListingBuildInput<'_>) -> ListingWindo
       if !addr.is_empty() {
         data_by_key.insert(canonical_key(&addr, default_space), u.clone());
       }
+    }
+  }
+  for d in input.data_units {
+    let addr = value_str(&d["address"]);
+    if !addr.is_empty() {
+      data_by_key.insert(canonical_key(&addr, default_space), d);
     }
   }
 

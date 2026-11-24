@@ -24,7 +24,7 @@ use tokio::sync::RwLock;
 
 use crate::address::MemoryBlockInfo;
 
-pub(crate) use format::symbol_display_name;
+pub(crate) use format::{decode_bytes_vec, symbol_display_name};
 pub(crate) use inspector::inspect_bytes;
 pub(crate) use listing_fetch::{ListingWindowRequest, listing_window};
 pub(crate) use memory::{MemoryWindowRequest, memory_window};
@@ -34,6 +34,8 @@ pub(crate) use meta::{program_meta, resolve_target};
 pub(super) const DEFAULT_LISTING_LIMIT: usize = 140;
 /// Default byte window size fetched for one hexadecimal memory chunk.
 pub(super) const DEFAULT_HEX_CHUNK_BYTES: usize = 1024;
+/// Maximum address count batched per cross-reference lookup wave.
+pub(super) const MAX_XREF_BATCH: usize = 64;
 /// Minimum consecutive undefined bytes collapsed into a single summary run.
 pub(super) const COLLAPSE_THRESHOLD: usize = 8;
 
@@ -67,6 +69,8 @@ pub(super) struct CachedProgramMeta {
   pub(super) address_width: usize,
   /// Sorted memory blocks defined in the program.
   pub(super) blocks: Vec<MemoryBlockInfo>,
+  /// True after range-scoped `reference.list` fails schema validation for this session.
+  pub(super) scoped_listing_unsupported: bool,
   /// Initial view target address chosen from executable or loaded blocks.
   pub(super) default_address: Option<String>,
   /// Indexed functions loaded from the backend.
@@ -204,6 +208,13 @@ impl ProgramMetaCache {
       .write()
       .await
       .insert(md5.to_ascii_lowercase(), meta);
+  }
+
+  /// Marks range-scoped `reference.list` as unsupported for session `md5`.
+  pub(super) async fn mark_scoped_listing_unsupported(&self, md5: &str) {
+    if let Some(meta) = self.inner.write().await.get_mut(&md5.to_ascii_lowercase()) {
+      meta.scoped_listing_unsupported = true;
+    }
   }
 }
 
