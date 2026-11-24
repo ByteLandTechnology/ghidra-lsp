@@ -25,6 +25,7 @@ import { MemoryFiles, memoryAddressAt, memoryScheme } from './bytes';
 import { ViewSets } from './views';
 import { AnalysisMode, ControlFlowView } from './control-flow-view';
 import { DataTypeFiles, typeScheme } from './type-files';
+import { registerCheckpointCommands } from './checkpoints';
 import { installManagedBinaries, resolveOrInstallBinaries, ResolvedBinaries } from './installer';
 
 /** Active LSP language client instance for `ghidra-lsp`. */
@@ -479,6 +480,11 @@ export async function activate(extension: vscode.ExtensionContext): Promise<void
     register('reanalyze', async resource => {
         const md5 = context.require(resource);
         await runAnalysis(md5, context.name(md5), true);
+    });
+    registerCheckpointCommands({
+        register, call, context, memory, labels, references, stringFiles, stringsView,
+        listingFiles, byteFiles, typeFiles, renames, browser, workbench, graphView,
+        sessionsView, programVersions, runAnalysis,
     });
     register('demangle', async resource => {
         const md5 = context.require(resource);

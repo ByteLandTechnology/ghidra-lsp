@@ -1,6 +1,6 @@
 # LSP 能力参考与开发规范
 
-本文档完整列出 `ghidra-lsp` 实现的 Language Server Protocol 能力、45 个 `workspace/executeCommand` 自定义命令、仓库目录结构、`AGENTS.md` 强制规范、`cargo xtask ci` 检查流水线以及外部黑盒测试边界。
+本文档完整列出 `ghidra-lsp` 实现的 Language Server Protocol 能力、49 个 `workspace/executeCommand` 自定义命令、仓库目录结构、`AGENTS.md` 强制规范、`cargo xtask ci` 检查流水线以及外部黑盒测试边界。
 
 ---
 
@@ -29,7 +29,7 @@
 | `codeLensProvider` | `resolveProvider: false`；在函数声明处提供 `Listing`、`Call Graph`、`Control Flow`、`Callers`、`Callees`、`References` 入口。 |
 | `foldingRangeProvider` | 计算多行注释、`//` 连续注释与 `{ ... }` 代码块折叠范围。 |
 | `documentLinkProvider` | `resolveProvider: false`；提取函数内可点击链接。 |
-| `executeCommandProvider` | 注册下述 45 个 `ghidra.*` 自定义命令，支持 `workDoneToken` 进度通知。 |
+| `executeCommandProvider` | 注册下述 49 个 `ghidra.*` 自定义命令，支持 `workDoneToken` 进度通知。 |
 
 ### 自定义通知
 
@@ -39,7 +39,7 @@
 
 ## 自定义命令目录（`workspace/executeCommand`）
 
-`src/server/mod.rs` 中的 `COMMANDS` 常量完整注册了以下 45 个命令，并按职责分发至 `commands.rs`、`domain_commands.rs`、`edit_commands.rs` 与 `view_commands.rs`：
+`src/server/mod.rs` 中的 `COMMANDS` 常量完整注册了以下 49 个命令，并按职责分发至 `commands.rs`、`checkpoint_commands.rs`、`domain_commands.rs`、`edit_commands.rs` 与 `view_commands.rs`：
 
 ### 会话、二进制与分析任务
 
@@ -53,6 +53,10 @@
 | `ghidra.beginReanalyze` | `{"md5?", "analyzers?"}` | 启动异步重分析作业并返回轮询 `token` |
 | `ghidra.reanalyze` | `{"md5?", "analyzers?", "wait?"}` | 触发重分析，可选等待完成（默认 `true`）、持久化并刷新打开文档 |
 | `ghidra.closeSession` | `{"md5?", "force?"}` | 关闭干净的会话（拒绝存在待决重命名或未保存改动的会话）并清理缓存 |
+| `ghidra.checkpoints` | `{"md5?"}` | 按最新到最旧顺序出会话已保存的项目检查点（`items`、`maxPerBinary`） |
+| `ghidra.createCheckpoint` | `{"md5?", "name?"}` | 保存干净程序会话并创建命名或未命名项目检查点 |
+| `ghidra.restoreCheckpoint` | `{"md5?", "id?", "name?"}` | 不保存强制停止 Ghidra、原子恢复指定或最新检查点、重新启动会话并刷新全部已打开视图 |
+| `ghidra.resetSession` | `{"md5?", "reopen?", "analyze?"}` | 删除 `ghidra/` 与检查点同时保留 `binary` 和 `binary.json`，可选重新导入与分析 |
 | `ghidra.cancelJob` | `{}` | 返回明确指引：已安装的 `ghidra-mcp` 仅暴露 `job.get`/`job.wait` 而无 `job.cancel` |
 
 ### 程序目录与虚拟文档
@@ -127,7 +131,7 @@ ghidra-lsp/
 │   ├── engine/                # 会话管理、单次反编译生成、导航、高亮与 F2 重命名计划
 │   ├── graph/                 # 基本块控制流图与有界调用图查询
 │   ├── mutations/             # 5 类注释、函数原型与变量批量变更编译器
-│   ├── server/                # LSP 协议实现、符号检索与 45 个命令分发器
+│   ├── server/                # LSP 协议实现、符号检索与 49 个命令分发器
 │   ├── types_doc/             # .ghidra-type JSONC 词法/AST、校验、冲突检测与修改计划
 │   └── views/                 # 汇编清单窗口、十六进制内存窗口、元数据缓存与数据检视器
 ├── xtask/                     # 自动化规则检查与 CI 编排器

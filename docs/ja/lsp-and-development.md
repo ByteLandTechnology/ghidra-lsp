@@ -1,6 +1,6 @@
 # LSP と開発規約
 
-この章では、`ghidra-lsp` が公開する LSP ケーパビリティの完全一覧、45 個のカスタムコマンド（`workspace/executeCommand`）、ワークベンチ操作の許可リスト、`AGENTS.md` の設計規約、および `cargo xtask ci` 検証パイプラインをまとめます。
+この章では、`ghidra-lsp` が公開する LSP ケーパビリティの完全一覧、49 個のカスタムコマンド（`workspace/executeCommand`）、ワークベンチ操作の許可リスト、`AGENTS.md` の設計規約、および `cargo xtask ci` 検証パイプラインをまとめます。
 
 ## LSP ケーパビリティ一覧
 
@@ -29,7 +29,7 @@
 | `codeLensProvider` | `resolveProvider: false` | 関数ヘッダ上に `Listing`, `Call Graph`, `Control Flow`, `Callers`, `Callees`, `References` を表示 |
 | `foldingRangeProvider` | `true` | `{ ... }` ブロックおよび複数行 `//`・`/* ... */` コメントの折りたたみ範囲を返却 |
 | `documentLinkProvider` | `resolveProvider: false` | 本文やコメント内の `ghidra://`、`ram:...`、`0x...` をクリック可能リンクに変換 |
-| `executeCommandProvider` | 全 45 個の `ghidra.*` コマンド | セッション、ナビゲーション、ビュー、グラフ、安全編集を実行 |
+| `executeCommandProvider` | 全 49 個の `ghidra.*` コマンド | セッション、チェックポイント、ナビゲーション、ビュー、グラフ、安全編集を実行 |
 
 ### カスタム LSP 通知
 
@@ -44,9 +44,9 @@
 }
 ```
 
-## `workspace/executeCommand` カタログ（全 45 コマンド）
+## `workspace/executeCommand` カタログ（全 49 コマンド）
 
-`src/server/mod.rs` の `COMMANDS` 配列で公開され、`commands.rs` / `domain_commands.rs` / `edit_commands.rs` / `view_commands.rs` にディスパッチされる全 45 コマンドです。
+`src/server/mod.rs` の `COMMANDS` 配列で公開され、`commands.rs` / `checkpoint_commands.rs` / `domain_commands.rs` / `edit_commands.rs` / `view_commands.rs` にディスパッチされる全 49 コマンドです。
 
 ### セッション・プログラムライフサイクル
 
@@ -61,6 +61,10 @@
 | `ghidra.reanalyze` | `{ md5?, analyzers?, wait? }` | プログラム再解析を開始（既定で `wait: true`、完了後 `program.save` と文書更新） |
 | `ghidra.cancelJob` | `{}` | 現在の `ghidra-mcp` に `job.cancel` がないことを明示通知（解析自体の中断は不可） |
 | `ghidra.closeSession` | `{ md5?, force? }` | 保留中リネームや未保存編集がないことを確認してセッションを閉じ、キャッシュを破棄 |
+| `ghidra.checkpoints` | `{ md5? }` | セッションの保存済みチェックポイント一覧（`items`、`maxPerBinary`）を取得 |
+| `ghidra.createCheckpoint` | `{ md5?, name? }` | クリーンなセッションを永続化してプロジェクトチェックポイントを作成 |
+| `ghidra.restoreCheckpoint` | `{ md5?, id?, name? }` | Ghidra を保存せず停止してチェックポイントを復元・再起動し、全ビューを再同期 |
+| `ghidra.resetSession` | `{ md5?, reopen?, analyze? }` | `binary` と `binary.json` を残して `ghidra/` とチェックポイントを削除し、必要に応じて再インポート・解析 |
 | `ghidra.configure` | `{ templateArguments? }` | 表示設定（`"omit"` / `"show"`）を動的更新 |
 
 ### カタログ・検索・ドキュメント管理
