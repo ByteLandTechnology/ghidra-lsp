@@ -114,6 +114,11 @@ function canonKey(address: string): string {
     return parsed ? `${parsed.space.toLowerCase()}:${parsed.offset.toString(16)}` : address.toLowerCase();
 }
 
+/** Return true if single-key webview shortcuts are active in extension settings. */
+export function singleKeyShortcutsEnabled(): boolean {
+    return vscode.workspace.getConfiguration('ghidraLsp').get<boolean>('views.singleKeyShortcuts', true) !== false;
+}
+
 /** Manages windowed Program Listing and Memory Hex panels and bidirectional cursor sync. */
 export class ProgramViewsController {
     /** Cached program metadata keyed by MD5. */
@@ -132,6 +137,11 @@ export class ProgramViewsController {
     /** Return whether cursor sync is enabled by default in extension settings. */
     defaultSyncEnabled(): boolean {
         return vscode.workspace.getConfiguration('ghidraLsp').get<boolean>('views.syncCursor', true) !== false;
+    }
+
+    /** Return true if single-key webview shortcuts are active in extension settings. */
+    singleKeyShortcutsEnabled(): boolean {
+        return singleKeyShortcutsEnabled();
     }
 
     /** Fetch or return cached {@link ProgramMetadata} for `md5`. */
@@ -340,6 +350,7 @@ export class ProgramViewsController {
             canBack: (state.pvHistory?.length || 0) > 0,
             canForward: (state.pvFuture?.length || 0) > 0,
             syncEnabled: Boolean(state.syncEnabled),
+            singleKeyShortcuts: this.singleKeyShortcutsEnabled(),
             totalUnitsLabel,
         };
         state.panel.webview.html = renderProgramListingPage(payload);
@@ -447,6 +458,7 @@ export class ProgramViewsController {
             canBack: (state.pvHistory?.length || 0) > 0,
             canForward: (state.pvFuture?.length || 0) > 0,
             syncEnabled: Boolean(state.syncEnabled),
+            singleKeyShortcuts: this.singleKeyShortcutsEnabled(),
             bytesPerRow,
             initialInspector: inspectorEntries,
         };

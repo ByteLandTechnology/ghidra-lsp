@@ -46,9 +46,19 @@ function input(field: Field): string {
 }
 /** Render an editable table grid section with optional row add/remove buttons. */
 function grid(spec: Grid): string {
-    const singular = spec.key === 'parameters' ? 'parameter' : 'row';
-    const row = (data: Data, rowIndex: number): string => `<tr data-original="${escape(data._original ?? '')}">${spec.columns.map(column => `<td>${formControl({ path: [spec.key, rowIndex, column.key], column: column.key, label: column.label, value: data[column.key], kind: column.kind, inline: true, required: column.required })}</td>`).join('')}${spec.remove === false ? '' : `<td><button type="button" class="row-remove secondary" data-remove-row aria-label="Remove ${singular}" title="Remove ${singular}">${callIcon('trash')}</button></td>`}</tr>`;
-    return section(spec.label, `<div class="table-wrap"><table class="editable" data-table="${escape(spec.key)}"><thead><tr>${spec.columns.map(column => `<th scope="col">${escape(column.label)}</th>`).join('')}${spec.remove === false ? '' : '<th></th>'}</tr></thead><tbody>${spec.values.map((item, index) => row(item, index)).join('')}</tbody></table></div>${spec.add === false ? '' : `<template data-row-template="${escape(spec.key)}">${row({}, spec.values.length)}</template><button type="button" class="secondary icon-add" data-add-row="${escape(spec.key)}" aria-label="Add ${singular}" title="Add ${singular}">${callIcon('plus')}</button>`}`);
+    const singular = spec.key === 'parameters' ? 'parameter' : spec.key === 'locals' ? 'local variable' : 'row';
+    const prefix = singular[0].toUpperCase() + singular.slice(1);
+    const row = (data: Data, rowIndex?: number): string => {
+        const number = rowIndex === undefined ? undefined : rowIndex + 1;
+        const cells = spec.columns.map(column => {
+            const label = number === undefined ? column.label : `${prefix} ${number} ${column.label.toLowerCase()}`;
+            return `<td>${formControl({ path: [spec.key, rowIndex ?? spec.values.length, column.key], column: column.key, label, value: data[column.key], kind: column.kind, inline: true, required: column.required, data: { label: column.label } })}</td>`;
+        }).join('');
+        const remove = spec.remove === false ? '' : `<td><button${number === undefined ? '' : ` id="grid-${escape(spec.key)}-${number}-remove"`} type="button" class="row-remove secondary" data-remove-row aria-label="Remove ${escape(singular)}${number === undefined ? '' : ` ${number}`}" title="Remove ${escape(singular)}">${callIcon('trash')}</button></td>`;
+        return `<tr data-original="${escape(data._original ?? '')}">${cells}${remove}</tr>`;
+    };
+    const actionHeader = spec.remove === false ? '' : '<th class="editable-action-col" scope="col"><span class="type-sr-only">Actions</span></th>';
+    return section(spec.label, `<div class="table-wrap"><table class="editable" data-table="${escape(spec.key)}" data-singular="${escape(singular)}"><thead><tr>${spec.columns.map(column => `<th scope="col">${escape(column.label)}</th>`).join('')}${actionHeader}</tr></thead><tbody>${spec.values.map((item, index) => row(item, index)).join('')}</tbody></table></div>${spec.add === false ? '' : `<template data-row-template="${escape(spec.key)}">${row({})}</template><button type="button" class="secondary icon-add" data-add-row="${escape(spec.key)}" aria-label="Add ${escape(singular)}" title="Add ${escape(singular)}">${callIcon('plus')}</button>`}`);
 }
 /** Client-side webview script for table row edits, submission, and initial focus. */
 const formScript = `

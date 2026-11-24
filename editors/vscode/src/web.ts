@@ -247,15 +247,19 @@ export function page(title: string, eyebrow: string, subtitle: unknown, body: st
       };
       const syncTable=table=>{
         if(!table?.tBodies?.[0])return;
-        const key=table.dataset.table;
+        const key=table.dataset.table,singular=table.dataset.singular||'row',prefix=singular[0].toUpperCase()+singular.slice(1);
         [...table.tBodies[0].rows].forEach((row,rowIndex)=>{
+          const number=rowIndex+1;
           for(const el of row.querySelectorAll('[data-column]')){
             const path=[key,rowIndex,el.dataset.column],id=fieldId(path),prevErrId=el.dataset.errorId,nextErrId=id+'-error';
             const errEl=prevErrId?row.querySelector('#'+CSS.escape(prevErrId)):el.nextElementSibling;
             el.id=id;el.dataset.path=JSON.stringify(path);el.dataset.errorId=nextErrId;
+            if(el.dataset.label||table.dataset.singular)el.setAttribute('aria-label',prefix+' '+number+' '+(el.dataset.label||el.dataset.column).toLowerCase());
             if(errEl?.classList.contains('field-error'))errEl.id=nextErrId;
             if(prevErrId&&el.hasAttribute('aria-describedby')){el.setAttribute('aria-describedby',el.getAttribute('aria-describedby').split(/\\s+/).map(item=>item===prevErrId?nextErrId:item).join(' '))}
           }
+          const button=row.querySelector('[data-remove-row]');
+          if(button){button.id='grid-'+key+'-'+number+'-remove';button.setAttribute('aria-label','Remove '+singular+' '+number)}
         });
       };
       return {fieldId,openDetails,focus,announce,findField,clearFieldError,clearErrors,markErrors,setBusy,syncTable};
