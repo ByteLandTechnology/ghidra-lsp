@@ -127,7 +127,7 @@ export async function activate(extension: vscode.ExtensionContext): Promise<void
     const workbench = new Workbench(call, context, editor => listingViews?.addressAt(editor) || memoryAddressAt(editor));
     const typeFiles = new DataTypeFiles(call, context, extension.workspaceState);
     const editing = new EditingUI(call, context, typeFiles);
-    const typeEditorView = new DataTypeEditorView(call);
+    const typeEditorView = new DataTypeEditorView(call, typeFiles);
     extension.subscriptions.push(context, tracker, stringFiles, stringsView, sessionsView, sessionsTree, browser, workbench, editing, typeFiles, typeEditorView);
     const memory = new GhidraMemory(call);
     renames = new ReadonlyRenames(call, async md5 => { await Promise.all([browser.refresh(md5), workbench.refresh(md5)]); });

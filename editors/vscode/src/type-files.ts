@@ -8,6 +8,7 @@ import { Data } from './web';
 import { formatFriendlyError } from './error';
 import { typeExtension } from './virtual-files';
 import { readonlyTypeReason, sameTypeData } from './type-model';
+import { FormPath } from './form-schema';
 
 /** URI scheme for virtual JSONC data type documents. */
 export const typeScheme = 'ghidra-type';
@@ -18,9 +19,44 @@ interface TypeDocumentPayload { md5: string; path: string; program: string; read
 /** Line/character range returned by type validation diagnostics. */
 interface TypeRange { start: { line: number; character: number }; end: { line: number; character: number } }
 /** Server response from `ghidra.validateTypeDocument`. */
-interface ValidateTypeResponse { valid: boolean; message?: string; range?: TypeRange; offset?: number; length?: number }
+interface ValidateTypeResponse { valid: boolean; message?: string; path?: FormPath; range?: TypeRange; offset?: number; length?: number }
 /** Server response from `ghidra.saveTypeDocument`. */
 interface SaveTypeResponse { md5: string; path: string; mutated: boolean; persisted: boolean; requiresReadback: boolean; text: string; original: Data; }
+/** Structured validation update emitted for open data type editors. */
+export interface TypeValidationEvent {
+    /** Validated `ghidra-type://` URI. */
+    uri: vscode.Uri;
+    /** Whether the current JSONC buffer passed validation. */
+    valid: boolean;
+    /** Human-readable error message when `valid` is false. */
+    message?: string;
+    /** Offending JSON path inside the type document when known. */
+    path?: FormPath;
+}
+/** Baseline refresh event emitted when a data type document is saved or reloaded. */
+export interface TypeSaveSuccessEvent {
+    /** Saved or reloaded `ghidra-type://` URI. */
+    uri: vscode.Uri;
+    /** Refreshed Ghidra data type snapshot. */
+    original: Data;
+    /** Normalized JSONC text after save or reload. */
+    text: string;
+    /** Whether Ghidra state was mutated during save. */
+    mutated: boolean;
+    /** Whether the open buffer awaits normalized readback text. */
+    requiresReadback: boolean;
+}
+/** Save failure event emitted when `writeFile` rejects a save attempt. */
+export interface TypeSaveFailureEvent {
+    /** Failed `ghidra-type://` URI. */
+    uri: vscode.Uri;
+    /** Formatted failure message suitable for webview presentation. */
+    message: string;
+    /** Offending JSON path when save failed due to schema validation. */
+    path?: FormPath;
+    /** Whether the mutation may have reached Ghidra before failing. */
+    uncertain: boolean;
+}
 /** Memento key storing persisted data type draft snapshots. */
 const storageKey = 'ghidra.typeFileSnapshots';
 /** v3 ends in a Ghidra-only extension, so editor associations never target '*' or a type name's own suffix. */
@@ -55,12 +91,28 @@ export class DataTypeFiles implements vscode.FileSystemProvider, vscode.Disposab
     private readonly events = new vscode.EventEmitter<vscode.FileChangeEvent[]>();
     /** Event fired when a type file updates after reload or save readback. */
     readonly onDidChangeFile = this.events.event;
+    /** Emitter for structured type validation updates. */
+    private readonly validateEvents = new vscode.EventEmitter<TypeValidationEvent>();
+    /** Event fired when `ghidra.validateTypeDocument` completes for an open URI. */
+    readonly onDidValidateType = this.validateEvents.event;
+    /** Emitter for successful type saves and reloads. */
+    private readonly saveEvents = new vscode.EventEmitter<TypeSaveSuccessEvent>();
+    /** Event fired when a type document saves or reloads a fresh baseline. */
+    readonly onDidSaveType = this.saveEvents.event;
+    /** Emitter for failed type save attempts. */
+    private readonly saveFailureEvents = new vscode.EventEmitter<TypeSaveFailureEvent>();
+    /** Event fired when saving a `ghidra-type://` document fails. */
+    readonly onDidFailSaveType = this.saveFailureEvents.event;
     /** Diagnostic collection displaying JSONC validation errors on open type files. */
     private readonly diagnostics = vscode.languages.createDiagnosticCollection('ghidra-types');
     /** Cached server comparison texts for `ghidra-type-current://` diff views. */
     private readonly comparisons = new Map<string, string>();
     /** Latest validated document version per URI string. */
     private readonly validateVersions = new Map<string, number>();
+    /** Latest structured validation failure keyed by URI string. */
+    private readonly validationFailures = new Map<string, TypeValidationEvent>();
+    /** Latest save failure keyed by URI string. */
+    private readonly saveFailures = new Map<string, TypeSaveFailureEvent>();
     /** Registered providers, commands, and workspace event listeners. */
     private readonly disposables: vscode.Disposable[];
     /** Serialized persistence queue tail for memento snapshot writes. */
@@ -93,7 +145,10 @@ export class DataTypeFiles implements vscode.FileSystemProvider, vscode.Disposab
                 if (document.uri.scheme === 'ghidra-type-current') { this.comparisons.delete(document.uri.toString()); }
                 // Language changes also close a TextDocument. Keep snapshots while its tab still exists.
                 if (document.uri.scheme === typeScheme) {
-                    this.validateVersions.delete(document.uri.toString());
+                    const closedKey = document.uri.toString();
+                    this.validateVersions.delete(closedKey);
+                    this.validationFailures.delete(closedKey);
+                    this.saveFailures.delete(closedKey);
                     this.diagnostics.delete(document.uri);
                 }
             }),
@@ -119,6 +174,12 @@ export class DataTypeFiles implements vscode.FileSystemProvider, vscode.Disposab
     }
     /** Find an open VS Code text document matching `uri`. */
     private document(uri: vscode.Uri): vscode.TextDocument | undefined { return vscode.workspace.textDocuments.find(document => document.uri.toString() === uri.toString()); }
+    /** Return the current conflict baseline snapshot cached for `uri`, if loaded. */
+    snapshotOriginal(uri: vscode.Uri): Data | undefined { return this.entries.get(uri.toString())?.original; }
+    /** Return the latest structured validation failure recorded for `uri`, if any. */
+    validationFailure(uri: vscode.Uri): TypeValidationEvent | undefined { return this.validationFailures.get(uri.toString()); }
+    /** Return the latest save failure recorded for `uri`, if any. */
+    lastSaveFailure(uri: vscode.Uri): TypeSaveFailureEvent | undefined { return this.saveFailures.get(uri.toString()); }
     /** Fetch the current JSONC document payload for `uri` from `ghidra.typeDocument`. */
     private fetchDocument(uri: vscode.Uri): Promise<TypeDocumentPayload> {
         const path = typePath(uri);
@@ -235,7 +296,16 @@ export class DataTypeFiles implements vscode.FileSystemProvider, vscode.Disposab
             entry.uncertain = false;
             entry.mtime = Math.max(Date.now(), entry.mtime + 1);
             await this.persist();
+            this.validationFailures.delete(key);
+            this.saveFailures.delete(key);
             this.diagnostics.delete(uri);
+            this.saveEvents.fire({
+                uri,
+                original: saved.original,
+                text: saved.text,
+                mutated,
+                requiresReadback: entry.requiresReadback,
+            });
             // VS Code completes its save before observing the backend's normalized layout.
             setTimeout(() => {
                 if (this.disposed) { return; }
@@ -258,7 +328,16 @@ export class DataTypeFiles implements vscode.FileSystemProvider, vscode.Disposab
                 await this.persist().catch(() => {});
             }
             if (validationFailure) { this.report(uri, validationFailure); }
-            throw vscode.FileSystemError.Unavailable(`${message}${mutated && !postSendError ? ' The save may have reached Ghidra; compare and reload before retrying.' : ''}`);
+            const fullMessage = `${message}${mutated && !postSendError ? ' The save may have reached Ghidra; compare and reload before retrying.' : ''}`;
+            const failureEvent: TypeSaveFailureEvent = {
+                uri,
+                message: fullMessage,
+                path: Array.isArray(validationFailure?.path) ? validationFailure!.path : undefined,
+                uncertain: mutated,
+            };
+            this.saveFailures.set(key, failureEvent);
+            this.saveFailureEvents.fire(failureEvent);
+            throw vscode.FileSystemError.Unavailable(fullMessage);
         } finally { this.saving.delete(key); }
     }
 
@@ -280,7 +359,16 @@ export class DataTypeFiles implements vscode.FileSystemProvider, vscode.Disposab
             range = new vscode.Range(document.positionAt(offset), document.positionAt(offset + length));
         }
         const diagnostic = new vscode.Diagnostic(range, failure.message || 'Invalid data type document.', vscode.DiagnosticSeverity.Error);
-        diagnostic.source = 'Ghidra type'; this.diagnostics.set(uri, [diagnostic]);
+        diagnostic.source = 'Ghidra type';
+        this.diagnostics.set(uri, [diagnostic]);
+        const event: TypeValidationEvent = {
+            uri,
+            valid: false,
+            message: failure.message || 'Invalid data type document.',
+            path: Array.isArray(failure.path) ? failure.path : undefined,
+        };
+        this.validationFailures.set(uri.toString(), event);
+        this.validateEvents.fire(event);
     }
     /** Validate an open type document against the server schema and update diagnostics. */
     private async validate(document: vscode.TextDocument): Promise<void> {
@@ -301,8 +389,13 @@ export class DataTypeFiles implements vscode.FileSystemProvider, vscode.Disposab
             if (this.disposed || this.validateVersions.get(key) !== version || this.saving.has(key)) { return; }
             const current = this.document(document.uri);
             if (!current || current.version !== version) { return; }
-            if (res.valid) { this.diagnostics.delete(document.uri); }
-            else { this.report(document.uri, res); }
+            if (res.valid) {
+                this.validationFailures.delete(key);
+                this.diagnostics.delete(document.uri);
+                this.validateEvents.fire({ uri: document.uri, valid: true });
+            } else {
+                this.report(document.uri, res);
+            }
         } catch {
             // Keep existing diagnostics if validation RPC fails transiently.
         }
@@ -326,15 +419,19 @@ export class DataTypeFiles implements vscode.FileSystemProvider, vscode.Disposab
         if (this.document(uri)?.isDirty || this.saving.has(uri.toString())) { return; }
         const previous = this.entries.get(uri.toString());
         const text = previous && sameTypeData(previous.original, current.original) ? previous.text : current.text;
+        const requiresReadback = this.document(uri)?.getText() !== text;
         this.entries.set(uri.toString(), {
             original: current.original,
             text,
             readonlyReason: current.readonlyReason,
-            requiresReadback: this.document(uri)?.getText() !== text,
+            requiresReadback,
             mtime: Math.max(Date.now(), (previous?.mtime || 0) + 1),
         });
         await this.persist();
+        this.validationFailures.delete(uri.toString());
+        this.saveFailures.delete(uri.toString());
         this.diagnostics.delete(uri);
+        this.saveEvents.fire({ uri, original: current.original, text, mutated: false, requiresReadback });
         this.events.fire([{ type: vscode.FileChangeType.Changed, uri }]);
     }
     /** Reload all open, clean data type documents belonging to program `md5`. */
@@ -381,6 +478,10 @@ export class DataTypeFiles implements vscode.FileSystemProvider, vscode.Disposab
     dispose(): void {
         this.disposed = true;
         for (const disposable of this.disposables) { disposable.dispose(); }
-        this.events.dispose(); this.diagnostics.dispose();
+        this.events.dispose();
+        this.validateEvents.dispose();
+        this.saveEvents.dispose();
+        this.saveFailureEvents.dispose();
+        this.diagnostics.dispose();
     }
 }

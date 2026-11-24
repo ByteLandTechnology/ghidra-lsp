@@ -23,17 +23,17 @@ section{margin:20px 0;padding-top:16px;border-top:1px solid var(--vscode-panel-b
 .toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:0 0 16px;min-width:0}
 .toolbar>*{max-width:100%}
 button{font:inherit;line-height:1.4;min-height:28px;padding:4px 10px;border:1px solid var(--vscode-contrastBorder,var(--vscode-button-border,var(--vscode-panel-border)));border-radius:2px;cursor:pointer;color:var(--vscode-button-secondaryForeground,var(--vscode-foreground));background:var(--vscode-button-secondaryBackground,var(--vscode-input-background))}
-button:hover:enabled{background:var(--vscode-button-secondaryHoverBackground,var(--vscode-list-hoverBackground))}
+button:hover:enabled:not([aria-disabled="true"]){background:var(--vscode-button-secondaryHoverBackground,var(--vscode-list-hoverBackground))}
 button.primary{color:var(--vscode-button-foreground,var(--vscode-foreground));background:var(--vscode-button-background,var(--vscode-editor-background))}
-button.primary:hover:enabled{background:var(--vscode-button-hoverBackground,var(--vscode-list-hoverBackground))}
-button:disabled{opacity:.5;cursor:default}
+button.primary:hover:enabled:not([aria-disabled="true"]){background:var(--vscode-button-hoverBackground,var(--vscode-list-hoverBackground))}
+button:disabled,button[aria-disabled="true"]{opacity:.5;cursor:default}
 button.link{min-height:0;padding:0;border:0;background:transparent;color:var(--vscode-textLink-foreground);text-align:left;text-decoration:underline;text-underline-offset:3px;overflow-wrap:anywhere}
 button.link:hover{color:var(--vscode-textLink-activeForeground);background:transparent}
 button.danger{color:var(--vscode-errorForeground)}
 input,select,textarea{font:inherit;border:1px solid var(--vscode-input-border,transparent);border-radius:2px;color:var(--vscode-input-foreground);background:var(--vscode-input-background);padding:5px 8px;min-width:0;max-width:100%}
 input,textarea{caret-color:var(--vscode-editorCursor-foreground,var(--vscode-foreground))}
 input::placeholder,textarea::placeholder{color:var(--vscode-input-placeholderForeground);opacity:1}
-input:disabled,select:disabled,textarea:disabled{opacity:.6;cursor:default}
+input:disabled,select:disabled,textarea:disabled,input[aria-disabled="true"],select[aria-disabled="true"],textarea[aria-disabled="true"]{opacity:.6;cursor:default}
 input:read-only{color:var(--vscode-descriptionForeground)}
 textarea{min-height:88px;resize:vertical}
 :focus-visible{outline:2px solid var(--vscode-focusBorder);outline-offset:2px}
@@ -57,11 +57,13 @@ summary{cursor:pointer;font-weight:600;overflow-wrap:anywhere}
 details[open]>summary{margin-bottom:12px}
 #edit-form{max-width:960px}
 .form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr));gap:16px}
-.form-grid label{display:block;min-width:0}
+.form-grid label,.form-grid .form-field{display:block;min-width:0}
+.form-field>label{display:block}
 label{font-size:12px;color:var(--vscode-foreground)}
-label>input:not([type=checkbox]),label>select,label>textarea{display:block;width:100%;margin-top:5px}
+label>input:not([type=checkbox]),label>select,label>textarea,.form-field>input:not([type=checkbox]),.form-field>select,.form-field>textarea{display:block;width:100%;margin-top:5px}
 input[type=checkbox]{width:auto;margin:0;accent-color:var(--vscode-checkbox-selectBackground,var(--vscode-focusBorder));flex-shrink:0}
 .checkbox{display:flex;align-items:center;gap:8px;min-height:28px}
+.checkbox>label,.type-flag>label{cursor:pointer}
 .check-group{display:flex;flex-wrap:wrap;gap:8px 20px;margin:16px 0 0;padding:0;border:0;min-width:0}
 .check-group legend{font-size:12px;color:var(--vscode-descriptionForeground);margin-bottom:6px;padding:0}
 .full{grid-column:1/-1}
@@ -77,8 +79,18 @@ input[type=checkbox]{width:auto;margin:0;accent-color:var(--vscode-checkbox-sele
 [data-add-row]{margin-top:8px}
 .hex{font:13px/1.6 var(--vscode-editor-font-family,monospace);white-space:pre-wrap;overflow-wrap:anywhere}
 .error{color:var(--vscode-errorForeground);white-space:pre-wrap;overflow-wrap:anywhere}
+#error:not(:empty){margin:8px 0 14px}
+.error-summary-lead{margin:0 0 6px;font-weight:600}
+.error-summary-list{margin:0;padding-left:18px;white-space:normal}
+.error-summary-list li{margin:3px 0}
+.error-jump-link{color:var(--vscode-errorForeground);text-decoration:underline;text-underline-offset:2px}
+.error-jump-link:hover{color:var(--vscode-textLink-activeForeground)}
+.field-hint{margin:4px 0 0;font-size:11px;line-height:1.45;color:var(--vscode-descriptionForeground)}
+.field-error{margin:4px 0 0;font-size:11px;line-height:1.45;color:var(--vscode-errorForeground)}
+.field-error[hidden]{display:none}
+:is(input,select,textarea)[aria-invalid="true"]{border-color:var(--vscode-inputValidation-errorBorder,var(--vscode-errorForeground))}
 .success{color:var(--vscode-testing-iconPassed)}
-#error:empty,#status:empty{display:none}
+#error:empty,#status:empty,.sr-only-hint{position:absolute;width:1px;height:1px;padding:0;margin:0;border:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .empty{padding:20px 0;color:var(--vscode-descriptionForeground)}
 @media(max-width:640px){main{padding:16px}h1{font-size:20px}dl>div{grid-template-columns:1fr;gap:2px}.toolbar{gap:6px}.form-grid{gap:12px}}
 `;

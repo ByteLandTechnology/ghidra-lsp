@@ -38,14 +38,16 @@ export const viewStyles = `
 .inspector-page[data-view-kind="type-editor"] .type-actions{display:inline-flex;align-items:center;gap:8px;flex-shrink:0}
 .inspector-page[data-view-kind="type-editor"] .type-validation:not([hidden]){margin:8px 0 12px;padding:8px 12px;border-left:1px solid var(--vscode-errorForeground);color:var(--vscode-errorForeground);background:color-mix(in srgb,var(--vscode-errorForeground) 6%,var(--vscode-editor-background))}
 .inspector-page[data-view-kind="type-editor"] .type-status{display:inline-flex;align-items:center;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:500;color:var(--vscode-descriptionForeground);background:var(--vscode-sideBar-background,var(--vscode-editor-background));border:1px solid var(--vscode-panel-border);white-space:nowrap}
-.inspector-page[data-view-kind="type-editor"] .type-status:empty{display:none}
+.inspector-page[data-view-kind="type-editor"] .type-status:empty{position:absolute;width:1px;height:1px;padding:0;margin:0;border:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .inspector-page[data-view-kind="type-editor"] .type-status[data-state="dirty"]{color:var(--vscode-editorWarning-foreground,#cca700);border-color:color-mix(in srgb,var(--vscode-editorWarning-foreground,#cca700) 45%,transparent)}
 .inspector-page[data-view-kind="type-editor"] .type-status[data-state="saving"]{color:var(--vscode-focusBorder);border-color:color-mix(in srgb,var(--vscode-focusBorder) 45%,transparent)}
+.inspector-page[data-view-kind="type-editor"] .type-status[data-state="error"]{color:var(--vscode-errorForeground);border-color:color-mix(in srgb,var(--vscode-errorForeground) 45%,transparent)}
+.inspector-page[data-view-kind="type-editor"] .type-actions .icon-submit{display:inline-flex;align-items:center;justify-content:center;width:32px;min-width:32px;height:28px;padding:0;border-radius:6px}
 .inspector-page[data-view-kind="type-editor"] .type-actions [data-open-jsonc]{display:inline-flex;align-items:center;gap:6px;min-height:28px;padding:4px 10px;border:1px solid var(--vscode-panel-border);border-radius:6px;background:var(--vscode-button-secondaryBackground,var(--vscode-input-background));color:var(--vscode-button-secondaryForeground,var(--vscode-foreground));font-size:12px;font-weight:500;cursor:pointer;white-space:nowrap}
-.inspector-page[data-view-kind="type-editor"] .type-actions [data-open-jsonc]:hover:enabled{background:var(--vscode-button-secondaryHoverBackground,var(--vscode-list-hoverBackground));border-color:var(--vscode-focusBorder)}
+.inspector-page[data-view-kind="type-editor"] .type-actions [data-open-jsonc]:hover:enabled:not([aria-disabled="true"]){background:var(--vscode-button-secondaryHoverBackground,var(--vscode-list-hoverBackground));border-color:var(--vscode-focusBorder)}
 .inspector-page[data-view-kind="type-editor"] .type-actions [data-open-jsonc] .call-icon{font-size:14px}
 .inspector-page[data-view-kind="type-editor"] .type-icon{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;min-height:0;padding:6px;border:0;background:transparent;color:var(--vscode-descriptionForeground);border-radius:3px}
-.inspector-page[data-view-kind="type-editor"] .type-icon:hover{background:var(--vscode-toolbar-hoverBackground,var(--vscode-list-hoverBackground));color:var(--vscode-foreground)}
+.inspector-page[data-view-kind="type-editor"] .type-icon:hover:not([aria-disabled="true"]){background:var(--vscode-toolbar-hoverBackground,var(--vscode-list-hoverBackground));color:var(--vscode-foreground)}
 .inspector-page[data-view-kind="type-editor"] .type-list{margin:0 0 20px;padding-top:12px}
 .inspector-page[data-view-kind="type-editor"] .type-list:first-of-type{border-top:0;padding-top:0}
 .inspector-page[data-view-kind="type-editor"] .type-definition{margin:0 0 20px;padding:0;border:0}
@@ -61,8 +63,10 @@ export const viewStyles = `
 .inspector-page[data-view-kind="type-editor"] .type-table tbody tr:hover:not([data-new]){background:var(--vscode-list-hoverBackground,var(--vscode-editor-background))}
 .inspector-page[data-view-kind="type-editor"] .type-table tbody tr:focus-within:not([data-new]){background:color-mix(in srgb,var(--vscode-focusBorder) 14%,var(--vscode-list-inactiveSelectionBackground,var(--vscode-editor-background)));box-shadow:inset 2px 0 var(--vscode-focusBorder),inset 0 0 0 1px color-mix(in srgb,var(--vscode-focusBorder) 48%,transparent)}
 .inspector-page[data-view-kind="type-editor"] .type-table input{width:100%;height:32px;min-width:0;border:1px solid transparent;border-radius:2px;background:transparent;cursor:text}
-.inspector-page[data-view-kind="type-editor"] .type-table input:hover{background:var(--vscode-input-background);border-color:var(--vscode-input-border,transparent)}
+.inspector-page[data-view-kind="type-editor"] .type-table input:hover:not([aria-disabled="true"]){background:var(--vscode-input-background);border-color:var(--vscode-input-border,transparent)}
 .inspector-page[data-view-kind="type-editor"] .type-table input:focus{background:var(--vscode-input-background);outline:2px solid var(--vscode-focusBorder);outline-offset:-2px}
+.inspector-page[data-view-kind="type-editor"] .type-table input[aria-invalid="true"]{border-color:var(--vscode-inputValidation-errorBorder,var(--vscode-errorForeground));background:color-mix(in srgb,var(--vscode-errorForeground) 6%,var(--vscode-input-background))}
+.inspector-page[data-view-kind="type-editor"] .type-table .cell-error{padding:0 4px 2px}
 .inspector-page[data-view-kind="type-editor"] .type-table td[data-field="offset"] input,.inspector-page[data-view-kind="type-editor"] .type-table td[data-field="length"] input,.inspector-page[data-view-kind="type-editor"] .type-table td[data-field="value"] input{font-variant-numeric:tabular-nums}
 .inspector-page[data-view-kind="type-editor"] .type-table th[data-field="offset"]{width:88px}
 .inspector-page[data-view-kind="type-editor"] .type-table th[data-field="length"]{width:100px}
@@ -88,8 +92,8 @@ export const viewStyles = `
 .inspector-page[data-view-kind="type-editor"] .type-empty{margin:0;padding:12px 8px;color:var(--vscode-descriptionForeground);border-top:1px solid var(--vscode-panel-border)}
 .inspector-page[data-view-kind="type-editor"] .type-sr-only{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .inspector-page[data-view-kind="type-editor"] .form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr));gap:12px}
-.inspector-page[data-view-kind="type-editor"] .form-grid label:not(.type-flag){display:flex;flex-direction:column;gap:4px;min-width:0}
-.inspector-page[data-view-kind="type-editor"] .form-grid input:not([type="checkbox"]){width:100%;min-width:0}
+.inspector-page[data-view-kind="type-editor"] .form-grid label:not(.type-flag),.inspector-page[data-view-kind="type-editor"] .form-grid .form-field:not(.form-field-check){display:flex;flex-direction:column;gap:4px;min-width:0}
+.inspector-page[data-view-kind="type-editor"] .form-grid input:not([type="checkbox"]){width:100%;min-width:0;margin-top:0}
 .inspector-page[data-view-kind="type-editor"] .type-flags{display:flex;flex-wrap:wrap;gap:8px 24px;margin-top:12px}
 .inspector-page[data-view-kind="type-editor"] .type-flag{display:flex;align-items:center;gap:8px;min-height:32px}
 
@@ -149,7 +153,7 @@ export const viewStyles = `
 .edit-page .table-wrap{scrollbar-width:thin}
 .edit-page .success:not(:empty){font-size:12px;padding:10px 0}
 .edit-page .row-remove{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;min-height:0;padding:6px;border:0;background:transparent;color:var(--vscode-descriptionForeground)}
-.edit-page .row-remove:hover:enabled{background:var(--vscode-toolbar-hoverBackground,var(--vscode-list-hoverBackground));color:var(--vscode-foreground)}
+.edit-page .row-remove:hover:enabled:not([aria-disabled="true"]){background:var(--vscode-toolbar-hoverBackground,var(--vscode-list-hoverBackground));color:var(--vscode-foreground)}
 .browser-page main{max-width:1450px;margin:0;padding:20px 24px 32px}
 .browser-page h1{font-size:16px;line-height:1.4;margin:0 0 2px}
 .browser-page .subtitle{font-size:11px;overflow-wrap:anywhere}
