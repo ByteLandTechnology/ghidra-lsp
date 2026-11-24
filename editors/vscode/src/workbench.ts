@@ -13,7 +13,7 @@ import { callIcon } from './call-graph-icons';
 import { CallColumns, callColumns, collectColumns, columnPathLimit } from './call-columns';
 import { formatFriendlyError } from './error';
 import { cursorLocation } from './location';
-import { ProgramPanelState, ProgramViewsController } from './program-views-controller';
+import { ProgramPanelState, ProgramViewsController, singleKeyShortcutsEnabled } from './program-views-controller';
 import { ProgramEndian } from './hex-model';
 import { parseAddress, sameAddress } from './address-math';
 import { Data, object, rows as items, stringOf } from './web';
@@ -298,7 +298,7 @@ export class Workbench implements vscode.Disposable {
     }
     /** Build the serializable state snapshot stored inside webview HTML for VS Code reload. */
     private snapshot(state: PanelState): Data {
-        return { kind: state.kind, md5: state.md5, address: state.kind === 'listing' ? state.displayAddress || state.address : state.address, entry: state.entry, cursor: state.cursor, previous: state.previous,
+        return { kind: state.kind, md5: state.md5, address: state.kind === 'listing' ? state.displayAddress || state.address : state.address, entry: state.entry, cursor: state.cursor, previous: state.previous, singleKeyShortcuts: singleKeyShortcutsEnabled(),
             ...(state.selected && state.kind !== 'callGraph' ? { selected: state.selected } : {}),
             ...(state.kind === 'listing' || state.kind === 'memory' ? { syncEnabled: state.syncEnabled, bytesPerRow: state.pvBytesPerRow, endian: state.pvEndian } : {}),
             ...(state.kind === 'callGraph' ? { selected: state.entry, selectedEntry: state.entry, callExpansion: state.callExpansion || { callers: [state.entry!], callees: [state.entry!] }, callHistory: state.callHistory || [], callView: state.callView || 'graph', callColumnDirection: state.callColumnDirection || 'callees', callColumnPath: state.callColumnPath || [] } : {}) };
@@ -499,7 +499,8 @@ export class Workbench implements vscode.Disposable {
         }
         if (generation !== owner.generation) { return; }
         owner.address = state.address; owner.displayAddress = state.displayAddress; owner.next = state.next;
-        state.panel.webview.html = page({ title, subtitle, body, scope, scopeSummary, address, callTools, callName, callBack: !!state.callHistory?.length, state: this.snapshot(state), actions: true, graph: ['callGraph', 'controlFlow'].includes(state.kind), controlFlow: state.kind === 'controlFlow', callGraph: state.kind === 'callGraph', callView: state.callView || 'graph', viewKind: state.kind, ...(['listing', 'memory'].includes(state.kind) ? { next, previous: state.previous.length > 0 } : {}) });
+        const singleKeyShortcuts = singleKeyShortcutsEnabled();
+        state.panel.webview.html = page({ title, subtitle, body, scope, scopeSummary, address, callTools, callName, callBack: !!state.callHistory?.length, singleKeyShortcuts, state: this.snapshot(state), actions: true, graph: ['callGraph', 'controlFlow'].includes(state.kind), controlFlow: state.kind === 'controlFlow', callGraph: state.kind === 'callGraph', callView: state.callView || 'graph', viewKind: state.kind, ...(['listing', 'memory'].includes(state.kind) ? { next, previous: state.previous.length > 0 } : {}) });
     }
     /** Fetch and render the basic-block Control Flow Graph HTML for function `entry`. */
     async controlFlow(md5: string, entry: string): Promise<ControlFlowData> {
@@ -672,6 +673,10 @@ export class Workbench implements vscode.Disposable {
             if (generation !== this.syncGeneration || !result.address) { return; }
             await this.programViews.syncFromCodeAddress(result.md5, result.code_unit_address || result.address);
         } catch { /* Tokens without a machine address have no trustworthy selection mapping. */ }
+    }
+    /** Send a live `singleKeyShortcuts` update to all open workbench panels. */
+    async setSingleKeyShortcuts(enabled: boolean): Promise<void> {
+        await Promise.allSettled([...this.panels.values()].map(state => state.panel.webview.postMessage({ action: 'singleKeyShortcuts', singleKeyShortcuts: enabled })));
     }
     /** Dispose all workbench panels belonging to closed program `md5`. */
     close(md5: string): void {
