@@ -3,7 +3,6 @@
 
 import * as vscode from 'vscode';
 import { ProgramContext } from './context';
-import { ContrastModeController } from './contrast-mode';
 import { ListingFiles, listingScheme } from './listing';
 import { singleKeyShortcutsEnabled } from './program-views-controller';
 import { Workbench, ControlFlowData } from './workbench';
@@ -52,12 +51,7 @@ export class ControlFlowView implements vscode.CustomTextEditorProvider, vscode.
     private readonly scope: vscode.Disposable;
 
     /** Register the Control Flow custom editor provider and title-scope listener. */
-    constructor(
-        private readonly files: ListingFiles,
-        private readonly workbench: Workbench,
-        private readonly context: ProgramContext,
-        private readonly contrast?: ContrastModeController,
-    ) {
+    constructor(private readonly files: ListingFiles, private readonly workbench: Workbench, private readonly context: ProgramContext) {
         this.registration = vscode.window.registerCustomEditorProvider(controlFlowViewType, this, {
             webviewOptions: { retainContextWhenHidden: true }, supportsMultipleEditorsPerDocument: true,
         });
@@ -85,7 +79,6 @@ export class ControlFlowView implements vscode.CustomTextEditorProvider, vscode.
     /** Populate and wire a VS Code custom text editor webview panel for `document`. */
     async resolveCustomTextEditor(document: vscode.TextDocument, panel: vscode.WebviewPanel): Promise<void> {
         panel.webview.options = { enableScripts: true, localResourceRoots: [] };
-        this.contrast?.track(panel);
         try {
             const state = await this.load(document.uri);
             state.panels.add(panel);
@@ -104,7 +97,7 @@ export class ControlFlowView implements vscode.CustomTextEditorProvider, vscode.
             this.render(state, panel);
             this.opened.fire({ uri: state.uri, entry: state.entry });
         } catch (error) {
-            panel.webview.html = page({ title: 'Control Flow', subtitle: this.context.name(document.uri.authority), body: `<p class="error">${escapeHtml(String(error))}</p>`, contrast: this.contrast?.state, singleKeyShortcuts: singleKeyShortcutsEnabled() });
+            panel.webview.html = page({ title: 'Control Flow', subtitle: this.context.name(document.uri.authority), body: `<p class="error">${escapeHtml(String(error))}</p>`, singleKeyShortcuts: singleKeyShortcutsEnabled() });
         }
     }
     /** Render the CFG HTML document into `panel`. */
@@ -113,7 +106,7 @@ export class ControlFlowView implements vscode.CustomTextEditorProvider, vscode.
         panel.title = this.title(state);
         const singleKeyShortcuts = singleKeyShortcutsEnabled();
         panel.webview.html = page({ title: 'Control Flow', subtitle: `${state.data.name} · ${this.context.name(state.uri.authority)}`,
-            body: state.data.body, scope: state.data.scope, graph: true, controlFlow: true, contrast: this.contrast?.state, singleKeyShortcuts,
+            body: state.data.body, scope: state.data.scope, graph: true, controlFlow: true, singleKeyShortcuts,
             state: { kind: 'controlFlow', md5: state.uri.authority, entry: state.entry, analysisUri: state.uri.toString(), singleKeyShortcuts } });
     }
     /** Handle selection, refresh, and decompile messages posted by the CFG webview. */

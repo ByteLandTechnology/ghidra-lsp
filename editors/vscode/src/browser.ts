@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: MIT
 
 import * as vscode from 'vscode';
-import { ContrastModeController } from './contrast-mode';
 import { symbolName, symbolTooltip, splitScope, displayTemplates, displayAddress } from './names';
 import { Call } from './memory';
 import { Details } from './details';
@@ -123,14 +122,9 @@ export class ProgramBrowser implements vscode.Disposable {
         this.views[1].description = viewDescription(this.context, this.md5, this.loadedCounts?.[1]);
     }
     /** Create the Symbols and Data Types tree views and register browser commands. */
-    constructor(
-        private readonly call: Call,
-        private readonly context: ProgramContext,
-        private readonly refreshDocuments: (md5: string) => Promise<void> = async () => {},
-        contrast?: ContrastModeController,
-    ) {
+    constructor(private readonly call: Call, private readonly context: ProgramContext, private readonly refreshDocuments: (md5: string) => Promise<void> = async () => {}) {
         void vscode.commands.executeCommand('setContext', 'ghidra.browserHasProgram', !!context.current);
-        this.details = new Details(call, context, contrast);
+        this.details = new Details(call, context);
         const symbolView = vscode.window.createTreeView('ghidra.symbols', { treeDataProvider: this.symbols, showCollapseAll: true });
         const typeView = vscode.window.createTreeView('ghidra.types', { treeDataProvider: this.types, showCollapseAll: true });
         this.disposables.push(this.symbols, this.types, this.willRefresh, symbolView, typeView,

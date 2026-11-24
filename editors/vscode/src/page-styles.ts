@@ -2,83 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 import { syntaxStyles } from './syntax';
-
-/** Host color theme family reported to webviews. */
-export type ContrastKind = 'dark' | 'light' | 'hc-dark' | 'hc-light';
-
-/** User preference values for `ghidraLsp.accessibility.highVisibilityControls`. */
-export type HighVisibilitySetting = 'auto' | 'on' | 'off';
-
-/** Contrast and high-visibility state stamped onto webviews and sent by `postMessage`. */
-export interface ContrastState {
-    /** Active color theme family in the extension host. */
-    readonly contrastMode: ContrastKind;
-    /** Configured value of `ghidraLsp.accessibility.highVisibilityControls`. */
-    readonly highVisibilityControls: HighVisibilitySetting;
-    /** True when explicit borders and persistent row buttons are active. */
-    readonly highVisibility: boolean;
-}
-
-/** Default contrast state used when a renderer receives no explicit host state. */
-export const defaultContrastState: ContrastState = {
-    contrastMode: 'dark',
-    highVisibilityControls: 'auto',
-    highVisibility: false,
-};
-
-/** Compute whether high-visibility controls are active for `mode` and `setting`. */
-export function computeHighVisibility(mode: ContrastKind, setting: HighVisibilitySetting): boolean {
-    if (setting === 'on') { return true; }
-    if (setting === 'off') { return false; }
-    return mode === 'hc-dark' || mode === 'hc-light';
-}
-
-/** Format `data-contrast-*` and `data-high-visibility*` attributes for a `<body>` tag. */
-export function contrastBodyAttributes(state: ContrastState = defaultContrastState): string {
-    const mode: ContrastKind = ['dark', 'light', 'hc-dark', 'hc-light'].includes(state.contrastMode) ? state.contrastMode : 'dark';
-    const setting: HighVisibilitySetting = ['auto', 'on', 'off'].includes(state.highVisibilityControls) ? state.highVisibilityControls : 'auto';
-    const highVisibility = typeof state.highVisibility === 'boolean' ? state.highVisibility : computeHighVisibility(mode, setting);
-    return ` data-contrast-mode="${mode}" data-high-visibility="${highVisibility}" data-high-visibility-controls="${setting}"`;
-}
-
-/** Portable client script that synchronizes body contrast attributes with media queries and host messages. */
-export const contrastClientScript = String.raw`(()=>{
-let hostMode=document.body.dataset.contrastMode||'dark';
-let hostExplicit=hostMode==='hc-dark'||hostMode==='hc-light';
-let visSetting=document.body.dataset.highVisibilityControls||'auto';
-const forcedMql=typeof window.matchMedia==='function'?window.matchMedia('(forced-colors: active)'):null;
-const moreMql=typeof window.matchMedia==='function'?window.matchMedia('(prefers-contrast: more)'):null;
-const syncContrast=()=>{
-  const cls=document.body.classList;
-  const mode=hostExplicit?hostMode:cls.contains('vscode-high-contrast-light')?'hc-light':cls.contains('vscode-high-contrast')?'hc-dark':cls.contains('vscode-light')?'light':cls.contains('vscode-dark')?'dark':hostMode;
-  const isHc=mode==='hc-dark'||mode==='hc-light'||cls.contains('vscode-high-contrast')||cls.contains('vscode-high-contrast-light');
-  const highVis=visSetting==='on'?true:visSetting==='off'?false:(isHc||!!forcedMql?.matches||!!moreMql?.matches);
-  if(document.body.dataset.contrastMode!==mode)document.body.dataset.contrastMode=mode;
-  if(document.body.dataset.highVisibilityControls!==visSetting)document.body.dataset.highVisibilityControls=visSetting;
-  const hvText=String(highVis);
-  if(document.body.dataset.highVisibility!==hvText)document.body.dataset.highVisibility=hvText;
-};
-syncContrast();
-forcedMql?.addEventListener?.('change',syncContrast);
-moreMql?.addEventListener?.('change',syncContrast);
-new MutationObserver(syncContrast).observe(document.body,{attributes:true,attributeFilter:['class']});
-window.addEventListener('message',event=>{
-  const msg=event.data;
-  if(msg&&msg.action==='contrastMode'){
-    if(typeof msg.contrastMode==='string'){hostMode=msg.contrastMode;hostExplicit=true}
-    if(typeof msg.highVisibilityControls==='string')visSetting=msg.highVisibilityControls;
-    syncContrast();
-  }
-});
-})();`;
-
 /** Shared by every webview. Native editors, comments and trees use VS Code's own UI. */
 export const pageStyles = `${syntaxStyles}
 *{box-sizing:border-box}
 html{scrollbar-color:var(--vscode-scrollbarSlider-background) var(--vscode-editor-background)}
-body{--ghidra-hv-border:var(--vscode-contrastBorder,color-mix(in srgb,var(--vscode-foreground) 72%,var(--vscode-editor-background)));--ghidra-active-border:var(--vscode-contrastActiveBorder,var(--vscode-focusBorder))}
-body.vscode-dark,body.vscode-high-contrast,body[data-contrast-mode="dark"],body[data-contrast-mode="hc-dark"]{color-scheme:dark}
-body.vscode-light,body.vscode-high-contrast-light,body[data-contrast-mode="light"],body[data-contrast-mode="hc-light"]{color-scheme:light}
+body.vscode-dark,body.vscode-high-contrast{color-scheme:dark}
+body.vscode-light,body.vscode-high-contrast-light{color-scheme:light}
 ::selection{background:var(--vscode-editor-selectionBackground);color:var(--vscode-editor-selectionForeground,var(--vscode-foreground))}
 body{margin:0;color:var(--vscode-foreground);background:var(--vscode-editor-background);font:var(--vscode-font-size,13px)/1.5 var(--vscode-font-family)}
 main{max-width:1160px;margin:0 auto;padding:24px 28px 40px;min-width:0}
@@ -101,9 +30,6 @@ button:disabled{opacity:.5;cursor:default}
 button.link{min-height:0;padding:0;border:0;background:transparent;color:var(--vscode-textLink-foreground);text-align:left;text-decoration:underline;text-underline-offset:3px;overflow-wrap:anywhere}
 button.link:hover{color:var(--vscode-textLink-activeForeground);background:transparent}
 button.danger{color:var(--vscode-errorForeground)}
-.call-icon.state-check{display:none;font-size:11px;line-height:1;flex-shrink:0}
-button[aria-pressed="true"]>.state-check,button[aria-expanded="true"]>.state-check{display:inline-block}
-button[aria-pressed="true"]:not(.node-branch):not(.call-column-pick),button[aria-expanded="true"]:not(.node-branch):not(.expand-run-btn){border:2px solid var(--ghidra-active-border)}
 input,select,textarea{font:inherit;border:1px solid var(--vscode-input-border,transparent);border-radius:2px;color:var(--vscode-input-foreground);background:var(--vscode-input-background);padding:5px 8px;min-width:0;max-width:100%}
 input,textarea{caret-color:var(--vscode-editorCursor-foreground,var(--vscode-foreground))}
 input::placeholder,textarea::placeholder{color:var(--vscode-input-placeholderForeground);opacity:1}
@@ -111,7 +37,7 @@ input:disabled,select:disabled,textarea:disabled{opacity:.6;cursor:default}
 input:read-only{color:var(--vscode-descriptionForeground)}
 textarea{min-height:88px;resize:vertical}
 :focus-visible{outline:2px solid var(--vscode-focusBorder);outline-offset:2px}
-input:focus,select:focus,textarea:focus{outline:2px solid var(--vscode-focusBorder);outline-offset:-1px}
+input:focus,select:focus,textarea:focus{outline:1px solid var(--vscode-focusBorder);outline-offset:0}
 .table-wrap{max-width:100%;overflow:auto;border:1px solid var(--vscode-panel-border);border-radius:2px}
 table{width:100%;border-collapse:collapse;text-align:left;font-size:inherit;font-variant-numeric:tabular-nums}
 th,td{padding:7px 10px;border-bottom:1px solid var(--vscode-panel-border);vertical-align:top}
@@ -119,7 +45,7 @@ th{font-size:12px;font-weight:600;color:var(--vscode-descriptionForeground);back
 td{overflow-wrap:anywhere}
 tr:last-child td{border-bottom:0}
 tbody tr:hover{background:var(--vscode-list-hoverBackground)}
-.selected{background:var(--vscode-list-inactiveSelectionBackground);color:var(--vscode-list-inactiveSelectionForeground,var(--vscode-foreground));box-shadow:inset 2px 0 var(--vscode-focusBorder);outline:2px solid var(--ghidra-active-border);outline-offset:-2px}
+.selected{background:var(--vscode-list-inactiveSelectionBackground);color:var(--vscode-list-inactiveSelectionForeground,var(--vscode-foreground));box-shadow:inset 2px 0 var(--vscode-focusBorder)}
 dl{margin:0}
 dl>div{display:grid;grid-template-columns:150px minmax(0,1fr);gap:16px;padding:6px 0;border-bottom:1px solid var(--vscode-panel-border)}
 dl>div:last-child{border:0}
@@ -154,23 +80,28 @@ input[type=checkbox]{width:auto;margin:0;accent-color:var(--vscode-checkbox-sele
 .success{color:var(--vscode-testing-iconPassed)}
 #error:empty,#status:empty{display:none}
 .empty{padding:20px 0;color:var(--vscode-descriptionForeground)}
-:is(body[data-high-visibility="true"],body.vscode-high-contrast,body.vscode-high-contrast-light) :is(input:not([type="checkbox"]),select,textarea){border:1px solid var(--ghidra-hv-border)}
-:is(body[data-high-visibility="true"],body.vscode-high-contrast,body.vscode-high-contrast-light) button:where(:not(.link,.type-sort,.xref-link,.target-link,.expand-run-btn,.hex-ptr-btn,.call-column-pick,[aria-pressed="true"],[aria-expanded="true"])){border:1px solid var(--ghidra-hv-border)}
-:is(body.vscode-high-contrast,body.vscode-high-contrast-light,body[data-contrast-mode="hc-dark"],body[data-contrast-mode="hc-light"]) button[aria-pressed="true"]:where(:not(.node-branch,.call-column-pick)),:is(body.vscode-high-contrast,body.vscode-high-contrast-light,body[data-contrast-mode="hc-dark"],body[data-contrast-mode="hc-light"]) button[aria-expanded="true"]:where(:not(.node-branch,.expand-run-btn)){background:var(--vscode-editor-background);color:var(--vscode-foreground);border:2px solid var(--ghidra-active-border)}
+@media(max-width:640px){main{padding:16px}h1{font-size:20px}dl>div{grid-template-columns:1fr;gap:2px}.toolbar{gap:6px}.form-grid{gap:12px}.editable,.editable input{min-width:0}}
+body{--ghidra-hv-border:var(--vscode-contrastBorder,color-mix(in srgb,var(--vscode-foreground) 72%,var(--vscode-editor-background)));--ghidra-active-border:var(--vscode-contrastActiveBorder,var(--vscode-focusBorder))}
+button[aria-pressed="true"]:not(.node-branch)::before,button[aria-expanded="true"]:not(.node-branch):not(.expand-run-btn)::before{content:"\\eab2" / "";font:11px/1 call-icons;display:inline-block;vertical-align:middle;flex-shrink:0}
+button[aria-pressed="true"]:not(.node-branch):not(.call-column-pick),button[aria-expanded="true"]:not(.node-branch):not(.expand-run-btn){border:2px solid var(--ghidra-active-border)}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--vscode-focusBorder);outline-offset:-1px}
+.selected{outline:2px solid var(--ghidra-active-border);outline-offset:-2px}
+:is(body.vscode-high-contrast,body.vscode-high-contrast-light) :is(input:not([type="checkbox"]),select,textarea){border:1px solid var(--ghidra-hv-border)}
+:is(body.vscode-high-contrast,body.vscode-high-contrast-light) button:where(:not(.link,.type-sort,.xref-link,.target-link,.expand-run-btn,.hex-ptr-btn,.call-column-pick,[aria-pressed="true"],[aria-expanded="true"])){border:1px solid var(--ghidra-hv-border)}
+:is(body.vscode-high-contrast,body.vscode-high-contrast-light) :is(button[aria-pressed="true"]:where(:not(.node-branch,.call-column-pick)),button[aria-expanded="true"]:where(:not(.node-branch,.expand-run-btn))){background:var(--vscode-editor-background);color:var(--vscode-foreground);border:2px solid var(--ghidra-active-border)}
 @media(prefers-contrast:more){
   input:not([type="checkbox"]),select,textarea{border:1px solid var(--ghidra-hv-border)}
   button:where(:not(.link,.type-sort,.xref-link,.target-link,.expand-run-btn,.hex-ptr-btn,.call-column-pick,[aria-pressed="true"],[aria-expanded="true"])){border:1px solid var(--ghidra-hv-border)}
 }
 @media(forced-colors:active){
-  body{background:Canvas;color:CanvasText}
+  body{background:Canvas;color:CanvasText;--gh-fg-muted:CanvasText;--gh-placeholder:GrayText;--gh-fg-success:CanvasText;--gh-sel-inactive-bg:Canvas;--gh-sel-inactive-fg:CanvasText;--gh-sel-active-bg:Canvas;--gh-sel-active-fg:CanvasText;--gh-sel-link:LinkText;--gh-toggle-active-bg:Canvas;--gh-toggle-active-fg:CanvasText;--gh-toggle-active-border:Highlight}
   input:not([type="checkbox"]),select,textarea{background:Field;color:FieldText;border:1px solid ButtonText}
   input[type="checkbox"]{border:1px solid ButtonText}
   button:where(:not(.link,.type-sort,.xref-link,.target-link,.expand-run-btn,.hex-ptr-btn,.call-column-pick,[aria-pressed="true"],[aria-expanded="true"])){background:ButtonFace;color:ButtonText;border:1px solid ButtonText}
   button.link,.xref-link,.target-link,.expand-run-btn,.hex-ptr-btn{color:LinkText;text-decoration:underline}
-  button[aria-pressed="true"]:where(:not(.node-branch,.call-column-pick)),button[aria-expanded="true"]:where(:not(.node-branch,.expand-run-btn)){background:Canvas;color:CanvasText;border:2px solid Highlight}
-  .selected{background:Canvas;color:CanvasText;box-shadow:none;outline:2px solid Highlight;outline-offset:-2px}
+  button[aria-pressed="true"]:not(.node-branch):not(.call-column-pick),button[aria-expanded="true"]:not(.node-branch):not(.expand-run-btn){background:Canvas;color:CanvasText;border:2px solid Highlight}
+  .selected,tbody tr.selected,tbody tr.selected:focus,tbody tr.selected:focus-within{background:Canvas;color:CanvasText;box-shadow:none;outline:2px solid Highlight;outline-offset:-2px;--gh-tok-mnemonic:CanvasText;--gh-tok-register:CanvasText;--gh-tok-number:CanvasText;--gh-tok-string:CanvasText;--gh-tok-keyword:CanvasText;--gh-tok-symbol:CanvasText;--gh-tok-name:CanvasText}
   :focus-visible,input:focus,select:focus,textarea:focus{outline:2px solid Highlight;outline-offset:2px}
   svg .tok-mnemonic,svg .tok-register,svg .tok-number,svg .tok-string,svg .tok-keyword,svg .tok-symbol{fill:CanvasText}
 }
-@media(max-width:640px){main{padding:16px}h1{font-size:20px}dl>div{grid-template-columns:1fr;gap:2px}.toolbar{gap:6px}.form-grid{gap:12px}.editable,.editable input{min-width:0}}
 `;

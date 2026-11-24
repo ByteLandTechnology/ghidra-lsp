@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { randomBytes } from 'node:crypto';
-import { ContrastState, contrastBodyAttributes, contrastClientScript, pageStyles } from './page-styles';
+import { pageStyles } from './page-styles';
 import { iconFontStyles } from './icon-font';
 import { viewStyles } from './view-ui';
 import { callIcon, callIcons } from './call-graph-icons';
@@ -82,8 +82,6 @@ export interface PageExtras {
     titleHtml?: string;
     /** Failure shown in the page's single alert region. */
     error?: string;
-    /** Initial host contrast and high-visibility state stamped onto `<body>`. */
-    contrast?: ContrastState;
 }
 /** Render a complete CSP-protected HTML page for a VS Code webview panel. */
 export function page(title: string, eyebrow: string, subtitle: unknown, body: string, script = '', state?: Data, actions = '', extras: PageExtras = {}): string {
@@ -96,8 +94,7 @@ export function page(title: string, eyebrow: string, subtitle: unknown, body: st
     ${pageStyles}
     ${iconFontStyles}
     ${viewStyles}
-    </style></head><body class="${form ? 'edit-page' : 'inspector-page'}${extras.busy ? ' is-busy' : ''}" data-view-kind="${escape(kind)}"${extras.busy ? ' aria-busy="true"' : ''}${contrastBodyAttributes(extras.contrast)}><main><header><div class="inspector-title"><div><div class="eyebrow">${escape(eyebrow)}</div><h1 tabindex="-1"${extras.titleHint ? ` title="${escape(extras.titleHint)}"` : ''}>${extras.titleHtml ?? breakable(title)}</h1>${subtitle ? `<p class="subtitle" title="${escape(subtitle)}">${subtitleMarkup}</p>` : ''}</div></div>${extras.nav || actions ? `<div class="inspector-tools">${extras.nav ? `<nav class="inspector-nav" aria-label="Inspector history">${extras.nav}</nav>` : ''}${actions ? `<div class="inspector-actions" role="group" aria-label="${escape(eyebrow)} actions">${actions}</div>` : ''}</div>` : ''}</header><p id="error" class="error" role="alert">${escape(extras.error ?? '')}</p><p id="busy-status" class="sr-status" role="status">${extras.busy ? 'Loading' : ''}</p>${body}</main><script nonce="${nonce}">
-    ${contrastClientScript}
+    </style></head><body class="${form ? 'edit-page' : 'inspector-page'}${extras.busy ? ' is-busy' : ''}" data-view-kind="${escape(kind)}"${extras.busy ? ' aria-busy="true"' : ''}><main><header><div class="inspector-title"><div><div class="eyebrow">${escape(eyebrow)}</div><h1 tabindex="-1"${extras.titleHint ? ` title="${escape(extras.titleHint)}"` : ''}>${extras.titleHtml ?? breakable(title)}</h1>${subtitle ? `<p class="subtitle" title="${escape(subtitle)}">${subtitleMarkup}</p>` : ''}</div></div>${extras.nav || actions ? `<div class="inspector-tools">${extras.nav ? `<nav class="inspector-nav" aria-label="Inspector history">${extras.nav}</nav>` : ''}${actions ? `<div class="inspector-actions" role="group" aria-label="${escape(eyebrow)} actions">${actions}</div>` : ''}</div>` : ''}</header><p id="error" class="error" role="alert">${escape(extras.error ?? '')}</p><p id="busy-status" class="sr-status" role="status">${extras.busy ? 'Loading' : ''}</p>${body}</main><script nonce="${nonce}">
     const vscode=acquireVsCodeApi();
     const inspectorState=${stateJson},inspectorPrevious=vscode.getState()||{};
     const inspectorSame=!!inspectorState.kind&&['kind','md5','path','entry','id'].every(key=>inspectorState[key]===inspectorPrevious[key]);

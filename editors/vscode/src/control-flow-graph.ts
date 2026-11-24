@@ -70,7 +70,7 @@ function code(row: CodeRow): string {
     return highlightAsm(row.text, 'tspan', !row.continuation);
 }
 
-/** Choose a badge center along `points` that never overlaps basic blocks or earlier badges. */
+/** Select a badge position on `points` that does not overlap basic blocks or previous badges. */
 function placeEdgeBadge(
     points: { x: number; y: number }[],
     nodes: FlowNode[],

@@ -31,7 +31,6 @@ import {
 } from './listing-model';
 import { Call } from './memory';
 import { displayAddress, SymbolName } from './names';
-import { ContrastState } from './page-styles';
 import {
     HexViewPayload,
     renderHexColHeadersHtml,
@@ -57,7 +56,6 @@ export interface ProgramViewHost {
     readonly openBeside: (kind: 'listing' | 'memory', md5: string, address: string) => Promise<void>;
     readonly openWorkbench: (kind: 'references' | 'callGraph' | 'controlFlow', md5: string, address: string) => Promise<void>;
     readonly getPanels: () => Iterable<ProgramPanelState>;
-    readonly getContrast?: () => ContrastState | undefined;
 }
 
 /** Cached program-level metadata used across Program Listing and Hex panels. */
@@ -354,7 +352,6 @@ export class ProgramViewsController {
             syncEnabled: Boolean(state.syncEnabled),
             singleKeyShortcuts: this.singleKeyShortcutsEnabled(),
             totalUnitsLabel,
-            contrast: this.host.getContrast?.(),
         };
         state.panel.webview.html = renderProgramListingPage(payload);
     }
@@ -464,7 +461,6 @@ export class ProgramViewsController {
             singleKeyShortcuts: this.singleKeyShortcutsEnabled(),
             bytesPerRow,
             initialInspector: inspectorEntries,
-            contrast: this.host.getContrast?.(),
         };
         state.panel.webview.html = renderProgramHexPage(payload);
     }

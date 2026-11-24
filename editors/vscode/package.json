@@ -476,21 +476,6 @@
           "default": true,
           "markdownDescription": "Synchronize cursor selection across open Program Listing, Hex View, and Decompiler tabs for the same program."
         },
-        "ghidraLsp.accessibility.highVisibilityControls": {
-          "type": "string",
-          "enum": [
-            "auto",
-            "on",
-            "off"
-          ],
-          "enumDescriptions": [
-            "Turn on high-visibility borders and persistent row buttons automatically in High Contrast themes and OS contrast modes.",
-            "Show explicit control borders and keep row buttons visible on all themes.",
-            "Use standard theme borders unless OS forced-colors mode is active."
-          ],
-          "default": "auto",
-          "description": "Control explicit input borders, selection outlines, and persistent row buttons in Ghidra webviews."
-        },
         "ghidraLsp.views.singleKeyShortcuts": {
           "type": "boolean",
           "default": true,

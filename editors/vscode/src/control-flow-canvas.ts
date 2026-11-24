@@ -44,17 +44,18 @@ export const controlFlowStyles = `
 #cfg-arrow-taken path{fill:var(--vscode-charts-green,#5fa77f);fill:context-stroke}
 #cfg-arrow-fallthrough path{fill:var(--vscode-charts-red,#e47777);fill:context-stroke}
 #cfg-arrow-flow path{fill:var(--vscode-charts-blue,#64a8eb);fill:context-stroke}
-body.flow-page:is(.vscode-high-contrast,[data-contrast-mode="hc-dark"]) .taken{color:#89d185}
-body.flow-page:is(.vscode-high-contrast,[data-contrast-mode="hc-dark"]) .fallthrough{color:#f48771}
-body.flow-page:is(.vscode-high-contrast,[data-contrast-mode="hc-dark"]) .flow{color:#75beff}
-body.flow-page:is(.vscode-high-contrast-light,[data-contrast-mode="hc-light"]) .taken{color:#136324}
-body.flow-page:is(.vscode-high-contrast-light,[data-contrast-mode="hc-light"]) .fallthrough{color:#a61b0b}
-body.flow-page:is(.vscode-high-contrast-light,[data-contrast-mode="hc-light"]) .flow{color:#0f4a85}
-body.flow-page:is(.vscode-high-contrast,.vscode-high-contrast-light,[data-contrast-mode="hc-dark"],[data-contrast-mode="hc-light"]) .flow-canvas .cfg-edge{opacity:1!important}
-body.flow-page:is(.vscode-high-contrast,.vscode-high-contrast-light,[data-contrast-mode="hc-dark"],[data-contrast-mode="hc-light"]) .flow-canvas .graph-node .block-body{stroke:var(--ghidra-hv-border);stroke-width:1.5}
-body.flow-page:is(.vscode-high-contrast,.vscode-high-contrast-light,[data-contrast-mode="hc-dark"],[data-contrast-mode="hc-light"]) .flow-canvas .graph-node .block-header{fill:var(--vscode-editor-background);stroke:var(--ghidra-hv-border);stroke-width:1}
-body.flow-page:is(.vscode-high-contrast,.vscode-high-contrast-light,[data-contrast-mode="hc-dark"],[data-contrast-mode="hc-light"]) :is(.flow-canvas .graph-node.selected .block-body,.flow-canvas .graph-node:focus-visible .block-body){stroke:var(--ghidra-active-border);stroke-width:2.5}
-body.flow-page:is(.vscode-high-contrast,.vscode-high-contrast-light,[data-contrast-mode="hc-dark"],[data-contrast-mode="hc-light"]) :is(.flow-canvas .node-title,.flow-canvas .node-subtitle,.flow-canvas .cfg-entry-badge,.flow-canvas .node-line){fill:var(--vscode-foreground)}
+body.flow-page.vscode-high-contrast .taken{color:#89d185}
+body.flow-page.vscode-high-contrast .fallthrough{color:#f48771}
+body.flow-page.vscode-high-contrast .flow{color:#75beff}
+body.flow-page.vscode-high-contrast-light .taken{color:#136324}
+body.flow-page.vscode-high-contrast-light .fallthrough{color:#a61b0b}
+body.flow-page.vscode-high-contrast-light .flow{color:#0f4a85}
+body.flow-page:is(.vscode-high-contrast,.vscode-high-contrast-light) .flow-canvas .cfg-edge{opacity:1!important}
+body.flow-page:is(.vscode-high-contrast,.vscode-high-contrast-light) .flow-canvas .graph-node .block-body{stroke:var(--ghidra-hv-border);stroke-width:1.5}
+body.flow-page:is(.vscode-high-contrast,.vscode-high-contrast-light) .flow-canvas .graph-node .block-header{fill:var(--vscode-editor-background);stroke:var(--ghidra-hv-border);stroke-width:1}
+body.flow-page:is(.vscode-high-contrast,.vscode-high-contrast-light) :is(.flow-canvas .graph-node.selected .block-body,.flow-canvas .graph-node:focus-visible .block-body){stroke:var(--ghidra-active-border);stroke-width:2.5}
+body.flow-page:is(.vscode-high-contrast,.vscode-high-contrast-light) :is(.flow-canvas .node-title,.flow-canvas .node-subtitle,.flow-canvas .cfg-entry-badge,.flow-canvas .node-line){fill:var(--vscode-foreground)}
+@media(prefers-contrast:more){.flow-canvas .graph-node .block-body{stroke:var(--ghidra-hv-border);stroke-width:1.5}}
 @media(forced-colors:active){
   .flow-page .flow-canvas{background:Canvas}
   .flow-canvas .graph-node .block-body{fill:Canvas;stroke:CanvasText;stroke-width:1.5}

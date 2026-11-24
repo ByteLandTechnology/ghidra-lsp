@@ -3,7 +3,6 @@
 
 import * as vscode from 'vscode';
 import { applyEdits, modify, parse, ParseError } from 'jsonc-parser';
-import { ContrastModeController } from './contrast-mode';
 import { typePath } from './type-files';
 import { callIcon } from './call-graph-icons';
 import { Data, escape, object, page, properties, reference, rows } from './web';
@@ -87,7 +86,7 @@ export class DataTypeEditorView implements vscode.CustomTextEditorProvider, vsco
     /** VS Code custom editor provider registration handle. */
     private readonly registration: vscode.Disposable;
     /** Register the `ghidra.dataTypeEditor` custom text editor provider. */
-    constructor(private readonly call: Call, private readonly contrast?: ContrastModeController) {
+    constructor(private readonly call: Call) {
         this.registration = vscode.window.registerCustomEditorProvider(typeEditorView, this, {
             webviewOptions: { retainContextWhenHidden: true }, supportsMultipleEditorsPerDocument: true,
         });
@@ -96,7 +95,6 @@ export class DataTypeEditorView implements vscode.CustomTextEditorProvider, vsco
     async resolveCustomTextEditor(document: vscode.TextDocument, panel: vscode.WebviewPanel): Promise<void> {
         typePath(document.uri);
         panel.webview.options = { enableScripts: true, localResourceRoots: [] };
-        this.contrast?.track(panel);
         const stat = await vscode.workspace.fs.stat(document.uri);
         const readonly = !!(stat.permissions && (stat.permissions & vscode.FilePermission.Readonly));
         let applying = false, panelVersion = document.version, generation = 0;
@@ -286,7 +284,7 @@ export class DataTypeEditorView implements vscode.CustomTextEditorProvider, vsco
             const path = typePath(document.uri);
             const summary = typeHeaderSummary(!errors.length ? model : undefined, path, readonly, document.isDirty ? undefined : cachedRawBytes);
             const actions = `<div class="type-actions"><span class="type-status" data-state="${document.isDirty ? 'dirty' : 'clean'}" role="status">${document.isDirty ? 'Unsaved changes' : ''}</span><button type="button" data-open-jsonc aria-label="Open JSONC text editor beside" title="Open .ghidra-type JSONC text editor beside">${callIcon('edit')}<span>JSONC</span></button></div>`;
-            panel.webview.html = page(path.split('/').pop() || 'Data type', 'Data type editor', summary.subtitle, `<p id="type-validation" class="type-validation" role="alert" hidden></p>` + body + `<datalist id="type-options">${typeOptions.map(value => `<option value="${escape(value)}"></option>`).join('')}</datalist>`, script, { kind: 'type-editor', md5: document.uri.authority, path }, actions, { subtitleHtml: summary.subtitleHtml, contrast: this.contrast?.state });
+            panel.webview.html = page(path.split('/').pop() || 'Data type', 'Data type editor', summary.subtitle, `<p id="type-validation" class="type-validation" role="alert" hidden></p>` + body + `<datalist id="type-options">${typeOptions.map(value => `<option value="${escape(value)}"></option>`).join('')}</datalist>`, script, { kind: 'type-editor', md5: document.uri.authority, path }, actions, { subtitleHtml: summary.subtitleHtml });
         };
         const diagnostics = (): string[] => vscode.languages.getDiagnostics(document.uri).filter(item => item.source === 'Ghidra type' && item.severity === vscode.DiagnosticSeverity.Error).map(item => item.message);
         const listener = vscode.workspace.onDidChangeTextDocument(event => { if (event.document.uri.toString() === document.uri.toString() && !applying) { render(panel.active ? editorFocus : undefined); } });

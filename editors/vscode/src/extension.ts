@@ -6,7 +6,6 @@ import { StringFiles, stringScheme } from './string-files';
 import { DataTypeEditorView } from './type-editor-view';
 import * as vscode from 'vscode';
 import { ProgramBrowser } from './browser';
-import { ContrastModeController } from './contrast-mode';
 import { ProgramContext } from './context';
 import { EditingUI } from './editing';
 import { Workbench } from './workbench';
@@ -124,23 +123,17 @@ export async function activate(extension: vscode.ExtensionContext): Promise<void
     sessionsView.bind(sessionsTree);
     const stringFiles = new StringFiles(call, context, () => references);
     const stringsView = new StringsView(call, context, stringFiles);
-    const contrast = new ContrastModeController();
-    const browser = new ProgramBrowser(call, context, md5 => stringsView.refresh(md5), contrast);
+    const browser = new ProgramBrowser(call, context, md5 => stringsView.refresh(md5));
     let listingViews: ListingViews | undefined;
-    const workbench = new Workbench(call, context, editor => listingViews?.addressAt(editor) || memoryAddressAt(editor), contrast);
+    const workbench = new Workbench(call, context, editor => listingViews?.addressAt(editor) || memoryAddressAt(editor));
     const typeFiles = new DataTypeFiles(call, context, extension.workspaceState);
-    const editing = new EditingUI(call, context, typeFiles, contrast);
-    const typeEditorView = new DataTypeEditorView(call, contrast);
-    extension.subscriptions.push(
-        contrast, context, tracker, stringFiles, stringsView, sessionsView, sessionsTree,
-        browser, workbench, editing, typeFiles, typeEditorView,
-        vscode.window.onDidChangeActiveColorTheme(() => contrast.scheduleBroadcast()),
-    );
+    const editing = new EditingUI(call, context, typeFiles);
+    const typeEditorView = new DataTypeEditorView(call);
+    extension.subscriptions.push(context, tracker, stringFiles, stringsView, sessionsView, sessionsTree, browser, workbench, editing, typeFiles, typeEditorView);
     const memory = new GhidraMemory(call);
     renames = new ReadonlyRenames(call, async md5 => { await Promise.all([browser.refresh(md5), workbench.refresh(md5)]); });
     // Template display is presentation-only: re-render the names already on screen for the current program.
     extension.subscriptions.push(vscode.workspace.onDidChangeConfiguration(async event => {
-        if (event.affectsConfiguration('ghidraLsp.accessibility.highVisibilityControls')) { contrast.scheduleBroadcast(); }
         if (!event.affectsConfiguration('ghidraLsp.templateArguments')) { return; }
         const value = vscode.workspace.getConfiguration('ghidraLsp').get<string>('templateArguments', 'omit');
         setShowTemplateArguments(value === 'show');
@@ -154,7 +147,7 @@ export async function activate(extension: vscode.ExtensionContext): Promise<void
     const byteFiles = new MemoryFiles(call, context);
     const listingFiles = new ListingFiles(call, context, byteFiles, extension.workspaceState);
     listingViews = new ListingViews(call, listingFiles);
-    const graphView = new ControlFlowView(listingFiles, workbench, context, contrast);
+    const graphView = new ControlFlowView(listingFiles, workbench, context);
     extension.subscriptions.push(vscode.workspace.onDidChangeConfiguration(async event => {
         if (!event.affectsConfiguration('ghidraLsp.views.singleKeyShortcuts')) { return; }
         const enabled = singleKeyShortcutsEnabled();

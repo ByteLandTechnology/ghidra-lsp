@@ -70,8 +70,8 @@ export const viewStyles = `
 .inspector-page[data-view-kind="type-editor"] .type-row-action{text-align:center}
 .inspector-page[data-view-kind="type-editor"] .type-row-handle{opacity:.65}
 .inspector-page[data-view-kind="type-editor"] .type-row-action{opacity:.7;transition:opacity .12s ease}
-@media(hover:hover){.inspector-page[data-view-kind="type-editor"] .type-row-action,.inspector-page[data-view-kind="type-editor"] .type-row-action button{opacity:0}}
-.inspector-page[data-view-kind="type-editor"] .type-table tr:hover :is(.type-row-handle,.type-row-handle .type-move,.type-row-action,.type-row-action button),.inspector-page[data-view-kind="type-editor"] .type-table tr:focus-within :is(.type-row-handle,.type-row-handle .type-move,.type-row-action,.type-row-action button){opacity:1}
+@media(hover:hover){.inspector-page[data-view-kind="type-editor"] .type-row-action{opacity:0}}
+.inspector-page[data-view-kind="type-editor"] .type-table tr:hover .type-row-handle,.inspector-page[data-view-kind="type-editor"] .type-table tr:hover .type-row-action,.inspector-page[data-view-kind="type-editor"] .type-table tr:focus-within .type-row-handle,.inspector-page[data-view-kind="type-editor"] .type-table tr:focus-within .type-row-action{opacity:1}
 @media(prefers-reduced-motion:reduce){.inspector-page[data-view-kind="type-editor"] .type-row-action{transition:none}}
 .inspector-page[data-view-kind="type-editor"] .type-move{cursor:grab;touch-action:none}
 .inspector-page[data-view-kind="type-editor"] .type-move:active{cursor:grabbing}
@@ -192,9 +192,9 @@ export const viewStyles = `
 .browser-page th{position:sticky;top:0;z-index:1;background:var(--vscode-editor-background);font-size:11px;padding:8px 10px}
 .browser-page td{padding:8px 10px;line-height:1.55;font-size:12px}
 .browser-page td.addr{font-family:var(--vscode-editor-font-family,monospace);font-size:11px;font-variant-numeric:tabular-nums;white-space:nowrap;overflow-wrap:normal}
-.browser-page tbody tr.selected{background:var(--vscode-list-inactiveSelectionBackground);color:var(--vscode-list-inactiveSelectionForeground,var(--vscode-foreground));outline:2px solid var(--ghidra-active-border);outline-offset:-2px}
-.browser-page tbody tr.selected:focus{background:var(--vscode-list-activeSelectionBackground);color:var(--vscode-list-activeSelectionForeground,var(--vscode-foreground));outline:2px solid var(--vscode-focusBorder);outline-offset:-2px}
-.browser-page tr:focus-visible{outline:2px solid var(--vscode-focusBorder);outline-offset:-2px}
+.browser-page tbody tr.selected{background:var(--vscode-list-inactiveSelectionBackground);color:var(--vscode-list-inactiveSelectionForeground,var(--vscode-foreground))}
+.browser-page tbody tr.selected:focus{background:var(--vscode-list-activeSelectionBackground);color:var(--vscode-list-activeSelectionForeground,var(--vscode-foreground))}
+.browser-page tr:focus-visible{outline:1px solid var(--vscode-focusBorder);outline-offset:-1px}
 .browser-page .table-empty{margin:0;padding:12px 0;color:var(--vscode-descriptionForeground);font-size:12px}
 .browser-page .no-results{display:flex;align-items:center;gap:12px;margin:12px 0;padding:8px 0;color:var(--vscode-descriptionForeground);font-size:12px}
 .browser-page .no-results[hidden]{display:none}
@@ -258,24 +258,7 @@ export const viewStyles = `
 .inspector-page dl>div{border-bottom:0}
 .edit-page .editable:has(tbody:empty){display:none}
 .edit-page .table-wrap:has(.editable tbody:empty){display:none}
-@media(hover:hover){.edit-page .row-remove,.inspector-page[data-view-kind="type-editor"] .type-row-handle,.inspector-page[data-view-kind="type-editor"] .type-row-handle .type-move{opacity:0}.edit-page tr:hover .row-remove,.edit-page tr:focus-within .row-remove,.inspector-page[data-view-kind="type-editor"] .type-table tr:hover :is(.type-row-handle,.type-row-handle .type-move),.inspector-page[data-view-kind="type-editor"] .type-table tr:focus-within :is(.type-row-handle,.type-row-handle .type-move){opacity:1}}
-body.inspector-page[data-view-kind="type-editor"]:is([data-high-visibility="true"],.vscode-high-contrast,.vscode-high-contrast-light) :is(.type-table input,.type-table tr[data-new] td[data-field="name"] input),body.edit-page:is([data-high-visibility="true"],.vscode-high-contrast,.vscode-high-contrast-light) .editable input{border:1px solid var(--ghidra-hv-border);background:var(--vscode-input-background)}
-body.inspector-page[data-view-kind="type-editor"]:is([data-high-visibility="true"],.vscode-high-contrast,.vscode-high-contrast-light) :is(.type-row-handle,.type-row-handle .type-move,.type-row-action,.type-row-action button),body.edit-page:is([data-high-visibility="true"],.vscode-high-contrast,.vscode-high-contrast-light) .row-remove{opacity:1;transition:none}
-body.inspector-page:is([data-high-visibility="true"],.vscode-high-contrast,.vscode-high-contrast-light) :is(.icon-button,.inspector-menu>summary,.page-options>summary),body.inspector-page[data-view-kind="type-editor"]:is([data-high-visibility="true"],.vscode-high-contrast,.vscode-high-contrast-light) :is(.type-icon,.type-actions [data-open-jsonc]),body.browser-page:is([data-high-visibility="true"],.vscode-high-contrast,.vscode-high-contrast-light) :is(.icon-button:not([aria-pressed="true"]):not([aria-expanded="true"]),.more-actions>summary,.page-options>summary),body.edit-page:is([data-high-visibility="true"],.vscode-high-contrast,.vscode-high-contrast-light) .row-remove{border:1px solid var(--ghidra-hv-border);color:var(--vscode-foreground)}
-body.browser-page:is(.vscode-high-contrast,.vscode-high-contrast-light,[data-contrast-mode="hc-dark"],[data-contrast-mode="hc-light"]) tbody tr.selected{background:var(--vscode-editor-background);color:var(--vscode-foreground);outline:2px solid var(--ghidra-active-border);outline-offset:-2px}
-@media(prefers-contrast:more){
-  .inspector-page[data-view-kind="type-editor"] .type-table input,.inspector-page[data-view-kind="type-editor"] .type-table tr[data-new] td[data-field="name"] input,.edit-page .editable input{border:1px solid var(--ghidra-hv-border);background:var(--vscode-input-background)}
-  .inspector-page[data-view-kind="type-editor"] :is(.type-row-handle,.type-row-handle .type-move,.type-row-action,.type-row-action button),.edit-page .row-remove{opacity:1}
-  .inspector-page .icon-button,.browser-page .icon-button:not([aria-pressed="true"]):not([aria-expanded="true"]),.inspector-page[data-view-kind="type-editor"] .type-icon,.edit-page .row-remove,.inspector-menu>summary,.browser-page .more-actions>summary,.page-options>summary,.inspector-page[data-view-kind="type-editor"] .type-actions [data-open-jsonc]{border:1px solid var(--ghidra-hv-border);color:var(--vscode-foreground)}
-}
-@media(forced-colors:active){
-  .inspector-page[data-view-kind="type-editor"] .type-table input,.inspector-page[data-view-kind="type-editor"] .type-table tr[data-new] td[data-field="name"] input,.edit-page .editable input{background:Field;color:FieldText;border:1px solid ButtonText}
-  .inspector-page[data-view-kind="type-editor"] :is(.type-row-handle,.type-row-handle .type-move,.type-row-action,.type-row-action button),.edit-page .row-remove{opacity:1}
-  .inspector-page .icon-button,.browser-page .icon-button:not([aria-pressed="true"]):not([aria-expanded="true"]),.inspector-page[data-view-kind="type-editor"] .type-icon,.edit-page .row-remove,.inspector-menu>summary,.browser-page .more-actions>summary,.page-options>summary,.inspector-page[data-view-kind="type-editor"] .type-actions [data-open-jsonc]{background:ButtonFace;color:ButtonText;border:1px solid ButtonText}
-  .browser-page tbody tr.selected,.browser-page tbody tr.selected:focus,.inspector-page[data-view-kind="type-editor"] .type-table tbody tr:focus-within:not([data-new]){background:Canvas;color:CanvasText;box-shadow:none;outline:2px solid Highlight;outline-offset:-2px}
-  .browser-page tr:focus-visible,.browser-page :is(button,summary,input):focus-visible,.inspector-page :is(button,summary,input):focus-visible,.edit-page :is(button,summary,input,select,textarea):focus-visible{outline:2px solid Highlight;outline-offset:-2px}
-  .browser-page .selection-tools,.inspector-menu-content,.page-options-content,.browser-page #selection-more{background:Canvas;color:CanvasText;border:1px solid CanvasText}
-}
+@media(hover:hover){.edit-page .row-remove,.inspector-page[data-view-kind="type-editor"] .type-row-handle{opacity:0}.edit-page tr:hover .row-remove,.edit-page tr:focus-within .row-remove{opacity:1}}
 
 /* Inspector identity: code-face values, history navigation and native-style loading (critique 2026-11-02). */
 .inspector-page code.mono,.edit-page code.mono{font-family:var(--vscode-editor-font-family,monospace);font-size:inherit;font-variant-numeric:tabular-nums;color:inherit;background:none;padding:0;overflow-wrap:anywhere}
@@ -318,6 +301,26 @@ body.browser-page:is(.vscode-high-contrast,.vscode-high-contrast-light,[data-con
 @keyframes inspector-busy-in{to{opacity:1}}
 @keyframes inspector-busy{from{transform:translateX(-100%)}to{transform:translateX(340%)}}
 @media(prefers-reduced-motion:reduce){.inspector-page.is-busy::before{width:100%;opacity:.6;animation:none}}
+@media(hover:hover){.inspector-page[data-view-kind="type-editor"] .type-row-action button,.inspector-page[data-view-kind="type-editor"] .type-row-handle .type-move{opacity:0}.inspector-page[data-view-kind="type-editor"] .type-table tr:hover :is(.type-row-handle,.type-row-handle .type-move,.type-row-action,.type-row-action button),.inspector-page[data-view-kind="type-editor"] .type-table tr:focus-within :is(.type-row-handle,.type-row-handle .type-move,.type-row-action,.type-row-action button){opacity:1}}
+.browser-page tbody tr.selected{outline:2px solid var(--ghidra-active-border);outline-offset:-2px}
+.browser-page tbody tr.selected:focus,.browser-page tr:focus-visible{outline:2px solid var(--vscode-focusBorder);outline-offset:-2px}
+body.inspector-page[data-view-kind="type-editor"]:is(.vscode-high-contrast,.vscode-high-contrast-light) :is(.type-table input,.type-table tr[data-new] td[data-field="name"] input),body.edit-page:is(.vscode-high-contrast,.vscode-high-contrast-light) .editable input{border:1px solid var(--ghidra-hv-border);background:var(--vscode-input-background)}
+body.inspector-page[data-view-kind="type-editor"]:is(.vscode-high-contrast,.vscode-high-contrast-light) :is(.type-row-handle,.type-row-handle .type-move,.type-row-action,.type-row-action button),body.edit-page:is(.vscode-high-contrast,.vscode-high-contrast-light) .row-remove{opacity:1;transition:none}
+body.inspector-page:is(.vscode-high-contrast,.vscode-high-contrast-light) :is(.icon-button,.inspector-menu>summary,.page-options>summary),body.inspector-page[data-view-kind="type-editor"]:is(.vscode-high-contrast,.vscode-high-contrast-light) :is(.type-icon,.type-actions [data-open-jsonc]),body.browser-page:is(.vscode-high-contrast,.vscode-high-contrast-light) :is(.icon-button:not([aria-pressed="true"]):not([aria-expanded="true"]),.more-actions>summary,.page-options>summary),body.edit-page:is(.vscode-high-contrast,.vscode-high-contrast-light) .row-remove{border:1px solid var(--ghidra-hv-border);color:var(--vscode-foreground)}
+body.browser-page:is(.vscode-high-contrast,.vscode-high-contrast-light) tbody tr.selected{background:var(--vscode-editor-background);color:var(--vscode-foreground);outline:2px solid var(--ghidra-active-border);outline-offset:-2px}
+@media(prefers-contrast:more){
+  .inspector-page[data-view-kind="type-editor"] .type-table input,.inspector-page[data-view-kind="type-editor"] .type-table tr[data-new] td[data-field="name"] input,.edit-page .editable input{border:1px solid var(--ghidra-hv-border);background:var(--vscode-input-background)}
+  .inspector-page[data-view-kind="type-editor"] :is(.type-row-handle,.type-row-handle .type-move,.type-row-action,.type-row-action button),.edit-page .row-remove{opacity:1;transition:none}
+  .inspector-page .icon-button,.browser-page .icon-button:not([aria-pressed="true"]):not([aria-expanded="true"]),.inspector-page[data-view-kind="type-editor"] .type-icon,.edit-page .row-remove,.inspector-menu>summary,.browser-page .more-actions>summary,.page-options>summary,.inspector-page[data-view-kind="type-editor"] .type-actions [data-open-jsonc]{border:1px solid var(--ghidra-hv-border);color:var(--vscode-foreground)}
+}
+@media(forced-colors:active){
+  .inspector-page[data-view-kind="type-editor"] .type-table input,.inspector-page[data-view-kind="type-editor"] .type-table tr[data-new] td[data-field="name"] input,.edit-page .editable input{background:Field;color:FieldText;border:1px solid ButtonText}
+  .inspector-page[data-view-kind="type-editor"] :is(.type-row-handle,.type-row-handle .type-move,.type-row-action,.type-row-action button),.edit-page .row-remove{opacity:1;transition:none}
+  .inspector-page .icon-button,.browser-page .icon-button:not([aria-pressed="true"]):not([aria-expanded="true"]),.inspector-page[data-view-kind="type-editor"] .type-icon,.edit-page .row-remove,.inspector-menu>summary,.browser-page .more-actions>summary,.page-options>summary,.inspector-page[data-view-kind="type-editor"] .type-actions [data-open-jsonc]{background:ButtonFace;color:ButtonText;border:1px solid ButtonText}
+  .browser-page tbody tr.selected,.browser-page tbody tr.selected:focus,.inspector-page[data-view-kind="type-editor"] .type-table tbody tr:focus-within:not([data-new]){background:Canvas;color:CanvasText;box-shadow:none;outline:2px solid Highlight;outline-offset:-2px}
+  .browser-page tr:focus-visible,.browser-page :is(button,summary,input):focus-visible,.inspector-page :is(button,summary,input):focus-visible,.edit-page :is(button,summary,input,select,textarea):focus-visible{outline:2px solid Highlight;outline-offset:-2px}
+  .browser-page .selection-tools,.inspector-menu-content,.page-options-content,.browser-page #selection-more{background:Canvas;color:CanvasText;border:1px solid CanvasText}
+}
 `;
 
 /** Format the search toggle tooltip for the active shortcut mode. */
