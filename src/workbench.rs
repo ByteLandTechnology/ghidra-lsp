@@ -396,7 +396,8 @@ pub(crate) fn allow_read(domain: &str, operation: &str, params: &Value) -> Resul
     return Ok(());
   }
   ensure!(
-    READ.contains(&(domain, operation)),
+    READ.contains(&(domain, operation))
+      || matches!((domain, operation), ("graph", "basic_blocks" | "callgraph")),
     "Unsupported read-only workbench query: {domain}.{operation}"
   );
   Ok(())

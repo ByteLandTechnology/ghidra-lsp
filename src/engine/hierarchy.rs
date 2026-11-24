@@ -4,6 +4,7 @@
 //! Call hierarchy item preparation and incoming/outgoing call edge queries.
 
 use std::collections::HashMap;
+use std::sync::atomic::Ordering;
 
 use anyhow::{Context, Result};
 use serde_json::{Value, json};
@@ -13,10 +14,179 @@ use tower_lsp_server::ls_types::{
 };
 
 use super::Engine;
-use crate::backend::list_all;
+use crate::address::paginate_operation;
 use crate::document::{
-  canonical_virtual_uri, in_address_range, position, same_address, virtual_uri,
+  Document, SHOW_TEMPLATE_ARGUMENTS, canonical_virtual_uri, position, same_address, virtual_uri,
 };
+use crate::views::symbol_display_name;
+
+/// Maximum page size requested from `function` `call.list`.
+const CALL_LIST_LIMIT: usize = 1000;
+
+/// Grouped call records for one caller or callee peer function.
+struct GroupedPeerCalls {
+  /// Backend entry address string of the peer function.
+  entry: String,
+  /// Formatted display name of the peer function.
+  name: String,
+  /// Distinct call-site addresses reported on this directed call edge.
+  sites: Vec<String>,
+}
+
+/// Formats a function label from a `function_call.list` record.
+fn format_peer_name(record: &Value, fallback_entry: &str) -> String {
+  let name = record.get("name").and_then(Value::as_str).unwrap_or("");
+  let namespace = record
+    .get("namespace")
+    .and_then(Value::as_str)
+    .unwrap_or("");
+  let demangled = record.get("demangled_name").and_then(Value::as_str);
+  let show_templates = SHOW_TEMPLATE_ARGUMENTS.load(Ordering::Relaxed);
+  let formatted = symbol_display_name(name, namespace, demangled, true, show_templates);
+  if formatted.is_empty() {
+    fallback_entry.to_owned()
+  } else {
+    formatted
+  }
+}
+
+/// Groups raw `function_call.list` records by peer entry in encounter sequence.
+fn group_peer_calls(records: &[Value]) -> Vec<GroupedPeerCalls> {
+  let mut order: Vec<String> = Vec::new();
+  let mut index_by_key: HashMap<String, usize> = HashMap::new();
+  let mut groups: Vec<GroupedPeerCalls> = Vec::new();
+
+  for record in records {
+    let Some(peer_entry) = record
+      .get("entry")
+      .and_then(Value::as_str)
+      .map(str::trim)
+      .filter(|s| !s.is_empty())
+    else {
+      continue;
+    };
+    let key = peer_entry.to_ascii_lowercase();
+    let idx = if let Some(&existing) = index_by_key.get(&key) {
+      existing
+    } else {
+      let next_idx = groups.len();
+      order.push(key.clone());
+      index_by_key.insert(key, next_idx);
+      groups.push(GroupedPeerCalls {
+        entry: peer_entry.to_owned(),
+        name: format_peer_name(record, peer_entry),
+        sites: Vec::new(),
+      });
+      next_idx
+    };
+    if let Some(site) = record
+      .get("call_site")
+      .and_then(Value::as_str)
+      .map(str::trim)
+      .filter(|s| !s.is_empty())
+      && !groups[idx]
+        .sites
+        .iter()
+        .any(|prev| same_address(prev, site))
+    {
+      groups[idx].sites.push(site.to_owned());
+    }
+  }
+  let _ = order;
+  groups
+}
+
+/// Resolves call-site ranges inside an already open caller [`Document`].
+fn resolve_open_site_ranges(
+  caller_doc: &Document,
+  sites: &[String],
+  callee_entry: &str,
+  callee_name: Option<&str>,
+  fallback_range: Range,
+) -> Vec<Range> {
+  let body_start = caller_doc.body_start();
+  let mut ranges: Vec<Range> = Vec::new();
+
+  for site in sites {
+    let matched = caller_doc
+      .spans
+      .iter()
+      .find(|s| {
+        s.start >= body_start
+          && s.token.kind == "function"
+          && s
+            .token
+            .address
+            .as_deref()
+            .is_some_and(|addr| same_address(addr, site))
+      })
+      .or_else(|| {
+        caller_doc.spans.iter().find(|s| {
+          s.start >= body_start
+            && s
+              .token
+              .address
+              .as_deref()
+              .is_some_and(|addr| same_address(addr, site))
+        })
+      })
+      .map(|s| caller_doc.range(s));
+    if let Some(range) = matched
+      && !ranges.contains(&range)
+    {
+      ranges.push(range);
+    }
+  }
+
+  if !ranges.is_empty() {
+    return ranges;
+  }
+
+  for span in &caller_doc.spans {
+    if span.start < body_start || span.token.kind != "function" {
+      continue;
+    }
+    let matches_callee = span
+      .symbol
+      .as_ref()
+      .is_some_and(|sym| same_address(&sym.address, callee_entry))
+      || span
+        .token
+        .address
+        .as_deref()
+        .is_some_and(|addr| same_address(addr, callee_entry))
+      || callee_name.is_some_and(|target_name| span.token.text == target_name);
+    if matches_callee {
+      let range = caller_doc.range(span);
+      if !ranges.contains(&range) {
+        ranges.push(range);
+      }
+    }
+  }
+
+  if ranges.is_empty() {
+    vec![fallback_range]
+  } else {
+    ranges
+  }
+}
+
+/// Computes document and declaration ranges from an already open virtual buffer.
+fn open_doc_bounds(doc: &Document, fallback_name: &str) -> (Range, Range) {
+  let body_start = doc.body_start();
+  let decl = doc
+    .spans
+    .iter()
+    .find(|s| s.token.kind == "function" && s.start < body_start);
+  let sel = decl.map(|s| doc.range(s)).unwrap_or_else(|| {
+    Range::new(
+      Position::new(0, 0),
+      Position::new(0, fallback_name.encode_utf16().count() as u32),
+    )
+  });
+  let full = Range::new(Position::new(0, 0), position(&doc.base, doc.base.len()));
+  (full, sel)
+}
 
 impl Engine {
   /// Builds the root [`CallHierarchyItem`] for the function or call expression at `pos`.
@@ -127,18 +297,7 @@ impl Engine {
             .docs
             .get(&callee_uri)
             .context("Unknown callee document")?;
-          let body_start = doc.body_start();
-          let decl = doc
-            .spans
-            .iter()
-            .find(|s| s.token.kind == "function" && s.start < body_start);
-          let sel = decl.map(|s| doc.range(s)).unwrap_or_else(|| {
-            Range::new(
-              Position::new(0, 0),
-              Position::new(0, func_name.encode_utf16().count() as u32),
-            )
-          });
-          let range = Range::new(Position::new(0, 0), position(&doc.base, doc.base.len()));
+          let (range, sel) = open_doc_bounds(doc, &func_name);
           (callee_uri, range, sel)
         }
         Err(_) => (uri.clone(), span_range, span_range),
@@ -159,7 +318,51 @@ impl Engine {
     Ok(Some(vec![item]))
   }
 
-  /// Resolves incoming call hierarchy edges from references targeting `item`.
+  /// Paginates `function` `call.list` for `entry` and `direction` without scanning all functions.
+  async fn query_function_calls(
+    &self,
+    md5: &str,
+    entry: &str,
+    direction: &str,
+  ) -> Result<Vec<Value>> {
+    paginate_operation(
+      &self.backend,
+      "function",
+      "call.list",
+      md5,
+      json!({
+        "filter": { "entry": entry, "direction": direction },
+        "page": { "limit": CALL_LIST_LIMIT },
+      }),
+    )
+    .await
+  }
+
+  /// Builds a [`CallHierarchyItem`] for `peer_entry` without decompiling unopened peers.
+  fn build_peer_item(
+    &self,
+    md5: &str,
+    peer_entry: &str,
+    peer_name: String,
+  ) -> Result<CallHierarchyItem> {
+    let peer_uri = virtual_uri(md5, "function", peer_entry)?;
+    let (range, selection_range) = match self.docs.get(&peer_uri) {
+      Some(peer_doc) => open_doc_bounds(peer_doc, &peer_name),
+      None => (Range::default(), Range::default()),
+    };
+    Ok(CallHierarchyItem {
+      name: peer_name.clone(),
+      kind: SymbolKind::FUNCTION,
+      tags: None,
+      detail: Some(peer_entry.to_owned()),
+      uri: peer_uri,
+      range,
+      selection_range,
+      data: Some(json!({ "md5": md5, "entry": peer_entry, "name": peer_name })),
+    })
+  }
+
+  /// Resolves incoming call hierarchy edges from `function` `call.list` without decompiling peers.
   pub(crate) async fn incoming_calls(
     &mut self,
     item: &CallHierarchyItem,
@@ -173,164 +376,34 @@ impl Engine {
       .get("entry")
       .and_then(Value::as_str)
       .context("Missing entry")?;
+    let callee_name = data.get("name").and_then(Value::as_str);
 
-    let mut refs = list_all(
-      self.backend.as_ref(),
-      "reference",
-      md5,
-      json!({"filter": {"direction": "to", "to": entry}, "page": {"limit": 1000}}),
-    )
-    .await
-    .unwrap_or_default();
+    let records = self.query_function_calls(md5, entry, "callers").await?;
+    let groups = group_peer_calls(&records);
+    let mut result = Vec::with_capacity(groups.len());
 
-    if refs.is_empty()
-      && let Some((_, raw)) = entry.split_once(':')
-      && let Ok(extra) = list_all(
-        self.backend.as_ref(),
-        "reference",
-        md5,
-        json!({"filter": {"direction": "to", "to": raw}, "page": {"limit": 1000}}),
-      )
-      .await
-    {
-      refs = extra;
-    }
-
-    let functions = list_all(
-      self.backend.as_ref(),
-      "function",
-      md5,
-      json!({
-        "page": {"limit": 1000},
-        "scan": {"timeout_ms": 60000},
-        "projection": {"fields": ["entry", "name", "namespace", "body"]},
-      }),
-    )
-    .await?;
-
-    let mut callers: HashMap<String, (Value, Vec<Range>)> = HashMap::new();
-    for reference in refs {
-      let Some(from) = reference.get("from").and_then(Value::as_str) else {
-        continue;
-      };
-      let caller_func = functions.iter().find(|f| {
-        let start = f.pointer("/body/start").and_then(Value::as_str);
-        let end = f.pointer("/body/end").and_then(Value::as_str);
-        match (start, end) {
-          (Some(s), Some(e)) => in_address_range(from, s, e),
-          _ => false,
-        }
-      });
-
-      if let Some(func) = caller_func
-        && let Some(caller_entry) = func.get("entry").and_then(Value::as_str)
-      {
-        let entry_slot = callers
-          .entry(caller_entry.to_owned())
-          .or_insert_with(|| (func.clone(), Vec::new()));
-        let caller_uri = virtual_uri(md5, "function", caller_entry)?;
-        let range = if let Some(caller_doc) = self.docs.get(&caller_uri) {
-          caller_doc
-            .spans
-            .iter()
-            .find(|s| {
-              s.token
-                .address
-                .as_deref()
-                .is_some_and(|a| same_address(a, from))
-            })
-            .map(|s| caller_doc.range(s))
-            .unwrap_or_default()
-        } else {
-          Range::default()
-        };
-        entry_slot.1.push(range);
-      }
-    }
-
-    let mut result = Vec::new();
-    for (caller_entry, (func, ranges)) in callers {
-      let caller_uri = match self.open(md5, &caller_entry).await {
-        Ok(u) => u,
-        Err(_) => virtual_uri(md5, "function", &caller_entry)?,
-      };
-      let (caller_range, caller_sel_range, caller_name, actual_ranges) =
-        if let Some(caller_doc) = self.docs.get(&caller_uri) {
-          let body_start = caller_doc.body_start();
-          let decl = caller_doc
-            .spans
-            .iter()
-            .find(|s| s.token.kind == "function" && s.start < body_start);
-          let name = func
-            .get("name")
-            .and_then(Value::as_str)
-            .map(str::to_owned)
-            .or_else(|| decl.map(|s| s.token.text.clone()))
-            .unwrap_or_else(|| caller_entry.clone());
-          let sel = decl.map(|s| caller_doc.range(s)).unwrap_or_else(|| {
-            Range::new(
-              Position::new(0, 0),
-              Position::new(0, name.encode_utf16().count() as u32),
-            )
-          });
-          let range = Range::new(
-            Position::new(0, 0),
-            position(&caller_doc.base, caller_doc.base.len()),
-          );
-          let clean_ranges: Vec<Range> = ranges.into_iter().filter(|r| r.start != r.end).collect();
-          let final_ranges = if !clean_ranges.is_empty() {
-            clean_ranges
-          } else {
-            let item_name = data.get("name").and_then(Value::as_str);
-            let found_ranges: Vec<Range> = caller_doc
-              .spans
-              .iter()
-              .filter(|s| {
-                s.start >= body_start
-                  && s.token.kind == "function"
-                  && (s
-                    .symbol
-                    .as_ref()
-                    .is_some_and(|sym| same_address(&sym.address, entry))
-                    || item_name.is_some_and(|n| s.token.text == n))
-              })
-              .map(|s| caller_doc.range(s))
-              .collect();
-            if !found_ranges.is_empty() {
-              found_ranges
-            } else {
-              vec![sel]
-            }
-          };
-          (range, sel, name, final_ranges)
-        } else {
-          let name = func
-            .get("name")
-            .and_then(Value::as_str)
-            .unwrap_or(&caller_entry)
-            .to_owned();
-          (Range::default(), Range::default(), name, ranges)
-        };
-      let caller_item = CallHierarchyItem {
-        name: caller_name,
-        kind: SymbolKind::FUNCTION,
-        tags: None,
-        detail: Some(caller_entry.clone()),
-        uri: caller_uri,
-        range: caller_range,
-        selection_range: caller_sel_range,
-        data: Some(json!({"md5": md5, "entry": caller_entry})),
+    for group in groups {
+      let caller_item = self.build_peer_item(md5, &group.entry, group.name)?;
+      let from_ranges = match self.docs.get(&caller_item.uri) {
+        Some(caller_doc) => resolve_open_site_ranges(
+          caller_doc,
+          &group.sites,
+          entry,
+          callee_name,
+          caller_item.selection_range,
+        ),
+        None => vec![Range::default(); group.sites.len().max(1)],
       };
       result.push(CallHierarchyIncomingCall {
         from: caller_item,
-        from_ranges: actual_ranges,
+        from_ranges,
       });
     }
 
     Ok(Some(result))
   }
 
-  /// Resolves outgoing call hierarchy edges from function call tokens inside `item`.
+  /// Resolves outgoing call hierarchy edges from `function` `call.list` without decompiling peers.
   pub(crate) async fn outgoing_calls(
     &mut self,
     item: &CallHierarchyItem,
@@ -345,87 +418,27 @@ impl Engine {
       .and_then(Value::as_str)
       .context("Missing entry")?;
 
-    let uri = self.open(md5, entry).await?;
-    let doc = self
-      .docs
-      .get(&uri)
-      .context("Failed to open function document")?;
+    let records = self.query_function_calls(md5, entry, "callees").await?;
+    let groups = group_peer_calls(&records);
+    let caller_uri = virtual_uri(md5, "function", entry)?;
+    let mut result = Vec::with_capacity(groups.len());
 
-    let body_start = doc.body_start();
-    let mut callees: HashMap<String, (String, Vec<Range>)> = HashMap::new();
-    for span in &doc.spans {
-      if span.start < body_start {
-        continue;
-      }
-      let callee_info = if let Some(sym) = &span.symbol
-        && sym.kind.eq_ignore_ascii_case("function")
-        && sym.address != entry
-      {
-        Some((sym.address.clone(), sym.display_name()))
-      } else if span.token.kind == "function" {
-        let addr = span
-          .token
-          .address
-          .clone()
-          .or_else(|| span.token.text.strip_prefix("FUN_").map(str::to_owned));
-        if let Some(a) = addr
-          && a != entry
-        {
-          Some((a, span.token.text.clone()))
-        } else {
-          None
-        }
-      } else {
-        None
-      };
-
-      if let Some((callee_entry, name)) = callee_info {
-        let entry_slot = callees
-          .entry(callee_entry)
-          .or_insert_with(|| (name, Vec::new()));
-        entry_slot.1.push(doc.range(span));
-      }
-    }
-
-    let mut result = Vec::new();
-    for (callee_entry, (name, ranges)) in callees {
-      let callee_uri = match self.open(md5, &callee_entry).await {
-        Ok(u) => u,
-        Err(_) => virtual_uri(md5, "function", &callee_entry)?,
-      };
-      let (callee_range, callee_sel_range) = if let Some(callee_doc) = self.docs.get(&callee_uri) {
-        let body_start = callee_doc.body_start();
-        let decl = callee_doc
-          .spans
-          .iter()
-          .find(|s| s.token.kind == "function" && s.start < body_start);
-        let sel = decl.map(|s| callee_doc.range(s)).unwrap_or_else(|| {
-          Range::new(
-            Position::new(0, 0),
-            Position::new(0, name.encode_utf16().count() as u32),
-          )
-        });
-        let range = Range::new(
-          Position::new(0, 0),
-          position(&callee_doc.base, callee_doc.base.len()),
-        );
-        (range, sel)
-      } else {
-        (Range::default(), Range::default())
-      };
-      let callee_item = CallHierarchyItem {
-        name,
-        kind: SymbolKind::FUNCTION,
-        tags: None,
-        detail: Some(callee_entry.clone()),
-        uri: callee_uri,
-        range: callee_range,
-        selection_range: callee_sel_range,
-        data: Some(json!({"md5": md5, "entry": callee_entry})),
+    for group in groups {
+      let callee_name = group.name.clone();
+      let callee_item = self.build_peer_item(md5, &group.entry, group.name)?;
+      let from_ranges = match self.docs.get(&caller_uri) {
+        Some(caller_doc) => resolve_open_site_ranges(
+          caller_doc,
+          &group.sites,
+          &group.entry,
+          Some(&callee_name),
+          Range::default(),
+        ),
+        None => vec![Range::default(); group.sites.len().max(1)],
       };
       result.push(CallHierarchyOutgoingCall {
         to: callee_item,
-        from_ranges: ranges,
+        from_ranges,
       });
     }
 

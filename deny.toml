@@ -3,6 +3,9 @@
 
 [advisories]
 yanked = "deny"
+ignore = [
+  { id = "RUSTSEC-2026-0543", reason = "rmcp depends on chrono, which is unmaintained and has no patched version" },
+]
 
 [licenses]
 allow = [
