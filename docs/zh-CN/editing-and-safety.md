@@ -48,7 +48,7 @@
 通过 `ghidra.functionPrototype`、`ghidra.saveFunctionPrototype` 与 `ghidra.saveVariables` 修改函数名、返回类型、调用约定、可变参数标志（`hasVarArgs`）、`noreturn`、`inline`、函数注释以及参数/局部变量的类型与名称时：
 
 - 提交载荷必须附带打开表单时捕获的 `original` 函数快照；提交前服务端先拉取最新 `function.get` 比对，若分析已在外部变化则拦截（`CONFLICT_FORM`）。
-- 函数重命名、单行 C `signature` 声明（与 `return_type`、`calling_convention`、`parameters` 互斥）以及有序 `parameters` 数组（含纯参数交换重排与兼容自定义 `VariableStorageReference` 存储保留）均编译为单次原子 `function.patch` 操作，连同注释或局部变量变更封装进单一 `batch.execute` 请求（强制 `"transaction_mode": "all_or_none"`）；若任一项出错则整批回滚（`Ghidra rejected the atomic batch; no changes were saved`）。此外可通过 `data_type.parse_c`（VS Code 的 **Import C header** 或 Neovim 的 `:GhidraParseC`）在内存中原子解析导入多条 C 头文件声明。
+- 函数重命名、单行 C `signature` 声明（与 `return_type`、`calling_convention`、`parameters` 互斥）以及有序 `parameters` 数组（含纯参数交换重排与兼容自定义 `VariableStorageReference` 存储保留）在后端支持时均编译为单次原子 `function.patch` 操作（连接旧版 `ghidra-mcp` 时则通过 `ghidra_help` 自动回退为结构化 `DataTypeReference` AST 与 `function_parameter.*` 的 `all_or_none` 事务批处理），连同注释或局部变量变更封装进单一 `batch.execute` 请求（强制 `"transaction_mode": "all_or_none"`）；若任一项出错则整批回滚（`Ghidra rejected the atomic batch; no changes were saved`）。此外可通过 `data_type.parse_c`（VS Code 的 **Import C header** 或 Neovim 的 `:GhidraParseC`）在内存中原子解析导入多条 C 头文件声明。
 - 直接调用 `ghidra.mutate` 工作台命令同样必须通过 `WRITE` 白名单校验，批量写入限制 `1` 至 `1000` 项，且禁止在批处理项内夹带 `program.save`；每次写操作完成后统一由 `Server::commit_and_refresh` 调用 `program.save` 并验证返回 `"saved": true`。
 
 ---

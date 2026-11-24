@@ -9,8 +9,8 @@ use anyhow::{Context, Result, bail, ensure};
 use serde_json::{Value, json};
 
 use super::CONFLICT_FORM;
-use crate::address::{format_type_ref, is_array_type_ref, parse_type_ref};
-use crate::backend::McpBackend;
+use crate::address::{format_type_ref, is_array_type_ref, parse_type_ref_for};
+use crate::backend::{BackendCapabilities, McpBackend};
 use crate::workbench;
 
 /// Formats the `data_type` field of a parameter or local variable JSON entry.
@@ -139,19 +139,19 @@ fn bool_any(obj: &Value, keys: &[&str]) -> bool {
   opt_bool_any(obj, keys).unwrap_or(false)
 }
 
-/// Normalizes a type field supplied as either a string expression or structured bridge JSON.
-fn parse_type_value(val: Option<&Value>) -> Result<Value> {
+/// Normalizes a type field into a C type string or structured `DataTypeReference` AST.
+fn parse_type_value(val: Option<&Value>, c_type_strings: bool) -> Result<Value> {
   match val {
-    None | Some(Value::Null) => parse_type_ref(""),
-    Some(Value::String(s)) => parse_type_ref(s),
+    None | Some(Value::Null) => parse_type_ref_for("", c_type_strings),
+    Some(Value::String(s)) => parse_type_ref_for(s, c_type_strings),
     Some(obj @ Value::Object(_)) => {
       if obj.get("kind").and_then(Value::as_str).is_some() {
         Ok(obj.clone())
       } else {
-        parse_type_ref(&format_type_ref(obj))
+        parse_type_ref_for(&format_type_ref(obj), c_type_strings)
       }
     }
-    Some(other) => parse_type_ref(&value_as_trimmed_str(other)),
+    Some(other) => parse_type_ref_for(&value_as_trimmed_str(other), c_type_strings),
   }
 }
 
@@ -163,9 +163,7 @@ fn same_type_input(proposed: &Value, original_dt: &Value) -> bool {
   if original_dt.is_null() {
     return false;
   }
-  proposed
-    .as_str()
-    .is_some_and(|s| s.trim() == format_type_ref(original_dt))
+  format_type_ref(proposed).trim() == format_type_ref(original_dt).trim()
 }
 
 /// Returns true when `dt` represents a pointer or untyped-pointer data type.
@@ -276,6 +274,7 @@ fn compile_signature_patch_op(
   original: &Value,
   payload: &Value,
   signature: &str,
+  caps: BackendCapabilities,
 ) -> Result<Vec<Value>> {
   let has_conflict = payload.get("parameters").is_some()
     || payload
@@ -290,6 +289,10 @@ fn compile_signature_patch_op(
   ensure!(
     !has_conflict,
     "conflicting_fields: signature cannot be combined with parameters, return_type, or calling_convention."
+  );
+  ensure!(
+    caps.function_signature,
+    "A newer ghidra-mcp is required for one-line C function signatures."
   );
 
   let mut patch = serde_json::Map::new();
@@ -355,18 +358,117 @@ fn compile_signature_patch_op(
   })])
 }
 
-/// Compiles one atomic `function.patch` operation for function signature and parameter updates.
+/// Normalized parameter row compiled from a prototype edit payload.
+struct CompiledParameter {
+  /// Claimed index in `orig_params` when this row maps to an existing parameter.
+  identity: Option<usize>,
+  /// Validated parameter identifier.
+  name: String,
+  /// Normalized data-type reference in C string or structured AST form.
+  data_type: Value,
+  /// Optional custom `VariableStorageReference` preserved or edited for this parameter.
+  storage: Option<Value>,
+  /// Whether `storage` was explicitly changed relative to the matched original parameter.
+  explicit_storage_change: bool,
+}
+
+/// Appends legacy `function_parameter.{delete,patch,create}` ops for non-atomic backends.
+fn append_legacy_parameter_ops(
+  entry: &str,
+  orig_params: &[Value],
+  compiled: &[CompiledParameter],
+  ops: &mut Vec<Value>,
+) {
+  let mut keep_in_place = HashSet::new();
+  let mut last_orig: Option<usize> = None;
+  for item in compiled {
+    if let Some(orig_idx) = item.identity
+      && last_orig.is_none_or(|prev| orig_idx > prev)
+    {
+      keep_in_place.insert(orig_idx);
+      last_orig = Some(orig_idx);
+    }
+  }
+  for (ordinal, item) in compiled.iter().enumerate() {
+    for later in &compiled[ordinal + 1..] {
+      if let Some(later_idx) = later.identity
+        && keep_in_place.contains(&later_idx)
+        && orig_params[later_idx].get("name").and_then(Value::as_str) == Some(item.name.as_str())
+      {
+        keep_in_place.remove(&later_idx);
+      }
+    }
+  }
+  for index in (0..orig_params.len()).rev() {
+    if !keep_in_place.contains(&index) {
+      let orig_ordinal = orig_params[index]
+        .get("ordinal")
+        .and_then(Value::as_u64)
+        .unwrap_or(index as u64);
+      ops.push(json!({
+        "method": "function_parameter.delete",
+        "arguments": {
+          "selector": { "entry": entry, "ordinal": orig_ordinal }
+        }
+      }));
+    }
+  }
+  for (ordinal, item) in compiled.iter().enumerate() {
+    if let Some(orig_idx) = item.identity
+      && keep_in_place.contains(&orig_idx)
+    {
+      let previous = &orig_params[orig_idx];
+      let prev_name = previous.get("name").and_then(Value::as_str).unwrap_or("");
+      if item.name != prev_name
+        || !same_type_input(&item.data_type, &previous["data_type"])
+        || item.explicit_storage_change
+      {
+        let mut patch_map = serde_json::Map::new();
+        patch_map.insert("name".into(), Value::String(item.name.clone()));
+        patch_map.insert("data_type".into(), item.data_type.clone());
+        if let Some(st) = &item.storage {
+          patch_map.insert("storage".into(), st.clone());
+        }
+        ops.push(json!({
+          "method": "function_parameter.patch",
+          "arguments": {
+            "selector": { "entry": entry, "ordinal": ordinal },
+            "patch": Value::Object(patch_map),
+          }
+        }));
+      }
+    } else {
+      let mut resource = serde_json::Map::new();
+      resource.insert("ordinal".into(), json!(ordinal));
+      resource.insert("name".into(), Value::String(item.name.clone()));
+      resource.insert("data_type".into(), item.data_type.clone());
+      if let Some(st) = &item.storage {
+        resource.insert("storage".into(), st.clone());
+      }
+      ops.push(json!({
+        "method": "function_parameter.create",
+        "arguments": {
+          "selector": { "entry": entry },
+          "resource": Value::Object(resource),
+        }
+      }));
+    }
+  }
+}
+
+/// Compiles atomic `function.patch` (and legacy parameter ops when needed) for prototype edits.
 fn compile_function_prototype_ops(
   entry: &str,
   original: &Value,
   payload: &Value,
+  caps: BackendCapabilities,
 ) -> Result<Vec<Value>> {
   if let Some(sig) = payload
     .get("signature")
     .map(value_as_trimmed_str)
     .filter(|s| !s.is_empty())
   {
-    return compile_signature_patch_op(entry, original, payload, &sig);
+    return compile_signature_patch_op(entry, original, payload, &sig, caps);
   }
 
   let name = required_str(payload, "name", "Function name")?;
@@ -374,6 +476,7 @@ fn compile_function_prototype_ops(
     payload
       .get("returnType")
       .or_else(|| payload.get("return_type")),
+    caps.c_type_strings,
   )?;
   let calling_convention = required_str_any(
     payload,
@@ -425,6 +528,8 @@ fn compile_function_prototype_ops(
     .and_then(Value::as_bool)
     .unwrap_or(false);
 
+  let mut legacy_params: Option<Vec<CompiledParameter>> = None;
+
   if let Some(params_val) = payload.get("parameters") {
     let parameters = params_val
       .as_array()
@@ -435,14 +540,17 @@ fn compile_function_prototype_ops(
       allow_fallback_index: false,
     };
     let mut claimed = HashSet::new();
-    let mut patch_params = Vec::with_capacity(parameters.len());
+    let mut compiled = Vec::with_capacity(parameters.len());
     let mut params_changed = parameters.len() != orig_params.len() || req_custom.is_some();
 
     for (ordinal, param) in parameters.iter().enumerate() {
       let raw_identity = resolve_indexed_identity(param, orig_params, ordinal, &id_opts)?;
       let identity = raw_identity.filter(|idx| claimed.insert(*idx));
       let param_name = required_str(param, "name", "Parameter name")?;
-      let data_type = parse_type_value(param.get("type").or_else(|| param.get("data_type")))?;
+      let data_type = parse_type_value(
+        param.get("type").or_else(|| param.get("data_type")),
+        caps.c_type_strings,
+      )?;
       let param_storage_obj = param.get("storage").filter(|v| v.is_object());
       let orig_entry = identity.and_then(|idx| orig_params.get(idx));
       let orig_storage_obj = orig_entry
@@ -463,44 +571,70 @@ fn compile_function_prototype_ops(
         params_changed = true;
       }
 
-      let mut item = serde_json::Map::new();
-      item.insert("name".into(), Value::String(param_name));
-      item.insert("data_type".into(), data_type.clone());
-
+      let mut storage = None;
       if req_custom != Some(false) {
         if explicit_storage_change {
-          if let Some(st) = param_storage_obj {
-            item.insert("storage".into(), st.clone());
-          }
+          storage = param_storage_obj.cloned();
         } else if (orig_custom || req_custom == Some(true))
           && let Some(previous) = orig_entry
           && let Some(st) = param_storage_obj.or(orig_storage_obj)
           && (same_type_input(&data_type, &previous["data_type"])
             || (is_pointer_like_type(&data_type) && is_pointer_like_type(&previous["data_type"])))
         {
-          item.insert("storage".into(), st.clone());
+          storage = Some(st.clone());
         }
       }
 
-      patch_params.push(Value::Object(item));
+      compiled.push(CompiledParameter {
+        identity,
+        name: param_name,
+        data_type,
+        storage,
+        explicit_storage_change,
+      });
     }
 
     if params_changed {
-      patch.insert("parameters".into(), Value::Array(patch_params));
+      if caps.atomic_function_parameters {
+        let patch_params: Vec<Value> = compiled
+          .into_iter()
+          .map(|p| {
+            let mut item = serde_json::Map::new();
+            item.insert("name".into(), Value::String(p.name));
+            item.insert("data_type".into(), p.data_type);
+            if let Some(st) = p.storage {
+              item.insert("storage".into(), st);
+            }
+            Value::Object(item)
+          })
+          .collect();
+        patch.insert("parameters".into(), Value::Array(patch_params));
+      } else {
+        legacy_params = Some(compiled);
+      }
     }
   }
 
-  Ok(vec![json!({
+  let mut ops = vec![json!({
     "method": "function.patch",
     "arguments": {
       "selector": { "entry": entry },
       "patch": Value::Object(patch),
     }
-  })])
+  })];
+  if let Some(compiled) = legacy_params {
+    append_legacy_parameter_ops(entry, orig_params, &compiled, &mut ops);
+  }
+  Ok(ops)
 }
 
 /// Compiles `all_or_none` batch operations for parameter and local variable updates.
-fn compile_variables_ops(entry: &str, original: &Value, payload: &Value) -> Result<Vec<Value>> {
+fn compile_variables_ops(
+  entry: &str,
+  original: &Value,
+  payload: &Value,
+  caps: BackendCapabilities,
+) -> Result<Vec<Value>> {
   let orig_params = original
     .get("parameters")
     .and_then(Value::as_array)
@@ -533,7 +667,10 @@ fn compile_variables_ops(entry: &str, original: &Value, payload: &Value) -> Resu
         .context("Parameter variable identity is required.")?;
       let previous = &orig_params[orig_idx];
       let name = required_str(var, "name", "Variable name")?;
-      let data_type = parse_type_value(var.get("type").or_else(|| var.get("data_type")))?;
+      let data_type = parse_type_value(
+        var.get("type").or_else(|| var.get("data_type")),
+        caps.c_type_strings,
+      )?;
       let prev_name = previous.get("name").and_then(Value::as_str).unwrap_or("");
       if name == prev_name && same_type_input(&data_type, &previous["data_type"]) {
         continue;
@@ -562,7 +699,10 @@ fn compile_variables_ops(entry: &str, original: &Value, payload: &Value) -> Resu
         .context("Local variable identity is required.")?;
       let previous = &orig_locals[orig_idx];
       let name = required_str(var, "name", "Variable name")?;
-      let data_type = parse_type_value(var.get("type").or_else(|| var.get("data_type")))?;
+      let data_type = parse_type_value(
+        var.get("type").or_else(|| var.get("data_type")),
+        caps.c_type_strings,
+      )?;
       let prev_name = previous.get("name").and_then(Value::as_str).unwrap_or("");
       if name == prev_name && same_type_input(&data_type, &previous["data_type"]) {
         continue;
@@ -589,8 +729,9 @@ pub(crate) async fn prepare_function_prototype_ops(
   original: &Value,
   payload: &Value,
 ) -> Result<Vec<Value>> {
+  let caps = backend.capabilities().await?;
   let entry = fetch_and_verify_function(backend, md5, entry, original).await?;
-  compile_function_prototype_ops(&entry, original, payload)
+  compile_function_prototype_ops(&entry, original, payload, caps)
 }
 
 /// Fetches the current function state, checks conflict against `original`, and compiles variable ops.
@@ -601,13 +742,15 @@ pub(crate) async fn prepare_variables_ops(
   original: &Value,
   payload: &Value,
 ) -> Result<Vec<Value>> {
+  let caps = backend.capabilities().await?;
   let entry = fetch_and_verify_function(backend, md5, entry, original).await?;
-  compile_variables_ops(&entry, original, payload)
+  compile_variables_ops(&entry, original, payload, caps)
 }
 
 /// Executes one single mutation or an atomic `all_or_none` batch through policy verification.
 pub(crate) async fn execute_ops(backend: &McpBackend, md5: &str, ops: &[Value]) -> Result<Value> {
   ensure!(!ops.is_empty(), "No changes to save.");
+  let caps = backend.capabilities().await?;
   if ops.len() == 1 {
     let op = &ops[0];
     let method = op
@@ -617,6 +760,7 @@ pub(crate) async fn execute_ops(backend: &McpBackend, md5: &str, ops: &[Value]) 
     let (domain, operation) = method.split_once('.').context("invalid mutation method")?;
     let arguments = op.get("arguments").cloned().unwrap_or_else(|| json!({}));
     workbench::allow_write(domain, operation, &arguments)?;
+    let arguments = workbench::adapt_write_params(domain, operation, arguments, caps)?;
     let (tool, tool_op) = workbench::mcp_operation(domain, operation);
     let result = backend
       .call(tool, &tool_op, Some(md5), arguments)
@@ -644,6 +788,7 @@ pub(crate) async fn execute_ops(backend: &McpBackend, md5: &str, ops: &[Value]) 
     "items": items,
   });
   workbench::allow_write("batch", "execute", &batch_params)?;
+  let batch_params = workbench::adapt_write_params("batch", "execute", batch_params, caps)?;
   let result = backend
     .call("batch", "execute", Some(md5), batch_params)
     .await

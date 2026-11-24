@@ -9,6 +9,8 @@ mod address;
 mod backend;
 /// Binary loader import and export parsing.
 mod binary;
+/// C type validation, display formatting, and structured DataTypeReference compilation.
+mod c_type;
 /// Repeatable comment insertion inside virtual C documents.
 mod comments;
 /// Virtual document state, token alignment, and UTF-16 helpers.

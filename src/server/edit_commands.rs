@@ -177,6 +177,8 @@ impl Server {
       return Ok(crate::types_doc::noop_type_save(&md5, path, text, current));
     };
     workbench::allow_write(domain, operation, &parameters)?;
+    let caps = backend.capabilities().await?;
+    let parameters = workbench::adapt_write_params(domain, operation, parameters, caps)?;
     let (tool, tool_operation) = workbench::mcp_operation(domain, operation);
     let result = backend
       .call(tool, &tool_operation, Some(&md5), parameters)

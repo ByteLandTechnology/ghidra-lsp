@@ -58,7 +58,7 @@
 
 ### 関数プロトタイプとローカル変数のバッチ変更
 
-`ghidra.saveFunctionPrototype` と `ghidra.saveVariables`（`src/mutations/prototype.rs`）は、フォームを開いた時点の `original` スナップショットと現在の Ghidra 状態を照合し、外部変更があれば保存を拒否します。関数名、1 行 C `signature`（`return_type`・`calling_convention`・`parameters` と排他）、戻り値型、呼び出し規約、可変長引数、`noreturn`、`inline`、およびパラメータの追加・削除・並び替え・型変更（カスタムストレージ関数での互換 `VariableStorageReference` 維持を含む）は単一の原子的な `function.patch` としてコンパイルされ、コメントやローカル変数変更とともに `batch.execute`（`"transaction_mode": "all_or_none"`）および `program.save` で永続化されます。また C ヘッダ宣言は `data_type.parse_c`（VS Code の **Import C header** または Neovim の `:GhidraParseC`）によりメモリ上で一括インポートできます。
+`ghidra.saveFunctionPrototype` と `ghidra.saveVariables`（`src/mutations/prototype.rs`）は、フォームを開いた時点の `original` スナップショットと現在の Ghidra 状態を照合し、外部変更があれば保存を拒否します。関数名、1 行 C `signature`（`return_type`・`calling_convention`・`parameters` と排他）、戻り値型、呼び出し規約、可変長引数、`noreturn`、`inline`、およびパラメータの追加・削除・並び替え・型変更（カスタムストレージ関数での互換 `VariableStorageReference` 維持を含む）は単一の原子的な `function.patch` としてコンパイルされ（旧バージョンの `ghidra-mcp` 接続時は `ghidra_help` 判定により構造化 `DataTypeReference` AST および `function_parameter.*` の `all_or_none` バッチへ自動フォールバックします）、コメントやローカル変数変更とともに `batch.execute`（`"transaction_mode": "all_or_none"`）および `program.save` で永続化されます。また C ヘッダ宣言は `data_type.parse_c`（VS Code の **Import C header** または Neovim の `:GhidraParseC`）によりメモリ上で一括インポートできます。
 
 ## データ型編集（`ghidra-type://`）と JSONC スキーマ
 

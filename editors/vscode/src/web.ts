@@ -69,6 +69,7 @@ export function reference(value: unknown): string {
 export function typeReference(value: unknown): string {
     const name = String(value ?? '').trim();
     if (!name) { throw new Error('Choose a data type.'); }
+    if (Buffer.byteLength(name, 'utf8') > 4096) { throw new Error('Data type must not exceed 4096 UTF-8 bytes.'); }
     if (/[;{}]/.test(name)) { throw new Error('Enter one C data type without braces or semicolons.'); }
     let parenDepth = 0;
     for (let i = 0; i < name.length; i++) {

@@ -6,11 +6,14 @@
 use std::cmp::Ordering;
 use std::collections::HashSet;
 
-use anyhow::{Context, Result, bail, ensure};
+use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::backend::McpBackend;
+pub(crate) use crate::c_type::{
+  format_type_ref, is_array_type_ref, parse_type_ref, parse_type_ref_for,
+};
 
 /// Canonical parsed address components with explicit address space and 64-bit offset.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -359,175 +362,6 @@ pub(crate) fn permissions_label(block: &MemoryBlockInfo) -> String {
     if block.write { 'W' } else { '\u{2212}' },
     if block.execute { 'X' } else { '\u{2212}' }
   )
-}
-
-/// Finds the index of the closing parenthesis matching `open` in `text`.
-fn find_matching_paren(text: &str, open: usize) -> Option<usize> {
-  let bytes = text.as_bytes();
-  if bytes.get(open) != Some(&b'(') {
-    return None;
-  }
-  let mut depth = 0_usize;
-  for (idx, &b) in bytes[open..].iter().enumerate() {
-    if b == b'(' {
-      depth += 1;
-    } else if b == b')' {
-      depth = depth.checked_sub(1)?;
-      if depth == 0 {
-        return Some(open + idx);
-      }
-    }
-  }
-  None
-}
-
-/// Checks whether a C abstract declarator suffix denotes a top-level array type.
-fn is_declarator_array(declarator: &str) -> bool {
-  let rest = declarator.trim_start_matches(['*', ' ', '\t']);
-  if rest.starts_with('(')
-    && let Some(close) = find_matching_paren(rest, 0)
-  {
-    let inside = rest[1..close].trim();
-    if inside.starts_with(['*', '(', '[']) {
-      return is_declarator_array(inside);
-    }
-  }
-  rest.starts_with('[')
-}
-
-/// Returns true when `value` represents a top-level array data-type reference.
-pub(crate) fn is_array_type_ref(value: &Value) -> bool {
-  if value.get("kind").and_then(Value::as_str) == Some("array") {
-    return true;
-  }
-  let Some(text) = value.as_str() else {
-    return false;
-  };
-  let trimmed = text.trim();
-  let Some(idx) = trimmed.find(['*', '(', '[']) else {
-    return false;
-  };
-  is_declarator_array(&trimmed[idx..])
-}
-
-/// Validates bracket and parenthesis balance and positive array lengths in a C type string.
-fn validate_c_type_syntax(name: &str) -> Result<()> {
-  ensure!(
-    !name.contains([';', '{', '}']),
-    "Enter one C data type without braces or semicolons."
-  );
-  let bytes = name.as_bytes();
-  let mut paren_depth = 0_usize;
-  let mut idx = 0_usize;
-  while idx < bytes.len() {
-    match bytes[idx] {
-      b'(' => {
-        paren_depth += 1;
-        idx += 1;
-      }
-      b')' => {
-        ensure!(
-          paren_depth > 0,
-          "Parentheses in the data type are not balanced."
-        );
-        paren_depth -= 1;
-        idx += 1;
-      }
-      b'[' => {
-        let Some(rel_close) = name[idx + 1..].find(']') else {
-          bail!("Brackets in the data type are not balanced.");
-        };
-        let count_str = name[idx + 1..idx + 1 + rel_close].trim();
-        let parsed = if let Some(hex) = count_str
-          .strip_prefix("0x")
-          .or_else(|| count_str.strip_prefix("0X"))
-        {
-          i64::from_str_radix(hex, 16).ok()
-        } else {
-          count_str.parse::<i64>().ok()
-        };
-        parsed
-          .filter(|&n| (1..=2_147_483_647).contains(&n))
-          .context("Array length must be an integer between 1 and 2147483647.")?;
-        idx += rel_close + 2;
-      }
-      b']' => bail!("Brackets in the data type are not balanced."),
-      _ => idx += 1,
-    }
-  }
-  ensure!(
-    paren_depth == 0,
-    "Parentheses in the data type are not balanced."
-  );
-  Ok(())
-}
-
-/// Validates C type text and returns a C type string value for bridge write calls.
-pub(crate) fn parse_type_ref(raw: &str) -> Result<Value> {
-  let name = raw.trim();
-  if name.is_empty() {
-    bail!("Choose a data type.");
-  }
-  validate_c_type_syntax(name)?;
-  Ok(Value::String(name.to_owned()))
-}
-
-/// Extracts scalar text from string or number JSON values, or returns an em dash.
-fn scalar_text(value: Option<&Value>) -> String {
-  match value {
-    Some(Value::String(s)) => s.clone(),
-    Some(Value::Number(n)) => n.to_string(),
-    _ => "\u{2014}".to_owned(),
-  }
-}
-
-/// Formats structured `value` with accumulated inner C declarator text `inner`.
-fn format_declarator(value: &Value, inner: &str) -> String {
-  if let Some(s) = value.as_str() {
-    if inner.is_empty() {
-      return s.to_owned();
-    }
-    return if inner.starts_with('[') {
-      format!("{s}{inner}")
-    } else {
-      format!("{s} {inner}")
-    };
-  }
-  match value.get("kind").and_then(Value::as_str) {
-    Some("pointer") => {
-      let target = value.get("target").unwrap_or(&Value::Null);
-      format_declarator(target, &format!("*{inner}"))
-    }
-    Some("array") => {
-      let element = value.get("element").unwrap_or(&Value::Null);
-      let count = scalar_text(value.get("count"));
-      let next_inner = if inner.starts_with('*') {
-        format!("({inner})[{count}]")
-      } else {
-        format!("{inner}[{count}]")
-      };
-      format_declarator(element, &next_inner)
-    }
-    kind => {
-      let base = if kind == Some("untyped_pointer") {
-        "pointer".to_owned()
-      } else {
-        scalar_text(value.get("name"))
-      };
-      if inner.is_empty() {
-        base
-      } else if inner.starts_with('[') {
-        format!("{base}{inner}")
-      } else {
-        format!("{base} {inner}")
-      }
-    }
-  }
-}
-
-/// Formats structured bridge data-type reference JSON back into C declaration syntax.
-pub(crate) fn format_type_ref(value: &Value) -> String {
-  format_declarator(value, "")
 }
 
 /// Paginates an MCP list operation (`domain`, `operation`) and enforces scan completion.

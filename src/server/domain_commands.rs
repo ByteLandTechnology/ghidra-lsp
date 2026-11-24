@@ -350,6 +350,8 @@ impl Server {
     let md5 = self.scoped_md5(arg).await?;
     let (domain, operation, parameters) = workbench::operation(arg)?;
     workbench::allow_write(domain, operation, &parameters)?;
+    let caps = backend.capabilities().await?;
+    let parameters = workbench::adapt_write_params(domain, operation, parameters, caps)?;
     let e = self.engine.lock().await;
     Self::ensure_program_clean(&e, &md5)?;
     let (tool, tool_operation) = workbench::mcp_operation(domain, operation);
