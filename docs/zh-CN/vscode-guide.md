@@ -12,7 +12,7 @@
 npm --prefix editors/vscode install
 npm --prefix editors/vscode run check
 npm --prefix editors/vscode run package
-code --install-extension editors/vscode/ghidra-lsp-0.1.0.vsix
+code --install-extension editors/vscode/ghidra-lsp-<version>.vsix
 ```
 
 扩展打包配置会排除父目录资源，离线打包与发布请遵循 `editors/vscode/README.md` 的说明。

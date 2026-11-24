@@ -15,7 +15,7 @@ npm --prefix editors/vscode run package
 生成された `.vsix` は VS Code の **Extensions: Install from VSIX...** または CLI からインストールできます。
 
 ```sh
-code --install-extension editors/vscode/ghidra-lsp-0.1.0.vsix
+code --install-extension editors/vscode/ghidra-lsp-<version>.vsix
 ```
 
 拡張機能自体の概要は [editors/vscode/README.md](../../editors/vscode/README.md) にも記載されています。

@@ -122,12 +122,15 @@ const READ: &[(&str, &str)] = &[
   ("data_type_category", "list"),
   ("data_unit", "list"),
   ("decompilation", "get"),
+  ("entry_point", "list"),
+  ("export", "list"),
   ("flow_override", "list"),
   ("function", "get"),
   ("function", "list"),
   ("function_call", "list"),
   ("global_variable", "get"),
   ("global_variable", "list"),
+  ("import", "list"),
   ("instruction", "get"),
   ("instruction", "list"),
   ("interface", "get"),
@@ -198,6 +201,7 @@ pub(crate) fn mcp_operation<'a>(domain: &'a str, operation: &'a str) -> (&'a str
   let (tool, prefix) = match domain {
     "address_space" => ("address", "space"),
     "program_language" => ("program", "language"),
+    "import" | "export" | "entry_point" => ("program", domain),
     "memory_block" => ("memory", "block"),
     "code_unit" | "data_unit" | "string" | "instruction" | "flow_override" => ("listing", domain),
     "function_call" => ("function", "call"),
@@ -222,6 +226,7 @@ fn resource_operation<'a>(domain: &'a str, operation: &'a str) -> (&'a str, &'a 
   match (domain, operation.split_once('.')) {
     ("address", Some(("space", op))) => ("address_space", op),
     ("program", Some(("language", op))) => ("program_language", op),
+    ("program", Some((resource @ ("import" | "export" | "entry_point"), op))) => (resource, op),
     ("memory", Some(("block", op))) => ("memory_block", op),
     (
       "listing",
@@ -325,18 +330,21 @@ pub(crate) async fn persist(backend: &McpBackend, md5: &str) -> Result<()> {
 /// Builds a coverage summary describing the scan scope and completeness for `domain`.
 pub(crate) fn coverage(domain: &str, params: &Value, count: usize, complete: bool) -> Value {
   let scoped = params.pointer("/scan/range").is_some();
-  let address_scan = matches!(
-    domain,
-    "symbol"
-      | "function"
-      | "global_variable"
-      | "memory"
-      | "code_unit"
-      | "data_unit"
-      | "string"
-      | "instruction"
-      | "comment"
-  );
+  let external_functions = domain == "function"
+    && params.pointer("/filter/external").and_then(Value::as_bool) == Some(true);
+  let address_scan = !external_functions
+    && matches!(
+      domain,
+      "symbol"
+        | "function"
+        | "global_variable"
+        | "memory"
+        | "code_unit"
+        | "data_unit"
+        | "string"
+        | "instruction"
+        | "comment"
+    );
   let scope = if address_scan {
     if scoped {
       "requested-address-range"
@@ -347,11 +355,14 @@ pub(crate) fn coverage(domain: &str, params: &Value, count: usize, complete: boo
     "bridge-resource-list"
   };
   let note = match domain {
+    "function" if external_functions => {
+      "External functions from Ghidra. Use import.list for library names and thunk addresses."
+    }
     "function" => {
-      "Address-scanned functions. Whole-program function_count can also include external functions outside the bridge iterator; this list is not an import table."
+      "Address-scanned functions. Set filter.external to true for external functions, or use import.list for the import table."
     }
     "symbol" => {
-      "Address-scanned symbols. Whole-program symbol_count also includes resources that the bridge does not enumerate, such as external or non-address symbols; this list is not an export table."
+      "Address-scanned symbols. Use import.list, export.list, or entry_point.list for imports, exports, and entry points."
     }
     "data_unit" => {
       "Defined data units in address order. Use string.list with filter.include_candidates to scan undefined bytes for candidate strings."
