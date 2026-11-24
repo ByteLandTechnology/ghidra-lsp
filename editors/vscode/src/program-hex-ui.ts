@@ -5,7 +5,7 @@
  * HTML and client script renderer for the Memory and Bytes webview.
  */
 import { randomBytes } from 'node:crypto';
-import { MemoryBlockInfo, permissionsLabel } from './address-math';
+import { MemoryBlockInfo, parseAddress, permissionsLabel, sameAddress } from './address-math';
 import { callIcon, callIcons } from './call-graph-icons';
 import { DataInspectorEntry, HexChunk, ProgramEndian } from './hex-model';
 import { iconFontStyles } from './icon-font';
@@ -42,46 +42,117 @@ export interface HexViewPayload {
     initialInspector: DataInspectorEntry[];
 }
 
-/** Render the column header row for 8-byte or 16-byte hex layout. */
-export function renderHexColHeadersHtml(bytesPerRow: number): string {
-    return `<span class="hex-row-cells">${Array.from({ length: bytesPerRow }, (_, i) => {
-        const gap = i > 0 && i % 8 === 0 ? ' is-gap' : '';
-        return `<span class="hx-col${gap}">${i.toString(16).padStart(2, '0').toUpperCase()}</span>`;
-    }).join('')}</span>`;
+/** Build the accessible label for one in-block ASCII cell. */
+function formatAsciiAriaLabel(value: number | null, shownAddr: string, symSuffix: string): { ch: string; label: string } {
+    if (value === null) {
+        return { ch: ' ', label: `Uninitialized ASCII byte at ${shownAddr}${symSuffix}` };
+    }
+    if (value === 32) {
+        return { ch: ' ', label: `Space (0x20) ASCII at ${shownAddr}${symSuffix}` };
+    }
+    if (value === 46) {
+        return { ch: '.', label: `. (0x2e) ASCII at ${shownAddr}${symSuffix}` };
+    }
+    if (value > 32 && value <= 126) {
+        const ch = String.fromCharCode(value);
+        return { ch, label: `${ch} ASCII at ${shownAddr}${symSuffix}` };
+    }
+    const hexCode = value.toString(16).padStart(2, '0');
+    return { ch: '.', label: `. non-printable (0x${hexCode}) ASCII at ${shownAddr}${symSuffix}` };
 }
 
-/** Render hex and ASCII table rows for one fetched {@link HexChunk}. */
+/** Render the column header cells for an 8-byte or 16-byte dual-pane hex grid. */
+export function renderHexColHeadersHtml(bytesPerRow: number): string {
+    const count = bytesPerRow === 8 ? 8 : 16;
+    const addrHead = '<span class="addr" role="columnheader" aria-colindex="1">Address</span>';
+    const hexHeads = Array.from({ length: count }, (_, i) => {
+        const gap = i > 0 && i % 8 === 0 ? ' is-gap' : '';
+        const hex = i.toString(16).padStart(2, '0').toUpperCase();
+        return `<span class="hx-col${gap}" role="columnheader" aria-colindex="${2 + i}" aria-label="${hex} hex offset">${hex}</span>`;
+    }).join(' ');
+    const asciiHeads = Array.from({ length: count }, (_, i) => {
+        const start = i === 0 ? ' is-ascii-start' : '';
+        const ch = i.toString(16).toUpperCase();
+        return `<span class="ha-col${start}" role="columnheader" aria-colindex="${2 + count + i}" aria-label="${ch} ASCII offset">${ch}</span>`;
+    }).join('');
+    return `${addrHead} ${hexHeads} ${asciiHeads}`;
+}
+
+/** Render flat ARIA grid rows with hex and ASCII gridcells for one fetched {@link HexChunk}. */
 export function renderHexRowsHtml(chunk: HexChunk, selectedAddress: string, selectionLength: number): string {
-    const selStartHex = selectedAddress.toLowerCase();
+    const selStart = parseAddress(selectedAddress);
+    const selLen = BigInt(Math.max(1, selectionLength));
+    const selEndOffset = selStart ? selStart.offset + selLen - 1n : -1n;
+    const selStartLower = selectedAddress.toLowerCase();
+    const isCellSelected = (address: string): boolean => {
+        if (selStart) {
+            const p = parseAddress(address);
+            if (p) {
+                return p.space === selStart.space && p.offset >= selStart.offset && p.offset <= selEndOffset;
+            }
+        }
+        return address.toLowerCase() === selStartLower;
+    };
+
+    let rovingAddress = '';
+    let fallbackAddress = '';
+    for (const row of chunk.rows) {
+        for (const cell of row.cells) {
+            if (cell.inBlock && cell.address) {
+                if (!fallbackAddress) {
+                    fallbackAddress = cell.address;
+                }
+                if (!rovingAddress && sameAddress(cell.address, selectedAddress)) {
+                    rovingAddress = cell.address;
+                }
+            }
+        }
+    }
+    const activeStopLower = (rovingAddress || fallbackAddress).toLowerCase();
+
     return chunk.rows.map(row => {
+        const bytesPerRow = row.cells.length === 8 || chunk.bytesPerRow === 8 ? 8 : 16;
         let rowHasSel = false;
         const bytesHtml = row.cells.map((cell, idx) => {
             const gapClass = idx > 0 && idx % 8 === 0 ? ' is-gap' : '';
+            const colIdx = 2 + idx;
             if (!cell.inBlock || !cell.address) {
-                return `<span class="hb is-pad${gapClass}" aria-hidden="true">  </span>`;
+                return `<span class="hb is-pad${gapClass}" role="gridcell" aria-colindex="${colIdx}" aria-disabled="true" aria-label="Out of memory block"></span>`;
             }
-            const isSel = cell.address.toLowerCase() === selStartHex;
+            const isSel = isCellSelected(cell.address);
             if (isSel) {
                 rowHasSel = true;
             }
+            const isStop = cell.address.toLowerCase() === activeStopLower;
             const byteStr = cell.value === null ? '??' : cell.value.toString(16).padStart(2, '0');
             const nullClass = cell.value === null ? ' is-null' : '';
+            const shownAddr = displayAddress(cell.address);
+            const symSuffix = cell.symbol ? `, ${cell.symbol}` : '';
+            const ariaLabel = cell.value === null
+                ? `?? uninitialized byte at ${shownAddr}${symSuffix}`
+                : `${byteStr} hex byte at ${shownAddr}${symSuffix}`;
             const title = `${cell.address}${cell.symbol ? ` · ${cell.symbol}` : ''}${cell.value === null ? ' (uninitialized)' : ''}`;
-            return `<span class="hb${gapClass}${nullClass}${isSel ? ' is-selected' : ''}" data-address="${escape(cell.address)}" data-byte="${cell.value === null ? '' : cell.value}" title="${escape(title)}" role="gridcell" tabindex="-1">${byteStr}</span>`;
+            return `<span class="hb${gapClass}${nullClass}${isSel ? ' is-selected' : ''}" data-address="${escape(cell.address)}" data-byte="${cell.value === null ? '' : cell.value}" title="${escape(title)}" aria-label="${escape(ariaLabel)}" role="gridcell" aria-colindex="${colIdx}" aria-selected="${isSel}" tabindex="${isStop ? '0' : '-1'}">${byteStr}</span>`;
         }).join(' ');
 
-        const asciiHtml = row.cells.map(cell => {
+        const asciiHtml = row.cells.map((cell, idx) => {
+            const startClass = idx === 0 ? ' is-ascii-start' : '';
+            const colIdx = 2 + bytesPerRow + idx;
             if (!cell.inBlock || !cell.address) {
-                return '<span class="ha is-pad" aria-hidden="true"> </span>';
+                return `<span class="ha is-pad${startClass}" role="gridcell" aria-colindex="${colIdx}" aria-disabled="true" aria-label="Out of memory block"></span>`;
             }
-            const ch = cell.value !== null && cell.value >= 32 && cell.value <= 126 ? String.fromCharCode(cell.value) : cell.value === null ? ' ' : '.';
-            const isSel = cell.address.toLowerCase() === selStartHex;
-            return `<span class="ha${isSel ? ' is-selected' : ''}" data-address="${escape(cell.address)}" title="${escape(cell.address)}">${escape(ch)}</span>`;
+            const isSel = isCellSelected(cell.address);
+            const nullClass = cell.value === null ? ' is-null' : '';
+            const shownAddr = displayAddress(cell.address);
+            const symSuffix = cell.symbol ? `, ${cell.symbol}` : '';
+            const { ch, label } = formatAsciiAriaLabel(cell.value, shownAddr, symSuffix);
+            const title = `${cell.address}${cell.symbol ? ` · ${cell.symbol}` : ''}${cell.value === null ? ' (uninitialized)' : ''}`;
+            return `<span class="ha${startClass}${nullClass}${isSel ? ' is-selected' : ''}" data-address="${escape(cell.address)}" title="${escape(title)}" aria-label="${escape(label)}" role="gridcell" aria-colindex="${colIdx}" aria-selected="${isSel}" tabindex="-1">${escape(ch)}</span>`;
         }).join('');
 
         const rowAddr = row.firstInBlockAddress || row.rowAddress;
         const firstByte = row.cells.find(c => c.inBlock)?.address || rowAddr;
-        return `<tr class="hex-row${rowHasSel ? ' selected' : ''}" tabindex="0" data-address="${escape(firstByte)}" data-kind="bytes" data-sel-len="${selectionLength}"><td class="addr">${addrSpan(row.rowAddress)}</td><td class="hex-bytes"><span class="hex-row-cells">${bytesHtml}</span></td><td class="hex-ascii">${asciiHtml}</td></tr>`;
+        return `<div class="hex-row${rowHasSel ? ' selected' : ''}" role="row" data-address="${escape(firstByte)}" data-kind="bytes" data-sel-len="${selectionLength}"><span class="addr" role="rowheader" aria-colindex="1">${addrSpan(row.rowAddress)}</span> ${bytesHtml} ${asciiHtml}</div>`;
     }).join('');
 }
 
@@ -101,7 +172,7 @@ export function renderDataInspectorHtml(
         selectionLength > 1 ? `${selectionLength} bytes selected` : '',
     ].filter(Boolean).join(' · ');
     const endianLabel = endian === 'be' ? 'Big Endian' : 'Little Endian';
-    const headHtml = `<div class="hex-inspector-head"><h2>Data inspector</h2><button type="button" class="hex-endian-pill" data-toggle-endian data-endian="${endian}" aria-pressed="${endian === 'be'}" aria-label="Toggle byte order (${endianLabel})" title="Switch byte order">${endianLabel}</button></div>`;
+    const headHtml = `<div class="hex-inspector-head"><h2>Data inspector</h2><button type="button" class="hex-endian-pill" data-toggle-endian data-endian="${endian}" aria-pressed="${endian === 'be'}" aria-label="${endianLabel} byte order" title="Switch byte order">${endianLabel}</button></div>`;
 
     if (!entries.length) {
         return `${headHtml}<p class="hex-inspector-meta" title="${escape(address)}">${escape(meta || 'Select a byte to inspect decoded values.')}</p>`;
@@ -188,10 +259,10 @@ ${programViewStyles}
 <div class="hex-workspace">
   <section class="hex-main" aria-label="Memory bytes at ${escape(payload.cursorAddress)}">
     <div class="table-wrap hex-grid-wrap" id="hex-wrap">
-      <table class="hex-table" role="grid" aria-label="Hexadecimal bytes">
-        <thead><tr><th scope="col">Address</th><th scope="col" class="hex-cols-head" id="hex-cols-head">${colHeaders}</th><th scope="col">ASCII</th></tr></thead>
-        <tbody id="hex-body">${renderHexRowsHtml(payload.chunk, payload.cursorAddress, payload.selectionLength)}</tbody>
-      </table>
+      <div class="hex-table" id="hex-grid" role="grid" aria-label="Hexadecimal bytes" aria-colcount="${1 + payload.bytesPerRow * 2}" data-bytes-per-row="${payload.bytesPerRow}">
+        <div class="hex-cols-head" id="hex-cols-head" role="row">${colHeaders}</div>
+        <div class="hex-body" id="hex-body" role="rowgroup">${renderHexRowsHtml(payload.chunk, payload.cursorAddress, payload.selectionLength)}</div>
+      </div>
     </div>
   </section>
   <aside class="hex-inspector" id="hex-inspector" aria-label="Data inspector">${renderDataInspectorHtml(payload.initialInspector, payload.cursorAddress, payload.currentBlock, payload.selectionLength, payload.cursorSymbol, payload.endian === 'big' ? 'be' : 'le')}</aside>
@@ -214,9 +285,13 @@ let selected = state.selected || '';
 let selectionLength = state.selectionLength || 1;
 let selectedKind = 'bytes';
 let anchorAddress = selected;
+let focusAddress = selected;
+let activePane = 'hb';
 let primaryAction = 'listing';
 
 const hexWrap = document.getElementById('hex-wrap');
+const hexGrid = document.getElementById('hex-grid');
+const hexColsHead = document.getElementById('hex-cols-head');
 const hexBody = document.getElementById('hex-body');
 const hexMain = hexWrap.closest('section');
 const hexWorkspace = hexMain.closest('.hex-workspace');
@@ -244,6 +319,7 @@ if (samePage) {
   if (typeof previous.filter === 'string') search.value = previous.filter;
   if (memoryMap && typeof previous.mapOpen === 'boolean') memoryMap.open = previous.mapOpen;
   if (typeof previous.showInspector === 'boolean') showInspectorChk.checked = previous.showInspector;
+  if (previous.activePane === 'ha' || previous.activePane === 'hb') activePane = previous.activePane;
   if (previous.inspectorEndian === 'be' || previous.inspectorEndian === 'le' || previous.endian === 'little' || previous.endian === 'big') {
     const nextEndian = toProgramEndian(previous.inspectorEndian || previous.endian);
     endianSelect.value = nextEndian;
@@ -270,6 +346,27 @@ const findBlockFor = addr => {
 
 const allByteCells = () => [...hexBody.querySelectorAll('.hb[data-address]')];
 const allAsciiCells = () => [...hexBody.querySelectorAll('.ha[data-address]')];
+const syncGridColumns = bytesPerRow => {
+  const w = Number(bytesPerRow) === 8 ? 8 : 16;
+  state.bytesPerRow = w;
+  if (widthSelect) widthSelect.value = String(w);
+  hexGrid.dataset.bytesPerRow = String(w);
+  hexGrid.setAttribute('aria-colcount', String(1 + w * 2));
+};
+const syncRovingTabindex = (preferredAddr = focusAddress || selected, pane = activePane) => {
+  for (const el of hexBody.querySelectorAll('[tabindex="0"]')) el.setAttribute('tabindex', '-1');
+  const want = String(preferredAddr || '').toLowerCase();
+  const visibleSelector = cls => [...hexBody.querySelectorAll('.hex-row:not([hidden]) .' + cls + '[data-address]')];
+  const primary = visibleSelector(pane === 'ha' ? 'ha' : 'hb');
+  const secondary = visibleSelector(pane === 'ha' ? 'hb' : 'ha');
+  const target = (want && primary.find(c => c.dataset.address?.toLowerCase() === want))
+    || (want && secondary.find(c => c.dataset.address?.toLowerCase() === want))
+    || primary[0]
+    || secondary[0]
+    || hexBody.querySelector('.hb[data-address], .ha[data-address]');
+  if (target) target.setAttribute('tabindex', '0');
+  return target;
+};
 
 const decodeLocalInspector = (startAddr, len) => {
   const cells = allByteCells();
@@ -325,7 +422,7 @@ const applyInspector = (startAddr, metaText, rows) => {
   const pill = document.createElement('button'); pill.type = 'button'; pill.className = 'hex-endian-pill';
   pill.setAttribute('data-toggle-endian', ''); pill.dataset.endian = mode;
   pill.setAttribute('aria-pressed', String(mode === 'be'));
-  pill.setAttribute('aria-label', 'Toggle byte order (' + label + ')');
+  pill.setAttribute('aria-label', label + ' byte order');
   pill.title = 'Switch byte order'; pill.textContent = label;
   head.append(heading, pill);
   const meta = document.createElement('p'); meta.className = 'hex-inspector-meta'; meta.title = startAddr; meta.textContent = metaText;
@@ -356,6 +453,7 @@ const persist = () => {
     ...state,
     selected,
     selectionLength,
+    activePane,
     filter: search.value,
     mapOpen: memoryMap?.open === true,
     showInspector: showInspectorChk.checked,
@@ -369,9 +467,9 @@ const persist = () => {
 const updateSelectionTools = () => {
   const label = document.getElementById('selection-label');
   const bar = label.closest('.selection-tools');
-  const activeHex = hexBody.querySelector('.hb.is-selected') || hexBody.querySelector('tr.selected');
+  const activeHex = hexBody.querySelector('.hb.is-selected, .ha.is-selected') || hexBody.querySelector('.hex-row.selected');
   const activeMap = memoryMap?.querySelector('tr.selected');
-  const visible = (!!activeHex && !activeHex.closest('tr')?.hidden && !hexMain.hidden) || (!!activeMap && !activeMap.hidden && memoryMap?.open);
+  const visible = (!!activeHex && !activeHex.closest('.hex-row')?.hidden && !hexMain.hidden) || (!!activeMap && !activeMap.hidden && memoryMap?.open);
   bar.hidden = !visible;
   document.body.classList.toggle('has-selection', visible);
   if (!visible) return;
@@ -412,25 +510,29 @@ const updateSelectionTools = () => {
   more.hidden = !extra.length;
 };
 
-const highlightRange = (startAddr, len = 1, notify = true, scroll = true) => {
+const highlightRange = (startAddr, len = 1, notify = true, scroll = true, rovingAddr = startAddr) => {
   const start = parseAddr(startAddr);
   if (!start) return;
   const endOffset = start.offset + BigInt(Math.max(1, len)) - 1n;
-  for (const el of document.querySelectorAll('.hb.is-selected,.ha.is-selected,tr.selected')) {
-    el.classList.remove('is-selected', 'selected');
+  for (const el of document.querySelectorAll('.hex-row.selected,tr.selected')) {
+    el.classList.remove('selected');
   }
   let firstMatchedRow = null;
   for (const el of [...allByteCells(), ...allAsciiCells()]) {
     const p = parseAddr(el.dataset.address);
-    if (p && p.space === start.space && p.offset >= start.offset && p.offset <= endOffset) {
-      el.classList.add('is-selected');
-      const tr = el.closest('tr');
-      if (tr) { tr.classList.add('selected'); firstMatchedRow ||= tr; }
+    const inRange = Boolean(p && p.space === start.space && p.offset >= start.offset && p.offset <= endOffset);
+    el.classList.toggle('is-selected', inRange);
+    el.setAttribute('aria-selected', String(inRange));
+    if (inRange) {
+      const row = el.closest('.hex-row');
+      if (row) { row.classList.add('selected'); firstMatchedRow ||= row; }
     }
   }
   selected = startAddr;
+  focusAddress = rovingAddr || startAddr;
   selectionLength = Math.max(1, len);
   selectedKind = 'bytes';
+  syncRovingTabindex(focusAddress, activePane);
   if (addressInput) addressInput.value = shortAddr(startAddr);
   if (firstMatchedRow && scroll) firstMatchedRow.scrollIntoView({ block: 'nearest' });
   renderInspector(startAddr, selectionLength);
@@ -444,13 +546,13 @@ const highlightRange = (startAddr, len = 1, notify = true, scroll = true) => {
 const applyFilter = () => {
   const q = search.value.trim().toLowerCase();
   const qCompact = q.replace(/\s+/g, '');
-  const gridRows = [...hexBody.querySelectorAll('tr.hex-row')];
+  const gridRows = [...hexBody.querySelectorAll('.hex-row')];
   const mapRows = memoryMap ? [...memoryMap.querySelectorAll('tbody tr')] : [];
   let visible = 0, total = 0;
 
   for (const r of gridRows) {
     total++;
-    const rowHexCompact = r.querySelector('.hex-bytes')?.textContent.toLowerCase().replace(/\s+/g, '') || '';
+    const rowHexCompact = [...r.querySelectorAll('.hb[data-address]')].map(c => c.textContent).join('').toLowerCase();
     const hit = !q || r.textContent.toLowerCase().includes(q) || (qCompact.length >= 2 && /^[0-9a-f]+$/.test(qCompact) && rowHexCompact.includes(qCompact));
     r.hidden = !hit;
     if (hit) visible++;
@@ -475,6 +577,7 @@ const applyFilter = () => {
   status.hidden = !q;
   status.classList.toggle('sr-filter-status', !!q && visible === 0);
   status.textContent = !q ? '' : visible ? visible + ' of ' + total + ' displayed rows match.' : collapsedMatches ? 'Matches in collapsed memory map.' : 'No displayed rows match this filter.';
+  syncRovingTabindex(focusAddress, activePane);
   updateSelectionTools();
 };
 
@@ -482,50 +585,93 @@ hexBody.addEventListener('click', event => {
   const cell = event.target.closest('.hb[data-address], .ha[data-address]');
   if (cell) {
     const addr = cell.dataset.address;
+    activePane = cell.classList.contains('ha') ? 'ha' : 'hb';
     if (event.shiftKey && anchorAddress) {
       const a = parseAddr(anchorAddress), b = parseAddr(addr);
       if (a && b && a.space === b.space) {
         const lo = a.offset <= b.offset ? anchorAddress : addr;
         const len = Number((a.offset <= b.offset ? b.offset - a.offset : a.offset - b.offset) + 1n);
-        highlightRange(lo, Math.min(len, 64), true, false);
+        highlightRange(lo, Math.min(len, 64), true, false, addr);
+        cell.focus({ preventScroll: true });
         return;
       }
     }
     anchorAddress = addr;
-    highlightRange(addr, 1, true, false);
-    if (cell.classList.contains('hb')) cell.focus({ preventScroll: true });
+    highlightRange(addr, 1, true, false, addr);
+    cell.focus({ preventScroll: true });
     return;
   }
-  const row = event.target.closest('tr.hex-row');
-  if (row) { anchorAddress = row.dataset.address; highlightRange(row.dataset.address, 1, true, false); }
+  const row = event.target.closest('.hex-row');
+  if (row?.dataset.address) {
+    anchorAddress = row.dataset.address;
+    activePane = 'hb';
+    highlightRange(row.dataset.address, 1, true, false, row.dataset.address);
+    syncRovingTabindex(row.dataset.address, 'hb')?.focus({ preventScroll: true });
+  }
 });
 
 hexBody.addEventListener('dblclick', event => {
-  const cell = event.target.closest('.hb[data-address], .ha[data-address], tr.hex-row');
+  const cell = event.target.closest('.hb[data-address], .ha[data-address], .hex-row');
   if (!cell?.dataset.address) return;
   vscode.postMessage({ action: 'listing', address: cell.dataset.address, kind: 'bytes' });
 });
 
 hexBody.addEventListener('keydown', event => {
-  const cell = event.target.closest('.hb[data-address]');
-  const cells = allByteCells();
-  if (!cells.length) return;
-  const curIdx = cell ? cells.indexOf(cell) : cells.findIndex(c => c.dataset.address?.toLowerCase() === selected.toLowerCase());
-  const step = state.bytesPerRow === 8 ? 8 : 16;
-  let nextIdx = -1;
-  if (event.key === 'ArrowRight') nextIdx = Math.min(cells.length - 1, (curIdx < 0 ? 0 : curIdx + 1));
-  else if (event.key === 'ArrowLeft') nextIdx = Math.max(0, (curIdx < 0 ? 0 : curIdx - 1));
-  else if (event.key === 'ArrowDown') nextIdx = Math.min(cells.length - 1, (curIdx < 0 ? 0 : curIdx + step));
-  else if (event.key === 'ArrowUp') nextIdx = Math.max(0, (curIdx < 0 ? 0 : curIdx - step));
-  else if (event.key === 'Home') nextIdx = 0;
-  else if (event.key === 'End') nextIdx = cells.length - 1;
-  else if (event.key === 'Enter' && selected) { event.preventDefault(); vscode.postMessage({ action: 'listing', address: selected, kind: 'bytes' }); return; }
-  if (nextIdx >= 0 && cells[nextIdx]) {
+  if (event.altKey) return;
+  const visibleRows = [...hexBody.querySelectorAll('.hex-row:not([hidden])')];
+  if (!visibleRows.length) return;
+  const flatCells = visibleRows.flatMap(r => [...r.querySelectorAll('.hb[data-address], .ha[data-address]')]);
+  if (!flatCells.length) return;
+  const curCell = event.target.closest('.hb[data-address], .ha[data-address]')
+    || hexBody.querySelector('.hex-row:not([hidden]) [tabindex="0"]')
+    || flatCells[0];
+  if (event.key === 'Enter') {
+    const enterAddr = curCell?.dataset.address || selected;
+    if (enterAddr) {
+      event.preventDefault();
+      vscode.postMessage({ action: 'listing', address: enterAddr, kind: 'bytes' });
+    }
+    return;
+  }
+  const curRow = curCell.closest('.hex-row') || visibleRows[0];
+  const rowIdx = Math.max(0, visibleRows.indexOf(curRow));
+  const curFlatIdx = Math.max(0, flatCells.indexOf(curCell));
+  const paneCls = curCell.classList.contains('ha') ? 'ha' : 'hb';
+  const colIdx = curCell.getAttribute('aria-colindex');
+  const pickVertical = targetRow => {
+    const exact = colIdx && targetRow.querySelector('[aria-colindex="' + colIdx + '"][data-address]');
+    if (exact) return exact;
+    const paneCells = [...targetRow.querySelectorAll('.' + paneCls + '[data-address]')];
+    const wantCol = Number(colIdx) || 0;
+    return paneCells.reduce((best, c) => !best || Math.abs(Number(c.getAttribute('aria-colindex')) - wantCol) < Math.abs(Number(best.getAttribute('aria-colindex')) - wantCol) ? c : best, null);
+  };
+  let nextCell = null;
+  if (event.key === 'ArrowRight') {
+    nextCell = flatCells[Math.min(flatCells.length - 1, curFlatIdx + 1)];
+  } else if (event.key === 'ArrowLeft') {
+    nextCell = flatCells[Math.max(0, curFlatIdx - 1)];
+  } else if (event.key === 'ArrowDown') {
+    nextCell = pickVertical(visibleRows[Math.min(visibleRows.length - 1, rowIdx + 1)]);
+  } else if (event.key === 'ArrowUp') {
+    nextCell = pickVertical(visibleRows[Math.max(0, rowIdx - 1)]);
+  } else if (event.key === 'Home') {
+    nextCell = (event.ctrlKey || event.metaKey)
+      ? flatCells[0]
+      : curRow.querySelector('.hb[data-address], .ha[data-address]');
+  } else if (event.key === 'End') {
+    const rowCells = [...curRow.querySelectorAll('.hb[data-address], .ha[data-address]')];
+    nextCell = (event.ctrlKey || event.metaKey)
+      ? flatCells[flatCells.length - 1]
+      : rowCells[rowCells.length - 1];
+  }
+  if (nextCell) {
     event.preventDefault();
-    const targetAddr = cells[nextIdx].dataset.address;
-    cells[nextIdx].focus();
+    activePane = nextCell.classList.contains('ha') ? 'ha' : 'hb';
+    const targetAddr = nextCell.dataset.address;
     anchorAddress = targetAddr;
-    highlightRange(targetAddr, 1, true, true);
+    highlightRange(targetAddr, 1, true, false, targetAddr);
+    nextCell.focus({ preventScroll: true });
+    nextCell.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }
 });
 
@@ -548,11 +694,17 @@ inspectorEl.addEventListener('click', event => {
 memoryMap?.querySelector('tbody')?.addEventListener('click', event => {
   const row = event.target.closest('tr[data-address]');
   if (!row) return;
-  for (const el of document.querySelectorAll('.hb.is-selected,.ha.is-selected,tr.selected')) el.classList.remove('is-selected', 'selected');
+  for (const el of document.querySelectorAll('.hb.is-selected,.ha.is-selected,.hex-row.selected,tr.selected')) {
+    el.classList.remove('is-selected', 'selected');
+  }
+  for (const el of [...allByteCells(), ...allAsciiCells()]) {
+    el.setAttribute('aria-selected', 'false');
+  }
   row.classList.add('selected');
   selected = row.dataset.address || '';
   selectedKind = 'block';
   selectionLength = 1;
+  syncRovingTabindex(selected, activePane);
   updateSelectionTools();
   persist();
 });
@@ -599,7 +751,7 @@ endianSelect?.addEventListener('change', () => {
 });
 widthSelect?.addEventListener('change', () => {
   const w = Number(widthSelect.value) === 8 ? 8 : 16;
-  state.bytesPerRow = w;
+  syncGridColumns(w);
   persist();
   vscode.postMessage({ action: 'setHexOptions', bytesPerRow: w });
 });
@@ -639,9 +791,14 @@ window.addEventListener('message', event => {
       applyInspector(addr, metaText, msg.entries);
     }
   } else if (msg.action === 'chunkData') {
+    const hadGridFocus = hexGrid.contains(document.activeElement);
+    if (document.activeElement?.classList.contains('ha')) activePane = 'ha';
+    else if (document.activeElement?.classList.contains('hb')) activePane = 'hb';
     state.address = msg.chunkStart;
     hexBody.innerHTML = msg.rowsHtml;
-    if (msg.colsHtml) document.getElementById('hex-cols-head').innerHTML = msg.colsHtml;
+    if (msg.colsHtml) hexColsHead.innerHTML = msg.colsHtml;
+    const nextCols = hexColsHead.querySelectorAll('.hx-col').length || hexBody.querySelector('.hex-row')?.querySelectorAll('.hb').length;
+    if (nextCols === 8 || nextCols === 16) syncGridColumns(nextCols);
     if (typeof msg.canBack === 'boolean') document.querySelector('[data-action="navBack"]').disabled = !msg.canBack;
     if (typeof msg.canForward === 'boolean') document.querySelector('[data-action="navForward"]').disabled = !msg.canForward;
     if (pvStep) pvStep.hidden = !msg.hasMoreBefore && !msg.hasMoreAfter;
@@ -651,10 +808,18 @@ window.addEventListener('message', event => {
     if (blockSelect && msg.currentBlockStart) blockSelect.value = msg.currentBlockStart;
     if (msg.sectionLabel) hexMain.setAttribute('aria-label', msg.sectionLabel);
     applyFilter();
-    highlightRange(msg.selectedAddress || selected, msg.length || 1, false, true);
+    const targetAddr = msg.selectedAddress || selected;
+    anchorAddress = targetAddr;
+    highlightRange(targetAddr, msg.length || 1, false, true, targetAddr);
+    if (hadGridFocus) {
+      const restored = syncRovingTabindex(targetAddr, activePane);
+      restored?.focus({ preventScroll: true });
+      restored?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    }
   }
 });
 
+syncGridColumns(state.bytesPerRow);
 applyFilter();
 highlightRange(selected, selectionLength, false, !samePage);
 requestAnimationFrame(() => {
