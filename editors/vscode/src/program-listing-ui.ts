@@ -13,7 +13,7 @@ import { displayAddress } from './names';
 import { pageStyles } from './page-styles';
 import { addrSpan, programViewStyles } from './program-views-styles';
 import { highlightAsm, highlightName } from './syntax';
-import { viewStyles } from './view-ui';
+import { gridRuntimeScript, viewStyles } from './view-ui';
 import { escape } from './web';
 
 /** Full view-model payload used to render the graphical Program Listing HTML page. */
@@ -53,7 +53,7 @@ function linkifyInlineTargets(opHtml: string, targets: ListingTarget[]): string 
         if (!match) {
             return full;
         }
-        return `<button type="button" class="target-link target-inline" data-jump="${escape(match.to)}" title="${escape(`Jump to ${match.to}${match.kind ? ` (${match.kind})` : ''}`)}">${escape(rawLiteral)}</button>`;
+        return `<button type="button" class="target-link target-inline" tabindex="-1" data-jump="${escape(match.to)}" title="${escape(`Jump to ${match.to}${match.kind ? ` (${match.kind})` : ''}`)}">${escape(rawLiteral)}</button>`;
     });
 }
 
@@ -64,32 +64,33 @@ export function renderListingRowsHtml(items: ListingRenderItem[], selectedAddres
         const parts: string[] = [];
         if (unit.blockHeader) {
             const b = unit.blockHeader;
-            parts.push(`<tr class="listing-aux-row listing-block-row"${hiddenRun ? ' hidden' : ''}><td colspan="5"><span class="listing-block-name">${escape(b.name)}</span><span>${addrSpan(b.start)}–${addrSpan(b.end)} · ${escape(b.permissions)}${b.initialized ? '' : ' · uninitialized'}${b.kind ? ` · ${escape(b.kind)}` : ''}${b.comment ? ` · ${escape(b.comment)}` : ''}</span></td></tr>`);
+            parts.push(`<tr class="listing-aux-row listing-block-row" role="row" aria-selected="false"${hiddenRun ? ' hidden' : ''}><td colspan="5" role="gridcell" aria-selected="false" tabindex="-1"><span class="listing-block-name">${escape(b.name)}</span> <span>${addrSpan(b.start)}–${addrSpan(b.end)} · ${escape(b.permissions)}${b.initialized ? '' : ' · uninitialized'}${b.kind ? ` · ${escape(b.kind)}` : ''}${b.comment ? ` · ${escape(b.comment)}` : ''}</span></td></tr>`);
         }
         if (unit.plateComment) {
-            parts.push(`<tr class="listing-aux-row listing-plate-row"${hiddenRun ? ' hidden' : ''}><td class="addr"></td><td colspan="4">/* ${escape(unit.plateComment)} */</td></tr>`);
+            parts.push(`<tr class="listing-aux-row listing-plate-row" role="row" aria-selected="false"${hiddenRun ? ' hidden' : ''}><td class="addr" role="gridcell" aria-selected="false" tabindex="-1"></td><td colspan="4" role="gridcell" aria-selected="false" tabindex="-1">/* ${escape(unit.plateComment)} */</td></tr>`);
         }
         if (unit.functionHeader) {
             const fn = unit.functionHeader;
             const flagStr = [fn.callingConvention, ...fn.flags].filter(Boolean).join(' · ');
             const vars = fn.variables.slice(0, 12).map(v => `<span title="${escape(v.rawStorage || v.storage)}">${escape(v.kind)}: ${escape(v.dataType)} <strong>${escape(v.name)}</strong> [${escape(v.storage)}]</span>`).join('');
             const moreVars = fn.variables.length > 12 ? `<span>+${fn.variables.length - 12} more</span>` : '';
-            parts.push(`<tr class="listing-aux-row listing-fn-row"${hiddenRun ? ' hidden' : ''}><td class="addr"></td><td colspan="4"><div class="listing-fn-sig" title="${escape(fn.rawSignature)}${fn.mangledName ? `\nMangled: ${fn.mangledName}` : ''}">${highlightName(fn.displaySignature)}</div>${flagStr ? `<div class="listing-fn-meta">${escape(flagStr)}</div>` : ''}${vars ? `<div class="listing-var-list">${vars}${moreVars}</div>` : ''}</td></tr>`);
+            parts.push(`<tr class="listing-aux-row listing-fn-row" role="row" aria-selected="false"${hiddenRun ? ' hidden' : ''}><td class="addr" role="gridcell" aria-selected="false" tabindex="-1"></td><td colspan="4" role="gridcell" aria-selected="false" tabindex="-1"><div class="listing-fn-sig" title="${escape(fn.rawSignature)}${fn.mangledName ? `\nMangled: ${fn.mangledName}` : ''}">${highlightName(fn.displaySignature)}</div>${flagStr ? `<div class="listing-fn-meta">${escape(flagStr)}</div>` : ''}${vars ? `<div class="listing-var-list">${vars}${moreVars}</div>` : ''}</td></tr>`);
         }
         if (unit.labels.length || unit.xrefs.length) {
             const labelsHtml = unit.labels.map(l => `<span class="listing-label-name" title="${escape(l.fullTooltip)}">${highlightName(l.name)}:</span>`).join(' ');
             const xrefsHtml = unit.xrefs.length
                 ? `<span class="listing-xrefs">XREF[${unit.xrefTotal}]: ${unit.xrefs.map(x => x.navigable
-                    ? `<button type="button" class="xref-link" data-jump="${escape(x.from)}" title="${escape(`${x.type} from ${x.from}`)}">${escape(x.label)}${escape(x.suffix)}</button>`
+                    ? `<button type="button" class="xref-link" tabindex="-1" data-jump="${escape(x.from)}" title="${escape(`${x.type} from ${x.from}`)}">${escape(x.label)}${escape(x.suffix)}</button>`
                     : `<span class="xref-static" title="${escape(`${x.type} from ${x.from}`)}">${escape(x.label)}${escape(x.suffix)}</span>`).join(' ')}${unit.xrefTotal > unit.xrefs.length ? ` <span>+${unit.xrefTotal - unit.xrefs.length}</span>` : ''}</span>`
                 : '';
-            parts.push(`<tr class="listing-aux-row listing-label-row"${hiddenRun ? ' hidden' : ''}><td class="addr"></td><td colspan="4"><div class="listing-label-main">${labelsHtml}${xrefsHtml}</div></td></tr>`);
+            parts.push(`<tr class="listing-aux-row listing-label-row" role="row" aria-selected="false"${hiddenRun ? ' hidden' : ''}><td class="addr" role="gridcell" aria-selected="false" tabindex="-1"></td><td colspan="4" role="gridcell" aria-selected="false" tabindex="-1"><div class="listing-label-main">${labelsHtml}${xrefsHtml}</div></td></tr>`);
         }
         if (unit.preComment) {
-            parts.push(`<tr class="listing-aux-row listing-pre-row"${hiddenRun ? ' hidden' : ''}><td class="addr"></td><td colspan="4">; ${escape(unit.preComment)}</td></tr>`);
+            parts.push(`<tr class="listing-aux-row listing-pre-row" role="row" aria-selected="false"${hiddenRun ? ' hidden' : ''}><td class="addr" role="gridcell" aria-selected="false" tabindex="-1"></td><td colspan="4" role="gridcell" aria-selected="false" tabindex="-1">; ${escape(unit.preComment)}</td></tr>`);
         }
 
-        const isSel = selectedAddress && unit.address.toLowerCase() === selectedAddress.toLowerCase();
+        const isSel = Boolean(selectedAddress && unit.address.toLowerCase() === selectedAddress.toLowerCase());
+        const selAttr = isSel ? 'true' : 'false';
         const rawOpHtml = unit.kind === 'instruction'
             ? highlightAsm(unit.operandsText, 'span', false)
             : unit.typePath
@@ -98,13 +99,13 @@ export function renderListingRowsHtml(items: ListingRenderItem[], selectedAddres
         const opHtml = unit.kind === 'instruction' ? linkifyInlineTargets(rawOpHtml, unit.targets) : rawOpHtml;
         const visibleTargets = unit.targets.filter(t => !t.inlineOnly);
         const chipsHtml = visibleTargets.length
-            ? `<span class="target-chips">${visibleTargets.map(t => `<button type="button" class="target-link" data-jump="${escape(t.to)}" title="${escape(`Jump to ${t.to}${t.kind ? ` (${t.kind})` : ''}`)}">→ ${escape(t.label)}</button>`).join('')}</span>`
+            ? `<span class="target-chips">${visibleTargets.map(t => `<button type="button" class="target-link" tabindex="-1" data-jump="${escape(t.to)}" title="${escape(`Jump to ${t.to}${t.kind ? ` (${t.kind})` : ''}`)}">→ ${escape(t.label)}</button>`).join('')}</span>`
             : '';
         const eolHtml = unit.eolComment ? `; ${escape(unit.eolComment)}` : '';
-        parts.push(`<tr class="listing-unit-row${isSel ? ' selected' : ''}" tabindex="0" data-address="${escape(unit.address)}" data-byte-length="${unit.byteLength}" data-kind="${escape(unit.kind)}"${unit.entry ? ` data-entry="${escape(unit.entry)}"` : ''}${unit.functionName ? ` data-fn-name="${escape(unit.functionName)}"` : ''}${unit.targets[0]?.to ? ` data-jump-primary="${escape(unit.targets[0].to)}"` : ''}${hiddenRun ? ' data-run-member="true" hidden' : ''}><td class="addr">${addrSpan(unit.address)}</td><td class="col-bytes" title="${escape(unit.bytesText)}">${escape(unit.bytesShort)}</td><td class="col-mnemonic"><span class="tok-mnemonic">${escape(unit.mnemonic)}</span></td><td class="col-operands">${opHtml}${chipsHtml}</td><td class="col-comment">${eolHtml}</td></tr>`);
+        parts.push(`<tr class="listing-unit-row${isSel ? ' selected' : ''}" role="row" aria-selected="${selAttr}" data-address="${escape(unit.address)}" data-byte-length="${unit.byteLength}" data-kind="${escape(unit.kind)}"${unit.entry ? ` data-entry="${escape(unit.entry)}"` : ''}${unit.functionName ? ` data-fn-name="${escape(unit.functionName)}"` : ''}${unit.targets[0]?.to ? ` data-jump-primary="${escape(unit.targets[0].to)}"` : ''}${hiddenRun ? ' data-run-member="true" hidden' : ''}><td class="addr" role="gridcell" aria-selected="${selAttr}" tabindex="-1">${addrSpan(unit.address)}</td><td class="col-bytes" role="gridcell" aria-selected="${selAttr}" tabindex="-1" title="${escape(unit.bytesText)}">${escape(unit.bytesShort)}</td><td class="col-mnemonic" role="gridcell" aria-selected="${selAttr}" tabindex="-1"><span class="tok-mnemonic">${escape(unit.mnemonic)}</span></td><td class="col-operands" role="gridcell" aria-selected="${selAttr}" tabindex="-1">${opHtml}${chipsHtml}</td><td class="col-comment" role="gridcell" aria-selected="${selAttr}" tabindex="-1">${eolHtml}</td></tr>`);
 
         if (unit.postComment) {
-            parts.push(`<tr class="listing-aux-row listing-post-row"${hiddenRun ? ' hidden' : ''}><td class="addr"></td><td colspan="4">; post: ${escape(unit.postComment)}</td></tr>`);
+            parts.push(`<tr class="listing-aux-row listing-post-row" role="row" aria-selected="false"${hiddenRun ? ' hidden' : ''}><td class="addr" role="gridcell" aria-selected="false" tabindex="-1"></td><td colspan="4" role="gridcell" aria-selected="false" tabindex="-1">; post: ${escape(unit.postComment)}</td></tr>`);
         }
         return parts.join('');
     };
@@ -114,9 +115,9 @@ export function renderListingRowsHtml(items: ListingRenderItem[], selectedAddres
             const run = item as ListingUndefinedRun;
             if (run.blockHeader) {
                 const b = run.blockHeader;
-                out.push(`<tr class="listing-aux-row listing-block-row"><td colspan="5"><span class="listing-block-name">${escape(b.name)}</span><span>${addrSpan(b.start)}–${addrSpan(b.end)} · ${escape(b.permissions)}${b.initialized ? '' : ' · uninitialized'}${b.kind ? ` · ${escape(b.kind)}` : ''}${b.comment ? ` · ${escape(b.comment)}` : ''}</span></td></tr>`);
+                out.push(`<tr class="listing-aux-row listing-block-row" role="row" aria-selected="false"><td colspan="5" role="gridcell" aria-selected="false" tabindex="-1"><span class="listing-block-name">${escape(b.name)}</span> <span>${addrSpan(b.start)}–${addrSpan(b.end)} · ${escape(b.permissions)}${b.initialized ? '' : ' · uninitialized'}${b.kind ? ` · ${escape(b.kind)}` : ''}${b.comment ? ` · ${escape(b.comment)}` : ''}</span></td></tr>`);
             }
-            out.push(`<tr class="listing-undef-run" data-run-start="${escape(run.startAddress)}"><td class="addr">${addrSpan(run.startAddress)}</td><td class="col-bytes"></td><td class="col-mnemonic">${run.uninitialized ? '??' : 'db'}</td><td class="col-operands"><button type="button" class="expand-run-btn" data-expand-run="${escape(run.startAddress)}">${run.byteLength} ${run.uninitialized ? 'uninitialized' : 'undefined'} bytes (${escape(displayAddress(run.startAddress))}..${escape(displayAddress(run.endAddress))})</button></td><td class="col-comment"></td></tr>`);
+            out.push(`<tr class="listing-undef-run" role="row" aria-selected="false" data-run-start="${escape(run.startAddress)}"><td class="addr" role="gridcell" aria-selected="false" tabindex="-1">${addrSpan(run.startAddress)}</td><td class="col-bytes" role="gridcell" aria-selected="false" tabindex="-1"></td><td class="col-mnemonic" role="gridcell" aria-selected="false" tabindex="-1">${run.uninitialized ? '??' : 'db'}</td><td class="col-operands" role="gridcell" aria-selected="false" tabindex="-1"><button type="button" class="expand-run-btn" tabindex="-1" data-expand-run="${escape(run.startAddress)}">${run.byteLength} ${run.uninitialized ? 'uninitialized' : 'undefined'} bytes (${escape(displayAddress(run.startAddress))}..${escape(displayAddress(run.endAddress))})</button></td><td class="col-comment" role="gridcell" aria-selected="false" tabindex="-1"></td></tr>`);
             for (const member of run.units) {
                 out.push(renderUnit(member, true));
             }
@@ -179,11 +180,11 @@ ${programViewStyles}
     </details>
   </div>
 </div>
-<p id="filter-status" role="status" aria-live="polite" hidden></p>
+<p id="filter-status" role="status" aria-live="polite" aria-atomic="true"></p>
 <div class="table-wrap" id="listing-wrap">
-  <table class="listing-table">
-    <thead><tr><th scope="col">Address</th><th scope="col" class="col-bytes">Bytes</th><th scope="col" class="col-mnemonic">Mnemonic</th><th scope="col" class="col-operands">Operands</th><th scope="col" class="col-comment">Comments</th></tr></thead>
-    <tbody id="listing-body">${renderListingRowsHtml(payload.window.collapsedItems, payload.selectedAddress)}</tbody>
+  <table class="listing-table" role="grid" aria-readonly="true" aria-label="Disassembly listing">
+    <thead role="rowgroup"><tr role="row"><th scope="col" role="columnheader" tabindex="-1">Address</th><th scope="col" role="columnheader" class="col-bytes" tabindex="-1">Bytes</th><th scope="col" role="columnheader" class="col-mnemonic" tabindex="-1">Mnemonic</th><th scope="col" role="columnheader" class="col-operands" tabindex="-1">Operands</th><th scope="col" role="columnheader" class="col-comment" tabindex="-1">Comments</th></tr></thead>
+    <tbody id="listing-body" role="rowgroup">${renderListingRowsHtml(payload.window.collapsedItems, payload.selectedAddress)}</tbody>
   </table>
 </div>
 <div class="no-results" hidden><span>No matching rows.</span><button type="button" id="clear-filter" class="icon-button" aria-label="Clear filter" title="Clear filter">${callIcon('close')}</button></div>
@@ -194,6 +195,7 @@ ${programViewStyles}
 </div>
 </main>
 <script nonce="${nonce}">
+${gridRuntimeScript}
 const vscode = acquireVsCodeApi();
 const state = ${stateJson};
 const previous = vscode.getState() || {};
@@ -222,7 +224,9 @@ const pagerAfter = document.getElementById('pager-after');
 const scopeNote = document.getElementById('listing-scope-note');
 const more = document.getElementById('more-actions');
 const moreSummary = document.getElementById('more-summary');
+const statusBus = new LiveStatusBus(document.getElementById('filter-status'));
 const icons = ${JSON.stringify(callIcons)};
+let listingGrid = null;
 
 if (samePage) {
   if (typeof previous.filter === 'string') search.value = previous.filter;
@@ -315,12 +319,16 @@ const selectRow = (row, notify = true, scroll = true) => {
   if (!row) return;
   for (const r of tbody.querySelectorAll('tr.selected')) r.classList.remove('selected');
   row.classList.add('selected');
+  listingGrid?.syncSelection();
   selected = row.dataset.address || '';
   selectedEntry = row.dataset.entry || '';
   selectedKind = row.dataset.kind || 'instruction';
   selectedLength = Number(row.dataset.byteLength) || 1;
   if (addressInput) addressInput.value = /^ram:[0-9a-f]+$/i.test(selected) ? selected.slice(4) : selected;
   if (scroll) row.scrollIntoView({ block: 'nearest' });
+  if (listingGrid && !listingGrid.grid.contains(document.activeElement)) {
+    listingGrid.refresh({ syncToSelected: true });
+  }
   updateSelectionTools();
   persist();
   if (notify) {
@@ -328,7 +336,7 @@ const selectRow = (row, notify = true, scroll = true) => {
   }
 };
 
-const applyFilter = () => {
+const applyFilter = (silent = false, resetGrid = false) => {
   const q = search.value.trim().toLowerCase();
   const rows = unitRows();
   let visible = 0;
@@ -346,22 +354,44 @@ const applyFilter = () => {
     aux.hidden = !!q || (aux.classList.contains('listing-undef-run') && !optCollapse.checked);
   }
   const empty = document.querySelector('.no-results');
-  const status = document.getElementById('filter-status');
   const wrapTable = wrap.querySelector('table');
   if (wrapTable) wrapTable.hidden = !!q && visible === 0;
   empty.hidden = !q || visible > 0;
-  status.hidden = !q;
-  status.classList.toggle('sr-filter-status', !!q && visible === 0);
-  status.textContent = q ? (visible ? visible + ' of ' + rows.length + ' displayed rows match.' : 'No displayed rows match this filter.') : '';
+  statusBus.reportFilter({ query: q, visible, total: rows.length, silent });
+  if (listingGrid) {
+    listingGrid.refresh(Boolean(q) || resetGrid ? { resetToFirstRow: true } : { syncToSelected: silent });
+  }
   updateSelectionTools();
 };
 
+const activateRow = row => {
+  if (!row) return;
+  if (row.classList.contains('listing-undef-run')) {
+    row.querySelector('[data-expand-run]')?.click();
+    return;
+  }
+  if (!row.classList.contains('listing-unit-row')) return;
+  selectRow(row, true, false);
+  const jump = row.dataset.jumpPrimary;
+  if (jump) vscode.postMessage({ action: 'goto', address: jump });
+  else if (primaryAction) vscode.postMessage({ action: primaryAction, address: selected, entry: selectedEntry, kind: selectedKind });
+};
+
+listingGrid = new GridController(wrap.querySelector('table[role="grid"]'), {
+  onSelect: (_stop, row) => {
+    if (row.classList.contains('listing-unit-row')) selectRow(row, true, false);
+    else if (row.classList.contains('listing-undef-run')) row.querySelector('[data-expand-run]')?.click();
+  },
+  onActivate: (_stop, row) => activateRow(row),
+});
+
 const bindTableInteractions = () => {
   for (const row of unitRows()) {
-    if (selected && row.dataset.address?.toLowerCase() === selected.toLowerCase()) row.classList.add('selected');
+    row.classList.toggle('selected', Boolean(selected && row.dataset.address?.toLowerCase() === selected.toLowerCase()));
   }
   applyViewClasses();
-  applyFilter();
+  listingGrid.syncSelection();
+  applyFilter(true, false);
 };
 
 tbody.addEventListener('click', event => {
@@ -374,9 +404,17 @@ tbody.addEventListener('click', event => {
   const expandBtn = event.target.closest('[data-expand-run]');
   if (expandBtn) {
     event.stopPropagation();
+    const runStart = expandBtn.dataset.expandRun;
     optCollapse.checked = false;
     applyViewClasses();
-    applyFilter();
+    applyFilter(true, false);
+    const revealed = findUnitRow(runStart);
+    if (revealed) {
+      selectRow(revealed, true, true);
+      listingGrid.focusRow(revealed);
+    } else {
+      listingGrid.refresh();
+    }
     persist();
     return;
   }
@@ -392,23 +430,6 @@ tbody.addEventListener('dblclick', event => {
   const jump = row.dataset.jumpPrimary;
   if (jump) vscode.postMessage({ action: 'goto', address: jump });
   else if (primaryAction) vscode.postMessage({ action: primaryAction, address: selected, entry: selectedEntry, kind: selectedKind });
-});
-
-tbody.addEventListener('keydown', event => {
-  const row = event.target.closest('tr.listing-unit-row');
-  if (!row) return;
-  const visible = unitRows().filter(r => !r.hidden);
-  const idx = visible.indexOf(row);
-  if (event.key === 'ArrowDown' && idx + 1 < visible.length) { event.preventDefault(); visible[idx + 1].focus(); selectRow(visible[idx + 1], true, true); }
-  else if (event.key === 'ArrowUp' && idx > 0) { event.preventDefault(); visible[idx - 1].focus(); selectRow(visible[idx - 1], true, true); }
-  else if (event.key === 'Home' && visible.length) { event.preventDefault(); visible[0].focus(); selectRow(visible[0], true, true); }
-  else if (event.key === 'End' && visible.length) { event.preventDefault(); visible[visible.length - 1].focus(); selectRow(visible[visible.length - 1], true, true); }
-  else if (event.key === 'Enter') {
-    event.preventDefault();
-    const jump = row.dataset.jumpPrimary;
-    if (jump) vscode.postMessage({ action: 'goto', address: jump });
-    else if (primaryAction) vscode.postMessage({ action: primaryAction, address: selected, entry: selectedEntry, kind: selectedKind });
-  }
 });
 
 document.addEventListener('click', event => {
@@ -438,11 +459,22 @@ document.getElementById('goto').addEventListener('submit', event => {
 blockSelect?.addEventListener('change', () => {
   if (blockSelect.value) { pageOptions.open = false; vscode.postMessage({ action: 'goto', address: blockSelect.value, pushHistory: true }); }
 });
-search.addEventListener('input', () => { applyFilter(); persist(); });
-document.getElementById('clear-filter').addEventListener('click', () => { search.value = ''; applyFilter(); persist(); search.focus(); });
+search.addEventListener('input', () => { applyFilter(false, true); persist(); });
+document.getElementById('clear-filter').addEventListener('click', () => { search.value = ''; applyFilter(false, true); persist(); search.focus(); });
 for (const chk of [optBytes, optHeaders, optVars, optXrefs, optCollapse]) {
-  chk.addEventListener('change', () => { applyViewClasses(); applyFilter(); persist(); });
+  chk.addEventListener('change', () => { applyViewClasses(); applyFilter(true, false); listingGrid.refresh(); persist(); });
 }
+window.addEventListener('resize', () => listingGrid.refresh());
+more?.addEventListener('keydown', event => {
+  if (event.key === 'Escape') { event.preventDefault(); more.open = false; moreSummary.focus(); return; }
+  if (!['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+  event.preventDefault();
+  more.open = true;
+  const buttons = [...more.querySelectorAll('button:not(:disabled)')];
+  const index = buttons.indexOf(document.activeElement);
+  const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : (event.key === 'ArrowDown' || event.key === 'ArrowRight') ? (index + 1) % buttons.length : (index <= 0 ? buttons.length - 1 : index - 1);
+  buttons[next]?.focus();
+});
 
 document.addEventListener('keydown', event => {
   if (event.altKey && !event.ctrlKey && !event.metaKey) {
@@ -453,7 +485,7 @@ document.addEventListener('keydown', event => {
   if (event.key === 'Escape') {
     if (pageOptions.open) { pageOptions.open = false; pageOptions.querySelector('summary').focus(); return; }
     if (more.open) { more.open = false; moreSummary.focus(); return; }
-    if (search.value) { search.value = ''; applyFilter(); persist(); return; }
+    if (search.value) { event.preventDefault(); search.value = ''; applyFilter(false, true); persist(); return; }
   }
   if (!inInput && event.key === '/') { event.preventDefault(); search.focus(); search.select(); }
   else if (!inInput && event.key.toLowerCase() === 'g') { event.preventDefault(); addressInput.focus(); addressInput.select(); }
@@ -464,6 +496,8 @@ window.addEventListener('message', event => {
   if (msg.action === 'highlight') {
     const row = findUnitRow(msg.address);
     if (row) selectRow(row, false, true);
+  } else if (msg.action === 'actionStatus' && msg.message) {
+    statusBus.announce(msg.message, { srOnly: true });
   } else if (msg.action === 'syncState') {
     state.syncEnabled = !!msg.syncEnabled;
     syncToggle.setAttribute('aria-pressed', String(state.syncEnabled));

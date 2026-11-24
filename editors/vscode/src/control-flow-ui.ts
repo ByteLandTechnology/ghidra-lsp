@@ -30,6 +30,7 @@ export const controlFlowUiStyles = `
 .cfg-page .flow-canvas{position:relative;border:0;border-radius:0;background:var(--vscode-editor-background)}
 .cfg-page .scope{position:absolute;bottom:19px;left:16px;z-index:2;max-width:calc(100% - 180px);margin:0;padding:3px 6px;background:var(--vscode-editor-background);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none}
 .cfg-page #filter-status{position:absolute;top:60px;left:16px;z-index:2;padding:3px 6px;background:var(--vscode-editor-background);font-size:11px}
+.cfg-page #filter-status:empty{padding:0}
 .cfg-page [hidden]{display:none!important}
 .cfg-page .cfg-zoom{position:absolute;bottom:16px;right:16px;z-index:2;display:flex;gap:0;border:1px solid var(--vscode-panel-border);border-radius:8px;background:var(--vscode-editor-background);box-shadow:0 2px 8px var(--vscode-widget-shadow)}
 .cfg-page .cfg-zoom button{height:32px;min-width:32px;min-height:0;padding:5px 8px;border:0;border-radius:0;background:transparent;color:var(--vscode-foreground)}

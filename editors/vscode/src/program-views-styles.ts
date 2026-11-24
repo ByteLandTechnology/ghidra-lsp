@@ -50,8 +50,10 @@ export const programViewStyles = `
 .program-view[data-view-kind="listing"] tr.listing-unit-row{cursor:pointer;border-bottom:1px solid color-mix(in srgb,var(--vscode-panel-border) 35%,transparent)}
 .program-view[data-view-kind="listing"] tr.listing-unit-row:hover{background:var(--vscode-list-hoverBackground)}
 .program-view[data-view-kind="listing"] tr.listing-unit-row.selected{background:color-mix(in srgb,var(--vscode-focusBorder) 14%,var(--vscode-list-inactiveSelectionBackground,var(--vscode-editor-background)))}
-.program-view[data-view-kind="listing"] tr.listing-unit-row.selected:focus{background:color-mix(in srgb,var(--vscode-focusBorder) 22%,var(--vscode-list-activeSelectionBackground,var(--vscode-list-inactiveSelectionBackground)))}
+.program-view[data-view-kind="listing"] tr.listing-unit-row.selected:focus,.program-view[data-view-kind="listing"] tr.listing-unit-row.selected:focus-within{background:color-mix(in srgb,var(--vscode-focusBorder) 22%,var(--vscode-list-activeSelectionBackground,var(--vscode-list-inactiveSelectionBackground)))}
 .program-view[data-view-kind="listing"] tr.listing-unit-row.selected td.addr{color:var(--vscode-foreground);font-weight:600;box-shadow:inset 3px 0 var(--vscode-focusBorder)}
+.program-view[data-view-kind="listing"] tr.listing-unit-row.selected :is(td.col-bytes,td.col-comment){color:var(--vscode-list-inactiveSelectionForeground,var(--vscode-foreground))}
+.program-view[data-view-kind="listing"] tr.listing-unit-row.selected:is(:focus,:focus-within) :is(td.addr,td.col-bytes,td.col-comment){color:var(--vscode-list-activeSelectionForeground,var(--vscode-foreground))}
 .program-view[data-view-kind="listing"] table.listing-table td.addr{width:1%;min-width:max-content;white-space:nowrap;overflow-wrap:normal;padding-right:12px;color:var(--vscode-descriptionForeground)}
 .program-view[data-view-kind="listing"] table.listing-table :is(th,td).col-bytes{width:116px;max-width:132px;color:var(--vscode-descriptionForeground);white-space:nowrap;overflow-wrap:normal;overflow:hidden;text-overflow:ellipsis;font-size:11px}
 .program-view[data-view-kind="listing"] table.listing-table :is(th,td).col-mnemonic{width:72px;white-space:nowrap;overflow-wrap:normal;font-weight:600}
@@ -106,6 +108,7 @@ export const programViewStyles = `
 .program-view[data-view-kind="memory"] .hb.is-null{color:var(--vscode-descriptionForeground);opacity:.7}
 .program-view[data-view-kind="memory"] .hb.is-pad{visibility:hidden}
 .program-view[data-view-kind="memory"] .hb.is-selected,.program-view[data-view-kind="memory"] .ha.is-selected{border-radius:4px;background:color-mix(in srgb,var(--vscode-focusBorder) 28%,var(--vscode-list-activeSelectionBackground));color:var(--vscode-list-activeSelectionForeground,var(--vscode-foreground));box-shadow:inset 0 0 0 1px var(--vscode-focusBorder);font-weight:600}
+.program-view[data-view-kind="memory"] .hb:focus-visible,.program-view[data-view-kind="memory"] .hx-col:focus-visible{outline:2px solid var(--vscode-focusBorder);outline-offset:-1px}
 .program-view[data-view-kind="memory"] td.hex-ascii{letter-spacing:0;padding-left:10px;border-left:1px solid color-mix(in srgb,var(--vscode-panel-border) 50%,transparent)}
 .program-view[data-view-kind="memory"] .ha{display:inline-block;width:8px;text-align:center;border-radius:2px;cursor:pointer;user-select:none}
 .program-view[data-view-kind="memory"] .ha:hover{background:var(--vscode-list-hoverBackground)}

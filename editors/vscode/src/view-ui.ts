@@ -162,6 +162,7 @@ export const viewStyles = `
 .browser-page .browser-search input{width:100%;height:32px;padding-left:30px;min-width:0;max-width:none;font-size:12px}
 .browser-page .scope{font-size:11px;line-height:1.6;margin:10px 0 12px;color:var(--vscode-descriptionForeground)}
 .browser-page #filter-status{font-size:11px;margin:8px 0;color:var(--vscode-descriptionForeground)}
+.browser-page #filter-status:empty{margin:0}
 .browser-page #filter-status.sr-filter-status{position:absolute;width:1px;height:1px;padding:0;margin:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .browser-page .selection-tools{position:fixed;z-index:4;left:50%;bottom:16px;transform:translateX(-50%);width:calc(100% - 32px);max-width:760px;box-shadow:0 3px 12px var(--vscode-widget-shadow);display:flex;align-items:center;gap:10px;padding:8px 10px;margin-bottom:10px;border:1px solid var(--vscode-panel-border);border-radius:4px;background:var(--vscode-sideBar-background,var(--vscode-editor-background))}
 .browser-page .selection-tools[hidden]{display:none!important}
@@ -185,8 +186,8 @@ export const viewStyles = `
 .browser-page td{padding:8px 10px;line-height:1.55;font-size:12px}
 .browser-page td.addr{font-family:var(--vscode-editor-font-family,monospace);font-size:11px;font-variant-numeric:tabular-nums;white-space:nowrap;overflow-wrap:normal}
 .browser-page tbody tr.selected{background:var(--vscode-list-inactiveSelectionBackground);color:var(--vscode-list-inactiveSelectionForeground,var(--vscode-foreground))}
-.browser-page tbody tr.selected:focus{background:var(--vscode-list-activeSelectionBackground);color:var(--vscode-list-activeSelectionForeground,var(--vscode-foreground))}
-.browser-page tr:focus-visible{outline:1px solid var(--vscode-focusBorder);outline-offset:-1px}
+.browser-page tbody tr.selected:focus,.browser-page tbody tr.selected:focus-within{background:var(--vscode-list-activeSelectionBackground);color:var(--vscode-list-activeSelectionForeground,var(--vscode-foreground))}
+.browser-page tr:focus-visible,.browser-page [role="grid"] :is([role="gridcell"],[role="columnheader"]):focus-visible{outline:2px solid var(--vscode-focusBorder);outline-offset:-2px}
 .browser-page .table-empty{margin:0;padding:12px 0;color:var(--vscode-descriptionForeground);font-size:12px}
 .browser-page .no-results{display:flex;align-items:center;gap:12px;margin:12px 0;padding:8px 0;color:var(--vscode-descriptionForeground);font-size:12px}
 .browser-page .no-results[hidden]{display:none}
@@ -295,13 +296,340 @@ export const viewStyles = `
 @media(prefers-reduced-motion:reduce){.inspector-page.is-busy::before{width:100%;opacity:.6;animation:none}}
 `;
 
-/** Client-side script for filterable browser tables and keyboard row navigation. */
+/** Shared client script that gives `LiveStatusBus` and `GridController` to ARIA grids. */
+export const gridRuntimeScript = String.raw`
+    class LiveStatusBus {
+      constructor(node) {
+        this.node = node;
+        this.hadFilter = false;
+        this.frame = 0;
+        if (this.node) {
+          this.node.removeAttribute('hidden');
+          this.node.setAttribute('role', 'status');
+          this.node.setAttribute('aria-live', 'polite');
+          this.node.setAttribute('aria-atomic', 'true');
+        }
+      }
+      announce(message, options = {}) {
+        if (!this.node) { return; }
+        const text = String(message ?? '');
+        this.node.removeAttribute('hidden');
+        this.node.classList.toggle('sr-filter-status', Boolean(options.srOnly));
+        if (this.frame) { cancelAnimationFrame(this.frame); this.frame = 0; }
+        if (options.silent) {
+          this.node.textContent = text;
+          return;
+        }
+        if (text && this.node.textContent === text) {
+          this.node.textContent = '';
+          this.frame = requestAnimationFrame(() => {
+            this.frame = 0;
+            if (this.node) { this.node.textContent = text; }
+          });
+          return;
+        }
+        this.node.textContent = text;
+      }
+      reportFilter(info) {
+        const query = String(info.query ?? '').trim();
+        const visible = Number(info.visible) || 0;
+        const total = Number(info.total) || 0;
+        const nodesMatched = Number(info.nodesMatched) || 0;
+        const nodesTotal = Number(info.nodesTotal) || 0;
+        const silent = Boolean(info.silent);
+        const unit = info.unit || 'displayed rows';
+        if (!query) {
+          if (this.hadFilter && !silent) {
+            this.hadFilter = false;
+            const restored = nodesTotal
+              ? 'Filter cleared. Showing all ' + nodesTotal + ' nodes' + (total ? ' and ' + total + ' ' + unit + '.' : '.')
+              : 'Filter cleared. Showing all ' + total + ' ' + unit + '.';
+            this.announce(restored, { srOnly: true });
+          } else {
+            this.hadFilter = false;
+            if (!silent && this.node && this.node.textContent) {
+              this.announce('', { srOnly: true, silent: true });
+            }
+          }
+          return;
+        }
+        this.hadFilter = true;
+        const text = nodesTotal
+          ? nodesMatched + ' of ' + nodesTotal + ' nodes match' + (total ? '; ' + visible + ' of ' + total + ' ' + unit + ' match.' : '.')
+          : visible > 0
+            ? visible + ' of ' + total + ' ' + unit + ' match.'
+            : (info.emptyText || 'No ' + unit + ' match this filter.');
+        this.announce(text, { srOnly: !nodesTotal && visible === 0, silent });
+      }
+    }
+    class GridController {
+      constructor(grid, options = {}) {
+        this.grid = grid;
+        this.options = options;
+        this.activeTarget = null;
+        this.activeRow = null;
+        this.preferredCol = 0;
+        this.bind();
+        this.syncSelection();
+        this.refresh({ syncToSelected: true });
+      }
+      isVisible(el) {
+        if (!el || !el.isConnected || !this.grid.isConnected) { return false; }
+        for (let cur = el; cur && cur !== document.body; cur = cur.parentElement) {
+          if (cur.hidden || cur.getAttribute('aria-hidden') === 'true') { return false; }
+          if (cur.tagName === 'DETAILS' && !cur.open) { return false; }
+          const style = getComputedStyle(cur);
+          if (style.display === 'none' || style.visibility === 'hidden') { return false; }
+        }
+        return true;
+      }
+      syncSelection() {
+        const hexMode = this.options.selectionMode === 'hex';
+        for (const row of this.grid.querySelectorAll('tbody [role="row"]')) {
+          if (row.closest('[role="grid"]') !== this.grid) { continue; }
+          const rowSel = row.classList.contains('selected') ? 'true' : 'false';
+          row.setAttribute('aria-selected', rowSel);
+          for (const cell of row.querySelectorAll('[role="gridcell"]')) {
+            if (cell.closest('[role="row"]') !== row) { continue; }
+            const cellSel = hexMode && cell.classList.contains('hb')
+              ? (cell.classList.contains('is-selected') ? 'true' : 'false')
+              : rowSel;
+            cell.setAttribute('aria-selected', cellSel);
+          }
+        }
+      }
+      buildRows() {
+        if (!this.isVisible(this.grid)) { return []; }
+        const result = [];
+        for (const row of this.grid.querySelectorAll('[role="row"]')) {
+          if (row.closest('[role="grid"]') !== this.grid || !this.isVisible(row)) { continue; }
+          const cells = [];
+          let rawCol = 0;
+          for (const child of row.children) {
+            const role = child.getAttribute('role');
+            if (role === 'none' || role === 'presentation') {
+              const slots = [...child.querySelectorAll('.hx-col,.hb')];
+              if (slots.length) {
+                slots.forEach((slot, idx) => {
+                  const slotRole = slot.getAttribute('role');
+                  if ((slotRole === 'columnheader' || slotRole === 'gridcell') && this.isVisible(slot)) {
+                    cells.push({ cell: slot, startCol: rawCol + idx, endCol: rawCol + idx, widgets: [], stops: [slot], isEmptyAux: false });
+                  }
+                });
+                rawCol += slots.length;
+              } else {
+                rawCol += 1;
+              }
+              continue;
+            }
+            const span = Math.max(1, Number(child.getAttribute('colspan')) || 1);
+            const startCol = rawCol;
+            const endCol = rawCol + span - 1;
+            rawCol += span;
+            if ((role === 'columnheader' || role === 'gridcell') && this.isVisible(child)) {
+              const widgets = [...child.querySelectorAll('button:not(:disabled),[href]')].filter(w => this.isVisible(w));
+              let stops = [child];
+              if (widgets.length) {
+                const widgetText = widgets.map(w => w.textContent).join('').replace(/\s+/g, '');
+                const totalText = child.textContent.replace(/\s+/g, '');
+                stops = totalText === widgetText ? widgets : [child, ...widgets];
+              }
+              const isEmptyAux = row.classList.contains('listing-aux-row') && !widgets.length && child.textContent.trim() === '';
+              cells.push({ cell: child, startCol, endCol, widgets, stops, isEmptyAux });
+            }
+          }
+          if (cells.length) {
+            result.push({ row, isHeader: Boolean(row.closest('thead')), cells, stops: cells.flatMap(c => c.stops) });
+          }
+        }
+        return result;
+      }
+      pickCellForCol(rowEntry, col) {
+        const candidates = rowEntry.cells.some(c => !c.isEmptyAux)
+          ? rowEntry.cells.filter(c => !c.isEmptyAux)
+          : rowEntry.cells;
+        const exact = candidates.find(c => col >= c.startCol && col <= c.endCol);
+        if (exact) { return exact; }
+        let best = candidates[0];
+        let bestDist = Infinity;
+        for (const c of candidates) {
+          const dist = col < c.startCol ? c.startCol - col : col - c.endCol;
+          if (dist < bestDist) { bestDist = dist; best = c; }
+        }
+        return best;
+      }
+      clearTabStops() {
+        for (const tr of this.grid.querySelectorAll('tr[tabindex]')) {
+          if (tr.closest('[role="grid"]') === this.grid) { tr.removeAttribute('tabindex'); }
+        }
+        for (const el of this.grid.querySelectorAll('[role="columnheader"],[role="gridcell"],button,[href]')) {
+          if (el.closest('[role="grid"]') === this.grid) { el.tabIndex = -1; }
+        }
+      }
+      setActive(target, options = {}) {
+        if (!target || !this.isVisible(target)) { return false; }
+        if (this.activeTarget && this.grid.contains(this.activeTarget)) {
+          this.activeTarget.tabIndex = -1;
+        } else {
+          this.clearTabStops();
+        }
+        target.tabIndex = 0;
+        this.activeTarget = target;
+        this.activeRow = target.closest('[role="row"]');
+        if (options.updatePreferredCol) {
+          const rows = this.buildRows();
+          for (const r of rows) {
+            for (const c of r.cells) {
+              if (c.stops.includes(target)) {
+                this.preferredCol = c.startCol;
+                break;
+              }
+            }
+          }
+        }
+        if (options.focus) {
+          target.focus({ preventScroll: !options.scroll });
+          if (options.scroll) { target.scrollIntoView({ block: 'nearest', inline: 'nearest' }); }
+        }
+        return true;
+      }
+      refresh(options = {}) {
+        const hadFocus = this.grid.contains(document.activeElement);
+        this.clearTabStops();
+        const rows = this.buildRows();
+        if (!rows.length) {
+          this.activeTarget = null;
+          this.activeRow = null;
+          return;
+        }
+        const bodyRows = rows.filter(r => !r.isHeader);
+        const firstDataRow = bodyRows.find(r => !r.row.classList.contains('listing-aux-row')) || bodyRows[0] || rows[0];
+        const firstBodyCell = (firstDataRow.cells.find(c => !c.isEmptyAux) || firstDataRow.cells[0]).stops[0];
+        let nextTarget = null;
+        const findSelectedCell = () => {
+          const direct = [...this.grid.querySelectorAll('tbody [role="gridcell"].is-selected')]
+            .find(c => c.closest('[role="grid"]') === this.grid && this.isVisible(c));
+          if (direct) { return direct; }
+          return [...this.grid.querySelectorAll('tbody tr.selected [role="gridcell"]')]
+            .find(c => c.closest('[role="grid"]') === this.grid && this.isVisible(c) && !(c.closest('tr')?.classList.contains('listing-aux-row') && c.textContent.trim() === ''));
+        };
+        if (options.resetToFirstRow) {
+          nextTarget = firstBodyCell;
+        } else if (options.syncToSelected) {
+          nextTarget = findSelectedCell() || (this.activeTarget && this.grid.contains(this.activeTarget) && this.isVisible(this.activeTarget) ? this.activeTarget : firstBodyCell);
+        } else if (this.activeTarget && this.grid.contains(this.activeTarget) && this.isVisible(this.activeTarget)) {
+          nextTarget = this.activeTarget;
+        } else if (this.activeRow && this.grid.contains(this.activeRow) && this.isVisible(this.activeRow)) {
+          const rowEntry = rows.find(r => r.row === this.activeRow);
+          if (rowEntry) { nextTarget = this.pickCellForCol(rowEntry, this.preferredCol)?.stops[0] || null; }
+        }
+        if (!nextTarget || !this.isVisible(nextTarget)) {
+          nextTarget = findSelectedCell() || firstBodyCell;
+        }
+        this.setActive(nextTarget, { focus: hadFocus && document.activeElement !== nextTarget, scroll: false, updatePreferredCol: Boolean(options.resetToFirstRow || options.syncToSelected) });
+      }
+      focusRow(row, preferredSelector) {
+        if (!row || !this.isVisible(row)) { return false; }
+        const rows = this.buildRows();
+        const entry = rows.find(r => r.row === row);
+        if (!entry) { return false; }
+        const specific = preferredSelector ? entry.stops.find(s => s.matches(preferredSelector)) : null;
+        const target = specific || this.pickCellForCol(entry, this.preferredCol)?.stops[0] || entry.stops[0];
+        return this.setActive(target, { focus: true, scroll: true, updatePreferredCol: Boolean(specific) });
+      }
+      bind() {
+        this.grid.addEventListener('focusin', event => {
+          const stop = event.target.closest('button:not(:disabled),[href],[role="gridcell"],[role="columnheader"]');
+          if (stop && stop !== this.activeTarget && stop.closest('[role="grid"]') === this.grid && this.isVisible(stop)) {
+            this.setActive(stop, { focus: false, scroll: false, updatePreferredCol: true });
+          }
+        });
+        this.grid.addEventListener('click', event => {
+          const stop = event.target.closest('button:not(:disabled),[href],[role="gridcell"],[role="columnheader"]');
+          if (stop && stop.closest('[role="grid"]') === this.grid && this.isVisible(stop)) {
+            this.setActive(stop, { focus: document.activeElement !== stop, scroll: false, updatePreferredCol: true });
+          }
+        });
+        this.grid.addEventListener('keydown', event => {
+          if (event.altKey) { return; }
+          const stop = event.target.closest('button:not(:disabled),[href],[role="gridcell"],[role="columnheader"]');
+          if (!stop || stop.closest('[role="grid"]') !== this.grid) { return; }
+          const rows = this.buildRows();
+          if (!rows.length) { return; }
+          const rowIdx = rows.findIndex(r => r.stops.includes(stop));
+          if (rowIdx < 0) { return; }
+          const curRow = rows[rowIdx];
+          const stopIdx = curRow.stops.indexOf(stop);
+          if (event.key === 'ArrowRight') {
+            event.preventDefault();
+            if (stopIdx + 1 < curRow.stops.length) {
+              this.setActive(curRow.stops[stopIdx + 1], { focus: true, scroll: true, updatePreferredCol: true });
+            }
+          } else if (event.key === 'ArrowLeft') {
+            event.preventDefault();
+            if (stopIdx > 0) {
+              this.setActive(curRow.stops[stopIdx - 1], { focus: true, scroll: true, updatePreferredCol: true });
+            }
+          } else if (event.key === 'ArrowDown' || event.key === 'PageDown') {
+            event.preventDefault();
+            const step = event.key === 'PageDown' ? 10 : 1;
+            const targetIdx = Math.min(rows.length - 1, rowIdx + step);
+            if (targetIdx !== rowIdx) {
+              const nextCell = this.pickCellForCol(rows[targetIdx], this.preferredCol);
+              if (nextCell) { this.setActive(nextCell.stops[0], { focus: true, scroll: true, updatePreferredCol: false }); }
+            }
+          } else if (event.key === 'ArrowUp' || event.key === 'PageUp') {
+            event.preventDefault();
+            const step = event.key === 'PageUp' ? 10 : 1;
+            const targetIdx = Math.max(0, rowIdx - step);
+            if (targetIdx !== rowIdx) {
+              const prevCell = this.pickCellForCol(rows[targetIdx], this.preferredCol);
+              if (prevCell) { this.setActive(prevCell.stops[0], { focus: true, scroll: true, updatePreferredCol: false }); }
+            }
+          } else if (event.key === 'Home') {
+            event.preventDefault();
+            if (event.ctrlKey || event.metaKey) {
+              const bodyRows = rows.filter(r => !r.isHeader);
+              const firstRow = bodyRows[0] || rows[0];
+              const cell = firstRow.cells.find(c => !c.isEmptyAux) || firstRow.cells[0];
+              this.setActive(cell.stops[0], { focus: true, scroll: true, updatePreferredCol: true });
+            } else {
+              const firstStop = (curRow.cells.find(c => !c.isEmptyAux) || curRow.cells[0]).stops[0];
+              this.setActive(firstStop, { focus: true, scroll: true, updatePreferredCol: true });
+            }
+          } else if (event.key === 'End') {
+            event.preventDefault();
+            if (event.ctrlKey || event.metaKey) {
+              const lastRow = rows[rows.length - 1];
+              this.setActive(lastRow.stops[lastRow.stops.length - 1], { focus: true, scroll: true, updatePreferredCol: true });
+            } else {
+              this.setActive(curRow.stops[curRow.stops.length - 1], { focus: true, scroll: true, updatePreferredCol: true });
+            }
+          } else if (event.key === ' ' && !stop.matches('button,[href]')) {
+            const handled = event.defaultPrevented;
+            event.preventDefault();
+            if (!handled && !curRow.isHeader && this.options.onSelect) {
+              this.options.onSelect(stop, curRow.row, event);
+            }
+          } else if (event.key === 'Enter' && !stop.matches('button,[href]')) {
+            if (!event.defaultPrevented && !curRow.isHeader && this.options.onActivate) {
+              event.preventDefault();
+              this.options.onActivate(stop, curRow.row, event);
+            }
+          }
+        });
+      }
+    }
+`;
+
+/** Client script for browser grids, filter clearing, and action menus. */
 export const browserViewScript = String.raw`
     (()=>{
       if(!document.body.classList.contains('browser-page')){return}
-      for(const table of document.querySelectorAll('.table-wrap')){table.addEventListener('scroll',schedulePersist,{passive:true});if(!table.querySelector('tbody tr')){table.hidden=true;const next=table.nextElementSibling;const counted=/\(0\)\s*$/.test(table.closest('section')?.querySelector('h2')?.textContent||'');if(!counted&&!next?.classList.contains('empty')){const empty=document.createElement('p');empty.className='table-empty';empty.hidden=!!search.value;empty.setAttribute('role','status');empty.textContent='No entries.';table.after(empty)}}}
-      document.getElementById('clear-filter').addEventListener('click',()=>{search.value='';filter();persist();search.focus()});
-      for(const row of selectable){row.addEventListener('keydown',event=>{if(!['ArrowDown','ArrowUp','Home','End'].includes(event.key)){return}const rows=[...row.closest('tbody').querySelectorAll('tr[data-address]:not([hidden]),tr[data-entry]:not([hidden])')],index=rows.indexOf(row),next=event.key==='Home'?0:event.key==='End'?rows.length-1:Math.max(0,Math.min(rows.length-1,index+(event.key==='ArrowDown'?1:-1)));event.preventDefault();rows[next]?.focus();rows[next]?.scrollIntoView({block:'nearest'})})}
+      for(const table of document.querySelectorAll('.table-wrap')){table.addEventListener('scroll',schedulePersist,{passive:true});if(!table.querySelector('tbody tr')){table.hidden=true;const next=table.nextElementSibling;const counted=/\(0\)\s*$/.test(table.closest('section')?.querySelector('h2')?.textContent||'');if(!counted&&!next?.classList.contains('empty')){const empty=document.createElement('p');empty.className='table-empty';empty.hidden=!!search.value.trim();empty.setAttribute('role','status');empty.textContent='No entries.';table.after(empty)}}}
+      document.getElementById('clear-filter')?.addEventListener('click',()=>{search.value='';filter(false,true);persist();search.focus()});
+      document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!pageOptions?.open&&!more?.open&&search.value){event.preventDefault();search.value='';filter(false,true);persist()}});
+      window.addEventListener('resize',()=>grids.forEach(grid=>grid.refresh()));
       more?.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();more.open=false;moreSummary.focus();return}if(!['ArrowDown','ArrowUp','ArrowLeft','ArrowRight','Home','End'].includes(event.key)){return}event.preventDefault();more.open=true;const buttons=[...more.querySelectorAll('button:not(:disabled)')],index=buttons.indexOf(document.activeElement),next=event.key==='Home'?0:event.key==='End'?buttons.length-1:(event.key==='ArrowDown'||event.key==='ArrowRight')?(index+1)%buttons.length:(index<=0?buttons.length-1:index-1);buttons[next]?.focus()});
     })();
 `;
