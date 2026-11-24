@@ -375,6 +375,10 @@ impl Server {
       if progress.phase == "ready" || progress.error.is_some() {
         return Ok(progress.value(token));
       }
+      ensure!(
+        progress.phase != "opening",
+        "Opening a binary cannot be cancelled with ghidra.cancelJob; close the session instead"
+      );
       if let Some(id) = progress.job_id.clone() {
         return self
           .cancel_backend_job(
@@ -386,10 +390,6 @@ impl Server {
           )
           .await;
       }
-      ensure!(
-        progress.phase != "opening",
-        "Opening a binary cannot be cancelled with ghidra.cancelJob; close the session instead"
-      );
       return self
         .cancel_session_analysis(backend, &progress.md5, Some(token), wait)
         .await;
@@ -403,6 +403,12 @@ impl Server {
         .iter()
         .find(|(_, p)| p.job_id.as_deref() == Some(id))
         .map(|(k, v)| (k.clone(), v.clone()));
+      if let Some((_, progress)) = &matched {
+        ensure!(
+          progress.phase != "opening" || progress.error.is_some(),
+          "Opening a binary cannot be cancelled with ghidra.cancelJob; close the session instead"
+        );
+      }
       return self
         .cancel_backend_job(backend, id, matched, wait, timeout_ms)
         .await;
@@ -417,15 +423,15 @@ impl Server {
       .find(|(_, p)| p.md5 == md5 && p.phase != "ready" && p.error.is_none())
       .map(|(k, v)| (k.clone(), v.clone()));
     if let Some((token, progress)) = active {
+      ensure!(
+        progress.phase != "opening",
+        "Opening a binary cannot be cancelled with ghidra.cancelJob; close the session instead"
+      );
       if let Some(id) = progress.job_id.clone() {
         return self
           .cancel_backend_job(backend, &id, Some((token, progress)), wait, timeout_ms)
           .await;
       }
-      ensure!(
-        progress.phase != "opening",
-        "Opening a binary cannot be cancelled with ghidra.cancelJob; close the session instead"
-      );
       return self
         .cancel_session_analysis(backend, &md5, Some(&token), wait)
         .await;
@@ -448,7 +454,10 @@ impl Server {
     if let Some(ms) = timeout_ms {
       params["timeoutMs"] = ms.into();
     }
-    let response = backend.call("job", "cancel", None, params).await?;
+    let response = backend
+      .call("job", "cancel", None, params)
+      .await
+      .map_err(map_cancel_error)?;
     let job = response.get("job").unwrap_or(&response);
     let status = job.get("status").and_then(Value::as_str);
     let md5 = job
@@ -524,7 +533,8 @@ impl Server {
   ) -> Result<Value> {
     let mut snapshot = backend
       .call("analysis", "cancel", Some(md5), json!({}))
-      .await?;
+      .await
+      .map_err(map_cancel_error)?;
     if wait && snapshot.get("status").and_then(Value::as_str) == Some("running") {
       let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(30);
       while tokio::time::Instant::now() < deadline {
@@ -770,5 +780,28 @@ impl Server {
         Ok(json!({"items": items, "coverage": scope}))
       }
     }
+  }
+}
+
+/// Maps backend unknown-operation or unknown-method failures on `cancel` to user guidance.
+fn map_cancel_error(error: anyhow::Error) -> anyhow::Error {
+  let text = format!("{error:#}").to_ascii_lowercase();
+  if [
+    "unknown operation",
+    "unknown_operation",
+    "no such operation",
+    "unsupported operation",
+    "unknown_method",
+    "no such method",
+    "method not found",
+  ]
+  .iter()
+  .any(|pattern| text.contains(pattern))
+  {
+    anyhow::anyhow!(
+      "The installed ghidra-mcp or ghidra-bridge backend does not support job.cancel or analysis.cancel. Update the backend, or close the session to stop Ghidra analysis"
+    )
+  } else {
+    error
   }
 }

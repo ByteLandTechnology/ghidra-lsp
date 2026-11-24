@@ -49,7 +49,7 @@ All 45 commands declared in `COMMANDS` (`src/server/mod.rs`) and dispatched acro
 | `ghidra.beginReanalyze` | `{"md5?", "analyzers?"}` | Start async program reanalysis and return polling `token` |
 | `ghidra.reanalyze` | `{"md5?", "analyzers?", "wait?"}` | Start analysis, optionally wait (`default: true`), persist, and refresh open buffers |
 | `ghidra.closeSession` | `{"md5?", "force?"}` | Close a clean program session (rejects pending renames or dirty buffers) and clear caches |
-| `ghidra.cancelJob` | `{"token?" \| "jobId?", "md5?", "wait?", "timeoutMs?"}` | Cancel active analysis job with `job.cancel` or `analysis.cancel`, record `job.error`, and send `ghidra/changed` |
+| `ghidra.cancelJob` | `{"token?" \| "jobId?", "md5?", "wait?", "timeoutMs?"}` | Cancel active analysis job with `job.cancel` or `analysis.cancel`, record `job.error`, and send `ghidra/changed` (returns upgrade and session-close guidance if backend lacks `cancel`) |
 
 ### Program catalogs and documents
 
