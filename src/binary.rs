@@ -1,7 +1,7 @@
 // Copyright 2026 ByteLand Technology Limited
 // SPDX-License-Identifier: MIT
 
-//! Binary loader table parsing directly from the imported executable on disk.
+//! Program import and export table loading from the bridge session, with a local file fallback.
 
 use std::collections::HashMap;
 
@@ -10,12 +10,138 @@ use md5::{Digest, Md5};
 use object::{Object, ObjectSegment};
 use serde_json::{Value, json};
 
-use crate::backend::{McpBackend, list_all};
+use crate::backend::{McpBackend, list_all, list_operation};
 
-/// Reads PE, ELF, or Mach-O import and export tables from the session executable on disk.
+/// Loads import and export tables from the Ghidra program session, or falls back to local loader
+/// tables when connected to an older bridge that lacks `import.list` and `export.list`.
 pub(crate) async fn interface(backend: &McpBackend, md5: &str) -> Result<Value> {
-  let attached_gpr = is_attached_gpr(backend, md5).await;
   let program = backend.call("program", "get", Some(md5), json!({})).await?;
+  if let Some(session) = session_interface(backend, md5, &program).await? {
+    return Ok(session);
+  }
+  disk_interface(backend, md5, &program).await
+}
+
+/// Fetches `import.list` and `export.list` from `ghidra_program`, returning `Ok(None)` when the
+/// connected server does not support those operations.
+async fn session_interface(
+  backend: &McpBackend,
+  md5: &str,
+  program: &Value,
+) -> Result<Option<Value>> {
+  let page = json!({"page": {"limit": 1000}});
+  let raw_imports = match list_operation(backend, "program", "import.list", md5, page.clone()).await
+  {
+    Ok(items) => items,
+    Err(error) if unsupported_operation(&error) => return Ok(None),
+    Err(error) => return Err(error),
+  };
+  let raw_exports = match list_operation(backend, "program", "export.list", md5, page).await {
+    Ok(items) => items,
+    Err(error) if unsupported_operation(&error) => return Ok(None),
+    Err(error) => return Err(error),
+  };
+  let mut imports: Vec<Value> = raw_imports.iter().map(map_session_import).collect();
+  let mut exports: Vec<Value> = raw_exports.iter().map(map_session_export).collect();
+  imports.sort_by_key(|item| {
+    (
+      item["library"].as_str().unwrap_or("").to_owned(),
+      item["name"].as_str().unwrap_or("").to_owned(),
+      item["external_address"].as_str().unwrap_or("").to_owned(),
+    )
+  });
+  exports.sort_by_key(|item| {
+    (
+      item["name"].as_str().unwrap_or("").to_owned(),
+      item["address"].as_str().unwrap_or("").to_owned(),
+    )
+  });
+  Ok(Some(json!({
+    "imports": imports,
+    "exports": exports,
+    "format": format_label(program.get("executable_format").and_then(Value::as_str)),
+    "source": "Ghidra program session",
+    "limitations": [],
+  })))
+}
+
+/// Maps one `import.list` item into a `ghidra.binaryInterface` import entry.
+fn map_session_import(item: &Value) -> Value {
+  let external_address = item.get("address").and_then(Value::as_str);
+  let thunk_address = item
+    .get("thunk_addresses")
+    .and_then(Value::as_array)
+    .and_then(|items| items.iter().find_map(Value::as_str));
+  let is_function = item.get("is_function").and_then(Value::as_bool) == Some(true);
+  let mut mapped = json!({
+    "name": item.get("name").and_then(Value::as_str).unwrap_or(""),
+    "library": item.get("library").and_then(Value::as_str).unwrap_or(""),
+    "ordinal": item.get("ordinal").cloned().unwrap_or(Value::Null),
+    "address": thunk_address.or(external_address),
+    "external_address": external_address,
+    "thunk_addresses": item.get("thunk_addresses").cloned().unwrap_or_else(|| json!([])),
+    "kind": if is_function { "function" } else { "import" },
+  });
+  for field in ["demangled_name", "original_name", "signature"] {
+    if let Some(value) = item.get(field).filter(|v| !v.is_null()) {
+      mapped[field] = value.clone();
+    }
+  }
+  mapped
+}
+
+/// Maps one `export.list` item into a `ghidra.binaryInterface` export entry.
+fn map_session_export(item: &Value) -> Value {
+  let is_function = item.get("is_function").and_then(Value::as_bool) == Some(true);
+  let mut mapped = json!({
+    "name": item.get("name").and_then(Value::as_str).unwrap_or(""),
+    "ordinal": item.get("ordinal").cloned().unwrap_or(Value::Null),
+    "address": item.get("address").cloned().unwrap_or(Value::Null),
+    "forward": Value::Null,
+    "kind": if is_function { "function" } else { "export" },
+  });
+  for field in ["demangled_name", "namespace"] {
+    if let Some(value) = item.get(field).filter(|v| !v.is_null()) {
+      mapped[field] = value.clone();
+    }
+  }
+  mapped
+}
+
+/// Shortens a Ghidra executable-format label for workbench summaries.
+fn format_label(raw: Option<&str>) -> String {
+  let Some(value) = raw.map(str::trim).filter(|value| !value.is_empty()) else {
+    return String::from("binary");
+  };
+  let upper = value.to_ascii_uppercase();
+  if upper.contains("ELF") {
+    String::from("ELF")
+  } else if upper.contains("MACH-O") || upper.contains("MACHO") {
+    String::from("Mach-O")
+  } else if upper.contains("PORTABLE EXECUTABLE") || upper == "PE" || upper.contains("(PE)") {
+    String::from("PE")
+  } else {
+    value.to_owned()
+  }
+}
+
+/// Returns true when `error` indicates that the connected server lacks `import.list` or
+/// `export.list`.
+fn unsupported_operation(error: &anyhow::Error) -> bool {
+  let text = format!("{error:#}").to_ascii_lowercase();
+  text.contains("unknown operation")
+    || text.contains("unknown method")
+    || text.contains("unknown_operation")
+    || text.contains("unknown_method")
+    || text.contains("method not found")
+    || text.contains("unsupported operation")
+    || text.contains("is not one of")
+    || text.contains("unknown variant")
+}
+
+/// Reads PE, ELF, or Mach-O import and export tables from `executable_path` on disk.
+async fn disk_interface(backend: &McpBackend, md5: &str, program: &Value) -> Result<Value> {
+  let attached_gpr = is_attached_gpr(backend, md5).await;
   let Some(path) = program
     .get("executable_path")
     .and_then(Value::as_str)
