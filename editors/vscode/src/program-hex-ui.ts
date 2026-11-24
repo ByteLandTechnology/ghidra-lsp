@@ -12,7 +12,7 @@ import { iconFontStyles } from './icon-font';
 import { displayAddress } from './names';
 import { pageStyles } from './page-styles';
 import { addrSpan, programViewStyles } from './program-views-styles';
-import { viewStyles } from './view-ui';
+import { viewStyles, webviewShortcutScript } from './view-ui';
 import { escape } from './web';
 
 /** Short byte-order identifier used by the Data Inspector pill toggle. */
@@ -38,6 +38,7 @@ export interface HexViewPayload {
     canBack: boolean;
     canForward: boolean;
     syncEnabled: boolean;
+    singleKeyShortcuts?: boolean;
     bytesPerRow: 8 | 16;
     initialInspector: DataInspectorEntry[];
 }
@@ -141,6 +142,7 @@ export function renderProgramHexPage(payload: HexViewPayload): string {
         selected: payload.cursorAddress,
         selectionLength: payload.selectionLength,
         syncEnabled: payload.syncEnabled,
+        singleKeyShortcuts: payload.singleKeyShortcuts !== false,
         endian: payload.endian,
         addressSizeBits: payload.addressSizeBits,
         defaultSpace: payload.defaultSpace,
@@ -365,6 +367,7 @@ const persist = () => {
     scrollTop: hexWrap.scrollTop,
   });
 };
+${webviewShortcutScript}
 
 const updateSelectionTools = () => {
   const label = document.getElementById('selection-label');
@@ -613,14 +616,15 @@ document.addEventListener('keydown', event => {
     if (event.key === 'ArrowLeft') { event.preventDefault(); vscode.postMessage({ action: 'navBack' }); return; }
     if (event.key === 'ArrowRight') { event.preventDefault(); vscode.postMessage({ action: 'navForward' }); return; }
   }
-  const inInput = event.target.closest('input,select,textarea');
+  if (isModShortcut(event, 'f')) { event.preventDefault(); search.focus(); search.select(); return; }
+  if (isModShortcut(event, 'g')) { event.preventDefault(); addressInput.focus(); addressInput.select(); return; }
   if (event.key === 'Escape') {
     if (pageOptions.open) { pageOptions.open = false; pageOptions.querySelector('summary').focus(); return; }
     if (more.open) { more.open = false; moreSummary.focus(); return; }
     if (search.value) { search.value = ''; applyFilter(); persist(); return; }
   }
-  if (!inInput && event.key === '/') { event.preventDefault(); search.focus(); search.select(); }
-  else if (!inInput && event.key.toLowerCase() === 'g') { event.preventDefault(); addressInput.focus(); addressInput.select(); }
+  if (event.key === '/' && canUseSingleKeyShortcut(event)) { event.preventDefault(); search.focus(); search.select(); }
+  else if ((event.key || '').toLowerCase() === 'g' && canUseSingleKeyShortcut(event)) { event.preventDefault(); addressInput.focus(); addressInput.select(); }
 });
 
 window.addEventListener('message', event => {
