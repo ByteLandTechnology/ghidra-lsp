@@ -65,18 +65,18 @@ export function highlightName(name: string): string {
 
 /** Theme-sourced token colours shared by every webview. */
 export const syntaxStyles = `
-.tok-mnemonic{color:var(--vscode-symbolIcon-keywordForeground,var(--vscode-foreground));font-weight:600}
-.tok-register{color:var(--vscode-symbolIcon-variableForeground,var(--vscode-foreground))}
-.tok-number{color:var(--vscode-debugTokenExpression-number,var(--vscode-foreground))}
-.tok-string{color:var(--vscode-debugTokenExpression-string,var(--vscode-foreground))}
-.tok-keyword{color:var(--vscode-descriptionForeground)}
-.tok-symbol{color:var(--vscode-symbolIcon-functionForeground,var(--vscode-foreground))}
-.tok-scope,.tok-params{color:var(--vscode-descriptionForeground);font-weight:400}
-.tok-name{color:var(--vscode-foreground)}
+.tok-mnemonic{color:var(--gh-tok-mnemonic,var(--vscode-symbolIcon-keywordForeground,var(--vscode-foreground)));font-weight:600}
+.tok-register{color:var(--gh-tok-register,var(--vscode-symbolIcon-variableForeground,var(--vscode-foreground)))}
+.tok-number{color:var(--gh-tok-number,var(--vscode-debugTokenExpression-number,var(--vscode-foreground)))}
+.tok-string{color:var(--gh-tok-string,var(--vscode-debugTokenExpression-string,var(--vscode-foreground)))}
+.tok-keyword{color:var(--gh-tok-keyword,var(--gh-fg-muted,var(--vscode-descriptionForeground)))}
+.tok-symbol{color:var(--gh-tok-symbol,var(--vscode-symbolIcon-functionForeground,var(--vscode-foreground)))}
+.tok-scope,.tok-params{color:var(--gh-tok-keyword,var(--gh-fg-muted,var(--vscode-descriptionForeground)));font-weight:400}
+.tok-name{color:var(--gh-tok-name,var(--vscode-foreground))}
 svg .tok-mnemonic{fill:var(--vscode-symbolIcon-keywordForeground,var(--vscode-foreground))}
 svg .tok-register{fill:var(--vscode-symbolIcon-variableForeground,var(--vscode-foreground))}
 svg .tok-number{fill:var(--vscode-debugTokenExpression-number,var(--vscode-foreground))}
 svg .tok-string{fill:var(--vscode-debugTokenExpression-string,var(--vscode-foreground))}
-svg .tok-keyword{fill:var(--vscode-descriptionForeground)}
+svg .tok-keyword{fill:var(--gh-fg-muted,var(--vscode-descriptionForeground))}
 svg .tok-symbol{fill:var(--vscode-symbolIcon-functionForeground,var(--vscode-foreground))}
 `;

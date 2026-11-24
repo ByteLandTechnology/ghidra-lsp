@@ -14,7 +14,7 @@ export function controlFlowToolbar(title: string, subtitle: string, active: bool
 export const controlFlowUiStyles = `
 /* Hallmark · v2.0.0 · redesign: full · shape: app screen · genre: modern-minimal · theme: Console (dealt 3/3) · material: VS Code theme tokens · signature: control-flow trace */
 /* Hallmark · pre-emit critique: P4 H4 E4 S4 R5 V4 · weakest: hierarchy, distinguish the graph identity from its tools */
-.cfg-page{--cfg-ground:var(--vscode-editor-background);--cfg-surface:var(--vscode-sideBar-background,var(--vscode-editor-background));--cfg-ink:var(--vscode-foreground);--cfg-muted:var(--vscode-descriptionForeground);--cfg-rule:var(--vscode-panel-border);--cfg-focus:var(--vscode-focusBorder)}
+.cfg-page{--cfg-ground:var(--vscode-editor-background);--cfg-surface:var(--vscode-sideBar-background,var(--vscode-editor-background));--cfg-ink:var(--vscode-foreground);--cfg-muted:var(--gh-fg-muted,var(--vscode-descriptionForeground));--cfg-rule:var(--vscode-panel-border);--cfg-focus:var(--vscode-focusBorder)}
 .cfg-page main{padding:0;gap:0;position:relative}
 .flow-page .call-icon{font:16px call-icons;display:inline-block;line-height:1;vertical-align:middle}
 .cfg-topbar{display:flex;align-items:center;gap:4px;min-height:56px;padding:8px 14px;border-bottom:1px solid var(--cfg-rule);background:var(--cfg-ground);flex-shrink:0}
@@ -23,7 +23,7 @@ export const controlFlowUiStyles = `
 .cfg-function-name{font-size:11px;line-height:1.25;font-weight:400;color:var(--cfg-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .cfg-page .cfg-icon-button{display:flex;align-items:center;justify-content:center;flex-shrink:0;width:32px;height:32px;min-height:0;padding:6px;border:0;border-radius:6px;background:transparent;color:var(--vscode-foreground);cursor:pointer}
 .cfg-page button:hover{background:var(--vscode-toolbar-hoverBackground,var(--vscode-list-hoverBackground))}
-.cfg-page .cfg-topbar [aria-pressed="true"],.cfg-page .cfg-topbar [aria-expanded="true"]{background:var(--vscode-toolbar-activeBackground,var(--vscode-list-hoverBackground));color:var(--vscode-focusBorder)}
+.cfg-page .cfg-topbar [aria-pressed="true"],.cfg-page .cfg-topbar [aria-expanded="true"]{background:var(--gh-toggle-active-bg);color:var(--gh-toggle-active-fg);border:1px solid var(--gh-toggle-active-border)}
 .cfg-search{flex:0 1 230px;min-width:0}
 .cfg-page .cfg-search input{width:100%;height:32px;min-width:0;border-radius:6px}
 .cfg-page .flow-canvas:focus-visible{outline:1px solid var(--vscode-focusBorder);outline-offset:-1px}
