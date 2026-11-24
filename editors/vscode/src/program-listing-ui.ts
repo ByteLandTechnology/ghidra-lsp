@@ -101,7 +101,7 @@ export function renderListingRowsHtml(items: ListingRenderItem[], selectedAddres
             ? `<span class="target-chips">${visibleTargets.map(t => `<button type="button" class="target-link" data-jump="${escape(t.to)}" title="${escape(`Jump to ${t.to}${t.kind ? ` (${t.kind})` : ''}`)}">→ ${escape(t.label)}</button>`).join('')}</span>`
             : '';
         const eolHtml = unit.eolComment ? `; ${escape(unit.eolComment)}` : '';
-        parts.push(`<tr class="listing-unit-row${isSel ? ' selected' : ''}" tabindex="0" data-address="${escape(unit.address)}" data-byte-length="${unit.byteLength}" data-kind="${escape(unit.kind)}"${unit.entry ? ` data-entry="${escape(unit.entry)}"` : ''}${unit.functionName ? ` data-fn-name="${escape(unit.functionName)}"` : ''}${unit.targets[0]?.to ? ` data-jump-primary="${escape(unit.targets[0].to)}"` : ''}${hiddenRun ? ' data-run-member="true" hidden' : ''}><td class="addr">${addrSpan(unit.address)}</td><td class="col-bytes" title="${escape(unit.bytesText)}">${escape(unit.bytesShort)}</td><td class="col-mnemonic"><span class="tok-mnemonic">${escape(unit.mnemonic)}</span></td><td class="col-operands">${opHtml}${chipsHtml}</td><td class="col-comment">${eolHtml}</td></tr>`);
+        parts.push(`<tr class="listing-unit-row${isSel ? ' selected' : ''}" tabindex="0" data-address="${escape(unit.address)}" data-byte-length="${unit.byteLength}" data-kind="${escape(unit.kind)}"${unit.isUndefinedByte ? ' data-undefined="true"' : ''}${unit.entry ? ` data-entry="${escape(unit.entry)}"` : ''}${unit.functionName ? ` data-fn-name="${escape(unit.functionName)}"` : ''}${unit.targets[0]?.to ? ` data-jump-primary="${escape(unit.targets[0].to)}"` : ''}${hiddenRun ? ' data-run-member="true" hidden' : ''}><td class="addr">${addrSpan(unit.address)}</td><td class="col-bytes" title="${escape(unit.bytesText)}">${escape(unit.bytesShort)}</td><td class="col-mnemonic"><span class="tok-mnemonic">${escape(unit.mnemonic)}</span></td><td class="col-operands">${opHtml}${chipsHtml}</td><td class="col-comment">${eolHtml}</td></tr>`);
 
         if (unit.postComment) {
             parts.push(`<tr class="listing-aux-row listing-post-row"${hiddenRun ? ' hidden' : ''}><td class="addr"></td><td colspan="4">; post: ${escape(unit.postComment)}</td></tr>`);
@@ -199,6 +199,8 @@ const state = ${stateJson};
 const previous = vscode.getState() || {};
 const samePage = previous.md5 === state.md5 && previous.kind === 'listing';
 let selected = state.selected || '';
+let selectedEnd = '';
+let anchorRowAddress = selected;
 let selectedEntry = '';
 let selectedKind = '';
 let selectedLength = 1;
@@ -272,14 +274,21 @@ const updateSelectionTools = () => {
   const fn = active.dataset.entry || '';
   const fnName = active.dataset.fnName || '';
   const kind = active.dataset.kind || 'instruction';
+  const isUndefined = active.dataset.undefined === 'true';
+  const rangeLabel = selectedEnd ? short(selected) + '..' + short(selectedEnd) : short(selected);
   label.textContent = fnName
-    ? short(selected) + ' · ' + fnName
-    : (kind === 'data' ? short(selected) + ' · data' : short(selected));
-  label.title = selected + (fnName ? ' in ' + fnName : fn ? ' in ' + fn : '');
+    ? rangeLabel + ' · ' + fnName
+    : (isUndefined ? rangeLabel + ' · undefined' : (kind === 'data' ? rangeLabel + ' · data' : rangeLabel));
+  label.title = (selectedEnd ? selected + '..' + selectedEnd : selected) + (fnName ? ' in ' + fnName : fn ? ' in ' + fn : '');
 
   const canDecompile = !!fn || kind === 'instruction';
+  const hasRange = !!selectedEnd;
   const items = [
     { action: 'decompile', label: 'Decompile containing function', available: canDecompile },
+    { action: 'assemble', label: 'Assemble instruction at address', available: true },
+    { action: 'disassemble', label: hasRange ? 'Disassemble selected range' : 'Disassemble bytes at address', available: hasRange || isUndefined || kind !== 'instruction' },
+    { action: 'clearCodeUnits', label: hasRange ? 'Clear code units in range' : 'Clear code unit (undefine)', available: hasRange || !isUndefined },
+    { action: 'patchBytes', label: 'Patch bytes at address', available: true },
     { action: 'memory', label: 'View bytes in Hex', available: true },
     { action: 'references', label: 'References at location', available: true },
     { action: 'copyAddress', label: 'Copy address', available: true },
@@ -288,8 +297,9 @@ const updateSelectionTools = () => {
   ].filter(i => i.available);
 
   primaryAction = canDecompile ? 'decompile' : 'memory';
-  const main = items.filter(i => i.action === primaryAction);
-  const extra = items.filter(i => i.action !== primaryAction);
+  const inlineActions = new Set([primaryAction, 'assemble', 'disassemble', 'clearCodeUnits', 'patchBytes']);
+  const main = items.filter(i => inlineActions.has(i.action));
+  const extra = items.filter(i => !inlineActions.has(i.action));
   const hosts = [document.getElementById('selection-primary'), document.getElementById('selection-more')];
   for (const [idx, list] of [main, extra].entries()) {
     hosts[idx].replaceChildren(...list.map(item => {
@@ -311,11 +321,41 @@ const updateSelectionTools = () => {
   more.hidden = !extra.length;
 };
 
-const selectRow = (row, notify = true, scroll = true) => {
+const computeRowEnd = row => {
+  const addr = row.dataset.address || '';
+  const len = Math.max(1, Number(row.dataset.byteLength) || 1);
+  if (len <= 1) return addr;
+  const m = /^(?:([A-Za-z_][A-Za-z0-9_.-]*):)?([0-9a-f]+)$/i.exec(addr);
+  if (!m) return addr;
+  const endHex = (BigInt('0x' + m[2]) + BigInt(len - 1)).toString(16).padStart(m[2].length, '0');
+  return (m[1] ? m[1] + ':' : '') + endHex;
+};
+
+const selectRow = (row, notify = true, scroll = true, extendRange = false) => {
   if (!row) return;
+  const visible = unitRows().filter(r => !r.hidden);
   for (const r of tbody.querySelectorAll('tr.selected')) r.classList.remove('selected');
+  if (extendRange && anchorRowAddress) {
+    const aIdx = visible.findIndex(r => r.dataset.address?.toLowerCase() === anchorRowAddress.toLowerCase());
+    const bIdx = visible.indexOf(row);
+    if (aIdx >= 0 && bIdx >= 0 && aIdx !== bIdx) {
+      const lo = Math.min(aIdx, bIdx), hi = Math.max(aIdx, bIdx);
+      for (let i = lo; i <= hi; i++) visible[i].classList.add('selected');
+      const first = visible[lo], last = visible[hi];
+      selected = first.dataset.address || '';
+      selectedEnd = computeRowEnd(last);
+      selectedEntry = first.dataset.entry || '';
+      selectedKind = first.dataset.kind || 'instruction';
+      selectedLength = Number(first.dataset.byteLength) || 1;
+      updateSelectionTools();
+      persist();
+      return;
+    }
+  }
   row.classList.add('selected');
   selected = row.dataset.address || '';
+  selectedEnd = '';
+  anchorRowAddress = selected;
   selectedEntry = row.dataset.entry || '';
   selectedKind = row.dataset.kind || 'instruction';
   selectedLength = Number(row.dataset.byteLength) || 1;
@@ -381,7 +421,7 @@ tbody.addEventListener('click', event => {
     return;
   }
   const row = event.target.closest('tr.listing-unit-row');
-  if (row) selectRow(row, true, false);
+  if (row) selectRow(row, true, false, event.shiftKey);
 });
 
 tbody.addEventListener('dblclick', event => {
@@ -420,7 +460,7 @@ document.addEventListener('click', event => {
     } else if (act === 'copyAddress' && selected) {
       vscode.postMessage({ action: 'copyAddress', address: selected });
     } else if (selected) {
-      vscode.postMessage({ action: act, address: selected, entry: selectedEntry, kind: selectedKind });
+      vscode.postMessage({ action: act, address: selected, endAddress: selectedEnd, entry: selectedEntry, kind: selectedKind, byteLength: selectedLength });
     }
     if (more && more.contains(btn)) { more.open = false; moreSummary.focus({ preventScroll: true }); }
     pageOptions.open = false;

@@ -356,6 +356,22 @@ function M.open_memory(arg)
         local a = vim.b[buf].ghidra_memory_cursor_addr
         if a then commands.goto_address({ md5 = md5, address = a }) end
     end, kopts)
+    vim.keymap.set('n', 'p', function()
+        local a = vim.b[buf].ghidra_memory_cursor_addr
+        if a then require('ghidra-lsp.patch').patch_bytes({ md5 = md5, address = a }) end
+    end, kopts)
+    vim.keymap.set('n', 'a', function()
+        local a = vim.b[buf].ghidra_memory_cursor_addr
+        if a then require('ghidra-lsp.patch').assemble({ md5 = md5, address = a }) end
+    end, kopts)
+    vim.keymap.set('n', 'D', function()
+        local a = vim.b[buf].ghidra_memory_cursor_addr
+        if a then require('ghidra-lsp.patch').disassemble({ md5 = md5, address = a }) end
+    end, kopts)
+    vim.keymap.set('n', 'u', function()
+        local a = vim.b[buf].ghidra_memory_cursor_addr
+        if a then require('ghidra-lsp.patch').clear_code_units({ md5 = md5, address = a }) end
+    end, kopts)
     vim.keymap.set('n', 'e', function()
         local st = vim.b[buf].ghidra_memory_state
         if not st then return end

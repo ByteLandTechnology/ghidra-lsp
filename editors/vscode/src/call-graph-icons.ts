@@ -8,6 +8,7 @@ export const callIcons = {
     refresh: 0xeb37, decompile: 0xeac4, listing: 0xeae9, memory: 0xeae8,
     references: 0xeb36, controlFlow: 0xeb03, details: 0xeb36, check: 0xeab2, close: 0xea76,
     link: 0xeb15, copy: 0xebcc, swap: 0xebcb,
+    assemble: 0xea73, disassemble: 0xebcb, clearCodeUnits: 0xea81, patchBytes: 0xea60,
 } as const;
 /** Render one bundled Codicon glyph as an HTML span element. */
 export const callIcon = (name: keyof typeof callIcons, extra = ''): string => `<span class="call-icon${extra ? ` ${extra}` : ''}" aria-hidden="true">&#x${callIcons[name].toString(16)};</span>`;

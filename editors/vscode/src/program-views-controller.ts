@@ -677,6 +677,21 @@ export class ProgramViewsController {
             await this.host.openBeside('listing', state.md5, address);
             return true;
         }
+        const mutationCommands: Record<string, string> = {
+            assemble: 'ghidraLsp.assembleInstruction',
+            disassemble: 'ghidraLsp.disassembleBytes',
+            clearCodeUnits: 'ghidraLsp.clearCodeUnits',
+            patchBytes: 'ghidraLsp.patchBytes',
+        };
+        if (mutationCommands[action] && address) {
+            await vscode.commands.executeCommand(mutationCommands[action], {
+                md5: state.md5,
+                address,
+                endAddress: stringOf(message.endAddress) || undefined,
+                length: Number(message.length || message.byteLength) || undefined,
+            });
+            return true;
+        }
         if (action === 'decompile' && (stringOf(message.entry) || address)) {
             await this.host.navigate(state.md5, stringOf(message.entry) || address, Boolean(stringOf(message.entry) || message.kind === 'instruction'));
             return true;

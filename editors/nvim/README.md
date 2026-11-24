@@ -97,7 +97,7 @@ Verify installation with `:checkhealth ghidra-lsp`.
 - `K` / `<C-k>` / `gd` / `gD` / `gi` / `gy` / `gr` / `gO`: Native LSP Hover, Signature Help, Definition, Declaration, Implementation, Type Definition, References, and Document Symbols.
 - `q`: Close snapshot, Listing, Memory, String, CFG, or Call Graph splits.
 
-## Commands (25)
+## Commands (29)
 
 - `:GhidraInstall [lsp|mcp]`: Install or update managed `ghidra-lsp` and `ghidra-mcp` binaries via `npm`.
 
@@ -110,4 +110,5 @@ Verify installation with `:checkhealth ghidra-lsp`.
 - `:GhidraListing [address]` / `:GhidraMemory [address]` / `:GhidraHex [address]`: Open Listing or Hex/Memory splits (`:GhidraHex` aliases `:GhidraMemory`).
 - `:GhidraControlFlow` / `:GhidraCallGraph [entry|address]`: Open basic-block CFG and bounded Call Graph splits.
 - `:GhidraComment [address]` / `:GhidraEditFunction` / `:GhidraEditVariables`: Open 5-kind comment float, function signature form, and variable editor.
+- `:GhidraAssemble [address]` / `:GhidraDisassemble [address|start..end]` / `:GhidraClear [address|start..end]` / `:GhidraPatchBytes [address]`: Assemble Sleigh instructions, disassemble undefined bytes, clear code units (`a`, `D`, `u`, `p` in Listing and Memory views), and patch bytes.
 - `:GhidraRefresh` / `:GhidraDiscardRename` / `:GhidraOrigin` / `:GhidraOverview` / `:GhidraCallHierarchy`: Refresh buffers, control renames, view program overview, and inspect call hierarchy.

@@ -419,6 +419,26 @@
       {
         "command": "ghidraLsp.installBinaries",
         "title": "Ghidra: Install or Update Binaries"
+      },
+      {
+        "command": "ghidraLsp.assembleInstruction",
+        "title": "Ghidra: Assemble Instruction",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "ghidraLsp.disassembleBytes",
+        "title": "Ghidra: Disassemble Bytes",
+        "icon": "$(arrow-swap)"
+      },
+      {
+        "command": "ghidraLsp.clearCodeUnits",
+        "title": "Ghidra: Clear Code Units (Undefine)",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "ghidraLsp.patchBytes",
+        "title": "Ghidra: Patch Bytes",
+        "icon": "$(file-binary)"
       }
     ],
     "configuration": {
@@ -766,7 +786,7 @@
         },
         {
           "submenu": "ghidra.listing",
-          "when": "resourceScheme == ghidra-listing",
+          "when": "resourceScheme == ghidra-listing || resourceScheme == ghidra-memory",
           "group": "ghidra"
         }
       ],
@@ -818,6 +838,14 @@
         {
           "command": "ghidraLsp.applyType",
           "group": "editing@4"
+        },
+        {
+          "command": "ghidraLsp.assembleInstruction",
+          "group": "editing@5"
+        },
+        {
+          "command": "ghidraLsp.patchBytes",
+          "group": "editing@6"
         }
       ],
       "view/item/context": [
@@ -961,6 +989,22 @@
         {
           "command": "ghidraLsp.listingRefresh",
           "group": "navigation@6"
+        },
+        {
+          "command": "ghidraLsp.assembleInstruction",
+          "group": "editing@1"
+        },
+        {
+          "command": "ghidraLsp.disassembleBytes",
+          "group": "editing@2"
+        },
+        {
+          "command": "ghidraLsp.clearCodeUnits",
+          "group": "editing@3"
+        },
+        {
+          "command": "ghidraLsp.patchBytes",
+          "group": "editing@4"
         }
       ]
     },

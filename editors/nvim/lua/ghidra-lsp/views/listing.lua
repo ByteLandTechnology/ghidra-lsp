@@ -50,7 +50,7 @@ function M.render_listing_into_buf(buf, md5, target_addr, focus_addr, cursor_opt
     end
     table.insert(lines, blk_header)
     table.insert(highlights, { #lines - 1, 'Title', 0, -1 })
-    table.insert(lines, '; Keys: <CR>/d Decompile | m Hex | c Comment | gr Xrefs | ]p/[p Page | ]b/[b Block | q Close')
+    table.insert(lines, '; Keys: <CR>/d Decompile | a Assemble | D Disasm | u Undefine | p Patch | m Hex | c Comment | gr Xrefs | q Close')
     table.insert(highlights, { #lines - 1, 'Comment', 0, -1 })
 
     if #items == 0 then
@@ -220,6 +220,34 @@ function M.open_listing(arg)
     vim.keymap.set('n', 'c', function()
         local a = cur_addr()
         if a then require('ghidra-lsp.edit').edit_comment({ md5 = md5, address = a, explicit_address = true }) end
+    end, kopts)
+    vim.keymap.set('n', 'a', function()
+        local a = cur_addr()
+        if a then require('ghidra-lsp.patch').assemble({ md5 = md5, address = a }) end
+    end, kopts)
+    vim.keymap.set('n', 'D', function()
+        local a = cur_addr()
+        if a then require('ghidra-lsp.patch').disassemble({ md5 = md5, address = a }) end
+    end, kopts)
+    vim.keymap.set('x', 'D', function()
+        local l1 = vim.fn.line('v')
+        local l2 = vim.fn.line('.')
+        vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes('<Esc>', true, false, true), 'nx', false)
+        require('ghidra-lsp.patch').disassemble({ md5 = md5, line1 = l1, line2 = l2, has_range = true })
+    end, kopts)
+    vim.keymap.set('n', 'u', function()
+        local a = cur_addr()
+        if a then require('ghidra-lsp.patch').clear_code_units({ md5 = md5, address = a }) end
+    end, kopts)
+    vim.keymap.set('x', 'u', function()
+        local l1 = vim.fn.line('v')
+        local l2 = vim.fn.line('.')
+        vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes('<Esc>', true, false, true), 'nx', false)
+        require('ghidra-lsp.patch').clear_code_units({ md5 = md5, line1 = l1, line2 = l2, has_range = true })
+    end, kopts)
+    vim.keymap.set('n', 'p', function()
+        local a = cur_addr()
+        if a then require('ghidra-lsp.patch').patch_bytes({ md5 = md5, address = a }) end
     end, kopts)
     vim.keymap.set('n', 'gr', function()
         local a = cur_addr()

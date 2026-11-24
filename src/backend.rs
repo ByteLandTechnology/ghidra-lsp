@@ -80,11 +80,20 @@ impl McpBackend {
       .pointer("/scan/timeout_ms")
       .and_then(Value::as_u64)
       .unwrap_or(0);
+    let floor_ms = if matches!(
+      (domain, operation),
+      ("listing", "instruction.assemble") | ("batch", "execute")
+    ) {
+      125_000
+    } else {
+      0
+    };
     let deadline = Duration::from_millis(
       self
         .config
         .request_timeout_ms
         .max(scan_ms)
+        .max(floor_ms)
         .clamp(100, 300_000),
     );
     let (session_id, peer) = {
