@@ -81,12 +81,12 @@ export const controlFlowScript = String.raw`
       const boundsOf=item=>{
         if(!item||!world.contains(item)){return undefined}
         const fo=item.closest('foreignObject');
-        if(fo){const node=fo.closest('.graph-node');return {x:Number(node?.dataset.x||0)+Number(fo.getAttribute('x')||0),y:Number(node?.dataset.y||0)+Number(fo.getAttribute('y')||0),width:Math.max(4,Number(fo.getAttribute('width')||0)),height:Math.max(4,Number(fo.getAttribute('height')||0))}}
-        if(item.classList.contains('graph-node')){return {x:Number(item.dataset.x),y:Number(item.dataset.y),width:Number(item.dataset.width),height:Number(item.dataset.height)}}
+        if(fo){const node=fo.closest('.call-node,.graph-node');return {x:Number(node?.dataset.x||0)+Number(fo.getAttribute('x')||0),y:Number(node?.dataset.y||0)+Number(fo.getAttribute('y')||0),width:Math.max(4,Number(fo.getAttribute('width')||0)),height:Math.max(4,Number(fo.getAttribute('height')||0))}}
+        if(item.matches('.graph-node,.call-node')){return {x:Number(item.dataset.x),y:Number(item.dataset.y),width:Number(item.dataset.width),height:Number(item.dataset.height)}}
         if(typeof item.getBBox==='function'){try{const box=item.getBBox(),path=item.querySelector('path.edge'),len=path&&typeof path.getTotalLength==='function'?path.getTotalLength():0,anchor=len>0?path.getPointAtLength(len/2):undefined,w=Math.max(8,box.width),h=Math.max(8,box.height);return {x:box.x-(w-box.width)/2,y:box.y-(h-box.height)/2,width:w,height:h,anchor}}catch{return undefined}}
         return undefined
       };
-      const focusSelector='.node-decompile,.node-branch,.cfg-edge,.call-edge,.graph-node';
+      const focusSelector='.node-decompile,.node-branch,.cfg-edge,.call-edge,.graph-node,.call-node';
       const reveal=(item=canvas.contains(document.activeElement)?document.activeElement.closest(focusSelector):svg.querySelector('.graph-node.selected'))=>{
         if(drag){return}
         const target=boundsOf(item);if(!target){return}
