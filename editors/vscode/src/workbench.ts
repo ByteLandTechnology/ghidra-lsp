@@ -17,6 +17,7 @@ import { ProgramPanelState, ProgramViewsController } from './program-views-contr
 import { ProgramEndian } from './hex-model';
 import { parseAddress, sameAddress } from './address-math';
 import { Data, object, rows as items, stringOf } from './web';
+import { WebviewShortcuts } from './webview-shortcuts';
 
 /** Extract the `items` array from a paginated server query response. */
 const collection = (value: unknown): Data[] => items(object(value).items ?? value);
@@ -50,6 +51,8 @@ export class Workbench implements vscode.Disposable {
     private readonly disposables: vscode.Disposable[] = [];
     /** Controller for full-program Listing and Memory Hex panels. */
     private readonly programViews: ProgramViewsController;
+    /** Shortcut command router and focus context tracker shared across webviews. */
+    readonly shortcuts = new WebviewShortcuts();
     /** Debounce timer for cursor synchronization from text editors to open panels. */
     private syncTimer?: ReturnType<typeof setTimeout>;
     /** Generation counter used to discard stale cursor-sync requests. */
@@ -70,6 +73,7 @@ export class Workbench implements vscode.Disposable {
             openBeside: (kind, md5, address) => this.open(kind, md5, address || undefined, vscode.ViewColumn.Beside),
             openWorkbench: (kind, md5, address) => this.open(kind, md5, address),
             getPanels: () => this.panels.values(),
+            resetPanelFocus: panel => this.shortcuts.resetPanel(panel),
         });
         const commands: [string, WorkbenchKind][] = [
             ['browseListing', 'listing'], ['showMemory', 'memory'],
@@ -287,11 +291,12 @@ export class Workbench implements vscode.Disposable {
         this.attach(kind === 'callGraph' ? `${key}:${++this.callGraphSerial}` : key, state);
         await this.context.activate(md5);
         try { await this.render(state); }
-        catch (error) { panel.webview.html = page({ title: names[kind], subtitle: this.context.name(md5), body: `<p class="error">${escapeHtml(String(error))}</p>`, state: this.snapshot(state) }); throw error; }
+        catch (error) { this.shortcuts.resetPanel(panel); panel.webview.html = page({ title: names[kind], subtitle: this.context.name(md5), body: `<p class="error">${escapeHtml(String(error))}</p>`, state: this.snapshot(state) }); throw error; }
     }
     /** Register lifecycle, focus, and message listeners for a workbench panel. */
     private attach(key: string, state: PanelState): void {
         this.panels.set(key, state);
+        this.shortcuts.attach(state.panel, state.kind);
         state.panel.onDidDispose(() => { state.generation++; if (this.panels.get(key) === state) { this.panels.delete(key); } });
         state.panel.onDidChangeViewState(event => { if (event.webviewPanel.active) { void this.context.activate(state.md5).catch(error => void vscode.window.showErrorMessage(formatFriendlyError(error))); } });
         state.panel.webview.onDidReceiveMessage((message: unknown) => { void this.message(state, object(message)).catch(error => { void vscode.window.showErrorMessage(formatFriendlyError(error)); }); });
@@ -331,6 +336,7 @@ export class Workbench implements vscode.Disposable {
             if (panel.active) { await this.context.activate(md5); }
             await this.render(state);
         } catch (error) {
+            this.shortcuts.resetPanel(panel);
             panel.webview.html = page({ title: names[kind], subtitle: this.context.name(md5), body: `<p class="error">${escapeHtml(String(error))}</p>`, state: this.snapshot(state) });
         }
     }
@@ -490,6 +496,7 @@ export class Workbench implements vscode.Disposable {
         }
         if (generation !== owner.generation) { return; }
         owner.address = state.address; owner.displayAddress = state.displayAddress; owner.next = state.next;
+        this.shortcuts.resetPanel(state.panel);
         state.panel.webview.html = page({ title, subtitle, body, scope, scopeSummary, address, callTools, callName, callBack: !!state.callHistory?.length, state: this.snapshot(state), actions: true, graph: ['callGraph', 'controlFlow'].includes(state.kind), controlFlow: state.kind === 'controlFlow', callGraph: state.kind === 'callGraph', callView: state.callView || 'graph', viewKind: state.kind, ...(['listing', 'memory'].includes(state.kind) ? { next, previous: state.previous.length > 0 } : {}) });
     }
     /** Fetch and render the basic-block Control Flow Graph HTML for function `entry`. */
@@ -520,6 +527,7 @@ export class Workbench implements vscode.Disposable {
     }
     /** Handle interactive navigation, filtering, and graph actions posted by a workbench webview. */
     private async message(state: PanelState, message: Data): Promise<void> {
+        if (this.shortcuts.handleMessage(state.panel, message)) { return; }
         if (await this.programViews.handleMessage(state, message)) { return; }
         const action = stringOf(message.action), address = stringOf(message.address), entry = stringOf(message.entry);
         if (address) { state.selected = address; }
@@ -673,6 +681,6 @@ export class Workbench implements vscode.Disposable {
         if (this.syncTimer) { clearTimeout(this.syncTimer); }
         this.syncGeneration++;
         for (const state of this.panels.values()) { state.panel.dispose(); }
-        this.panels.clear(); this.disposables.forEach(item => item.dispose());
+        this.panels.clear(); this.shortcuts.dispose(); this.disposables.forEach(item => item.dispose());
     }
 }

@@ -15,6 +15,7 @@ import { addrSpan, programViewStyles } from './program-views-styles';
 import { highlightAsm, highlightName } from './syntax';
 import { viewStyles } from './view-ui';
 import { escape } from './web';
+import { webviewFocusScript } from './webview-shortcuts';
 
 /** Full view-model payload used to render the graphical Program Listing HTML page. */
 export interface ListingViewPayload {
@@ -449,19 +450,26 @@ document.addEventListener('keydown', event => {
     if (event.key === 'ArrowLeft') { event.preventDefault(); vscode.postMessage({ action: 'navBack' }); return; }
     if (event.key === 'ArrowRight') { event.preventDefault(); vscode.postMessage({ action: 'navForward' }); return; }
   }
-  const inInput = event.target.closest('input,select,textarea');
   if (event.key === 'Escape') {
     if (pageOptions.open) { pageOptions.open = false; pageOptions.querySelector('summary').focus(); return; }
     if (more.open) { more.open = false; moreSummary.focus(); return; }
     if (search.value) { search.value = ''; applyFilter(); persist(); return; }
   }
-  if (!inInput && event.key === '/') { event.preventDefault(); search.focus(); search.select(); }
-  else if (!inInput && event.key.toLowerCase() === 'g') { event.preventDefault(); addressInput.focus(); addressInput.select(); }
 });
+
+${webviewFocusScript}
 
 window.addEventListener('message', event => {
   const msg = event.data || {};
-  if (msg.action === 'highlight') {
+  if (msg.action === 'focusFilter') {
+    search.focus();
+    search.select();
+    syncWebviewFocus();
+  } else if (msg.action === 'focusAddress') {
+    addressInput.focus();
+    addressInput.select();
+    syncWebviewFocus();
+  } else if (msg.action === 'highlight') {
     const row = findUnitRow(msg.address);
     if (row) selectRow(row, false, true);
   } else if (msg.action === 'syncState') {
@@ -491,6 +499,7 @@ window.addEventListener('message', event => {
     } else {
       wrap.scrollTop = 0;
     }
+    if (document.hasFocus()) syncWebviewFocus();
     persist();
   }
 });
@@ -500,6 +509,7 @@ requestAnimationFrame(() => {
   const initialRow = findUnitRow(selected);
   if (initialRow && !samePage) initialRow.scrollIntoView({ block: 'center' });
   updateSelectionTools();
+  if (document.hasFocus()) syncWebviewFocus();
   persist();
   document.body.dataset.viewReady = 'true';
 });

@@ -14,6 +14,7 @@ import { pageStyles } from './page-styles';
 import { addrSpan, programViewStyles } from './program-views-styles';
 import { viewStyles } from './view-ui';
 import { escape } from './web';
+import { webviewFocusScript } from './webview-shortcuts';
 
 /** Short byte-order identifier used by the Data Inspector pill toggle. */
 export type InspectorEndian = 'le' | 'be';
@@ -613,19 +614,26 @@ document.addEventListener('keydown', event => {
     if (event.key === 'ArrowLeft') { event.preventDefault(); vscode.postMessage({ action: 'navBack' }); return; }
     if (event.key === 'ArrowRight') { event.preventDefault(); vscode.postMessage({ action: 'navForward' }); return; }
   }
-  const inInput = event.target.closest('input,select,textarea');
   if (event.key === 'Escape') {
     if (pageOptions.open) { pageOptions.open = false; pageOptions.querySelector('summary').focus(); return; }
     if (more.open) { more.open = false; moreSummary.focus(); return; }
     if (search.value) { search.value = ''; applyFilter(); persist(); return; }
   }
-  if (!inInput && event.key === '/') { event.preventDefault(); search.focus(); search.select(); }
-  else if (!inInput && event.key.toLowerCase() === 'g') { event.preventDefault(); addressInput.focus(); addressInput.select(); }
 });
+
+${webviewFocusScript}
 
 window.addEventListener('message', event => {
   const msg = event.data || {};
-  if (msg.action === 'highlight') {
+  if (msg.action === 'focusFilter') {
+    search.focus();
+    search.select();
+    syncWebviewFocus();
+  } else if (msg.action === 'focusAddress') {
+    addressInput.focus();
+    addressInput.select();
+    syncWebviewFocus();
+  } else if (msg.action === 'highlight') {
     highlightRange(msg.address, msg.length || 1, false, true);
   } else if (msg.action === 'syncState') {
     state.syncEnabled = !!msg.syncEnabled;
@@ -637,6 +645,7 @@ window.addEventListener('message', event => {
       const block = findBlockFor(addr);
       const metaText = block ? shortAddr(addr) + ' · ' + block.name + ' (' + (block.read ? 'R' : '−') + (block.write ? 'W' : '−') + (block.execute ? 'X' : '−') + ')' + (len > 1 ? ' · ' + len + ' bytes selected' : '') : shortAddr(addr);
       applyInspector(addr, metaText, msg.entries);
+      if (document.hasFocus()) syncWebviewFocus();
     }
   } else if (msg.action === 'chunkData') {
     state.address = msg.chunkStart;
@@ -652,12 +661,14 @@ window.addEventListener('message', event => {
     if (msg.sectionLabel) hexMain.setAttribute('aria-label', msg.sectionLabel);
     applyFilter();
     highlightRange(msg.selectedAddress || selected, msg.length || 1, false, true);
+    if (document.hasFocus()) syncWebviewFocus();
   }
 });
 
 applyFilter();
 highlightRange(selected, selectionLength, false, !samePage);
 requestAnimationFrame(() => {
+  if (document.hasFocus()) syncWebviewFocus();
   persist();
   document.body.dataset.viewReady = 'true';
 });

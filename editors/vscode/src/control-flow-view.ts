@@ -7,6 +7,7 @@ import { ListingFiles, listingScheme } from './listing';
 import { Workbench, ControlFlowData } from './workbench';
 import { escapeHtml, page } from './workbench-page';
 import { AddressRange, addressRange, intersects } from './view-ranges';
+import { object } from './web';
 
 /** Custom editor viewType identifier for Control Flow Graph panels. */
 export const controlFlowViewType = 'ghidra.analysisControlFlow';
@@ -78,6 +79,7 @@ export class ControlFlowView implements vscode.CustomTextEditorProvider, vscode.
     /** Populate and wire a VS Code custom text editor webview panel for `document`. */
     async resolveCustomTextEditor(document: vscode.TextDocument, panel: vscode.WebviewPanel): Promise<void> {
         panel.webview.options = { enableScripts: true, localResourceRoots: [] };
+        this.workbench.shortcuts.attach(panel, 'controlFlow');
         try {
             const state = await this.load(document.uri);
             state.panels.add(panel);
@@ -96,6 +98,7 @@ export class ControlFlowView implements vscode.CustomTextEditorProvider, vscode.
             this.render(state, panel);
             this.opened.fire({ uri: state.uri, entry: state.entry });
         } catch (error) {
+            this.workbench.shortcuts.resetPanel(panel);
             panel.webview.html = page({ title: 'Control Flow', subtitle: this.context.name(document.uri.authority), body: `<p class="error">${escapeHtml(String(error))}</p>` });
         }
     }
@@ -103,12 +106,14 @@ export class ControlFlowView implements vscode.CustomTextEditorProvider, vscode.
     private render(state: GraphState, panel: vscode.WebviewPanel): void {
         this.context.track(state.uri.authority);
         panel.title = this.title(state);
+        this.workbench.shortcuts.resetPanel(panel);
         panel.webview.html = page({ title: 'Control Flow', subtitle: `${state.data.name} · ${this.context.name(state.uri.authority)}`,
             body: state.data.body, scope: state.data.scope, graph: true, controlFlow: true,
             state: { kind: 'controlFlow', md5: state.uri.authority, entry: state.entry, analysisUri: state.uri.toString() } });
     }
     /** Handle selection, refresh, and decompile messages posted by the CFG webview. */
     private async message(state: GraphState, panel: vscode.WebviewPanel, message: { action?: string; address?: string }): Promise<void> {
+        if (this.workbench.shortcuts.handleMessage(panel, object(message))) { return; }
         if (this.context.isClosing(state.uri.authority)) { return; }
         if (message.action === 'ready') { await this.highlight(state.uri, state.addresses, state.selected); return; }
         if (!panel.active) { return; }

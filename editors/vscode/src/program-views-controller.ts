@@ -56,6 +56,7 @@ export interface ProgramViewHost {
     readonly openBeside: (kind: 'listing' | 'memory', md5: string, address: string) => Promise<void>;
     readonly openWorkbench: (kind: 'references' | 'callGraph' | 'controlFlow', md5: string, address: string) => Promise<void>;
     readonly getPanels: () => Iterable<ProgramPanelState>;
+    readonly resetPanelFocus?: (panel: vscode.WebviewPanel) => void;
 }
 
 /** Cached program-level metadata used across Program Listing and Hex panels. */
@@ -342,6 +343,7 @@ export class ProgramViewsController {
             syncEnabled: Boolean(state.syncEnabled),
             totalUnitsLabel,
         };
+        this.host.resetPanelFocus?.(state.panel);
         state.panel.webview.html = renderProgramListingPage(payload);
     }
 
@@ -450,6 +452,7 @@ export class ProgramViewsController {
             bytesPerRow,
             initialInspector: inspectorEntries,
         };
+        this.host.resetPanelFocus?.(state.panel);
         state.panel.webview.html = renderProgramHexPage(payload);
     }
 

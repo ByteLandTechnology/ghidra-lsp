@@ -419,6 +419,26 @@
       {
         "command": "ghidraLsp.installBinaries",
         "title": "Ghidra: Install or Update Binaries"
+      },
+      {
+        "command": "ghidraLsp.webviewFocusFilter",
+        "title": "Ghidra: Focus Webview Filter"
+      },
+      {
+        "command": "ghidraLsp.webviewGoToAddress",
+        "title": "Ghidra: Go to Address in Webview"
+      },
+      {
+        "command": "ghidraLsp.webviewZoomIn",
+        "title": "Ghidra: Zoom In Webview Graph"
+      },
+      {
+        "command": "ghidraLsp.webviewZoomOut",
+        "title": "Ghidra: Zoom Out Webview Graph"
+      },
+      {
+        "command": "ghidraLsp.webviewResetZoom",
+        "title": "Ghidra: Reset Webview Graph Zoom"
       }
     ],
     "configuration": {
@@ -495,6 +515,36 @@
         "mac": "cmd+s",
         "command": "ghidraLsp.saveRename",
         "when": "resourceScheme == ghidra && editorTextFocus && !renameInputVisible"
+      },
+      {
+        "key": "/",
+        "command": "ghidraLsp.webviewFocusFilter",
+        "when": "(activeWebviewPanelId == 'ghidra.listing' || activeWebviewPanelId == 'ghidra.memory' || activeWebviewPanelId == 'ghidra.callGraph' || activeWebviewPanelId == 'ghidra.controlFlow' || activeCustomEditorId == 'ghidra.analysisControlFlow') && !ghidra.webviewEditableOrButtonFocus && !inputFocus && !terminalFocus && !sideBarFocus && !panelFocus"
+      },
+      {
+        "key": "g",
+        "command": "ghidraLsp.webviewGoToAddress",
+        "when": "(activeWebviewPanelId == 'ghidra.listing' || activeWebviewPanelId == 'ghidra.memory') && !ghidra.webviewEditableOrButtonFocus && !inputFocus && !terminalFocus && !sideBarFocus && !panelFocus"
+      },
+      {
+        "key": "=",
+        "command": "ghidraLsp.webviewZoomIn",
+        "when": "(activeWebviewPanelId == 'ghidra.callGraph' || activeWebviewPanelId == 'ghidra.controlFlow' || activeCustomEditorId == 'ghidra.analysisControlFlow') && ghidra.webviewCanvasFocus && !ghidra.webviewEditableOrButtonFocus && !inputFocus && !terminalFocus && !sideBarFocus && !panelFocus"
+      },
+      {
+        "key": "shift+=",
+        "command": "ghidraLsp.webviewZoomIn",
+        "when": "(activeWebviewPanelId == 'ghidra.callGraph' || activeWebviewPanelId == 'ghidra.controlFlow' || activeCustomEditorId == 'ghidra.analysisControlFlow') && ghidra.webviewCanvasFocus && !ghidra.webviewEditableOrButtonFocus && !inputFocus && !terminalFocus && !sideBarFocus && !panelFocus"
+      },
+      {
+        "key": "-",
+        "command": "ghidraLsp.webviewZoomOut",
+        "when": "(activeWebviewPanelId == 'ghidra.callGraph' || activeWebviewPanelId == 'ghidra.controlFlow' || activeCustomEditorId == 'ghidra.analysisControlFlow') && ghidra.webviewCanvasFocus && !ghidra.webviewEditableOrButtonFocus && !inputFocus && !terminalFocus && !sideBarFocus && !panelFocus"
+      },
+      {
+        "key": "0",
+        "command": "ghidraLsp.webviewResetZoom",
+        "when": "(activeWebviewPanelId == 'ghidra.callGraph' || activeWebviewPanelId == 'ghidra.controlFlow' || activeCustomEditorId == 'ghidra.analysisControlFlow') && ghidra.webviewCanvasFocus && !ghidra.webviewEditableOrButtonFocus && !inputFocus && !terminalFocus && !sideBarFocus && !panelFocus"
       }
     ],
     "submenus": [
@@ -610,6 +660,26 @@
         {
           "command": "ghidraLsp.analysisView",
           "when": "resourceScheme == ghidra-listing"
+        },
+        {
+          "command": "ghidraLsp.webviewFocusFilter",
+          "when": "activeWebviewPanelId == 'ghidra.listing' || activeWebviewPanelId == 'ghidra.memory' || activeWebviewPanelId == 'ghidra.callGraph' || activeWebviewPanelId == 'ghidra.controlFlow' || activeCustomEditorId == 'ghidra.analysisControlFlow'"
+        },
+        {
+          "command": "ghidraLsp.webviewGoToAddress",
+          "when": "activeWebviewPanelId == 'ghidra.listing' || activeWebviewPanelId == 'ghidra.memory'"
+        },
+        {
+          "command": "ghidraLsp.webviewZoomIn",
+          "when": "activeWebviewPanelId == 'ghidra.callGraph' || activeWebviewPanelId == 'ghidra.controlFlow' || activeCustomEditorId == 'ghidra.analysisControlFlow'"
+        },
+        {
+          "command": "ghidraLsp.webviewZoomOut",
+          "when": "activeWebviewPanelId == 'ghidra.callGraph' || activeWebviewPanelId == 'ghidra.controlFlow' || activeCustomEditorId == 'ghidra.analysisControlFlow'"
+        },
+        {
+          "command": "ghidraLsp.webviewResetZoom",
+          "when": "activeWebviewPanelId == 'ghidra.callGraph' || activeWebviewPanelId == 'ghidra.controlFlow' || activeCustomEditorId == 'ghidra.analysisControlFlow'"
         }
       ],
       "editor/title": [

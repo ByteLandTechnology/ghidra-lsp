@@ -56,6 +56,9 @@ When `ghidraLsp.serverPath` (`"ghidra-lsp"`) and `ghidraLsp.mcpCommand` (`"ghidr
 - `Ctrl+.` (`Cmd+.` on macOS): **Ghidra: Code Actions…** inside `ghidra://` decompiled buffers.
 - `F2`: **Ghidra: Rename Symbol** inside `ghidra://` function buffers.
 - `Ctrl+S` (`Cmd+S` on macOS): **Ghidra: Submit Pending Rename** on the `origin` buffer of a pending rename.
+- `/`: **Ghidra: Focus Webview Filter** (`ghidraLsp.webviewFocusFilter`) in **Program Listing**, **Memory and Bytes**, **Call Graph**, and **Control Flow** webviews when no editable control, button, or graph item has focus.
+- `g`: **Ghidra: Go to Address in Webview** (`ghidraLsp.webviewGoToAddress`) in **Program Listing** and **Memory and Bytes** webviews when no editable control or button has focus.
+- `=` / `Shift+=`, `-`, and `0`: **Ghidra: Zoom In Webview Graph** (`ghidraLsp.webviewZoomIn`), **Ghidra: Zoom Out Webview Graph** (`ghidraLsp.webviewZoomOut`), and **Ghidra: Reset Webview Graph Zoom** (`ghidraLsp.webviewResetZoom`) when the graph canvas (`.flow-canvas`) holds focus in **Call Graph** or **Control Flow**.
 
 ## Commands
 
@@ -88,6 +91,7 @@ When `ghidraLsp.serverPath` (`"ghidra-lsp"`) and `ghidraLsp.mcpCommand` (`"ghidr
 - **Ghidra: Open Containing Function** / **Ghidra: References at Address** / **Ghidra: Switch to Bytes** / **Ghidra: Switch to Listing** / **Ghidra: Copy Address** / **Ghidra: Open in Program Listing** / **Ghidra: Refresh Listing**
 - **Ghidra: Strings** / **Ghidra: Imports** / **Ghidra: Exports** / **Ghidra: Address References** / **Ghidra: Binary Address References**
 - **Ghidra: Control Flow Graph** / **Ghidra: Call Graph** / **Ghidra: Callers** / **Ghidra: Callees** / **Ghidra: Show Call Hierarchy**
+- **Ghidra: Focus Webview Filter** / **Ghidra: Go to Address in Webview** / **Ghidra: Zoom In Webview Graph** / **Ghidra: Zoom Out Webview Graph** / **Ghidra: Reset Webview Graph Zoom**
 
 ## Troubleshooting
 
