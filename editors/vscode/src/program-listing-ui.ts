@@ -116,7 +116,7 @@ export function renderListingRowsHtml(items: ListingRenderItem[], selectedAddres
                 const b = run.blockHeader;
                 out.push(`<tr class="listing-aux-row listing-block-row"><td colspan="5"><span class="listing-block-name">${escape(b.name)}</span><span>${addrSpan(b.start)}–${addrSpan(b.end)} · ${escape(b.permissions)}${b.initialized ? '' : ' · uninitialized'}${b.kind ? ` · ${escape(b.kind)}` : ''}${b.comment ? ` · ${escape(b.comment)}` : ''}</span></td></tr>`);
             }
-            out.push(`<tr class="listing-undef-run" data-run-start="${escape(run.startAddress)}"><td class="addr">${addrSpan(run.startAddress)}</td><td class="col-bytes"></td><td class="col-mnemonic">${run.uninitialized ? '??' : 'db'}</td><td class="col-operands"><button type="button" class="expand-run-btn" data-expand-run="${escape(run.startAddress)}">${run.byteLength} ${run.uninitialized ? 'uninitialized' : 'undefined'} bytes (${escape(displayAddress(run.startAddress))}..${escape(displayAddress(run.endAddress))})</button></td><td class="col-comment"></td></tr>`);
+            out.push(`<tr class="listing-undef-run" data-run-start="${escape(run.startAddress)}"><td class="addr">${addrSpan(run.startAddress)}</td><td class="col-bytes"></td><td class="col-mnemonic">${run.uninitialized ? '??' : 'db'}</td><td class="col-operands"><button type="button" class="expand-run-btn" aria-expanded="false" data-expand-run="${escape(run.startAddress)}">${run.byteLength} ${run.uninitialized ? 'uninitialized' : 'undefined'} bytes (${escape(displayAddress(run.startAddress))}..${escape(displayAddress(run.endAddress))})</button></td><td class="col-comment"></td></tr>`);
             for (const member of run.units) {
                 out.push(renderUnit(member, true));
             }
@@ -239,7 +239,10 @@ const applyViewClasses = () => {
   document.body.classList.toggle('hide-vars', !optVars.checked);
   document.body.classList.toggle('hide-xrefs', !optXrefs.checked);
   const collapse = optCollapse.checked;
-  for (const runRow of tbody.querySelectorAll('tr.listing-undef-run')) { runRow.hidden = !collapse; }
+  for (const runRow of tbody.querySelectorAll('tr.listing-undef-run')) {
+    runRow.hidden = !collapse;
+    runRow.querySelector('.expand-run-btn')?.setAttribute('aria-expanded', String(!collapse));
+  }
   for (const member of tbody.querySelectorAll('tr[data-run-member="true"]')) { member.hidden = collapse; }
 };
 
@@ -358,10 +361,30 @@ const applyFilter = () => {
 
 const bindTableInteractions = () => {
   for (const row of unitRows()) {
-    if (selected && row.dataset.address?.toLowerCase() === selected.toLowerCase()) row.classList.add('selected');
+    if (selected && row.dataset.address?.toLowerCase() === selected.toLowerCase()) {
+      row.classList.add('selected');
+      selectedEntry = row.dataset.entry || '';
+      selectedKind = row.dataset.kind || 'instruction';
+      selectedLength = Number(row.dataset.byteLength) || 1;
+    }
   }
   applyViewClasses();
   applyFilter();
+};
+
+const focusListingFallback = () => {
+  const selRow = findUnitRow(selected);
+  if (selRow && !selRow.hidden) {
+    selRow.focus({ preventScroll: true });
+    return;
+  }
+  const firstVisible = unitRows().find(r => !r.hidden);
+  if (firstVisible) {
+    firstVisible.scrollIntoView({ block: 'nearest' });
+    firstVisible.focus({ preventScroll: true });
+    return;
+  }
+  search?.focus({ preventScroll: true });
 };
 
 tbody.addEventListener('click', event => {
@@ -374,10 +397,24 @@ tbody.addEventListener('click', event => {
   const expandBtn = event.target.closest('[data-expand-run]');
   if (expandBtn) {
     event.stopPropagation();
+    const runRow = expandBtn.closest('tr');
     optCollapse.checked = false;
     applyViewClasses();
     applyFilter();
-    persist();
+    let firstRow = findUnitRow(expandBtn.dataset.expandRun);
+    if (!firstRow || firstRow.hidden) {
+      let next = runRow?.nextElementSibling;
+      while (next && (!next.classList.contains('listing-unit-row') || next.hidden)) {
+        next = next.nextElementSibling;
+      }
+      firstRow = next || unitRows().find(r => !r.hidden);
+    }
+    if (firstRow) {
+      firstRow.focus({ preventScroll: true });
+      selectRow(firstRow, true, true);
+    } else {
+      persist();
+    }
     return;
   }
   const row = event.target.closest('tr.listing-unit-row');
@@ -395,6 +432,7 @@ tbody.addEventListener('dblclick', event => {
 });
 
 tbody.addEventListener('keydown', event => {
+  if (event.target.closest('[data-jump],[data-expand-run],button')) return;
   const row = event.target.closest('tr.listing-unit-row');
   if (!row) return;
   const visible = unitRows().filter(r => !r.hidden);
@@ -468,14 +506,23 @@ window.addEventListener('message', event => {
     state.syncEnabled = !!msg.syncEnabled;
     syncToggle.setAttribute('aria-pressed', String(state.syncEnabled));
   } else if (msg.action === 'windowData') {
+    const activeEl = document.activeElement;
+    const focusInTbody = !!activeEl && tbody.contains(activeEl);
+    const navBack = document.querySelector('[data-action="navBack"]');
+    const navForward = document.querySelector('[data-action="navForward"]');
+    const navButtons = [navBack, navForward, pagerBefore, pagerAfter].filter(Boolean);
+    const focusedNavBtn = navButtons.find(btn => btn === activeEl);
     const anchorAddr = msg.anchorAddress;
     const prevTop = anchorAddr ? findUnitRow(anchorAddr)?.getBoundingClientRect().top : undefined;
     tbody.innerHTML = msg.rowsHtml;
     selected = msg.selectedAddress || selected;
+    if (addressInput && activeEl !== addressInput) {
+      addressInput.value = /^ram:[0-9a-f]+$/i.test(selected) ? selected.slice(4) : selected;
+    }
     state.windowStart = msg.windowStart;
     state.windowEnd = msg.windowEnd;
-    if (typeof msg.canBack === 'boolean') document.querySelector('[data-action="navBack"]').disabled = !msg.canBack;
-    if (typeof msg.canForward === 'boolean') document.querySelector('[data-action="navForward"]').disabled = !msg.canForward;
+    if (typeof msg.canBack === 'boolean' && navBack) navBack.disabled = !msg.canBack;
+    if (typeof msg.canForward === 'boolean' && navForward) navForward.disabled = !msg.canForward;
     if (pvStep) pvStep.hidden = !msg.hasMoreBefore && !msg.hasMoreAfter;
     pagerBefore.disabled = !msg.hasMoreBefore;
     pagerAfter.disabled = !msg.hasMoreAfter;
@@ -487,9 +534,23 @@ window.addEventListener('message', event => {
       if (nextRow) { wrap.scrollTop += nextRow.getBoundingClientRect().top - prevTop; }
     } else if (msg.scrollToSelected) {
       const selRow = findUnitRow(selected);
-      if (selRow) selRow.scrollIntoView({ block: 'center' });
+      if (selRow && !selRow.hidden) selRow.scrollIntoView({ block: 'center' });
     } else {
       wrap.scrollTop = 0;
+    }
+    if (focusInTbody) {
+      focusListingFallback();
+    } else if (focusedNavBtn && (focusedNavBtn.disabled || focusedNavBtn.closest('[hidden]'))) {
+      const siblingOrder = focusedNavBtn === pagerBefore
+        ? [pagerAfter, navBack, navForward]
+        : focusedNavBtn === pagerAfter
+          ? [pagerBefore, navBack, navForward]
+          : focusedNavBtn === navBack
+            ? [navForward, pagerBefore, pagerAfter]
+            : [navBack, pagerBefore, pagerAfter];
+      const nextBtn = siblingOrder.find(btn => btn && !btn.disabled && !btn.closest('[hidden]'));
+      if (nextBtn) nextBtn.focus({ preventScroll: true });
+      else focusListingFallback();
     }
     persist();
   }

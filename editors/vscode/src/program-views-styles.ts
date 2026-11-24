@@ -70,14 +70,17 @@ export const programViewStyles = `
 .program-view[data-view-kind="listing"] .listing-label-name{font-weight:600;color:var(--vscode-symbolIcon-functionForeground,var(--vscode-foreground))}
 .program-view[data-view-kind="listing"] .listing-xrefs{display:inline-flex;flex-wrap:wrap;align-items:center;gap:4px 6px;font-family:var(--vscode-font-family);font-size:11px;color:var(--vscode-descriptionForeground)}
 .program-view[data-view-kind="listing"] .xref-static{font-family:var(--vscode-editor-font-family,monospace);font-size:11px;color:var(--vscode-descriptionForeground)}
-.program-view[data-view-kind="listing"] .xref-link,.program-view[data-view-kind="listing"] .target-link{min-height:0;padding:0;border:0;background:transparent;color:var(--vscode-textLink-foreground);font-family:var(--vscode-editor-font-family,monospace);font-size:11px;cursor:pointer;text-decoration:none}
-.program-view[data-view-kind="listing"] .target-link.target-inline{font-size:inherit}
+.program-view[data-view-kind="listing"] .xref-link,.program-view[data-view-kind="listing"] .target-link{border:0;background:transparent;color:var(--vscode-textLink-foreground);font-family:var(--vscode-editor-font-family,monospace);font-size:11px;cursor:pointer;text-decoration:none}
+.program-view[data-view-kind="listing"] .xref-link,.program-view[data-view-kind="listing"] .target-link:not(.target-inline),.program-view[data-view-kind="listing"] .expand-run-btn{display:inline-flex;align-items:center;min-width:24px;min-height:24px;padding:0 4px}
+.program-view[data-view-kind="listing"] .xref-link{justify-content:center}
+.program-view[data-view-kind="listing"] .target-link.target-inline{min-width:0;min-height:0;padding:0;font-size:inherit}
 .program-view[data-view-kind="listing"] .xref-link:hover,.program-view[data-view-kind="listing"] .target-link:hover{text-decoration:underline;color:var(--vscode-textLink-activeForeground)}
-.program-view[data-view-kind="listing"] .target-chips{display:inline-flex;flex-wrap:wrap;gap:6px;margin-left:8px}
+.program-view[data-view-kind="listing"] .target-chips{display:inline-flex;flex-wrap:wrap;align-items:center;gap:6px;margin-left:8px;vertical-align:middle}
 .program-view[data-view-kind="listing"] .listing-pre-row td,.program-view[data-view-kind="listing"] .listing-post-row td{padding:2px 8px;color:var(--vscode-descriptionForeground);font-size:11px}
 .program-view[data-view-kind="listing"] tr.listing-undef-run{cursor:pointer;color:var(--vscode-descriptionForeground)}
+.program-view[data-view-kind="listing"] tr.listing-undef-run td{vertical-align:middle}
 .program-view[data-view-kind="listing"] tr.listing-undef-run:hover{background:var(--vscode-list-hoverBackground)}
-.program-view[data-view-kind="listing"] .expand-run-btn{min-height:0;padding:0;border:0;background:transparent;color:var(--vscode-textLink-foreground);font-size:11px;cursor:pointer}
+.program-view[data-view-kind="listing"] .expand-run-btn{border:0;background:transparent;color:var(--vscode-textLink-foreground);font-size:11px;cursor:pointer;text-align:left}
 .program-view[data-view-kind="listing"] .expand-run-btn:hover{text-decoration:underline}
 .program-view.hide-bytes .col-bytes{display:none}
 .program-view.hide-headers .listing-fn-row,.program-view.hide-headers .listing-plate-row,.program-view.hide-headers .listing-pre-row,.program-view.hide-headers .listing-post-row{display:none}
