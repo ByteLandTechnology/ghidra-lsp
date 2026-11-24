@@ -446,7 +446,7 @@ hexBody.addEventListener('keydown', event => {
       const colIndex = activeCell.cellIndex;
       const rowByteCells = [...visibleRows[nextRowIdx].querySelectorAll('.hb[data-address]')];
       nextCell = rowByteCells.find(c => c.cellIndex === colIndex)
-        || (event.key === 'ArrowDown' ? rowByteCells[0] : rowByteCells[rowByteCells.length - 1]);
+        || (colIndex < rowByteCells[0]?.cellIndex ? rowByteCells[0] : rowByteCells[rowByteCells.length - 1]);
     } else {
       nextCell = event.key === 'ArrowDown' ? cells[cells.length - 1] : cells[0];
     }
@@ -457,7 +457,11 @@ hexBody.addEventListener('keydown', event => {
   } else if (event.key === ' ') {
     nextCell = activeCell;
   } else if (event.key === 'Enter') {
-    const enterAddr = (!cell && row && !row.classList.contains('selected') && row.dataset.address) ? row.dataset.address : selected;
+    const enterAddr = (cell && !cell.classList.contains('is-selected') && cell.dataset.address)
+      ? cell.dataset.address
+      : (!cell && row && !row.classList.contains('selected') && row.dataset.address)
+        ? row.dataset.address
+        : selected;
     if (enterAddr) { event.preventDefault(); vscode.postMessage({ action: 'listing', address: enterAddr, kind: 'bytes' }); }
     return;
   }
@@ -511,6 +515,8 @@ const selectBlockRow = row => {
   selected = row.dataset.address || '';
   selectedKind = 'block';
   selectionLength = 1;
+  anchorAddress = '';
+  cursorAddress = '';
   syncRovingTabindex('');
   updateSelectionTools();
   persist();

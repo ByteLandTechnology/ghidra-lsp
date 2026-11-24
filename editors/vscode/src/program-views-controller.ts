@@ -674,7 +674,7 @@ export class ProgramViewsController {
         if (action === 'selectByte' && state.kind === 'memory' && address) {
             state.selected = address;
             state.pvSelectionLength = Math.max(1, Number(message.length) || 1);
-            await this.broadcastCursorSync(state, address, 1);
+            await this.broadcastCursorSync(state, address, state.pvSelectionLength);
             await this.updateInspector(state);
             return true;
         }
