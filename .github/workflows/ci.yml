@@ -3,7 +3,8 @@
 
 # Continuous integration for the ghidra-lsp workspace.
 #
-# Builds standalone x86_64 and ARM64 executables for macOS, Linux, and Windows.
+# Builds standalone x86_64 and ARM64 executables, packages the VS Code extension,
+# and publishes verified releases.
 
 name: CI
 
@@ -165,14 +166,71 @@ jobs:
           overwrite: true
           if-no-files-found: error
 
-  publish:
-    name: Publish verified release
-    needs: [release-please, build, security-audit]
-    if: needs.release-please.outputs.release_created == 'true'
+  vscode:
+    name: VS Code extension
+    needs: release-please
+    if: >-
+      always() && !cancelled() &&
+      (needs.release-please.result == 'success' || needs.release-please.result == 'skipped')
     runs-on: ubuntu-24.04
     permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release-please.outputs.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Verify extension version
+        run: |
+          manifest_version="$(jq -r '."."' .release-please-manifest.json)"
+          test "$(jq -r .version editors/vscode/package.json)" = "$manifest_version"
+          test "$(jq -r .version editors/vscode/package-lock.json)" = "$manifest_version"
+          test "$(jq -r '.packages[""].version' editors/vscode/package-lock.json)" = "$manifest_version"
+
+      - name: Install Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: editors/vscode/package-lock.json
+
+      - name: Install dependencies
+        working-directory: editors/vscode
+        run: npm ci
+
+      - name: Typecheck and compile extension
+        working-directory: editors/vscode
+        run: |
+          npm run check
+          npm run compile
+
+      - name: Package VSIX
+        working-directory: editors/vscode
+        run: |
+          version="$(jq -r .version package.json)"
+          npx --yes --package=@vscode/vsce@^4.1.1 vsce package --out "ghidra-lsp-${version}.vsix"
+
+      - name: Upload VSIX artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vscode-extension
+          path: editors/vscode/ghidra-lsp-*.vsix
+          overwrite: true
+          if-no-files-found: error
+
+  publish:
+    name: Publish verified release
+    needs: [release-please, build, security-audit, vscode]
+    if: needs.release-please.outputs.release_created == 'true'
+    runs-on: ubuntu-24.04
+    concurrency:
+      group: publish-release
+      cancel-in-progress: false
+    permissions:
       contents: write
-      # The npm trusted publisher feature uses the GitHub OIDC token.
+      # The npm and Visual Studio Marketplace trusted publishers use the GitHub OIDC token.
       id-token: write
     steps:
       - name: Checkout release commit
@@ -214,6 +272,9 @@ jobs:
           while IFS= read -r dep_version; do
             test "$dep_version" = "$RELEASE_VERSION"
           done < <(jq -r '.optionalDependencies[]' npm/cli/package.json)
+          test "$(jq -r .version editors/vscode/package.json)" = "$RELEASE_VERSION"
+          test "$(jq -r .version editors/vscode/package-lock.json)" = "$RELEASE_VERSION"
+          test "$(jq -r '.packages[""].version' editors/vscode/package-lock.json)" = "$RELEASE_VERSION"
 
       - name: Download release executables
         uses: actions/download-artifact@v4
@@ -228,18 +289,30 @@ jobs:
           name: third-party-licenses
           path: dist
 
-      - name: Upload release executables
+      - name: Download VS Code extension
+        uses: actions/download-artifact@v4
+        with:
+          name: vscode-extension
+          path: vsix
+
+      - name: Upload release assets
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ needs.release-please.outputs.tag_name }}
+          RELEASE_VERSION: ${{ needs.release-please.outputs.version }}
         run: |
           assets=(dist/ghidra-lsp-*)
           test "${#assets[@]}" -eq 6
           for asset in "${assets[@]}"; do test -s "$asset"; done
-          sha256sum "${assets[@]}" | sed 's@  dist/@  @' > dist/SHA256SUMS
+          vsix="vsix/ghidra-lsp-${RELEASE_VERSION}.vsix"
+          test -s "$vsix"
+          {
+            (cd dist && sha256sum ghidra-lsp-*)
+            (cd vsix && sha256sum "ghidra-lsp-${RELEASE_VERSION}.vsix")
+          } > dist/SHA256SUMS
           cp LICENSE dist/LICENSE
-          gh release upload "$RELEASE_TAG" "${assets[@]}" dist/SHA256SUMS dist/LICENSE dist/THIRD_PARTY_LICENSES.txt --clobber
+          gh release upload "$RELEASE_TAG" "${assets[@]}" "$vsix" dist/SHA256SUMS dist/LICENSE dist/THIRD_PARTY_LICENSES.txt --clobber
 
       - name: Install Node.js
         uses: actions/setup-node@v7
@@ -270,6 +343,27 @@ jobs:
             fi
             npm publish "$directory" --access public
           done
+
+      - name: Publish VS Code extension to Visual Studio Marketplace
+        env:
+          RELEASE_VERSION: ${{ needs.release-please.outputs.version }}
+        run: npx --yes --package=@vscode/vsce@^4.1.1 vsce publish --oidc --packagePath "vsix/ghidra-lsp-${RELEASE_VERSION}.vsix" --skip-duplicate
+
+      - name: Publish VS Code extension to Open VSX Registry
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+          RELEASE_VERSION: ${{ needs.release-please.outputs.version }}
+        run: |
+          if [ -z "$OVSX_PAT" ]; then
+            echo "OVSX_PAT is not set; skipping Open VSX publish."
+            exit 0
+          fi
+          if curl -fsSL "https://open-vsx.org/api/byteland-app/ghidra-lsp/${RELEASE_VERSION}" 2>/dev/null | jq -e --arg version "$RELEASE_VERSION" '.version == $version' > /dev/null 2>&1; then
+            echo "byteland-app.ghidra-lsp@${RELEASE_VERSION} already exists on Open VSX; skipping."
+            exit 0
+          fi
+          npx --yes ovsx create-namespace byteland-app -p "$OVSX_PAT" || true
+          npx --yes ovsx publish "vsix/ghidra-lsp-${RELEASE_VERSION}.vsix" -p "$OVSX_PAT"
 
       - name: Make release public
         env:

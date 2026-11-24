@@ -14,8 +14,8 @@ use tower_lsp_server::ls_types::{
 
 use super::{Engine, Pending, Refresh};
 use crate::document::{
-  Document, Span, Symbol, apply_edits, canonical_virtual_uri, matches_text, position, same_address,
-  storage_selector, valid_name,
+  Document, Span, Symbol, apply_edits, canonical_virtual_uri, is_field_access, matches_text,
+  position, same_address, storage_selector, valid_name,
 };
 
 impl Engine {
@@ -92,7 +92,7 @@ impl Engine {
       let replacements: Vec<TextEdit> = doc
         .spans
         .iter()
-        .filter(|span| span_matches_symbol(span, &symbol))
+        .filter(|span| span_matches_symbol(&doc.base, span, &symbol))
         .map(|span| {
           let old = &doc.base[span.start..span.end];
           let replacement = if old == symbol.name {
@@ -733,13 +733,15 @@ impl Engine {
 }
 
 /// Returns true when `span` refers to `symbol` or carries an unresolved fallback matching token.
-fn span_matches_symbol(span: &Span, symbol: &Symbol) -> bool {
+fn span_matches_symbol(code: &str, span: &Span, symbol: &Symbol) -> bool {
   if let Some(v) = &span.symbol {
     v.id == symbol.id
   } else if symbol.kind.eq_ignore_ascii_case("function") {
     span.token.kind == "function" && span.token.text == symbol.name
   } else if symbol.local() {
-    matches!(span.token.kind.as_str(), "variable" | "parameter") && span.token.text == symbol.name
+    !is_field_access(code, span.start)
+      && matches!(span.token.kind.as_str(), "variable" | "parameter")
+      && span.token.text == symbol.name
   } else if symbol.kind.eq_ignore_ascii_case("label")
     || symbol.kind.eq_ignore_ascii_case("constant")
   {

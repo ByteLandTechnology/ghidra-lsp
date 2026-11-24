@@ -122,7 +122,7 @@ impl Symbol {
 
   /// Returns true when this symbol represents a function-local variable or parameter.
   pub(crate) fn local(&self) -> bool {
-    self.kind == "Local" || self.kind == "Parameter"
+    matches!(self.kind.as_str(), "Local" | "Local Var" | "Parameter")
   }
 
   /// Returns the name prefixed with its namespace when it is not in `Global`.
@@ -337,9 +337,12 @@ pub(crate) fn resolve(spans: &mut [Span], symbols: &[Symbol], locals: &HashSet<S
   let resolved: Vec<Option<Symbol>> = spans
     .iter()
     .map(|s| {
-      // Native GUI tokens carry the target symbol for functions, parameters, and locals.
+      // Native GUI tokens keep their attached function, variable, parameter, or global symbol.
       if s.location.is_some()
-        && matches!(s.token.kind.as_str(), "function" | "variable" | "parameter")
+        && matches!(
+          s.token.kind.as_str(),
+          "function" | "variable" | "parameter" | "global"
+        )
         && s.symbol.is_some()
       {
         return s.symbol.clone();
@@ -422,11 +425,22 @@ pub(crate) struct LocalBinding {
   pub(crate) symbol: Symbol,
   /// Zero-based parameter ordinal when `symbol` is a parameter.
   pub(crate) ordinal: Option<u64>,
-  /// Raw storage serialization or register name when known.
+  /// Formatted variable storage text when known.
   pub(crate) storage: Option<String>,
+  /// Raw variable storage serialization string when known.
+  pub(crate) serialization: Option<String>,
 }
 
-/// Resolves variable and parameter spans from native GUI symbol tags or unique local names.
+impl LocalBinding {
+  /// Returns true when `storage_ser` matches the raw serialization or formatted storage text.
+  pub(crate) fn matches_storage(&self, storage_ser: &str) -> bool {
+    !storage_ser.is_empty()
+      && (self.serialization.as_deref() == Some(storage_ser)
+        || self.storage.as_deref() == Some(storage_ser))
+  }
+}
+
+/// Resolves variable and parameter spans without a symbol when `locals` has one match.
 pub(crate) fn resolve_locals(code: &str, spans: &mut [Span], locals: &[LocalBinding]) {
   for span in spans {
     if !matches!(span.token.kind.as_str(), "variable" | "parameter") {
@@ -436,32 +450,8 @@ pub(crate) fn resolve_locals(code: &str, spans: &mut [Span], locals: &[LocalBind
       span.symbol = None;
       continue;
     }
-    if let Some(raw) = span.symbol.as_ref() {
-      if let Some(ord_text) = raw.id.strip_prefix("parameter:")
-        && let Ok(ord) = ord_text.parse::<u64>()
-        && let Some(bound) = locals.iter().find(|b| b.ordinal == Some(ord))
-      {
-        span.symbol = Some(bound.symbol.clone());
-        continue;
-      }
-      if let Some(rest) = raw.id.strip_prefix("local:")
-        && let Some((_, storage_ser)) = rest.split_once(':')
-        && let Some(bound) = locals
-          .iter()
-          .find(|b| {
-            b.symbol.kind == "Local"
-              && b.storage.as_deref() == Some(storage_ser)
-              && b.symbol.name == raw.name
-          })
-          .or_else(|| {
-            locals
-              .iter()
-              .find(|b| b.symbol.kind == "Local" && b.storage.as_deref() == Some(storage_ser))
-          })
-      {
-        span.symbol = Some(bound.symbol.clone());
-        continue;
-      }
+    if span.symbol.is_some() {
+      continue;
     }
     let mut candidates = locals.iter().filter(|b| b.symbol.name == span.token.text);
     let candidate = candidates.next();

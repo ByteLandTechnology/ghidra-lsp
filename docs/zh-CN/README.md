@@ -79,7 +79,7 @@ cargo build --locked --release
 cargo xtask ci
 ```
 
-通过 [CI 工作流](../../.github/workflows/ci.yml)（`release-please` + 6 平台构建 + GitHub OIDC Trusted Publishing），每次发布都会自动同步版本号、上传 GitHub Release 产物，并将 6 个平台包与 `@ghidra-lsp/cli` 发布到 npm。
+通过 [CI 工作流](../../.github/workflows/ci.yml)（`release-please` + 6 平台与 VS Code 扩展构建 + GitHub OIDC Trusted Publishing），每次发布都会自动同步 `Cargo.toml`、`npm/cli/package.json` 及 VS Code 扩展版本号、上传二进制与 `.vsix` 等 GitHub Release 产物，将 6 个平台包与 `@ghidra-lsp/cli` 发布到 npm，并通过 Trusted Publishing 将扩展发布到 Visual Studio Marketplace（配置了 `OVSX_PAT` 时同步发布到 Open VSX）。
 
 命令行启动参数速览（完整说明见[快速上手](getting-started.md)）：
 

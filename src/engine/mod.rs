@@ -9,6 +9,8 @@ mod assist;
 mod decorations;
 /// Incoming and outgoing call hierarchy builders.
 mod hierarchy;
+/// Function parameter and local variable merging, caching, and span binding.
+mod locals;
 /// Symbol resolution, definitions, and cross-reference lookups.
 mod navigation;
 /// Scoped rename preview, origin save persistence, and document refresh.
@@ -23,9 +25,8 @@ use tower_lsp_server::ls_types::Uri;
 
 use crate::backend::{McpBackend, list_all};
 use crate::document::{
-  Document, LocalBinding, Symbol, Token, align, canonical_virtual_uri, data_type_name,
-  extract_label_address, format_storage_value, is_field_access, is_label_token, resolve,
-  resolve_locals, same_address, virtual_uri,
+  Document, Symbol, Token, align, canonical_virtual_uri, data_type_name, extract_label_address,
+  is_label_token, resolve, same_address, virtual_uri,
 };
 
 /// Finds a function symbol by address first and by name or qualified name second.
@@ -288,7 +289,7 @@ impl Engine {
           serde_json::from_value(tokens.get("tokens").context("missing tokens")?.clone())?;
         align(&doc.base, tokens)?
       };
-      let function = merge_decompilation_locals(
+      let function = locals::merge_decompilation_locals(
         function
           .as_ref()
           .map_err(|error| anyhow::anyhow!("{error:#}"))?,
@@ -307,81 +308,17 @@ impl Engine {
         .filter_map(|v| v.get("name").and_then(Value::as_str).map(str::to_owned))
         .collect();
       resolve(&mut spans, &symbols, &locals);
-      let mut local_symbols = vec![];
       let entry_str = doc.entry.as_deref().unwrap_or(entry);
-      let param_prefix = format!("Parameter:{md5}:{entry_str}:");
-      let local_prefix = format!("Local:{md5}:{entry_str}:");
-      self
-        .local_details
-        .retain(|k, _| !k.starts_with(&param_prefix) && !k.starts_with(&local_prefix));
-      for (key, kind) in [("parameters", "Parameter"), ("local_variables", "Local")] {
-        for variable in function
-          .get(key)
-          .and_then(Value::as_array)
-          .into_iter()
-          .flatten()
-        {
-          let Some(name) = variable.get("name").and_then(Value::as_str) else {
-            continue;
-          };
-          if name.is_empty() {
-            continue;
-          }
-          let ordinal = (kind == "Parameter")
-            .then(|| variable.get("ordinal").and_then(Value::as_u64))
-            .flatten();
-          if kind == "Parameter" && ordinal.is_none() {
-            continue;
-          }
-          let storage_val = variable.get("storage").filter(|s| !s.is_null());
-          let identity = if let Some(ord) = ordinal {
-            json!({"ordinal": ord})
-          } else if let Some(storage) = storage_val {
-            json!({"storage": storage, "name": name})
-          } else {
-            json!({"name": name})
-          };
-          let id = format!("{kind}:{md5}:{entry_str}:{identity}");
-          let mut detail = variable.clone();
-          detail["entry"] = json!(entry_str);
-          detail["kind"] = json!(kind);
-          self.local_details.insert(id.clone(), detail);
-          let storage_text = format_storage_value(storage_val);
-          local_symbols.push(LocalBinding {
-            symbol: Symbol {
-              demangled_name: None,
-              id,
-              name: name.into(),
-              address: entry_str.to_owned(),
-              namespace: String::new(),
-              kind: kind.into(),
-            },
-            ordinal,
-            storage: (!storage_text.is_empty()).then_some(storage_text),
-          });
-        }
-      }
-      resolve_locals(&doc.base, &mut spans, &local_symbols);
+      self.bind_function_locals(
+        md5,
+        entry_str,
+        &doc.base,
+        &function,
+        has_native_locals,
+        &mut spans,
+      );
       for span in &mut spans {
         if span.symbol.is_none()
-          && !has_native_locals
-          && matches!(span.token.kind.as_str(), "variable" | "parameter")
-          && !is_field_access(&doc.base, span.start)
-        {
-          let kind = if span.token.kind == "parameter" {
-            "Parameter"
-          } else {
-            "Local"
-          };
-          span.symbol = Some(Symbol {
-            demangled_name: None,
-            id: format!("{kind}:{md5}:{entry_str}:name={}", span.token.text),
-            name: span.token.text.clone(),
-            address: entry_str.to_owned(),
-            namespace: String::new(),
-            kind: kind.into(),
-          });
-        } else if span.symbol.is_none()
           && (span.token.kind == "label"
             || is_label_token(&span.token.text, span.start, span.end, &doc.base))
         {
@@ -725,42 +662,6 @@ fn append_warning(doc: &mut Document, message: &str) {
     || message.into(),
     |previous| format!("{previous}; {message}"),
   ));
-}
-
-/// Merges `local_variables` from `decompilation` into `function` without duplicating entries.
-fn merge_decompilation_locals(function: &Value, decompilation: &Value) -> Value {
-  let mut merged = function.clone();
-  let Some(extra) = decompilation
-    .get("local_variables")
-    .and_then(Value::as_array)
-  else {
-    return merged;
-  };
-  let mut locals = merged
-    .get("local_variables")
-    .and_then(Value::as_array)
-    .cloned()
-    .unwrap_or_default();
-  let mut seen: HashSet<(String, String)> = locals
-    .iter()
-    .filter_map(|v| {
-      Some((
-        v.get("name")?.as_str()?.to_owned(),
-        format_storage_value(v.get("storage")),
-      ))
-    })
-    .collect();
-  for item in extra {
-    let Some(name) = item.get("name").and_then(Value::as_str) else {
-      continue;
-    };
-    let key = (name.to_owned(), format_storage_value(item.get("storage")));
-    if seen.insert(key) {
-      locals.push(item.clone());
-    }
-  }
-  merged["local_variables"] = Value::Array(locals);
-  merged
 }
 
 /// Returns true when an error indicates `ghidra-mcp` does not support document decompile format.
