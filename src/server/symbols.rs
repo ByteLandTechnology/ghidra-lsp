@@ -161,7 +161,7 @@ impl Server {
       backend.as_ref(),
       "data_type",
       &md5,
-      json!({"page": {"limit": 500}}),
+      json!({"page": {"limit": 1000}}),
     )
     .await
     {
