@@ -4,6 +4,7 @@
 import * as vscode from 'vscode';
 import { ProgramContext } from './context';
 import { ListingFiles, listingScheme } from './listing';
+import { singleKeyShortcutsEnabled } from './program-views-controller';
 import { Workbench, ControlFlowData } from './workbench';
 import { escapeHtml, page } from './workbench-page';
 import { AddressRange, addressRange, intersects } from './view-ranges';
@@ -96,16 +97,17 @@ export class ControlFlowView implements vscode.CustomTextEditorProvider, vscode.
             this.render(state, panel);
             this.opened.fire({ uri: state.uri, entry: state.entry });
         } catch (error) {
-            panel.webview.html = page({ title: 'Control Flow', subtitle: this.context.name(document.uri.authority), body: `<p class="error">${escapeHtml(String(error))}</p>` });
+            panel.webview.html = page({ title: 'Control Flow', subtitle: this.context.name(document.uri.authority), body: `<p class="error">${escapeHtml(String(error))}</p>`, singleKeyShortcuts: singleKeyShortcutsEnabled() });
         }
     }
     /** Render the CFG HTML document into `panel`. */
     private render(state: GraphState, panel: vscode.WebviewPanel): void {
         this.context.track(state.uri.authority);
         panel.title = this.title(state);
+        const singleKeyShortcuts = singleKeyShortcutsEnabled();
         panel.webview.html = page({ title: 'Control Flow', subtitle: `${state.data.name} · ${this.context.name(state.uri.authority)}`,
-            body: state.data.body, scope: state.data.scope, graph: true, controlFlow: true,
-            state: { kind: 'controlFlow', md5: state.uri.authority, entry: state.entry, analysisUri: state.uri.toString() } });
+            body: state.data.body, scope: state.data.scope, graph: true, controlFlow: true, singleKeyShortcuts,
+            state: { kind: 'controlFlow', md5: state.uri.authority, entry: state.entry, analysisUri: state.uri.toString(), singleKeyShortcuts } });
     }
     /** Handle selection, refresh, and decompile messages posted by the CFG webview. */
     private async message(state: GraphState, panel: vscode.WebviewPanel, message: { action?: string; address?: string }): Promise<void> {
@@ -188,6 +190,16 @@ export class ControlFlowView implements vscode.CustomTextEditorProvider, vscode.
             state.data = await this.workbench.controlFlow(md5, state.entry);
             for (const panel of state.panels) { this.render(state, panel); }
         }
+    }
+    /** Send a live `singleKeyShortcuts` update to all open CFG panels. */
+    async setSingleKeyShortcuts(enabled: boolean): Promise<void> {
+        const posts: Thenable<boolean>[] = [];
+        for (const state of this.states.values()) {
+            for (const panel of state.panels) {
+                posts.push(panel.webview.postMessage({ action: 'singleKeyShortcuts', singleKeyShortcuts: enabled }));
+            }
+        }
+        await Promise.allSettled(posts);
     }
     /** Dispose all CFG panels and cached highlights belonging to `md5`. */
     close(md5: string): void {

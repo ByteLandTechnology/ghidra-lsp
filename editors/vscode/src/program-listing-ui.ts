@@ -13,7 +13,7 @@ import { displayAddress } from './names';
 import { pageStyles } from './page-styles';
 import { addrSpan, programViewStyles } from './program-views-styles';
 import { highlightAsm, highlightName } from './syntax';
-import { viewStyles } from './view-ui';
+import { viewStyles, webviewShortcutScript } from './view-ui';
 import { escape } from './web';
 
 /** Full view-model payload used to render the graphical Program Listing HTML page. */
@@ -31,6 +31,7 @@ export interface ListingViewPayload {
     canBack: boolean;
     canForward: boolean;
     syncEnabled: boolean;
+    singleKeyShortcuts?: boolean;
     totalUnitsLabel: string;
 }
 
@@ -142,6 +143,7 @@ export function renderProgramListingPage(payload: ListingViewPayload): string {
         windowStart: payload.window.startAddress,
         windowEnd: payload.window.endAddress,
         syncEnabled: payload.syncEnabled,
+        singleKeyShortcuts: payload.singleKeyShortcuts !== false,
     }).replace(/</g, '\\u003c');
 
     return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; font-src data:; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}';"><title>${escape(payload.title)}</title><style nonce="${nonce}">
@@ -259,6 +261,7 @@ const persist = () => {
     scrollTop: wrap.scrollTop,
   });
 };
+${webviewShortcutScript}
 
 const unitRows = () => [...tbody.querySelectorAll('tr.listing-unit-row')];
 const findUnitRow = addr => addr ? unitRows().find(r => r.dataset.address?.toLowerCase() === addr.toLowerCase()) : undefined;
@@ -487,14 +490,15 @@ document.addEventListener('keydown', event => {
     if (event.key === 'ArrowLeft') { event.preventDefault(); vscode.postMessage({ action: 'navBack' }); return; }
     if (event.key === 'ArrowRight') { event.preventDefault(); vscode.postMessage({ action: 'navForward' }); return; }
   }
-  const inInput = event.target.closest('input,select,textarea');
+  if (isModShortcut(event, 'f')) { event.preventDefault(); search.focus(); search.select(); return; }
+  if (isModShortcut(event, 'g')) { event.preventDefault(); addressInput.focus(); addressInput.select(); return; }
   if (event.key === 'Escape') {
     if (pageOptions.open) { pageOptions.open = false; pageOptions.querySelector('summary').focus(); return; }
     if (more.open) { more.open = false; moreSummary.focus(); return; }
     if (search.value) { search.value = ''; applyFilter(); persist(); return; }
   }
-  if (!inInput && event.key === '/') { event.preventDefault(); search.focus(); search.select(); }
-  else if (!inInput && event.key.toLowerCase() === 'g') { event.preventDefault(); addressInput.focus(); addressInput.select(); }
+  if (event.key === '/' && canUseSingleKeyShortcut(event)) { event.preventDefault(); search.focus(); search.select(); }
+  else if ((event.key || '').toLowerCase() === 'g' && canUseSingleKeyShortcut(event)) { event.preventDefault(); addressInput.focus(); addressInput.select(); }
 });
 
 window.addEventListener('message', event => {

@@ -303,6 +303,47 @@ export const viewStyles = `
 @media(prefers-reduced-motion:reduce){.inspector-page.is-busy::before{width:100%;opacity:.6;animation:none}}
 `;
 
+/** Format the search toggle tooltip for the active shortcut mode. */
+export function searchShortcutTitle(label: string, singleKeyShortcuts: boolean): string {
+    const mod = typeof process !== 'undefined' && process.platform === 'darwin' ? 'Cmd+F' : 'Ctrl+F';
+    return `${label} (${singleKeyShortcuts ? '/' : mod})`;
+}
+
+/** Format the graph-fit tooltip for the active shortcut mode. */
+export function fitGraphTitle(singleKeyShortcuts: boolean): string {
+    return singleKeyShortcuts ? 'Fit the entire graph (0)' : 'Fit the entire graph';
+}
+
+/** Shared client script for shortcut guards, modifier keys, live updates, and tooltips. */
+export const webviewShortcutScript = String.raw`
+const shortcutGuardSelector='input,select,textarea,[contenteditable]:not([contenteditable="false" i]),button,summary,[role="button"]';
+const isShortcutBlockedElement=node=>{const el=node instanceof Element?node:node?.parentElement;return Boolean(el)&&(Boolean(el.isContentEditable)||Boolean(el.closest(shortcutGuardSelector)))};
+const canUseSingleKeyShortcut=(event,directTarget)=>{
+  if(state.singleKeyShortcuts===false||event.ctrlKey||event.metaKey||event.altKey||event.isComposing){return false}
+  if(directTarget&&(event.target!==directTarget||(directTarget.contains(document.activeElement)&&document.activeElement!==directTarget))){return false}
+  return !isShortcutBlockedElement(event.target)&&!isShortcutBlockedElement(document.activeElement);
+};
+const isModShortcut=(event,key)=>!event.altKey&&!event.shiftKey&&!event.isComposing&&(event.ctrlKey||event.metaKey)&&(event.key||'').toLowerCase()===key;
+const syncShortcutHints=()=>{
+  const platform=(navigator.userAgentData&&navigator.userAgentData.platform)||navigator.platform||navigator.userAgent||'';
+  const mod=/Mac|iPhone|iPad|iPod/i.test(platform)?'Cmd+F':'Ctrl+F';
+  const searchHint=state.singleKeyShortcuts===false?mod:'/';
+  const cfgToggle=document.getElementById('cfg-search-toggle');if(cfgToggle){cfgToggle.title='Find blocks ('+searchHint+')'}
+  const callToggle=document.getElementById('call-search-toggle');if(callToggle){callToggle.title='Find functions ('+searchHint+')'}
+  const fitBtn=document.getElementById('graph-fit');if(fitBtn){fitBtn.title=state.singleKeyShortcuts===false?'Fit the entire graph':'Fit the entire graph (0)'}
+};
+const setSingleKeyShortcuts=enabled=>{
+  state.singleKeyShortcuts=enabled!==false;
+  syncShortcutHints();
+  if(typeof persist==='function'){persist()}
+};
+window.addEventListener('message',event=>{
+  const msg=event.data||{};
+  if(msg.action==='singleKeyShortcuts'){setSingleKeyShortcuts(typeof msg.singleKeyShortcuts==='boolean'?msg.singleKeyShortcuts:msg.enabled)}
+});
+syncShortcutHints();
+`;
+
 /** Client-side script for filterable browser tables and keyboard row navigation. */
 export const browserViewScript = String.raw`
     (()=>{
