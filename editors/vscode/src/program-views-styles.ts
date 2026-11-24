@@ -92,23 +92,24 @@ export const programViewStyles = `
 .program-view[data-view-kind="memory"] .hex-main{min-width:0;display:flex;flex-direction:column}
 .program-view[data-view-kind="memory"] .hex-grid-wrap{max-height:max(220px,calc(100vh - 150px));overflow:auto;min-width:0}
 .program-view[data-view-kind="memory"] table.hex-table{width:auto;min-width:0;border-collapse:collapse;font-family:var(--vscode-editor-font-family,monospace);font-size:12px;font-variant-numeric:tabular-nums}
-.program-view[data-view-kind="memory"] table.hex-table th{position:sticky;top:0;z-index:1;background:var(--vscode-editor-background);padding:6px 8px;font-size:11px;font-weight:600;color:var(--vscode-descriptionForeground);border-bottom:1px solid var(--vscode-panel-border);white-space:nowrap}
-.program-view[data-view-kind="memory"] table.hex-table td{padding:3px 8px;line-height:1.5;border-bottom:0;white-space:nowrap}
+.program-view[data-view-kind="memory"] table.hex-table thead th{position:sticky;top:0;z-index:2;background:var(--vscode-editor-background);padding:4px 8px;height:26px;min-height:24px;font-size:11px;font-weight:600;color:var(--vscode-descriptionForeground);border-bottom:1px solid var(--vscode-panel-border);white-space:nowrap;vertical-align:middle}
+.program-view[data-view-kind="memory"] table.hex-table thead th.addr{left:0;z-index:3;text-align:left}
+.program-view[data-view-kind="memory"] table.hex-table tbody th.addr{position:sticky;left:0;top:auto;z-index:1;background:var(--vscode-editor-background);padding:3px 8px;height:24px;min-height:24px;line-height:18px;font-family:var(--vscode-editor-font-family,monospace);font-size:11px;font-weight:400;font-variant-numeric:tabular-nums;color:var(--vscode-descriptionForeground);border-bottom:0;white-space:nowrap;vertical-align:middle;text-align:left;cursor:pointer}
+.program-view[data-view-kind="memory"] table.hex-table td{padding:3px 8px;height:24px;min-height:24px;line-height:18px;border-bottom:0;white-space:nowrap;vertical-align:middle}
 .program-view[data-view-kind="memory"] tr.hex-row{border-bottom:1px solid color-mix(in srgb,var(--vscode-panel-border) 30%,transparent)}
-.program-view[data-view-kind="memory"] tr.hex-row.selected{background:color-mix(in srgb,var(--vscode-focusBorder) 12%,var(--vscode-list-inactiveSelectionBackground,var(--vscode-editor-background)))}
-.program-view[data-view-kind="memory"] tr.hex-row.selected td.addr{color:var(--vscode-foreground);font-weight:600;box-shadow:inset 3px 0 var(--vscode-focusBorder)}
-.program-view[data-view-kind="memory"] td.hex-bytes,.program-view[data-view-kind="memory"] th.hex-cols-head{white-space:nowrap;font-family:var(--vscode-editor-font-family,monospace)}
-.program-view[data-view-kind="memory"] .hex-row-cells{display:inline-flex;align-items:center}
-.program-view[data-view-kind="memory"] .hb,.program-view[data-view-kind="memory"] .hx-col{display:inline-block;width:22px;text-align:center;border-radius:2px;user-select:none}
-.program-view[data-view-kind="memory"] .hb.is-gap,.program-view[data-view-kind="memory"] .hx-col.is-gap{margin-left:8px}
-.program-view[data-view-kind="memory"] .hb[data-address]{cursor:pointer}
-.program-view[data-view-kind="memory"] .hb[data-address]:hover{background:var(--vscode-list-hoverBackground)}
-.program-view[data-view-kind="memory"] .hb.is-null{color:var(--vscode-descriptionForeground);opacity:.7}
-.program-view[data-view-kind="memory"] .hb.is-pad{visibility:hidden}
-.program-view[data-view-kind="memory"] .hb.is-selected,.program-view[data-view-kind="memory"] .ha.is-selected{border-radius:4px;background:color-mix(in srgb,var(--vscode-focusBorder) 28%,var(--vscode-list-activeSelectionBackground));color:var(--vscode-list-activeSelectionForeground,var(--vscode-foreground));box-shadow:inset 0 0 0 1px var(--vscode-focusBorder);font-weight:600}
+.program-view[data-view-kind="memory"] tr.hex-row:hover th.addr{background:var(--vscode-list-hoverBackground)}
+.program-view[data-view-kind="memory"] tr.hex-row.selected{background:color-mix(in srgb,var(--vscode-focusBorder) 12%,var(--vscode-editor-background));color:var(--vscode-foreground)}
+.program-view[data-view-kind="memory"] tr.hex-row.selected th.addr{color:var(--vscode-foreground);font-weight:600;background:color-mix(in srgb,var(--vscode-focusBorder) 14%,var(--vscode-editor-background));box-shadow:inset 3px 0 var(--vscode-focusBorder)}
+.program-view[data-view-kind="memory"] table.hex-table th.hx-col,.program-view[data-view-kind="memory"] table.hex-table td.hb{width:25px;min-width:24px;height:25px;min-height:24px;padding:3px 2px;font-family:var(--vscode-editor-font-family,monospace);text-align:center;user-select:none}
+.program-view[data-view-kind="memory"] table.hex-table th.hx-col.is-gap,.program-view[data-view-kind="memory"] table.hex-table td.hb.is-gap{border-left:1px solid color-mix(in srgb,var(--vscode-panel-border) 45%,transparent)}
+.program-view[data-view-kind="memory"] td.hb[data-address]{cursor:pointer}
+.program-view[data-view-kind="memory"] td.hb[data-address]:hover{background:var(--vscode-list-hoverBackground)}
+.program-view[data-view-kind="memory"] td.hb:focus-visible{outline:2px solid var(--vscode-focusBorder);outline-offset:-2px;position:relative;z-index:1}
+.program-view[data-view-kind="memory"] td.hb.is-null{color:var(--vscode-descriptionForeground)}
+.program-view[data-view-kind="memory"] td.hb.is-pad{pointer-events:none}
+.program-view[data-view-kind="memory"] td.hb.is-selected,.program-view[data-view-kind="memory"] .ha.is-selected{border-radius:3px;background:color-mix(in srgb,var(--vscode-focusBorder) 22%,var(--vscode-editor-background));color:var(--vscode-foreground);box-shadow:inset 0 0 0 1px var(--vscode-focusBorder);font-weight:600}
 .program-view[data-view-kind="memory"] td.hex-ascii{letter-spacing:0;padding-left:10px;border-left:1px solid color-mix(in srgb,var(--vscode-panel-border) 50%,transparent)}
-.program-view[data-view-kind="memory"] .ha{display:inline-block;width:8px;text-align:center;border-radius:2px;cursor:pointer;user-select:none}
-.program-view[data-view-kind="memory"] .ha:hover{background:var(--vscode-list-hoverBackground)}
+.program-view[data-view-kind="memory"] .ha{display:inline-block;width:8px;text-align:center;border-radius:2px}
 .program-view[data-view-kind="memory"] .ha.is-pad{visibility:hidden}
 .program-view[data-view-kind="memory"] .hex-inspector{min-width:0;padding:4px 0 8px 18px;border-left:1px solid var(--vscode-panel-border)}
 .program-view[data-view-kind="memory"] .hex-inspector-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 6px}
@@ -121,7 +122,7 @@ export const programViewStyles = `
 .program-view[data-view-kind="memory"] .hex-inspector dl>div{display:flex;flex-direction:column;gap:3px;min-width:0;padding:8px 10px;border:1px solid color-mix(in srgb,var(--vscode-panel-border) 80%,transparent);border-radius:8px;background:color-mix(in srgb,var(--vscode-sideBar-background,var(--vscode-editor-background)) 75%,var(--vscode-editor-background));font-size:11px}
 .program-view[data-view-kind="memory"] .hex-inspector dt{font-size:10.5px;color:var(--vscode-descriptionForeground);font-weight:600;line-height:1.25}
 .program-view[data-view-kind="memory"] .hex-inspector dd{margin:0;font-family:var(--vscode-editor-font-family,monospace);font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;color:var(--vscode-foreground);overflow-wrap:anywhere;line-height:1.3}
-.program-view[data-view-kind="memory"] .hex-ptr-btn{min-height:0;padding:0;border:0;background:transparent;color:var(--vscode-textLink-foreground);font-family:var(--vscode-editor-font-family,monospace);font-size:12px;font-weight:600;cursor:pointer;text-align:left}
+.program-view[data-view-kind="memory"] .hex-ptr-btn{display:inline-flex;align-items:center;min-height:24px;padding:0;border:0;background:transparent;color:var(--vscode-textLink-foreground);font-family:var(--vscode-editor-font-family,monospace);font-size:12px;font-weight:600;cursor:pointer;text-align:left}
 .program-view[data-view-kind="memory"] .hex-ptr-btn:hover{text-decoration:underline;color:var(--vscode-textLink-activeForeground)}
 .program-view[data-view-kind="memory"] .memory-map{margin-top:12px;padding-top:10px;border-top:1px solid var(--vscode-panel-border)}
 .program-view[data-view-kind="memory"] .memory-map>summary{font-size:12px;font-weight:600;color:var(--vscode-foreground);margin-bottom:8px}
@@ -142,12 +143,8 @@ export const programViewStyles = `
 .program-view[data-view-kind="listing"] table.listing-table td.col-comment{max-width:170px}
 }
 @media(max-width:580px){
-.program-view[data-view-kind="memory"] table.hex-table th,.program-view[data-view-kind="memory"] table.hex-table td{padding:2px 5px}
-.program-view[data-view-kind="memory"] .hb,.program-view[data-view-kind="memory"] .hx-col{width:19px;font-size:11px}
-.program-view[data-view-kind="memory"] .hb.is-gap,.program-view[data-view-kind="memory"] .hx-col.is-gap{margin-left:5px}
-.program-view[data-view-kind="memory"] table.hex-table th:first-child,.program-view[data-view-kind="memory"] table.hex-table tr.hex-row td.addr{position:sticky;left:0;z-index:2;background:var(--vscode-editor-background)}
-.program-view[data-view-kind="memory"] table.hex-table tr.hex-row:hover td.addr{background:var(--vscode-list-hoverBackground)}
-.program-view[data-view-kind="memory"] table.hex-table tr.hex-row.selected td.addr{background:color-mix(in srgb,var(--vscode-focusBorder) 14%,var(--vscode-editor-background));box-shadow:inset 3px 0 var(--vscode-focusBorder)}
+.program-view[data-view-kind="memory"] table.hex-table thead th.addr,.program-view[data-view-kind="memory"] table.hex-table tbody th.addr,.program-view[data-view-kind="memory"] table.hex-table td.hex-ascii{padding-left:6px;padding-right:6px}
+.program-view[data-view-kind="memory"] table.hex-table th.hx-col,.program-view[data-view-kind="memory"] table.hex-table td.hb{font-size:11px}
 }
 @media(max-width:520px){
 .program-view .pv-toolbar{flex-wrap:wrap}
