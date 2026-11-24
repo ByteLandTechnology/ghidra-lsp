@@ -25,7 +25,7 @@ interface SaveOutcome { close?: boolean; title?: string; tables?: Record<string,
 interface Mutation { method: string; arguments: Data; }
 /** Read and trim a string field value from form data. */
 const value = (data: Data, key: string): string => String(data[key] ?? '').trim();
-/** Read a non-empty trimmed string field or throw a {@link FieldError} naming `label` at `path`. */
+/** Read a non-empty trimmed string field or throw a {@link FieldError} for `label` at `path`. */
 const required = (data: Data, key: string, label: string, path: FieldPath = [key]): string => requiredText(data[key], label, path);
 /** Return true when checkbox field `key` is checked. */
 const checked = (data: Data, key: string): boolean => data[key] === true;
@@ -51,8 +51,9 @@ function grid(spec: Grid): string {
     const row = (data: Data, rowIndex?: number): string => {
         const number = rowIndex === undefined ? undefined : rowIndex + 1;
         const cells = spec.columns.map(column => {
+            const id = number === undefined ? undefined : `grid-${spec.key}-${number}-${column.key}`;
             const label = number === undefined ? column.label : `${prefix} ${number} ${column.label.toLowerCase()}`;
-            return `<td>${formControl({ path: [spec.key, rowIndex ?? spec.values.length, column.key], column: column.key, label, value: data[column.key], kind: column.kind, inline: true, required: column.required, data: { label: column.label } })}</td>`;
+            return `<td>${formControl({ id, path: [spec.key, rowIndex ?? spec.values.length, column.key], column: column.key, label, value: data[column.key], kind: column.kind, inline: true, required: column.required, data: { label: column.label } })}</td>`;
         }).join('');
         const remove = spec.remove === false ? '' : `<td><button${number === undefined ? '' : ` id="grid-${escape(spec.key)}-${number}-remove"`} type="button" class="row-remove secondary" data-remove-row aria-label="Remove ${escape(singular)}${number === undefined ? '' : ` ${number}`}" title="Remove ${escape(singular)}">${callIcon('trash')}</button></td>`;
         return `<tr data-original="${escape(data._original ?? '')}">${cells}${remove}</tr>`;

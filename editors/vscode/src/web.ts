@@ -31,7 +31,7 @@ export function reference(value: unknown): string {
         default: return text(ref.name);
     }
 }
-/** JSON path segment sequence locating a form control or data type member field. */
+/** JSON path segments that identify a form control or data-type member field. */
 export type FieldPath = (string | number)[];
 /** Validation error bound to a structured control `path`. */
 export class FieldError extends Error {
@@ -63,21 +63,23 @@ export function integer(value: unknown, label: string, minimum = 0, maximum = 21
     if (!raw || !Number.isSafeInteger(number) || number < minimum || number > maximum) { throw new FieldError(`${label} must be an integer between ${minimum} and ${maximum}.`, path); }
     return number;
 }
-/** Options for rendering an accessible HTML form control via {@link formControl}. */
+/** Options to render an accessible HTML form control with {@link formControl}. */
 export interface FormControlOptions {
-    /** Structured path identifying this control for focus and error binding. */
+    /** Explicit HTML element ID that overrides {@link fieldControlId}. */
+    id?: string;
+    /** Structured path that identifies this control for focus and error state. */
     path: FieldPath;
-    /** Visible or accessible label describing the control purpose. */
+    /** Visible or accessible label that gives the control purpose. */
     label: string;
     /** Initial scalar or boolean value rendered in the control. */
     value?: unknown;
     /** Control input presentation kind. */
     kind?: 'text' | 'number' | 'textarea' | 'checkbox' | 'type';
-    /** Optional HTML `name` attribute for form submission collection. */
+    /** Optional HTML `name` attribute for form submission data. */
     name?: string;
     /** Optional `data-column` attribute for editable table cells. */
     column?: string;
-    /** Render without a visible `<label>` wrapper, using `aria-label` on the control. */
+    /** Render without a visible `<label>` wrapper and set `aria-label` on the control. */
     inline?: boolean;
     /** Mark the control as mandatory when editable. */
     required?: boolean;
@@ -100,7 +102,7 @@ export interface FormControlOptions {
 }
 /** Render a labeled HTML form control paired with a field error description element. */
 export function formControl(options: FormControlOptions): string {
-    const id = fieldControlId(options.path);
+    const id = options.id || fieldControlId(options.path);
     const errorId = `${id}-error`;
     const isRequired = Boolean(options.required && !options.readonly && !options.disabled);
     const extraData = Object.entries(options.data || {})
@@ -251,7 +253,7 @@ export function page(title: string, eyebrow: string, subtitle: unknown, body: st
         [...table.tBodies[0].rows].forEach((row,rowIndex)=>{
           const number=rowIndex+1;
           for(const el of row.querySelectorAll('[data-column]')){
-            const path=[key,rowIndex,el.dataset.column],id=fieldId(path),prevErrId=el.dataset.errorId,nextErrId=id+'-error';
+            const path=[key,rowIndex,el.dataset.column],id=table.dataset.singular?'grid-'+key+'-'+number+'-'+el.dataset.column:fieldId(path),prevErrId=el.dataset.errorId,nextErrId=id+'-error';
             const errEl=prevErrId?row.querySelector('#'+CSS.escape(prevErrId)):el.nextElementSibling;
             el.id=id;el.dataset.path=JSON.stringify(path);el.dataset.errorId=nextErrId;
             if(el.dataset.label||table.dataset.singular)el.setAttribute('aria-label',prefix+' '+number+' '+(el.dataset.label||el.dataset.column).toLowerCase());

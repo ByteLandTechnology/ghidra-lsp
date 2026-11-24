@@ -16,7 +16,7 @@ export const typeScheme = 'ghidra-type';
 export interface TypeDiagnosticIssue {
     /** Human-readable validation or save error message. */
     message: string;
-    /** JSON path segments locating the offending control, if any. */
+    /** JSON path segments that identify the invalid control, if any. */
     path: FieldPath;
 }
 /** Persisted baseline and draft state for one open data type URI. */

@@ -8,9 +8,9 @@ import { Data, FieldError, FieldPath, object, reference, rows, typeReference } f
 export interface TypeMutation { method: string; arguments: Data; }
 /** Editable JSONC model representation of a Ghidra struct, union, enum, or function definition. */
 export interface TypeModel { path: string; kind: string; fields?: Data[]; values?: Data[]; signature?: Data; }
-/** JSON path segment sequence locating a field inside a type document. */
+/** JSON path segments that identify a field in a type document. */
 type JsonPath = FieldPath;
-/** Validation or schema error carrying the offending JSON path or character span. */
+/** Validation or schema error with a JSON path or character span. */
 export class TypeEditError extends FieldError {
     /** Create a type edit error attached to `path` and an optional source span. */
     constructor(message: string, path: JsonPath = [], readonly offset?: number, readonly length?: number) { super(message, path); }

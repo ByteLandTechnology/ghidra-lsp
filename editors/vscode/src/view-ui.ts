@@ -64,6 +64,7 @@ export const viewStyles = `
 .inspector-page[data-view-kind="type-editor"] .type-table input:hover{background:var(--vscode-input-background);border-color:var(--vscode-input-border,transparent)}
 .inspector-page[data-view-kind="type-editor"] .type-table input:focus{background:var(--vscode-input-background);outline:2px solid var(--vscode-focusBorder);outline-offset:-2px}
 .inspector-page[data-view-kind="type-editor"] .type-table input[aria-invalid="true"]{background:var(--vscode-input-background);border-color:var(--vscode-inputValidation-errorBorder,var(--vscode-errorForeground))}
+.inspector-page[data-view-kind="type-editor"] .type-table tr:has(.field-error:not([hidden]):not(:empty)) td{vertical-align:top}
 .inspector-page[data-view-kind="type-editor"] .type-table td[data-field="offset"] input,.inspector-page[data-view-kind="type-editor"] .type-table td[data-field="length"] input,.inspector-page[data-view-kind="type-editor"] .type-table td[data-field="value"] input{font-variant-numeric:tabular-nums}
 .inspector-page[data-view-kind="type-editor"] .type-table th[data-field="offset"]{width:88px}
 .inspector-page[data-view-kind="type-editor"] .type-table th[data-field="length"]{width:100px}
@@ -107,6 +108,7 @@ export const viewStyles = `
 .inspector-page[data-view-kind="type-editor"] .type-table[data-kind="struct"] th[data-field="type"],.inspector-page[data-view-kind="type-editor"] .type-table:not([data-kind="struct"]) th[data-field="length"]{grid-column:2;grid-row:2}
 .inspector-page[data-view-kind="type-editor"] .type-table[data-kind="struct"] th[data-field="length"]{grid-column:3;grid-row:2}
 .inspector-page[data-view-kind="type-editor"] .type-table tbody tr{display:grid;grid-template-columns:32px repeat(2,minmax(0,1fr)) 32px;gap:6px 8px;padding:8px 0;border-bottom:1px solid var(--vscode-panel-border)}
+.inspector-page[data-view-kind="type-editor"] .type-table tbody tr:has(.field-error:not([hidden]):not(:empty)){align-items:start}
 .inspector-page[data-view-kind="type-editor"] .type-table tr:last-child{border-bottom:0}
 .inspector-page[data-view-kind="type-editor"] .type-table td{display:block;min-width:0;padding:0;border:0}
 .inspector-page[data-view-kind="type-editor"] .type-table tr[data-new] td:not([data-field="name"]){display:none}

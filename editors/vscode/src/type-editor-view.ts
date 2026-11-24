@@ -268,8 +268,8 @@ export class DataTypeEditorView implements vscode.CustomTextEditorProvider, vsco
                   if(el.dataset.newKey)el.value='';
                 }
                 const move=blank.querySelector('[data-move]'),remove=blank.querySelector('[data-action=remove]');
-                if(move)move.setAttribute('aria-label','Move '+singular+' '+(index+1));
-                if(remove)remove.setAttribute('aria-label','Remove '+singular+' '+(index+1));
+                if(move){move.id='f-move-'+key+'-'+(index+1);move.setAttribute('aria-label','Move '+singular+' '+(index+1))}
+                if(remove){remove.id='f-remove-'+key+'-'+(index+1);remove.setAttribute('aria-label','Remove '+singular+' '+(index+1))}
                 row.after(blank);
               };
               const edit=el=>{
