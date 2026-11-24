@@ -16,7 +16,7 @@ export const viewStyles = `
 .inspector-actions{display:flex;align-items:center;gap:2px;flex-shrink:0}
 .inspector-actions>button,.inspector-page .recovery>button,.inspector-menu-content button,.edit-page .form-actions button,.edit-page [data-add-row]{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:32px;font-size:12px;border-radius:3px}
 .inspector-page .icon-button,.browser-page .icon-button{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;min-height:0;padding:7px;border:0;background:transparent;color:var(--vscode-foreground);border-radius:3px;flex-shrink:0}
-.inspector-page .icon-button:hover:enabled,.browser-page .icon-button:hover:enabled{background:var(--vscode-toolbar-hoverBackground,var(--vscode-list-hoverBackground))}
+.inspector-page .icon-button:hover:enabled:not([aria-disabled="true"]),.browser-page .icon-button:hover:enabled:not([aria-disabled="true"]){background:var(--vscode-toolbar-hoverBackground,var(--vscode-list-hoverBackground))}
 .inspector-menu{position:relative;margin:0;padding:0;border:0;flex-shrink:0}
 .inspector-menu>summary{display:flex;align-items:center;justify-content:center;width:32px;height:32px;padding:7px;list-style:none;border-radius:3px;cursor:pointer;font-weight:400}
 .inspector-menu>summary:hover{background:var(--vscode-toolbar-hoverBackground,var(--vscode-list-hoverBackground))}
@@ -24,7 +24,7 @@ export const viewStyles = `
 .inspector-menu[open]>summary{margin:0}
 .inspector-menu-content{position:absolute;z-index:10;right:0;top:calc(100% + 5px);width:230px;max-width:calc(100vw - 32px);padding:6px;border:1px solid var(--vscode-menu-border,var(--vscode-panel-border));background:var(--vscode-menu-background,var(--vscode-editor-background));color:var(--vscode-menu-foreground,var(--vscode-foreground));box-shadow:0 4px 12px var(--vscode-widget-shadow)}
 .inspector-menu-content button{width:100%;justify-content:flex-start;text-align:left;border:0;background:transparent;color:inherit;padding:7px 9px}
-.inspector-menu-content button:hover:enabled{background:var(--vscode-menu-selectionBackground,var(--vscode-list-hoverBackground));color:var(--vscode-menu-selectionForeground,var(--vscode-foreground))}
+.inspector-menu-content button:hover:enabled:not([aria-disabled="true"]){background:var(--vscode-menu-selectionBackground,var(--vscode-list-hoverBackground));color:var(--vscode-menu-selectionForeground,var(--vscode-foreground))}
 .inspector-menu-content .danger{color:var(--vscode-errorForeground);border-top:1px solid var(--vscode-panel-border);margin-top:4px;padding-top:10px}
 /* Hallmark · data type editor · the definition is the work surface. */
 .inspector-page[data-view-kind="type-editor"] main{max-width:1060px;margin:0;padding:16px 22px 32px}
@@ -36,16 +36,16 @@ export const viewStyles = `
 .inspector-page[data-view-kind="type-editor"] .type-meta-sep{opacity:.55;user-select:none}
 .inspector-page[data-view-kind="type-editor"] .type-meta-stat{font-variant-numeric:tabular-nums;white-space:nowrap}
 .inspector-page[data-view-kind="type-editor"] .type-actions{display:inline-flex;align-items:center;gap:8px;flex-shrink:0}
-.inspector-page[data-view-kind="type-editor"] .type-validation:not([hidden]){margin:8px 0 12px;padding:8px 12px;border-left:1px solid var(--vscode-errorForeground);color:var(--vscode-errorForeground);background:color-mix(in srgb,var(--vscode-errorForeground) 6%,var(--vscode-editor-background))}
+.inspector-page[data-view-kind="type-editor"] .type-validation:not(:empty){margin:8px 0 12px;padding:8px 12px;border-left:1px solid var(--vscode-errorForeground);color:var(--vscode-errorForeground);background:color-mix(in srgb,var(--vscode-errorForeground) 6%,var(--vscode-editor-background))}
 .inspector-page[data-view-kind="type-editor"] .type-status{display:inline-flex;align-items:center;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:500;color:var(--vscode-descriptionForeground);background:var(--vscode-sideBar-background,var(--vscode-editor-background));border:1px solid var(--vscode-panel-border);white-space:nowrap}
-.inspector-page[data-view-kind="type-editor"] .type-status:empty{display:none}
+.inspector-page[data-view-kind="type-editor"] .type-status:empty,.inspector-page[data-view-kind="type-editor"] .type-validation:empty{position:absolute;width:1px;height:1px;padding:0;margin:0;border:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .inspector-page[data-view-kind="type-editor"] .type-status[data-state="dirty"]{color:var(--vscode-editorWarning-foreground,#cca700);border-color:color-mix(in srgb,var(--vscode-editorWarning-foreground,#cca700) 45%,transparent)}
 .inspector-page[data-view-kind="type-editor"] .type-status[data-state="saving"]{color:var(--vscode-focusBorder);border-color:color-mix(in srgb,var(--vscode-focusBorder) 45%,transparent)}
 .inspector-page[data-view-kind="type-editor"] .type-actions [data-open-jsonc]{display:inline-flex;align-items:center;gap:6px;min-height:28px;padding:4px 10px;border:1px solid var(--vscode-panel-border);border-radius:6px;background:var(--vscode-button-secondaryBackground,var(--vscode-input-background));color:var(--vscode-button-secondaryForeground,var(--vscode-foreground));font-size:12px;font-weight:500;cursor:pointer;white-space:nowrap}
-.inspector-page[data-view-kind="type-editor"] .type-actions [data-open-jsonc]:hover:enabled{background:var(--vscode-button-secondaryHoverBackground,var(--vscode-list-hoverBackground));border-color:var(--vscode-focusBorder)}
+.inspector-page[data-view-kind="type-editor"] .type-actions [data-open-jsonc]:hover:enabled:not([aria-disabled="true"]){background:var(--vscode-button-secondaryHoverBackground,var(--vscode-list-hoverBackground));border-color:var(--vscode-focusBorder)}
 .inspector-page[data-view-kind="type-editor"] .type-actions [data-open-jsonc] .call-icon{font-size:14px}
 .inspector-page[data-view-kind="type-editor"] .type-icon{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;min-height:0;padding:6px;border:0;background:transparent;color:var(--vscode-descriptionForeground);border-radius:3px}
-.inspector-page[data-view-kind="type-editor"] .type-icon:hover{background:var(--vscode-toolbar-hoverBackground,var(--vscode-list-hoverBackground));color:var(--vscode-foreground)}
+.inspector-page[data-view-kind="type-editor"] .type-icon:hover:enabled:not([aria-disabled="true"]){background:var(--vscode-toolbar-hoverBackground,var(--vscode-list-hoverBackground));color:var(--vscode-foreground)}
 .inspector-page[data-view-kind="type-editor"] .type-list{margin:0 0 20px;padding-top:12px}
 .inspector-page[data-view-kind="type-editor"] .type-list:first-of-type{border-top:0;padding-top:0}
 .inspector-page[data-view-kind="type-editor"] .type-definition{margin:0 0 20px;padding:0;border:0}
@@ -63,6 +63,7 @@ export const viewStyles = `
 .inspector-page[data-view-kind="type-editor"] .type-table input{width:100%;height:32px;min-width:0;border:1px solid transparent;border-radius:2px;background:transparent;cursor:text}
 .inspector-page[data-view-kind="type-editor"] .type-table input:hover{background:var(--vscode-input-background);border-color:var(--vscode-input-border,transparent)}
 .inspector-page[data-view-kind="type-editor"] .type-table input:focus{background:var(--vscode-input-background);outline:2px solid var(--vscode-focusBorder);outline-offset:-2px}
+.inspector-page[data-view-kind="type-editor"] .type-table input[aria-invalid="true"]{background:var(--vscode-input-background);border-color:var(--vscode-inputValidation-errorBorder,var(--vscode-errorForeground))}
 .inspector-page[data-view-kind="type-editor"] .type-table td[data-field="offset"] input,.inspector-page[data-view-kind="type-editor"] .type-table td[data-field="length"] input,.inspector-page[data-view-kind="type-editor"] .type-table td[data-field="value"] input{font-variant-numeric:tabular-nums}
 .inspector-page[data-view-kind="type-editor"] .type-table th[data-field="offset"]{width:88px}
 .inspector-page[data-view-kind="type-editor"] .type-table th[data-field="length"]{width:100px}
@@ -88,10 +89,11 @@ export const viewStyles = `
 .inspector-page[data-view-kind="type-editor"] .type-empty{margin:0;padding:12px 8px;color:var(--vscode-descriptionForeground);border-top:1px solid var(--vscode-panel-border)}
 .inspector-page[data-view-kind="type-editor"] .type-sr-only{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .inspector-page[data-view-kind="type-editor"] .form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr));gap:12px}
-.inspector-page[data-view-kind="type-editor"] .form-grid label:not(.type-flag){display:flex;flex-direction:column;gap:4px;min-width:0}
+.inspector-page[data-view-kind="type-editor"] .form-grid :is(label:not(.type-flag),.form-field:not(.form-field-check)){display:flex;flex-direction:column;gap:4px;min-width:0}
+.inspector-page[data-view-kind="type-editor"] .form-grid .form-field>input:not([type="checkbox"]){margin-top:0}
 .inspector-page[data-view-kind="type-editor"] .form-grid input:not([type="checkbox"]){width:100%;min-width:0}
 .inspector-page[data-view-kind="type-editor"] .type-flags{display:flex;flex-wrap:wrap;gap:8px 24px;margin-top:12px}
-.inspector-page[data-view-kind="type-editor"] .type-flag{display:flex;align-items:center;gap:8px;min-height:32px}
+.inspector-page[data-view-kind="type-editor"] .type-flag,.inspector-page[data-view-kind="type-editor"] .form-field-check>.type-flag{display:flex;align-items:center;gap:8px;min-height:32px}
 
 @media(max-width:640px){
 .inspector-page[data-view-kind="type-editor"] main{padding:12px 12px 24px}
@@ -149,7 +151,7 @@ export const viewStyles = `
 .edit-page .table-wrap{scrollbar-width:thin}
 .edit-page .success:not(:empty){font-size:12px;padding:10px 0}
 .edit-page .row-remove{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;min-height:0;padding:6px;border:0;background:transparent;color:var(--vscode-descriptionForeground)}
-.edit-page .row-remove:hover:enabled{background:var(--vscode-toolbar-hoverBackground,var(--vscode-list-hoverBackground));color:var(--vscode-foreground)}
+.edit-page .row-remove:hover:enabled:not([aria-disabled="true"]){background:var(--vscode-toolbar-hoverBackground,var(--vscode-list-hoverBackground));color:var(--vscode-foreground)}
 .browser-page main{max-width:1450px;margin:0;padding:20px 24px 32px}
 .browser-page h1{font-size:16px;line-height:1.4;margin:0 0 2px}
 .browser-page .subtitle{font-size:11px;overflow-wrap:anywhere}
@@ -246,7 +248,7 @@ export const viewStyles = `
 /* The content establishes hierarchy; avoid a border around each section. */
 .inspector-page header,.edit-page header{border:0;padding-bottom:0;margin-bottom:24px}
 .inspector-page h1,.edit-page h1{font-size:16px;letter-spacing:normal}
-.inspector-page main>details,.edit-page .advanced-fields,.inspector-page section,.edit-page section,.edit-page .form-actions{border-top:0}
+.inspector-page :is(main,form)>details,.edit-page .advanced-fields,.inspector-page section,.edit-page section,.edit-page .form-actions{border-top:0}
 .inspector-page dl>div{border-bottom:0}
 .edit-page .editable:has(tbody:empty){display:none}
 .edit-page .table-wrap:has(.editable tbody:empty){display:none}
@@ -266,8 +268,8 @@ export const viewStyles = `
 .inspector-page .type-category{color:var(--vscode-descriptionForeground);font-size:11px;overflow-wrap:anywhere}
 .inspector-page .hex{font-size:inherit}
 .inspector-page .detail-heading{font-size:12px;font-weight:600;margin:16px 0 0;color:var(--vscode-descriptionForeground)}
-.inspector-page main>details:not(.inspector-menu)>:not(summary){margin-left:16px}
-.inspector-page main>details[open]:not(.inspector-menu){margin-bottom:28px}
+.inspector-page :is(main,form)>details:not(.inspector-menu)>:not(summary){margin-left:16px}
+.inspector-page :is(main,form)>details[open]:not(.inspector-menu){margin-bottom:28px}
 .inspector-page[data-view-kind="function"] main>.function-definition+section{margin-top:14px}.inspector-page[data-view-kind="function"] main>.function-definition+section>h2{margin-bottom:2px}
 .inspector-page .parameters .param-storage{display:none;color:var(--vscode-descriptionForeground)}
 .inspector-page:has(#function-details[open]) .parameters .param-storage{display:inline}
