@@ -48,8 +48,8 @@ async function layoutCalls(graph: CallGraph): Promise<{ width: number; height: n
         return {
             ...node,
             lines,
-            width: Math.max(root ? 270 : 230, addressWidth, ...lines.map(line => columns(line) * (root ? 9 : 8) + 72)),
-            height: 30 + lines.length * 18 + (root ? 20 : 0),
+            width: Math.max(root ? 276 : 230, addressWidth, ...lines.map(line => columns(line) * (root ? 9 : 8) + 84)),
+            height: root ? 78 + lines.length * 18 : 34 + lines.length * 18,
         };
     });
     const model: ElkNode = { id: 'calls', layoutOptions: {
@@ -84,16 +84,16 @@ export async function callGraph(graph: CallGraph): Promise<string> {
             const branch = node.branches?.[direction]; if (!branch || branch.count === 0) { return ''; }
             const label = `${branch.expanded ? 'Collapse' : 'Expand'} ${direction} of ${node.name}`;
             const portX = Math.round(node.width / 2 - 26);
-            const portY = direction === 'callers' ? 0 : node.height - 12;
+            const portY = direction === 'callers' ? 0 : node.height - 14;
             const restPath = branch.expanded ? 'M13 6 Q24 6 35 6' : 'M6 6 Q24 6 42 6';
             const glyph = `<svg class="branch-bar" width="48" height="12" viewBox="0 0 48 12" aria-hidden="true"><path class="branch-bar-path" d="${restPath}" fill="none" stroke="currentColor" stroke-linecap="round"/></svg>`;
-            return html(portX, portY, 52, 12, `<button id="call-branch-${encodeURIComponent(node.id)}-${direction}" class="node-branch" data-direction="${direction}" aria-expanded="${branch.expanded}" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}">${glyph}</button>`, `node-${direction}`);
+            return html(portX, portY, 52, 14, `<button id="call-branch-${encodeURIComponent(node.id)}-${direction}" class="node-branch" data-direction="${direction}" aria-expanded="${branch.expanded}" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}">${glyph}</button>`, `node-${direction}`);
         }).join('');
-        const blockHeight = node.lines.length * 18 + (root ? 18 : 0);
-        const titleBaseline = Math.round((node.height - blockHeight) / 2 + 14);
+        const titleBaseline = root ? 50 : Math.round((node.height - node.lines.length * 18) / 2 + 14);
+        const rootRing = root ? `<rect class="call-root-ring" x="4" y="4" width="${node.width - 8}" height="${node.height - 8}" rx="5" aria-hidden="true"/><g class="call-root-badge" aria-hidden="true" transform="translate(${Math.round(node.width / 2)},24)"><rect x="-23" y="-8" width="46" height="16" rx="8"/><text y="3.5" text-anchor="middle">ROOT</text></g>` : '';
         const rootAddress = root ? `<text x="${node.width / 2}" y="${titleBaseline + (node.lines.length - 1) * 18 + 19}" text-anchor="middle" class="node-subtitle call-root-address">${escapeHtml(displayAddress(node.entry))}</text>` : '';
-        const controls = html(node.width - 34, Math.round(node.height / 2 - 14), 28, 28, action, 'node-code') + ports;
-        return `<g class="graph-node call-node${root ? ' is-root' : ''}" data-node="${escapeHtml(node.id)}" data-entry="${escapeHtml(node.entry)}" data-address="${escapeHtml(node.entry)}" data-kind="function" data-label="${escapeHtml(node.name)}" data-x="${node.x}" data-y="${node.y}" data-width="${node.width}" data-height="${node.height}" transform="translate(${node.x},${node.y})" tabindex="0" role="group" aria-label="${escapeHtml(node.name)}" aria-description="${escapeHtml(`${relation}, ${node.entry}`)}"><title>${escapeHtml(`${node.name}\n${node.entry}\n${relation}\nDouble-click or Enter to focus this function's call graph`)}</title><rect class="call-node-body" width="${node.width}" height="${node.height}" rx="8"/>${node.lines.map((line, index) => `<text x="${node.width / 2}" y="${titleBaseline + index * 18}" text-anchor="middle" class="node-title">${escapeHtml(line)}</text>`).join('')}${rootAddress}${controls}</g>`;
+        const controls = html(node.width - 36, Math.round(node.height / 2 - 14), 28, 28, action, 'node-code') + ports;
+        return `<g class="graph-node call-node${root ? ' is-root' : ''}" data-node="${escapeHtml(node.id)}" data-entry="${escapeHtml(node.entry)}" data-address="${escapeHtml(node.entry)}" data-kind="function" data-label="${escapeHtml(node.name)}" data-x="${node.x}" data-y="${node.y}" data-width="${node.width}" data-height="${node.height}" transform="translate(${node.x},${node.y})" tabindex="0" role="group" aria-label="${escapeHtml(node.name)}" aria-description="${escapeHtml(`${relation}, ${node.entry}`)}"><title>${escapeHtml(`${node.name}\n${node.entry}\n${relation}\nDouble-click or Enter to focus this function's call graph`)}</title><rect class="call-node-body" width="${node.width}" height="${node.height}" rx="8"/>${rootRing}${node.lines.map((line, index) => `<text x="${node.width / 2}" y="${titleBaseline + index * 18}" text-anchor="middle" class="node-title">${escapeHtml(line)}</text>`).join('')}${rootAddress}${controls}</g>`;
     }).join('');
     const overviewNodes = layout.nodes.map(node => `<rect class="${node.id === graph.root ? 'overview-root' : ''}" x="${node.x}" y="${node.y}" width="${node.width}" height="${node.height}"/>`).join('');
     return `<div class="graph-wrap flow-canvas call-canvas" data-call-graph data-root="${escapeHtml(graph.root)}" tabindex="0" role="region" aria-label="Call graph canvas. Callers above, callees below. Wheel to zoom, drag to pan, double-click a function to focus."><svg role="group" aria-label="Static call graph" data-width="${layout.width}" data-height="${layout.height}"><defs><marker id="call-arrow" markerUnits="userSpaceOnUse" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z"/></marker></defs><g class="graph-world">${edgeSvg}${nodeSvg}</g></svg><details class="call-overview" hidden><summary title="Hide overview">${callIcon('overview')}<span>Overview</span>${callIcon('close')}</summary><svg id="call-overview-map" viewBox="0 0 ${layout.width} ${layout.height}" preserveAspectRatio="xMidYMid meet" tabindex="0" role="button" aria-label="Graph overview. Click to move the viewport; arrow keys to pan."><g>${layout.edges.map(edge => `<path d="${path(edge)}"/>`).join('')}${overviewNodes}</g><rect id="call-overview-window"/></svg></details></div>`;

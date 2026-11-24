@@ -7,7 +7,7 @@ import { escapeHtml } from './workbench-page';
 /** Render the top toolbar and zoom control bar for the control-flow graph view. */
 export function controlFlowToolbar(title: string, subtitle: string, active: boolean): string {
     const disabled = active ? '' : ' disabled';
-    return `<div class="cfg-topbar" role="group" aria-label="Control flow tools"><div class="cfg-heading"><div class="cfg-identity"><h1>${escapeHtml(title)}</h1><span class="cfg-function-name" title="${escapeHtml(subtitle)}">${escapeHtml(subtitle)}</span></div></div><div class="cfg-search" hidden><input id="search" class="search" aria-label="Find blocks" placeholder="Find blocks…"></div><button class="cfg-icon-button" id="cfg-search-toggle" aria-label="Find blocks" aria-expanded="false" title="Find blocks (/)"${disabled}>${callIcon('search')}</button><button class="cfg-icon-button" id="graph-fit" aria-label="Fit graph" title="Fit the entire graph (0)"${disabled}>${callIcon('fit')}</button><button class="cfg-icon-button" id="cfg-overview-toggle" aria-label="Toggle overview" aria-pressed="false" title="Show or hide overview"${disabled}>${callIcon('overview')}</button><button class="cfg-icon-button" data-action="refresh" aria-label="Refresh graph" title="Refresh graph">${callIcon('refresh')}</button></div><div class="cfg-zoom" role="group" aria-label="Zoom"><button id="graph-zoom-out" aria-label="Zoom out"${disabled}>${callIcon('minus')}</button><button id="graph-zoom" aria-label="Actual size" title="Actual size (100%)"${disabled}>100%</button><button id="graph-zoom-in" aria-label="Zoom in"${disabled}>${callIcon('plus')}</button></div>`;
+    return `<div class="cfg-topbar" role="group" aria-label="Control flow tools"><div class="cfg-heading"><div class="cfg-identity"><h1>${escapeHtml(title)}</h1><span class="cfg-function-name" title="${escapeHtml(subtitle)}">${escapeHtml(subtitle)}</span></div></div><div class="cfg-search" hidden><input id="search" class="search" aria-label="Find blocks" placeholder="Find blocks…"></div><button class="cfg-icon-button" id="cfg-search-toggle" aria-label="Find blocks" aria-expanded="false" title="Find blocks (/)"${disabled}>${callIcon('check', 'state-check')}${callIcon('search')}</button><button class="cfg-icon-button" id="graph-fit" aria-label="Fit graph" title="Fit the entire graph (0)"${disabled}>${callIcon('fit')}</button><button class="cfg-icon-button" id="cfg-overview-toggle" aria-label="Toggle overview" aria-pressed="false" title="Show or hide overview"${disabled}>${callIcon('check', 'state-check')}${callIcon('overview')}</button><button class="cfg-icon-button" data-action="refresh" aria-label="Refresh graph" title="Refresh graph">${callIcon('refresh')}</button></div><div class="cfg-zoom" role="group" aria-label="Zoom"><button id="graph-zoom-out" aria-label="Zoom out"${disabled}>${callIcon('minus')}</button><button id="graph-zoom" aria-label="Actual size" title="Actual size (100%)"${disabled}>100%</button><button id="graph-zoom-in" aria-label="Zoom in"${disabled}>${callIcon('plus')}</button></div>`;
 }
 
 /** CSS styles for the control-flow graph toolbar, edges, zoom widget, and overview map. */
@@ -21,12 +21,12 @@ export const controlFlowUiStyles = `
 .cfg-heading{display:flex;align-items:center;gap:10px;flex:1;min-width:0}.cfg-identity{display:flex;flex-direction:column;gap:1px;min-width:0}
 .cfg-page .cfg-heading h1{font-size:13px;line-height:1.25;font-weight:600;color:var(--cfg-ink)}
 .cfg-function-name{font-size:11px;line-height:1.25;font-weight:400;color:var(--cfg-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
-.cfg-page .cfg-icon-button{display:flex;align-items:center;justify-content:center;flex-shrink:0;width:32px;height:32px;min-height:0;padding:6px;border:0;border-radius:6px;background:transparent;color:var(--vscode-foreground);cursor:pointer}
+.cfg-page .cfg-icon-button{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;width:32px;height:32px;min-height:0;padding:6px;border:0;border-radius:6px;background:transparent;color:var(--vscode-foreground);cursor:pointer}
 .cfg-page button:hover{background:var(--vscode-toolbar-hoverBackground,var(--vscode-list-hoverBackground))}
-.cfg-page .cfg-topbar [aria-pressed="true"],.cfg-page .cfg-topbar [aria-expanded="true"]{background:var(--vscode-toolbar-activeBackground,var(--vscode-list-hoverBackground));color:var(--vscode-focusBorder)}
+.cfg-page .cfg-topbar [aria-pressed="true"],.cfg-page .cfg-topbar [aria-expanded="true"]{width:auto;min-width:32px;gap:3px;padding-inline:6px;background:var(--vscode-toolbar-activeBackground,var(--vscode-list-hoverBackground));color:var(--vscode-focusBorder);border:2px solid var(--ghidra-active-border)}
 .cfg-search{flex:0 1 230px;min-width:0}
 .cfg-page .cfg-search input{width:100%;height:32px;min-width:0;border-radius:6px}
-.cfg-page .flow-canvas:focus-visible{outline:1px solid var(--vscode-focusBorder);outline-offset:-1px}
+.cfg-page .flow-canvas:focus-visible{outline:2px solid var(--vscode-focusBorder);outline-offset:-2px}
 .cfg-page .flow-canvas{position:relative;border:0;border-radius:0;background:var(--vscode-editor-background)}
 .cfg-page .scope{position:absolute;bottom:19px;left:16px;z-index:2;max-width:calc(100% - 180px);margin:0;padding:3px 6px;background:var(--vscode-editor-background);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none}
 .cfg-page #filter-status{position:absolute;top:60px;left:16px;z-index:2;padding:3px 6px;background:var(--vscode-editor-background);font-size:11px}
@@ -65,7 +65,17 @@ export const controlFlowUiStyles = `
 .cfg-page button:focus-visible,.cfg-page summary:focus-visible,.cfg-page .cfg-overview-close:focus-visible,.cfg-page #cfg-overview-map:focus-visible{outline:2px solid var(--cfg-focus);outline-offset:-2px}.cfg-page button:disabled{opacity:.5;cursor:not-allowed}
 .cfg-page button,.cfg-page summary{transition:background-color 120ms ease,color 120ms ease}
 @media(prefers-reduced-motion:reduce){.cfg-page *{animation:none!important;transition:none!important}}
-.vscode-high-contrast .cfg-edge,.vscode-high-contrast-light .cfg-edge{opacity:1!important}
+body.cfg-page:is(.vscode-high-contrast,.vscode-high-contrast-light,[data-contrast-mode="hc-dark"],[data-contrast-mode="hc-light"]) .cfg-edge{opacity:1!important}
+body.cfg-page:is([data-high-visibility="true"],.vscode-high-contrast,.vscode-high-contrast-light) :is(.cfg-icon-button:not([aria-pressed="true"]):not([aria-expanded="true"]),.cfg-overview-close){border:1px solid var(--ghidra-hv-border)}
+body.cfg-page:is(.vscode-high-contrast,.vscode-high-contrast-light,[data-contrast-mode="hc-dark"],[data-contrast-mode="hc-light"]) .cfg-topbar :is([aria-pressed="true"],[aria-expanded="true"]){background:var(--vscode-editor-background);color:var(--vscode-foreground);border:2px solid var(--ghidra-active-border)}
+@media(prefers-contrast:more){.cfg-page .cfg-icon-button:not([aria-pressed="true"]):not([aria-expanded="true"]),.cfg-page .cfg-overview-close{border:1px solid var(--ghidra-hv-border)}}
+@media(forced-colors:active){
+  .cfg-topbar,.cfg-overview,.cfg-page .cfg-zoom{background:Canvas;color:CanvasText;border-color:CanvasText}
+  .cfg-page .cfg-icon-button:not([aria-pressed="true"]):not([aria-expanded="true"]),.cfg-page .cfg-zoom button,.cfg-page .cfg-overview-close{background:ButtonFace;color:ButtonText;border:1px solid ButtonText}
+  .cfg-page .cfg-topbar [aria-pressed="true"],.cfg-page .cfg-topbar [aria-expanded="true"]{background:Canvas;color:CanvasText;border:2px solid Highlight}
+  .cfg-page .cfg-edge{opacity:1!important}
+  .cfg-page .flow-canvas .block-header,.cfg-page .flow-canvas .graph-node.selected .block-header{fill:Canvas;stroke:CanvasText;stroke-width:1}
+}
 @media(max-width:640px){.cfg-topbar{min-height:48px;padding:8px 10px;gap:3px}.cfg-heading{gap:6px}.cfg-page .cfg-heading h1{font-size:12px}.cfg-function-name{font-size:11px}.cfg-search{position:absolute;top:52px;left:10px;right:10px;z-index:4;background:var(--vscode-editor-background)}.cfg-page .scope{left:10px;bottom:15px;font-size:10px}.cfg-page .cfg-zoom{right:10px;bottom:12px}.cfg-overview{width:130px;right:10px;bottom:54px}.cfg-page .cfg-overview svg{height:90px}}
 `;
 

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import * as vscode from 'vscode';
+import { ContrastModeController } from './contrast-mode';
 import { Call } from './memory';
 import { ProgramContext } from './context';
 import { Data, object, rows, escape, reference, text, page, section, properties, button, iconButton, actionsMenu, code, PageExtras } from './web';
@@ -136,7 +137,7 @@ export class Details implements vscode.Disposable {
     /** Registered serializers, commands, and context listeners. */
     private readonly disposables: vscode.Disposable[] = [];
     /** Register panel serializers, title-scope listeners, and type/function detail commands. */
-    constructor(private readonly call: Call, private readonly context: ProgramContext) {
+    constructor(private readonly call: Call, private readonly context: ProgramContext, private readonly contrast?: ContrastModeController) {
         for (const viewType of ['ghidra.programOverview', 'ghidra.dataType', 'ghidra.symbolDetails', 'ghidra.functionDetails']) {
             this.disposables.push(vscode.window.registerWebviewPanelSerializer(viewType, { deserializeWebviewPanel: async (panel, raw) => {
                 const data = object(raw);
@@ -192,6 +193,7 @@ export class Details implements vscode.Disposable {
     /** Wire webview options, lifecycle hooks, and message handlers onto `panel`. */
     private attach(panel: vscode.WebviewPanel, state: PanelState): Panel {
         panel.webview.options = { enableScripts: true, localResourceRoots: [] };
+        this.contrast?.track(panel);
         try { panel.iconPath = new vscode.ThemeIcon(tabIcons[state.kind]); } catch { /* Older hosts accept only URI icons; the tab keeps its default. */ }
         const item: Panel = { key: this.key(state), panel, state, generation: 0, title: pendingTitle(state), back: [], forward: [] };
         this.panels.set(item.key, item);
@@ -228,7 +230,7 @@ export class Details implements vscode.Disposable {
         const viewType = { program: 'ghidra.programOverview', type: 'ghidra.dataType', symbol: 'ghidra.symbolDetails', function: 'ghidra.functionDetails' }[state.kind];
         const panel = vscode.window.createWebviewPanel(viewType, this.context.titled(pendingTitle(state), state.md5), { viewColumn: this.column(state), preserveFocus: fromCode && state.kind !== 'program' }, { enableScripts: true, localResourceRoots: [], retainContextWhenHidden: true });
         const item = this.attach(panel, state);
-        panel.webview.html = page(item.title, eyebrows[state.kind], '', '', '', {}, '', { busy: true });
+        panel.webview.html = page(item.title, eyebrows[state.kind], '', '', '', {}, '', { busy: true, contrast: this.contrast?.state });
         // Failures render in the panel itself; a toast on top would report the same problem twice.
         try { await this.render(item); } catch (error) { this.failure(item, error); return; }
         await this.context.activate(state.md5);
@@ -270,7 +272,7 @@ export class Details implements vscode.Disposable {
         const message = missing ? `This ${eyebrows[state.kind].replace(/ inspector$/, '').toLowerCase()} no longer exists in ${program}.` : formatFriendlyError(error);
         const recovery = missing ? (item.back.length ? button(`Back to ${item.back.at(-1)!.title}`, 'back', undefined, 'primary') : '') : button('Retry', 'refresh', undefined, 'primary');
         const where = state.path || state.entry || '';
-        item.panel.webview.html = page(item.title, eyebrows[state.kind], where ? `${program} · ${where}` : program, recovery ? `<div class="recovery">${recovery}</div>` : '', '', state, '', { nav: this.nav(item), error: message, subtitleHtml: where ? `${escape(program)} · ${code(where)}` : escape(program) });
+        item.panel.webview.html = page(item.title, eyebrows[state.kind], where ? `${program} · ${where}` : program, recovery ? `<div class="recovery">${recovery}</div>` : '', '', state, '', { nav: this.nav(item), error: message, subtitleHtml: where ? `${escape(program)} · ${code(where)}` : escape(program), contrast: this.contrast?.state });
     }
     /** Query the server for `item.state` and render its inspector webview HTML. */
     private async render(item: Panel): Promise<void> {
@@ -347,7 +349,7 @@ export class Details implements vscode.Disposable {
         if (generation !== item.generation) { return; }
         item.title = title; item.shown = state;
         item.panel.title = this.context.titled(title, state.md5);
-        item.panel.webview.html = page(title, eyebrow, subtitle, body, '', state, actions, { ...extras, nav: this.nav(item) });
+        item.panel.webview.html = page(title, eyebrow, subtitle, body, '', state, actions, { ...extras, nav: this.nav(item), contrast: this.contrast?.state });
     }
     /** Dispatch button, link, and history actions posted by an inspector webview. */
     private async action(item: Panel, action: string, value?: string): Promise<void> {

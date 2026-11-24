@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import * as vscode from 'vscode';
+import { ContrastModeController } from './contrast-mode';
 import { Call } from './memory';
 import { ProgramContext } from './context';
 import { DataTypeFiles, typePath, typeScheme } from './type-files';
@@ -104,7 +105,12 @@ export class EditingUI implements vscode.Disposable {
     /** Inline five-kind comment controller for decompiled views. */
     private readonly comments: InlineComments;
     /** Register editing commands and initialize the inline comment controller. */
-    constructor(private readonly call: Call, private readonly context: ProgramContext, private readonly typeFiles: DataTypeFiles) {
+    constructor(
+        private readonly call: Call,
+        private readonly context: ProgramContext,
+        private readonly typeFiles: DataTypeFiles,
+        private readonly contrast?: ContrastModeController,
+    ) {
         this.comments = new InlineComments(call);
         const commands: Record<string, (...args: any[]) => Promise<unknown>> = {
             createType: this.createType.bind(this), editType: this.editType.bind(this), deleteType: this.deleteType.bind(this), applyType: this.applyType.bind(this),
@@ -151,6 +157,7 @@ export class EditingUI implements vscode.Disposable {
         const types = usesTypes ? await this.types(md5) : [];
         await this.context.activate(md5);
         const panel = vscode.window.createWebviewPanel('ghidra.edit', title, vscode.ViewColumn.Active, { enableScripts: true, localResourceRoots: [], retainContextWhenHidden: true });
+        this.contrast?.track(panel);
         this.panels.set(panel, md5); panel.onDidDispose(() => this.panels.delete(panel));
         panel.onDidChangeViewState(event => { if (event.webviewPanel.active) { void this.context.activate(md5).catch(error => vscode.window.showErrorMessage(formatFriendlyError(error))); } });
         const advanced = fields.filter(field => (field.kind === 'checkbox' && field.key !== 'confirmed' && field.value !== true) || (field.kind === 'textarea' && !field.value) || (field.key === 'category' && (!field.value || field.value === '/')) || (field.key === 'size' && !field.value) || (field.key === 'convention' && ['default', 'unknown', '__cdecl'].includes(String(field.value))));
@@ -162,7 +169,7 @@ export class EditingUI implements vscode.Disposable {
         const fieldBody = (controls.length ? `<div class="form-grid">${controls.map(input).join('')}</div>` : '')
             + (flags.length ? `<fieldset class="check-group"><legend>${title === 'Delete data type' ? 'Confirm deletion' : 'Behavior'}</legend>${flags.map(input).join('')}</fieldset>` : '')
             + (notes.length ? `<div class="form-grid form-notes">${notes.map(input).join('')}</div>` : '');
-        panel.webview.html = page(title, 'Edit analysis', subtitle, `<form id="edit-form">${fieldBody ? `<section class="form-fields">${fieldBody}</section>` : ''}${hint ? `<p class="form-hint">${escape(hint)}</p>` : ''}${grids.map(grid).join('')}${advanced.length ? `<details class="advanced-fields"><summary>Advanced options</summary><div class="form-grid">${advanced.map(input).join('')}</div></details>` : ''}<datalist id="type-options">${types.map(type => `<option value="${escape(type)}"></option>`).join('')}</datalist><div class="toolbar form-actions"><button class="primary icon-submit${label === 'Delete type' ? ' danger' : ''}" id="submit" type="submit" aria-label="${label}" title="${label}">${callIcon(label === 'Delete type' ? 'trash' : label === 'Create type' ? 'plus' : 'save')}</button></div><p id="status" class="success" role="status"></p></form>`, formScript);
+        panel.webview.html = page(title, 'Edit analysis', subtitle, `<form id="edit-form">${fieldBody ? `<section class="form-fields">${fieldBody}</section>` : ''}${hint ? `<p class="form-hint">${escape(hint)}</p>` : ''}${grids.map(grid).join('')}${advanced.length ? `<details class="advanced-fields"><summary>Advanced options</summary><div class="form-grid">${advanced.map(input).join('')}</div></details>` : ''}<datalist id="type-options">${types.map(type => `<option value="${escape(type)}"></option>`).join('')}</datalist><div class="toolbar form-actions"><button class="primary icon-submit${label === 'Delete type' ? ' danger' : ''}" id="submit" type="submit" aria-label="${label}" title="${label}">${callIcon(label === 'Delete type' ? 'trash' : label === 'Create type' ? 'plus' : 'save')}</button></div><p id="status" class="success" role="status"></p></form>`, formScript, undefined, '', { contrast: this.contrast?.state });
         let busy = false;
         panel.webview.onDidReceiveMessage(async (message: unknown) => {
             const data = object(message);

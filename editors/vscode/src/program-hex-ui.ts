@@ -10,7 +10,7 @@ import { callIcon, callIcons } from './call-graph-icons';
 import { DataInspectorEntry, HexChunk, ProgramEndian } from './hex-model';
 import { iconFontStyles } from './icon-font';
 import { displayAddress } from './names';
-import { pageStyles } from './page-styles';
+import { ContrastState, contrastBodyAttributes, contrastClientScript, pageStyles } from './page-styles';
 import { addrSpan, programViewStyles } from './program-views-styles';
 import { viewStyles } from './view-ui';
 import { escape } from './web';
@@ -40,6 +40,7 @@ export interface HexViewPayload {
     syncEnabled: boolean;
     bytesPerRow: 8 | 16;
     initialInspector: DataInspectorEntry[];
+    contrast?: ContrastState;
 }
 
 /** Render the column header row for 8-byte or 16-byte hex layout. */
@@ -101,7 +102,7 @@ export function renderDataInspectorHtml(
         selectionLength > 1 ? `${selectionLength} bytes selected` : '',
     ].filter(Boolean).join(' · ');
     const endianLabel = endian === 'be' ? 'Big Endian' : 'Little Endian';
-    const headHtml = `<div class="hex-inspector-head"><h2>Data inspector</h2><button type="button" class="hex-endian-pill" data-toggle-endian data-endian="${endian}" aria-pressed="${endian === 'be'}" aria-label="Toggle byte order (${endianLabel})" title="Switch byte order">${endianLabel}</button></div>`;
+    const headHtml = `<div class="hex-inspector-head"><h2>Data inspector</h2><button type="button" class="hex-endian-pill" data-toggle-endian data-endian="${endian}" aria-pressed="${endian === 'be'}" aria-label="Toggle byte order (${endianLabel})" title="Switch byte order">${callIcon('check', 'state-check')}<span>${endianLabel}</span></button></div>`;
 
     if (!entries.length) {
         return `${headHtml}<p class="hex-inspector-meta" title="${escape(address)}">${escape(meta || 'Select a byte to inspect decoded values.')}</p>`;
@@ -156,7 +157,7 @@ ${pageStyles}
 ${iconFontStyles}
 ${viewStyles}
 ${programViewStyles}
-</style></head><body class="browser-page program-view" data-view-kind="memory"><main>
+</style></head><body class="browser-page program-view" data-view-kind="memory"${contrastBodyAttributes(payload.contrast)}><main>
 <h1 class="page-context">${escape(payload.title)}</h1>
 <div class="toolbar pv-toolbar" role="group" aria-label="Hex navigation">
   <div class="pv-nav" role="group" aria-label="History and window">
@@ -167,7 +168,7 @@ ${programViewStyles}
   <form id="goto"><input id="address" aria-label="Address" value="${escape(displayAddress(payload.cursorAddress))}" placeholder="Address or +offset…"><button type="submit" aria-label="Go to address" title="Go to address">${callIcon('right')}</button></form>
   <div class="browser-search">${callIcon('search')}<input class="search" id="search" aria-label="Filter displayed rows" placeholder="Filter hex, ASCII, or block…"></div>
   <div class="pv-tools" role="group" aria-label="Hex tools">
-    <button type="button" id="sync-toggle" class="icon-button" data-action="toggleSync" aria-pressed="${payload.syncEnabled}" aria-label="Sync cursor with other Ghidra views" title="Sync cursor with other Ghidra views">${callIcon('link')}</button>
+    <button type="button" id="sync-toggle" class="icon-button" data-action="toggleSync" aria-pressed="${payload.syncEnabled}" aria-label="Sync cursor with other Ghidra views" title="Sync cursor with other Ghidra views">${callIcon('check', 'state-check')}${callIcon('link')}</button>
     <button type="button" class="icon-button" data-action="openListingBeside" aria-label="Open Program Listing beside" title="Open Program Listing beside">${callIcon('listing')}</button>
     <details id="page-options" class="page-options">
       <summary aria-label="View options" title="View options">${callIcon('more')}</summary>
@@ -205,6 +206,7 @@ ${renderMemoryMapHtml(payload.blocks)}
 </div>
 </main>
 <script nonce="${nonce}">
+${contrastClientScript}
 const vscode = acquireVsCodeApi();
 const state = ${stateJson};
 const previous = vscode.getState() || {};
@@ -326,7 +328,10 @@ const applyInspector = (startAddr, metaText, rows) => {
   pill.setAttribute('data-toggle-endian', ''); pill.dataset.endian = mode;
   pill.setAttribute('aria-pressed', String(mode === 'be'));
   pill.setAttribute('aria-label', 'Toggle byte order (' + label + ')');
-  pill.title = 'Switch byte order'; pill.textContent = label;
+  pill.title = 'Switch byte order';
+  const chk = document.createElement('span'); chk.className = 'call-icon state-check'; chk.setAttribute('aria-hidden', 'true'); chk.textContent = String.fromCodePoint(icons.check);
+  const pillLabel = document.createElement('span'); pillLabel.textContent = label;
+  pill.append(chk, pillLabel);
   head.append(heading, pill);
   const meta = document.createElement('p'); meta.className = 'hex-inspector-meta'; meta.title = startAddr; meta.textContent = metaText;
   const dl = document.createElement('dl');

@@ -4,6 +4,7 @@
 import { definedStrings } from './strings';
 import { symbolName, displayAddress } from './names';
 import * as vscode from 'vscode';
+import { ContrastModeController } from './contrast-mode';
 import { Call } from './memory';
 import { ProgramContext } from './context';
 import { escapeHtml, GraphEdge, GraphNode, page, Row, table } from './workbench-page';
@@ -61,6 +62,7 @@ export class Workbench implements vscode.Disposable {
         private readonly call: Call,
         private readonly context: ProgramContext,
         private readonly editorCursorAddress?: (editor: vscode.TextEditor) => string | undefined,
+        private readonly contrast?: ContrastModeController,
     ) {
         this.programViews = new ProgramViewsController({
             context: this.context,
@@ -70,6 +72,7 @@ export class Workbench implements vscode.Disposable {
             openBeside: (kind, md5, address) => this.open(kind, md5, address || undefined, vscode.ViewColumn.Beside),
             openWorkbench: (kind, md5, address) => this.open(kind, md5, address),
             getPanels: () => this.panels.values(),
+            getContrast: () => this.contrast?.state,
         });
         const commands: [string, WorkbenchKind][] = [
             ['browseListing', 'listing'], ['showMemory', 'memory'],
@@ -287,11 +290,12 @@ export class Workbench implements vscode.Disposable {
         this.attach(kind === 'callGraph' ? `${key}:${++this.callGraphSerial}` : key, state);
         await this.context.activate(md5);
         try { await this.render(state); }
-        catch (error) { panel.webview.html = page({ title: names[kind], subtitle: this.context.name(md5), body: `<p class="error">${escapeHtml(String(error))}</p>`, state: this.snapshot(state) }); throw error; }
+        catch (error) { panel.webview.html = page({ title: names[kind], subtitle: this.context.name(md5), body: `<p class="error">${escapeHtml(String(error))}</p>`, state: this.snapshot(state), contrast: this.contrast?.state }); throw error; }
     }
     /** Register lifecycle, focus, and message listeners for a workbench panel. */
     private attach(key: string, state: PanelState): void {
         this.panels.set(key, state);
+        this.contrast?.track(state.panel);
         state.panel.onDidDispose(() => { state.generation++; if (this.panels.get(key) === state) { this.panels.delete(key); } });
         state.panel.onDidChangeViewState(event => { if (event.webviewPanel.active) { void this.context.activate(state.md5).catch(error => void vscode.window.showErrorMessage(formatFriendlyError(error))); } });
         state.panel.webview.onDidReceiveMessage((message: unknown) => { void this.message(state, object(message)).catch(error => { void vscode.window.showErrorMessage(formatFriendlyError(error)); }); });
@@ -331,7 +335,7 @@ export class Workbench implements vscode.Disposable {
             if (panel.active) { await this.context.activate(md5); }
             await this.render(state);
         } catch (error) {
-            panel.webview.html = page({ title: names[kind], subtitle: this.context.name(md5), body: `<p class="error">${escapeHtml(String(error))}</p>`, state: this.snapshot(state) });
+            panel.webview.html = page({ title: names[kind], subtitle: this.context.name(md5), body: `<p class="error">${escapeHtml(String(error))}</p>`, state: this.snapshot(state), contrast: this.contrast?.state });
         }
     }
     /** Refresh open workbench panels globally or for program `md5`. */
@@ -478,7 +482,7 @@ export class Workbench implements vscode.Disposable {
                     entry: names.get(edge.to)!.entry, address: site || names.get(edge.to)!.entry, label: names.get(edge.to)!.name, kind: 'function',
                 })));
                 body = await callGraph(model) + `<details class="call-details" hidden><summary>Call relationships and sites (${model.edges.length})</summary>${table(['Caller', 'Callee', 'Call site'], rows)}</details>`;
-                callTools = `<div class="call-controls call-icon-row" role="group" aria-label="Call graph exploration"><button id="call-center" aria-label="Center current function" title="Center current function">${callIcon('center')}</button><button id="call-focus" data-action="focusCallGraph" aria-label="Focus selected function" title="Focus selected function">${callIcon('focus')}</button><span class="call-divider" aria-hidden="true"></span><button id="call-menu-overview" aria-pressed="true" aria-label="Overview" title="Overview">${callIcon('overview')}</button><button id="call-details-toggle" aria-pressed="false" aria-label="Call sites" title="Call sites">${callIcon('details')}</button><span class="call-divider" aria-hidden="true"></span><button data-action="refresh" aria-label="Refresh graph" title="Refresh graph">${callIcon('refresh')}</button></div>`;
+                callTools = `<div class="call-controls call-icon-row" role="group" aria-label="Call graph exploration"><button id="call-center" aria-label="Center current function" title="Center current function">${callIcon('center')}</button><button id="call-focus" data-action="focusCallGraph" aria-label="Focus selected function" title="Focus selected function">${callIcon('focus')}</button><span class="call-divider" aria-hidden="true"></span><button id="call-menu-overview" aria-pressed="true" aria-label="Overview" title="Overview">${callIcon('check', 'state-check')}${callIcon('overview')}</button><button id="call-details-toggle" aria-pressed="false" aria-label="Call sites" title="Call sites">${callIcon('check', 'state-check')}${callIcon('details')}</button><span class="call-divider" aria-hidden="true"></span><button data-action="refresh" aria-label="Refresh graph" title="Refresh graph">${callIcon('refresh')}</button></div>`;
                 scope = `${model.limited ? 'Graph limit reached; fold branches for a smaller neighborhood. ' : ''}${model.warnings.length ? `${model.warnings.length} functions could not be expanded; refresh to retry.` : ''}`;
                 callName = res.rootName || names.get(model.root)?.name || displayAddress(state.entry || '');
                 nodeNames.set(state.entry!.toLowerCase(), callName);
@@ -490,7 +494,7 @@ export class Workbench implements vscode.Disposable {
         }
         if (generation !== owner.generation) { return; }
         owner.address = state.address; owner.displayAddress = state.displayAddress; owner.next = state.next;
-        state.panel.webview.html = page({ title, subtitle, body, scope, scopeSummary, address, callTools, callName, callBack: !!state.callHistory?.length, state: this.snapshot(state), actions: true, graph: ['callGraph', 'controlFlow'].includes(state.kind), controlFlow: state.kind === 'controlFlow', callGraph: state.kind === 'callGraph', callView: state.callView || 'graph', viewKind: state.kind, ...(['listing', 'memory'].includes(state.kind) ? { next, previous: state.previous.length > 0 } : {}) });
+        state.panel.webview.html = page({ title, subtitle, body, scope, scopeSummary, address, callTools, callName, callBack: !!state.callHistory?.length, state: this.snapshot(state), contrast: this.contrast?.state, actions: true, graph: ['callGraph', 'controlFlow'].includes(state.kind), controlFlow: state.kind === 'controlFlow', callGraph: state.kind === 'callGraph', callView: state.callView || 'graph', viewKind: state.kind, ...(['listing', 'memory'].includes(state.kind) ? { next, previous: state.previous.length > 0 } : {}) });
     }
     /** Fetch and render the basic-block Control Flow Graph HTML for function `entry`. */
     async controlFlow(md5: string, entry: string): Promise<ControlFlowData> {

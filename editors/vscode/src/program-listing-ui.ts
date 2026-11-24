@@ -10,7 +10,7 @@ import { callIcon, callIcons } from './call-graph-icons';
 import { iconFontStyles } from './icon-font';
 import { ListingRenderItem, ListingTarget, ListingUnit, ListingUndefinedRun, ListingWindowModel } from './listing-model';
 import { displayAddress } from './names';
-import { pageStyles } from './page-styles';
+import { ContrastState, contrastBodyAttributes, contrastClientScript, pageStyles } from './page-styles';
 import { addrSpan, programViewStyles } from './program-views-styles';
 import { highlightAsm, highlightName } from './syntax';
 import { viewStyles } from './view-ui';
@@ -32,6 +32,7 @@ export interface ListingViewPayload {
     canForward: boolean;
     syncEnabled: boolean;
     totalUnitsLabel: string;
+    contrast?: ContrastState;
 }
 
 /** Turn inline hex address literals inside highlighted operands into jump buttons. */
@@ -149,7 +150,7 @@ ${pageStyles}
 ${iconFontStyles}
 ${viewStyles}
 ${programViewStyles}
-</style></head><body class="browser-page program-view hide-vars" data-view-kind="listing"><main>
+</style></head><body class="browser-page program-view hide-vars" data-view-kind="listing"${contrastBodyAttributes(payload.contrast)}><main>
 <h1 class="page-context">${escape(payload.title)}</h1>
 <div class="toolbar pv-toolbar" role="group" aria-label="Listing navigation">
   <div class="pv-nav" role="group" aria-label="History and window">
@@ -160,7 +161,7 @@ ${programViewStyles}
   <form id="goto"><input id="address" aria-label="Address or symbol" value="${escape(displayAddress(payload.cursorAddress))}" placeholder="Address or symbol…"><button type="submit" aria-label="Go to address" title="Go to address">${callIcon('right')}</button></form>
   <div class="browser-search">${callIcon('search')}<input class="search" id="search" aria-label="Filter displayed rows" placeholder="Filter instructions, labels, comments…"></div>
   <div class="pv-tools" role="group" aria-label="Listing tools">
-    <button type="button" id="sync-toggle" class="icon-button" data-action="toggleSync" aria-pressed="${payload.syncEnabled}" aria-label="Sync cursor with other Ghidra views" title="Sync cursor with other Ghidra views">${callIcon('link')}</button>
+    <button type="button" id="sync-toggle" class="icon-button" data-action="toggleSync" aria-pressed="${payload.syncEnabled}" aria-label="Sync cursor with other Ghidra views" title="Sync cursor with other Ghidra views">${callIcon('check', 'state-check')}${callIcon('link')}</button>
     <button type="button" class="icon-button" data-action="openHexBeside" aria-label="Open Hex view beside" title="Open Hex view beside">${callIcon('memory')}</button>
     <details id="page-options" class="page-options">
       <summary aria-label="View options" title="View options">${callIcon('more')}</summary>
@@ -194,6 +195,7 @@ ${programViewStyles}
 </div>
 </main>
 <script nonce="${nonce}">
+${contrastClientScript}
 const vscode = acquireVsCodeApi();
 const state = ${stateJson};
 const previous = vscode.getState() || {};
