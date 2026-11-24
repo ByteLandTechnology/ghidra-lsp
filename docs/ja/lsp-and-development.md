@@ -54,8 +54,8 @@
 | --- | --- | --- |
 | `ghidra.sessions` | `{}` | `ghidra-mcp` 上の全セッション一覧を取得 |
 | `ghidra.selectSession` | `{ md5 }` | 指定 `md5` が `ready` であることを確認してアクティブセッションに設定 |
-| `ghidra.openBinary` | `{ path \| md5, analyze? }` | バイナリパスまたは保存済み `md5` を同期オープンし、必要に応じて自動解析完了まで待機 |
-| `ghidra.beginOpenBinary` | `{ path \| md5, analyze? }` | 非同期でバイナリオープン／解析を開始し、ポーリング用 `token` を返却 |
+| `ghidra.openBinary` | `{ path \| md5, analyze?, programName?, processor?, compilerSpec?, loader?, baseAddress?, reimport? }` | バイナリ、`.gpr` プロジェクト、または保存済み `md5` を任意のインポートフラグ付きで同期オープンし、自動解析完了まで待機 |
+| `ghidra.beginOpenBinary` | `{ path \| md5, analyze?, programName?, processor?, compilerSpec?, loader?, baseAddress?, reimport? }` | バイナリまたは `.gpr` プロジェクトの非同期オープンジョブを任意のインポートフラグ付きで開始し、ポーリング用 `token` を返却 |
 | `ghidra.pollOpenBinary` | `{ token }` | 非同期オープン／再解析ジョブの進捗（`opening` / `analysis` / `ready` / `failed`）をポーリング |
 | `ghidra.beginReanalyze` | `{ md5?, analyzers? }` | 非同期でプログラム再解析ジョブを開始し、ポーリング用 `token` を返却 |
 | `ghidra.reanalyze` | `{ md5?, analyzers?, wait? }` | プログラム再解析を開始（既定で `wait: true`、完了後 `program.save` と文書更新） |

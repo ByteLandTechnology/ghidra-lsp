@@ -85,6 +85,14 @@ export function formatFriendlyError(error: unknown): string {
         return 'Choose a valid binary or .gpr project on a local disk.';
     }
 
+    if (/does not support \.gpr project attachment/i.test(raw)) {
+        return 'The installed ghidra-mcp does not support .gpr project attachment. Run "Ghidra: Install or Update Binaries" or update ghidra-mcp, then reload the window.';
+    }
+
+    if (/does not support firmware import options/i.test(raw)) {
+        return 'The installed ghidra-mcp does not support firmware import options. Run "Ghidra: Install or Update Binaries" or update ghidra-mcp, then reload the window.';
+    }
+
     if (/backend scan is incomplete/i.test(raw)) {
         return 'The Ghidra scan is incomplete. Refresh after analysis finishes.';
     }

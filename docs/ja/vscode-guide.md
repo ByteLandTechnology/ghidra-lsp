@@ -31,7 +31,7 @@ code --install-extension editors/vscode/ghidra-lsp-<version>.vsix
 | `ghidra.strings` | Strings | 折りたたみ | デフォルトアドレス空間から抽出された定義済み文字列一覧（クリックで `ghidra-string://` を表示） |
 | `ghidra.types` | Data Types | 表示 | カテゴリ別のデータ型ツリー。型の作成（`ghidraLsp.createType`）・編集（`ghidraLsp.editType`）・削除（`ghidraLsp.deleteType`）に対応 |
 
-ファイルエクスプローラ上の任意の実行ファイルを右クリックして **Ghidra: Open Binary** を選択するか、各ビューの Welcome 画面からバイナリを開くことができます。
+ファイルエクスプローラ上の任意の実行ファイル・ファームウェアイメージ・`.gpr` プロジェクトを右クリックして **Ghidra: Open Binary or Project**（または **Ghidra: Open Binary or Project with Options…**）を選択するか、各ビューの Welcome 画面から開くことができます。
 
 ## 逆コンパイルエディタとカスタムエディタ
 
@@ -145,7 +145,7 @@ code --install-extension editors/vscode/ghidra-lsp-<version>.vsix
 
 | カテゴリ | コマンド ID とタイトル |
 | --- | --- |
-| セッション・解析 | `ghidraLsp.openBinary`（Open Binary）、`ghidraLsp.openRecent`（Open Recent Program）、`ghidraLsp.selectSession`（Select Session）、`ghidraLsp.selectSessionItem`（Switch to Session）、`ghidraLsp.openRecentItem`（Reopen Session）、`ghidraLsp.refreshSessions`（Refresh Sessions）、`ghidraLsp.closeSession`（Close Program）、`ghidraLsp.reanalyze`（Reanalyze Program）、`ghidraLsp.cancelAnalysis`（Stop Waiting for Analysis）、`ghidraLsp.programOverview`（Program Overview）、`ghidraLsp.installBinaries`（Install or Update Binaries） |
+| セッション・解析 | `ghidraLsp.openBinary`（Open Binary or Project）、`ghidraLsp.openBinaryWithOptions`（Open Binary or Project with Options…）、`ghidraLsp.openRecent`（Open Recent Program）、`ghidraLsp.selectSession`（Select Session）、`ghidraLsp.selectSessionItem`（Switch to Session）、`ghidraLsp.openRecentItem`（Reopen Session）、`ghidraLsp.refreshSessions`（Refresh Sessions）、`ghidraLsp.closeSession`（Close Program）、`ghidraLsp.reanalyze`（Reanalyze Program）、`ghidraLsp.cancelAnalysis`（Stop Waiting for Analysis）、`ghidraLsp.programOverview`（Program Overview）、`ghidraLsp.installBinaries`（Install or Update Binaries） |
 | ナビゲーション・詳細 | `ghidraLsp.openFunction`（Open Function）、`ghidraLsp.goToAddress`（Go to Address）、`ghidraLsp.demangle`（Demangle C++ Symbols）、`ghidraLsp.refresh`（Refresh Documents）、`ghidraLsp.refreshBrowser`（Refresh Program Browser）、`ghidraLsp.refreshStrings`（Refresh Strings）、`ghidraLsp.functionDetails`（Function Details）、`ghidraLsp.inspectType`（Inspect Type at Cursor）、`ghidraLsp.browseSymbol`（Show Symbol Details） |
 | リネーム・編集 | `ghidraLsp.renameSymbol`（Rename Symbol）、`ghidraLsp.saveRename`（Submit Pending Rename）、`ghidraLsp.saveAllRenames`（Submit All Pending Renames）、`ghidraLsp.showPendingRename`（Show Pending Rename）、`ghidraLsp.discardRename`（Discard Pending Rename）、`ghidraLsp.codeActions`（Code Actions…）、`ghidraLsp.editComment`（Edit Comment）、`ghidraLsp.editCommentText` / `ghidraLsp.selectCommentKind`（Switch Comment Kind） / `ghidraLsp.saveComment` / `ghidraLsp.cancelCommentEdit` / `ghidraLsp.closeCommentEditor`（インラインコメント操作）、`ghidraLsp.editFunction`（Edit Function Signature）、`ghidraLsp.editVariables`（Edit Variables and Parameters）、`ghidraLsp.editSymbol`（Edit Global Symbol） |
 | データ型 | `ghidraLsp.createType`（Create Data Type）、`ghidraLsp.editType`（Edit Data Type）、`ghidraLsp.deleteType`（Delete Data Type）、`ghidraLsp.applyType`（Apply Data Type）、`ghidraLsp.typeDetails`（Data Type Details）、`ghidraLsp.compareType`（Compare Data Type with Ghidra）、`ghidraLsp.reloadType`（Reload Data Type from Ghidra） |

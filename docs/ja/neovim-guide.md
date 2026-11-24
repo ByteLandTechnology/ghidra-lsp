@@ -54,7 +54,7 @@
 | コマンド | 引数 | 動作 |
 | --- | --- | --- |
 | `:GhidraInstall` | `[lsp\|mcp]` | `npm` 経由で `ghidra-lsp` と `ghidra-mcp` バイナリをインストールまたは更新します |
-| `:GhidraOpenBinary` | `[path]` | バイナリファイルを開きます（解析済みなら無言で復元、未解析なら解析実行を確認） |
+| `:GhidraOpenBinary` | `[path\|md5] [options...]` | バイナリ、ファームウェアイメージ、`.gpr` プロジェクト、または保存済み MD5 を開きます（`programName=`、`processor=`、`compilerSpec=`、`loader=`、`baseAddress=`、`reimport=` 補完対応） |
 | `:GhidraSelectSession` | `[md5]` | 開いているまたは保存済みの Ghidra セッションを選択・アクティブ化します |
 | `:GhidraCloseSession` | `[md5]` | 指定または現在の Ghidra セッションを閉じます（未保存編集や保留中リネームがある場合は拒否） |
 | `:GhidraReanalyze` | なし | アクティブな Ghidra プログラムの再解析を実行します |

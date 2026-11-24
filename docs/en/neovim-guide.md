@@ -86,7 +86,7 @@ Run `:checkhealth ghidra-lsp` at any time to inspect the Neovim version, `npm` a
 | Command | Arguments | Action |
 | --- | --- | --- |
 | `:GhidraInstall` | `[lsp\|mcp]` | Install or update managed `ghidra-lsp` and `ghidra-mcp` binaries via `npm` |
-| `:GhidraOpenBinary` | `[path]` | Open a binary (file completion); restores silently if analyzed, or prompts to analyze |
+| `:GhidraOpenBinary` | `[path\|md5] [options...]` | Open a binary, firmware image, `.gpr` project, or saved MD5 (`programName=`, `processor=`, `compilerSpec=`, `loader=`, `baseAddress=`, `reimport=`) |
 | `:GhidraSelectSession` | `[md5]` | Pick or activate an open or saved Ghidra session |
 | `:GhidraCloseSession` | `[md5]` | Close the active or specified clean session |
 | `:GhidraReanalyze` | — | Run or re-run auto-analysis on the active program |

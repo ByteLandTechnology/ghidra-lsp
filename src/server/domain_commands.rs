@@ -23,8 +23,9 @@ const OPEN_STRING_OPTIONS: [&str; 5] = [
   "baseAddress",
 ];
 
-/// Copies optional `session.open` fields from `arg` into `parameters`.
-fn copy_open_options(arg: &Value, parameters: &mut Map<String, Value>) -> Result<()> {
+/// Copies optional `session.open` fields from `arg` into `parameters` and reports if any exist.
+fn copy_open_options(arg: &Value, parameters: &mut Map<String, Value>) -> Result<bool> {
+  let mut added = false;
   for field in OPEN_STRING_OPTIONS {
     if let Some(value) = arg.get(field).filter(|value| !value.is_null()) {
       let text = value
@@ -33,14 +34,16 @@ fn copy_open_options(arg: &Value, parameters: &mut Map<String, Value>) -> Result
         .trim();
       if !text.is_empty() {
         parameters.insert(field.to_owned(), json!(text));
+        added = true;
       }
     }
   }
   if let Some(value) = arg.get("reimport").filter(|value| !value.is_null()) {
     let reimport = value.as_bool().context("reimport must be a boolean")?;
     parameters.insert(String::from("reimport"), json!(reimport));
+    added = true;
   }
-  Ok(())
+  Ok(added)
 }
 
 impl Server {
@@ -268,19 +271,24 @@ impl Server {
     Ok(value)
   }
 
-  /// Opens a backend session from a binary or `.gpr` `path` or an existing saved program `md5`.
+  /// Opens a backend session from a binary or `.gpr` `path`, or from a saved program `md5`.
   async fn open_session(&self, arg: &Value, backend: &McpBackend) -> Result<Value> {
     ensure!(
       arg.get("path").is_some() != arg.get("md5").is_some(),
       "provide exactly one binary or .gpr path, or one saved program MD5"
     );
     let mut parameters = Map::new();
+    let mut gpr_target = false;
     let md5 = if let Some(path) = arg.get("path") {
       let path = path
         .as_str()
         .map(str::trim)
         .filter(|path| !path.is_empty())
         .context("path must be a nonempty string")?;
+      gpr_target = std::path::Path::new(path)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("gpr"));
       parameters.insert(String::from("path"), json!(path));
       None
     } else {
@@ -290,7 +298,10 @@ impl Server {
       );
       Some(self.scoped_md5(arg).await?)
     };
-    copy_open_options(arg, &mut parameters)?;
+    let has_options = copy_open_options(arg, &mut parameters)?;
+    if gpr_target || has_options {
+      backend.check_extended_open(gpr_target).await?;
+    }
     let opened = backend
       .call("session", "open", md5.as_deref(), Value::Object(parameters))
       .await?;
