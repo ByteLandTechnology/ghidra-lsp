@@ -75,13 +75,11 @@ pub(super) struct CachedProgramMeta {
   pub(super) functions: Vec<RawFunctionMeta>,
 }
 
-/// Per-session cache of call-graph node metadata and edge queries.
+/// Per-session cache of bounded `function.call_graph.get` responses.
 #[derive(Clone, Debug, Default)]
 struct CallGraphCache {
-  /// Cached `function.get` records keyed by canonical entry address.
-  functions: HashMap<String, Value>,
-  /// Cached caller or callee lists keyed by `(canonical_entry, direction)`.
-  calls: HashMap<(String, String), Vec<Value>>,
+  /// Cached `function.call_graph.get` payloads keyed by serialized query key.
+  graphs: HashMap<String, Value>,
 }
 
 /// Shared asynchronous cache of program metadata and bounded call-graph queries.
@@ -124,69 +122,24 @@ impl ProgramMetaCache {
       .remove(&md5.to_ascii_lowercase());
   }
 
-  /// Reads a cached function summary record for `canonical_entry` inside session `md5`.
-  pub(crate) async fn get_cached_function(
-    &self,
-    md5: &str,
-    canonical_entry: &str,
-  ) -> Option<Value> {
+  /// Reads a cached `function.call_graph.get` response for `query_key` inside session `md5`.
+  pub(crate) async fn get_cached_call_graph(&self, md5: &str, query_key: &str) -> Option<Value> {
     self
       .call_graph
       .read()
       .await
       .get(&md5.to_ascii_lowercase())
-      .and_then(|cg| cg.functions.get(canonical_entry).cloned())
+      .and_then(|cg| cg.graphs.get(query_key).cloned())
   }
 
-  /// Stores a function summary record for `canonical_entry` inside session `md5`.
-  pub(crate) async fn insert_cached_function(
-    &self,
-    md5: &str,
-    canonical_entry: String,
-    value: Value,
-  ) {
+  /// Stores a `function.call_graph.get` response for `query_key` inside session `md5`.
+  pub(crate) async fn insert_cached_call_graph(&self, md5: &str, query_key: String, value: Value) {
     let mut guard = self.call_graph.write().await;
     let cg = guard.entry(md5.to_ascii_lowercase()).or_default();
-    if cg.functions.len() >= 512 && !cg.functions.contains_key(&canonical_entry) {
-      cg.functions.clear();
+    if cg.graphs.len() >= 128 && !cg.graphs.contains_key(&query_key) {
+      cg.graphs.clear();
     }
-    cg.functions.insert(canonical_entry, value);
-  }
-
-  /// Reads cached neighbor records for `(canonical_entry, direction)` inside session `md5`.
-  pub(crate) async fn get_cached_calls(
-    &self,
-    md5: &str,
-    canonical_entry: &str,
-    direction: &str,
-  ) -> Option<Vec<Value>> {
-    self
-      .call_graph
-      .read()
-      .await
-      .get(&md5.to_ascii_lowercase())
-      .and_then(|cg| {
-        cg.calls
-          .get(&(canonical_entry.to_owned(), direction.to_owned()))
-          .cloned()
-      })
-  }
-
-  /// Stores neighbor records for `(canonical_entry, direction)` inside session `md5`.
-  pub(crate) async fn insert_cached_calls(
-    &self,
-    md5: &str,
-    canonical_entry: String,
-    direction: String,
-    items: Vec<Value>,
-  ) {
-    let mut guard = self.call_graph.write().await;
-    let cg = guard.entry(md5.to_ascii_lowercase()).or_default();
-    let key = (canonical_entry, direction);
-    if cg.calls.len() >= 512 && !cg.calls.contains_key(&key) {
-      cg.calls.clear();
-    }
-    cg.calls.insert(key, items);
+    cg.graphs.insert(query_key, value);
   }
 
   /// Looks up cached program metadata for `md5`.

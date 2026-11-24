@@ -767,7 +767,7 @@ impl LanguageServer for Server {
     &self,
     params: CallHierarchyIncomingCallsParams,
   ) -> jsonrpc::Result<Option<Vec<CallHierarchyIncomingCall>>> {
-    let mut e = self.engine.lock().await;
+    let e = self.engine.lock().await;
     e.incoming_calls(&params.item).await.map_err(rpc)
   }
 
@@ -775,7 +775,7 @@ impl LanguageServer for Server {
     &self,
     params: CallHierarchyOutgoingCallsParams,
   ) -> jsonrpc::Result<Option<Vec<CallHierarchyOutgoingCall>>> {
-    let mut e = self.engine.lock().await;
+    let e = self.engine.lock().await;
     e.outgoing_calls(&params.item).await.map_err(rpc)
   }
 
