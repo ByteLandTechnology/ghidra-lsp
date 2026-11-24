@@ -5,6 +5,7 @@ import * as vscode from 'vscode';
 import { applyEdits, modify, parse, ParseError } from 'jsonc-parser';
 import { typePath } from './type-files';
 import { callIcon } from './call-graph-icons';
+import { toolbarButton } from './toolbar-ui';
 import { Data, escape, object, page, properties, reference, rows } from './web';
 import { Call } from './memory';
 import { parseType, reorderTypeMembers, typeModel, typeMutations } from './type-model';
@@ -134,7 +135,10 @@ export class DataTypeEditorView implements vscode.CustomTextEditorProvider, vsco
                 const newItem = key === 'values' ? { name: '', value: 0 } : key === 'parameters' ? { name: '', type: 'int' } : { offset: nextOffset, name: '', type: 'undefined1' };
                 const blank = readonly ? '' : entry(newItem, rows.length, true);
                 const heading = key === 'parameters' ? '<h2>Parameters</h2>' : '';
-                const headers = columns.map(field => `<th scope="col" data-field="${escape(field)}" aria-sort="none"><button type="button" class="type-sort" data-sort="${escape(field)}" aria-label="Sort by ${escape(field)}">${escape(field[0].toUpperCase() + field.slice(1))}<span aria-hidden="true"></span></button></th>`).join('');
+                const headers = columns.map(field => {
+                    const label = field[0].toUpperCase() + field.slice(1);
+                    return `<th scope="col" data-field="${escape(field)}" aria-sort="none">${toolbarButton({ className: 'type-sort', dataset: { sort: field }, text: label, labelDetail: 'sort', trailingHtml: '<span aria-hidden="true"></span>' })}</th>`;
+                }).join('');
                 return `<section class="type-list">${heading}<div class="type-table-wrap"><table class="type-table" data-type-list="${escape(key)}" data-kind="${escape(String((model as Record<string, unknown>).kind))}" data-readonly="${readonly}"><thead><tr>${canMove ? '<th class="type-handle-col" scope="col"><span class="type-sr-only">Move</span></th>' : ''}${headers}${readonly ? '' : '<th class="type-action-col" scope="col"><span class="type-sr-only">Actions</span></th>'}</tr></thead><tbody>${contents}${blank}</tbody></table></div></section>`;
             };
             let body = '';
@@ -283,7 +287,7 @@ export class DataTypeEditorView implements vscode.CustomTextEditorProvider, vsco
             `;
             const path = typePath(document.uri);
             const summary = typeHeaderSummary(!errors.length ? model : undefined, path, readonly, document.isDirty ? undefined : cachedRawBytes);
-            const actions = `<div class="type-actions"><span class="type-status" data-state="${document.isDirty ? 'dirty' : 'clean'}" role="status">${document.isDirty ? 'Unsaved changes' : ''}</span><button type="button" data-open-jsonc aria-label="Open JSONC text editor beside" title="Open .ghidra-type JSONC text editor beside">${callIcon('edit')}<span>JSONC</span></button></div>`;
+            const actions = `<div class="type-actions"><span class="type-status" data-state="${document.isDirty ? 'dirty' : 'clean'}" role="status">${document.isDirty ? 'Unsaved changes' : ''}</span>${toolbarButton({ dataset: { 'open-jsonc': '' }, text: 'JSONC', wrapText: true, labelDetail: 'open text editor beside', title: 'Open .ghidra-type JSONC text editor beside', leadingHtml: callIcon('edit') })}</div>`;
             panel.webview.html = page(path.split('/').pop() || 'Data type', 'Data type editor', summary.subtitle, `<p id="type-validation" class="type-validation" role="alert" hidden></p>` + body + `<datalist id="type-options">${typeOptions.map(value => `<option value="${escape(value)}"></option>`).join('')}</datalist>`, script, { kind: 'type-editor', md5: document.uri.authority, path }, actions, { subtitleHtml: summary.subtitleHtml });
         };
         const diagnostics = (): string[] => vscode.languages.getDiagnostics(document.uri).filter(item => item.source === 'Ghidra type' && item.severity === vscode.DiagnosticSeverity.Error).map(item => item.message);

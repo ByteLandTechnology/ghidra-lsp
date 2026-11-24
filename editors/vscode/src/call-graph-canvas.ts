@@ -51,29 +51,28 @@ export const callGraphStyles = `
 .call-page .call-canvas{position:relative;min-height:160px;border:0;border-radius:0;background:var(--vscode-editor-background)}
 .call-canvas svg{overflow:visible}
 .call-node-controls{overflow:visible}
-.call-node .call-node-controls{opacity:0;pointer-events:none;transition:opacity 140ms ease}
-.call-node:hover .call-node-controls,.call-node:focus-within .call-node-controls{opacity:1;pointer-events:auto}
+.call-node .call-node-controls{opacity:1;pointer-events:auto;transition:opacity 140ms ease}
 .node-control-content{display:flex;align-items:center;justify-content:center;width:100%;height:100%;font:12px var(--vscode-font-family);color:var(--vscode-foreground);cursor:default}
 .call-node-controls .call-icon{font-size:16px;flex-shrink:0}
-.call-page .node-decompile{display:flex;align-items:center;justify-content:center;width:28px;height:28px;min-height:0;padding:3px;background:transparent;border:0;border-radius:3px;color:var(--vscode-descriptionForeground)}
-.call-node:hover .node-decompile,.call-node:focus-within .node-decompile{color:var(--vscode-foreground)}
+.call-page .node-decompile{display:flex;align-items:center;justify-content:center;width:28px;height:28px;min-width:24px;min-height:24px;padding:3px;background:transparent;border:0;border-radius:3px;color:var(--vscode-descriptionForeground)}
+.call-node:hover .node-decompile,.call-node.is-focused .node-decompile{color:var(--vscode-foreground)}
 .call-node .node-decompile:hover{background:var(--vscode-list-hoverBackground)}
 .call-node.is-root .node-decompile{color:var(--vscode-list-activeSelectionForeground,var(--vscode-foreground))}
-.call-page .node-branch{display:inline-flex;align-items:center;justify-content:center;width:52px;height:12px;min-height:0;padding:0;border:0;border-radius:6px;background:transparent;color:color-mix(in srgb,var(--vscode-foreground) 32%,transparent);box-shadow:none;cursor:pointer;box-sizing:border-box;transition:color 150ms ease,transform 100ms ease-out}
-.call-node.is-root .node-branch{color:color-mix(in srgb,var(--vscode-list-activeSelectionForeground,var(--vscode-foreground)) 36%,transparent)}
-.call-page .node-branch[aria-expanded="true"]{color:color-mix(in srgb,var(--vscode-focusBorder) 55%,transparent)}
-.call-node.is-root .node-branch[aria-expanded="true"]{color:color-mix(in srgb,var(--vscode-list-activeSelectionForeground,var(--vscode-foreground)) 38%,transparent)}
+.call-page .node-branch{display:inline-flex;align-items:center;justify-content:center;width:52px;height:26px;min-width:24px;min-height:24px;padding:0;border:0;border-radius:6px;background:transparent;color:color-mix(in srgb,var(--vscode-foreground) 42%,transparent);box-shadow:none;cursor:pointer;box-sizing:border-box;transition:color 150ms ease,transform 100ms ease-out}
+.call-node.is-root .node-branch{color:color-mix(in srgb,var(--vscode-list-activeSelectionForeground,var(--vscode-foreground)) 48%,transparent)}
+.call-page .node-branch[data-expanded="true"]{color:color-mix(in srgb,var(--vscode-focusBorder) 68%,transparent)}
+.call-node.is-root .node-branch[data-expanded="true"]{color:color-mix(in srgb,var(--vscode-list-activeSelectionForeground,var(--vscode-foreground)) 52%,transparent)}
 .call-page .node-branch svg.branch-bar{width:48px;height:12px;flex:none;overflow:visible}
 .call-page .node-branch .branch-bar-path{stroke-width:3.4;d:path("M6 6 Q24 6 42 6");transition:d 180ms cubic-bezier(.23,1,.32,1),stroke-width 180ms ease}
-.call-page .node-branch[aria-expanded="true"] .branch-bar-path{stroke-width:2.8;d:path("M13 6 Q24 6 35 6")}
+.call-page .node-branch[data-expanded="true"] .branch-bar-path{stroke-width:2.8;d:path("M13 6 Q24 6 35 6")}
 .call-page .node-branch:hover,.call-page .node-branch:focus-visible{background:transparent;color:var(--vscode-foreground);box-shadow:none}
 body.vscode-dark .call-page .node-branch:hover,body.vscode-dark .call-page .node-branch:focus-visible,.call-node.is-root .node-branch:hover,.call-node.is-root .node-branch:focus-visible{color:rgba(255,255,255,0.94)}
-.call-page .node-branch[data-direction="callers"][aria-expanded="false"]:hover .branch-bar-path,.call-page .node-branch[data-direction="callers"][aria-expanded="false"]:focus-visible .branch-bar-path{stroke-width:3.6;d:path("M3 7.1 Q24 1.8 45 7.1")}
-.call-page .node-branch[data-direction="callees"][aria-expanded="false"]:hover .branch-bar-path,.call-page .node-branch[data-direction="callees"][aria-expanded="false"]:focus-visible .branch-bar-path{stroke-width:3.6;d:path("M3 4.9 Q24 10.2 45 4.9")}
-.call-page .node-branch[data-direction="callers"][aria-expanded="true"]:hover .branch-bar-path,.call-page .node-branch[data-direction="callers"][aria-expanded="true"]:focus-visible .branch-bar-path{stroke-width:3.2;d:path("M10 5 Q24 9.4 38 5")}
-.call-page .node-branch[data-direction="callees"][aria-expanded="true"]:hover .branch-bar-path,.call-page .node-branch[data-direction="callees"][aria-expanded="true"]:focus-visible .branch-bar-path{stroke-width:3.2;d:path("M10 7 Q24 2.6 38 7")}
+.call-page .node-branch[data-direction="callers"][data-expanded="false"]:hover .branch-bar-path{stroke-width:3.6;d:path("M3 7.1 Q24 1.8 45 7.1")}
+.call-page .node-branch[data-direction="callees"][data-expanded="false"]:hover .branch-bar-path{stroke-width:3.6;d:path("M3 4.9 Q24 10.2 45 4.9")}
+.call-page .node-branch[data-direction="callers"][data-expanded="true"]:hover .branch-bar-path{stroke-width:3.2;d:path("M10 5 Q24 9.4 38 5")}
+.call-page .node-branch[data-direction="callees"][data-expanded="true"]:hover .branch-bar-path{stroke-width:3.2;d:path("M10 7 Q24 2.6 38 7")}
 .call-page .node-branch:active{transform:scale(0.95)}
-.call-page .node-branch:focus-visible{outline:1px solid var(--vscode-focusBorder);outline-offset:0}
+.call-page .node-branch:focus-visible{outline:2px solid var(--vscode-focusBorder);outline-offset:0}
 .call-page .node-branch:disabled{cursor:wait;opacity:.45}
 .call-edge{cursor:pointer;outline:none}
 .call-edge-hit{fill:none;stroke:transparent;stroke-width:14;vector-effect:non-scaling-stroke;pointer-events:stroke}
@@ -85,7 +84,7 @@ body.vscode-dark .call-page .node-branch:hover,body.vscode-dark .call-page .node
 .call-page .call-zoom #graph-zoom{font-size:12px;border-inline:1px solid var(--vscode-panel-border);font-variant-numeric:tabular-nums;min-width:52px}
 .call-page .call-zoom button:first-child{border-radius:7px 0 0 7px}
 .call-page .call-zoom button:last-child{border-radius:0 7px 7px 0}
-.call-page .scope,.call-page #filter-status{position:absolute;z-index:2;top:58px;left:20px;margin:0;font-size:11px;background:var(--vscode-editor-background)}
+.call-page .scope,.call-page #filter-status{position:absolute;z-index:2;top:58px;left:20px;margin:0;font-size:11px;background:var(--vscode-editor-background);pointer-events:none}
 .call-page:has([data-call-columns]) #filter-status{top:104px}
 .call-page .scope{top:80px;color:var(--vscode-descriptionForeground)}
 .call-page [hidden]{display:none!important}
@@ -110,10 +109,12 @@ body.vscode-dark .call-page .node-branch:hover,body.vscode-dark .call-page .node
 .call-canvas .call-edge.is-hovered .edge{stroke-width:2.5}
 #call-arrow path{fill:var(--vscode-descriptionForeground);fill:context-stroke}
 .call-overview{margin:0;padding:0;position:absolute;right:16px;bottom:58px;width:176px;background:var(--vscode-editor-background);border:1px solid var(--vscode-editorWidget-border,var(--vscode-panel-border));border-radius:8px;box-shadow:0 2px 8px var(--vscode-widget-shadow);overflow:hidden;opacity:.95;cursor:default}
-.call-overview summary{display:flex;align-items:center;gap:6px;margin:0!important;padding:6px 8px;font-size:11px;font-weight:500;cursor:pointer;user-select:none;list-style:none}
+.call-overview summary{display:flex;align-items:center;gap:6px;min-height:28px;margin:0!important;padding:6px 8px;font-size:11px;font-weight:500;cursor:pointer;user-select:none;list-style:none}
 .call-overview summary::-webkit-details-marker{display:none}
 .call-overview summary .call-icon{font-size:13px}
 .call-overview summary .call-icon:last-child{margin-left:auto}
+.call-overview-stage{outline:none}
+.call-overview-stage:focus-visible{outline:2px solid var(--vscode-focusBorder);outline-offset:-2px}
 .call-canvas .call-overview svg{display:block;width:100%;height:110px;border-top:1px solid var(--vscode-panel-border);cursor:crosshair;background:var(--vscode-sideBar-background)}
 .call-overview path{fill:none;stroke:var(--vscode-descriptionForeground);stroke-width:2}
 .call-overview rect{fill:var(--vscode-editorWidget-border,var(--vscode-descriptionForeground));stroke:none}
@@ -128,9 +129,8 @@ body.vscode-dark .call-page .node-branch:hover,body.vscode-dark .call-page .node
 @media(prefers-reduced-motion:reduce){.call-page *{animation:none!important;transition:none!important}}
 .vscode-high-contrast .call-canvas .call-edge,.vscode-high-contrast-light .call-canvas .call-edge{opacity:1!important}
 @media(forced-colors:active){.call-canvas .call-node-body{stroke:CanvasText}.call-canvas .is-root .call-node-body{fill:Highlight;stroke:Highlight}.call-canvas .call-node.selected .call-node-body,.call-canvas .call-node:focus-visible .call-node-body{stroke:Highlight}.call-canvas .call-edge{color:CanvasText}.call-page .call-menu-content,.call-page .call-zoom{border-color:CanvasText}.call-page .node-branch{color:ButtonText}}
-@media(max-width:640px){.call-page .call-topbar{padding:8px 10px;gap:5px;min-height:48px}.call-page .call-topbar h1{font-size:13px}.call-page .call-search{position:absolute;z-index:4;top:52px;left:10px;right:10px;background:var(--vscode-editor-background)}.call-page .call-overview{width:120px;right:10px;bottom:54px}.call-page .call-overview svg{height:82px}.call-page .call-zoom{bottom:12px;right:10px}}
-
-@media(hover:none) and (pointer:coarse){.call-node.is-root .call-node-controls,.call-node.selected .call-node-controls{opacity:1;pointer-events:auto}}
+@media(max-width:640px){.call-page .call-topbar{flex-wrap:wrap;padding:8px 10px;gap:5px;min-height:48px}.call-page .call-topbar h1{font-size:13px}.call-page .call-search{position:static;flex:1 1 100%;order:10}.call-page .call-overview{width:120px;right:10px;bottom:54px}.call-page .call-overview svg{height:82px}.call-page .call-zoom{bottom:12px;right:10px}}
+@media(max-width:480px){.call-page .call-topbar h1{flex:1 1 calc(100% - 44px)}}
 `;
 
 /** Runs after the common selection handlers; all browsing controls use the panel's owning program. */
@@ -138,35 +138,37 @@ export const callGraphScript = String.raw`
     (()=>{
       const canvas=document.querySelector('[data-call-graph]');if(!canvas||!graphViewport){return}
       const root=canvas.querySelector('.is-root');
-      for(const button of canvas.querySelectorAll('.node-decompile')){button.addEventListener('click',event=>{event.stopPropagation();const node=button.closest('.call-node');send('decompile',{entry:node.dataset.entry,address:node.dataset.entry,kind:'function',label:node.dataset.label})});button.addEventListener('dblclick',event=>event.stopPropagation());button.addEventListener('keydown',event=>event.stopPropagation())}
+      for(const button of canvas.querySelectorAll('.node-decompile')){button.addEventListener('click',event=>{event.stopPropagation();const node=button.closest('.call-node');const outlineBtn=document.querySelector('.graph-outline-action[data-outline-action="decompile"][data-node-id="'+CSS.escape(node.dataset.node)+'"]');if(outlineBtn){outlineBtn.focus({preventScroll:true});outlineBtn.click()}else{send('decompile',{entry:node.dataset.entry,address:node.dataset.entry,kind:'function',label:node.dataset.label})}});button.addEventListener('dblclick',event=>event.stopPropagation())}
 
       const centerCurrent=()=>graphViewport.center(Number(root.dataset.x)+Number(root.dataset.width)/2,Number(root.dataset.y)+Number(root.dataset.height)/2);
       document.getElementById('call-center').addEventListener('click',centerCurrent);
-      for(const button of canvas.querySelectorAll('.node-branch')){button.addEventListener('click',event=>{event.stopPropagation();const node=button.closest('.call-node'),view=graphViewport.snapshot();branchAnchor={entry:node.dataset.entry,x:(Number(node.dataset.x)+Number(node.dataset.width)/2)*view.scale+view.x,y:(Number(node.dataset.y)+Number(node.dataset.height)/2)*view.scale+view.y,focusId:button.id};button.disabled=true;persist();send('callGraphToggle',{entry:node.dataset.entry,address:node.dataset.entry,direction:button.dataset.direction,graphRoot:state.entry})});button.addEventListener('dblclick',event=>event.stopPropagation());button.addEventListener('keydown',event=>event.stopPropagation())}
+      for(const button of canvas.querySelectorAll('.node-branch')){button.addEventListener('click',event=>{event.stopPropagation();const node=button.closest('.call-node'),outlineBtn=document.getElementById('call-branch-'+encodeURIComponent(node.dataset.node)+'-'+button.dataset.direction);button.disabled=true;if(outlineBtn){outlineBtn.focus({preventScroll:true});outlineBtn.click()}else{const view=graphViewport.snapshot();branchAnchor={entry:node.dataset.entry,x:(Number(node.dataset.x)+Number(node.dataset.width)/2)*view.scale+view.x,y:(Number(node.dataset.y)+Number(node.dataset.height)/2)*view.scale+view.y};persist();send('callGraphToggle',{entry:node.dataset.entry,address:node.dataset.entry,direction:button.dataset.direction,graphRoot:state.entry})}});button.addEventListener('dblclick',event=>event.stopPropagation())}
       const details=document.querySelector('.call-details');details.open=samePage&&previous.callDetails===true;details.hidden=!details.open;details.addEventListener('toggle',()=>{details.hidden=!details.open;persist()});
-      const overview=canvas.querySelector('.call-overview'),map=overview.querySelector('svg'),windowRect=map.querySelector('#call-overview-window');
+      const overview=canvas.querySelector('.call-overview'),overviewStage=overview.querySelector('.call-overview-stage'),map=overview.querySelector('svg'),windowRect=map.querySelector('#call-overview-window');
       overview.open=previous.callOverview===true;overview.hidden=!overview.open;overview.addEventListener('toggle',()=>{overview.hidden=!overview.open;if(graphViewport.snapshot().fitted){graphViewport.fit()}persist()});
       const update=()=>{const view=graphViewport.snapshot(),box=map.viewBox.baseVal;const left=Math.max(0,Math.min(box.width,-view.x/view.scale)),top=Math.max(0,Math.min(box.height,-view.y/view.scale)),right=Math.max(left,Math.min(box.width,(canvas.clientWidth-view.x)/view.scale)),bottom=Math.max(top,Math.min(box.height,(canvas.clientHeight-view.y)/view.scale));const w=Math.min(box.width,Math.max(4,right-left)),h=Math.min(box.height,Math.max(4,bottom-top)),wx=Math.max(0,Math.min(box.width-w,left)),wy=Math.max(0,Math.min(box.height-h,top));windowRect.setAttribute('x',wx);windowRect.setAttribute('y',wy);windowRect.setAttribute('width',w);windowRect.setAttribute('height',h)};
       canvas.addEventListener('graph-viewport',update);
       let overviewPointer;
       const moveOverview=event=>{const matrix=map.getScreenCTM();if(!matrix){return}const point=map.createSVGPoint();point.x=event.clientX;point.y=event.clientY;const graph=point.matrixTransform(matrix.inverse());graphViewport.center(graph.x,graph.y)};
-      map.addEventListener('pointerdown',event=>{if(event.button!==0){return}event.preventDefault();event.stopPropagation();overviewPointer=event.pointerId;map.setPointerCapture(event.pointerId);map.focus({preventScroll:true});moveOverview(event)});
-      map.addEventListener('pointermove',event=>{if(event.pointerId===overviewPointer){moveOverview(event)}});
-      const endOverview=()=>{overviewPointer=undefined};map.addEventListener('pointerup',endOverview);map.addEventListener('pointercancel',endOverview);map.addEventListener('lostpointercapture',endOverview);
-      map.addEventListener('keydown',event=>{const direction={ArrowLeft:[-50,0],ArrowRight:[50,0],ArrowUp:[0,-50],ArrowDown:[0,50]}[event.key];if(!direction){return}event.preventDefault();event.stopPropagation();const view=graphViewport.snapshot();graphViewport.center((canvas.clientWidth/2-view.x+direction[0])/view.scale,(canvas.clientHeight/2-view.y+direction[1])/view.scale)});
+      overviewStage.addEventListener('pointerdown',event=>{if(event.button!==0){return}event.preventDefault();event.stopPropagation();overviewPointer=event.pointerId;overviewStage.setPointerCapture(event.pointerId);overviewStage.focus({preventScroll:true});moveOverview(event)});
+      overviewStage.addEventListener('pointermove',event=>{if(event.pointerId===overviewPointer){moveOverview(event)}});
+      const endOverview=()=>{overviewPointer=undefined};overviewStage.addEventListener('pointerup',endOverview);overviewStage.addEventListener('pointercancel',endOverview);overviewStage.addEventListener('lostpointercapture',endOverview);
+      overviewStage.addEventListener('keydown',event=>{const direction={ArrowLeft:[-50,0],ArrowRight:[50,0],ArrowUp:[0,-50],ArrowDown:[0,50]}[event.key];if(!direction){return}event.preventDefault();event.stopPropagation();const view=graphViewport.snapshot();graphViewport.center((canvas.clientWidth/2-view.x+direction[0])/view.scale,(canvas.clientHeight/2-view.y+direction[1])/view.scale)});
       let canvasWidth=canvas.clientWidth;
       new ResizeObserver(()=>{const width=canvas.clientWidth;if(width!==canvasWidth&&width<640&&graphViewport.snapshot().scale<.65){document.getElementById('graph-zoom').click();document.getElementById('call-center').click()}canvasWidth=width}).observe(canvas);
       const menu=document.getElementById('call-menu'),summary=menu.querySelector('summary');
       const nodes=[...canvas.querySelectorAll('.call-node')],edges=[...canvas.querySelectorAll('.call-edge')];
-      let tracedNode,activeEdge,hoveredEdge;
-      const paintTrace=()=>{canvas.classList.toggle('is-tracing',!!(tracedNode||activeEdge||hoveredEdge));for(const edge of edges){edge.classList.toggle('is-hovered',edge===hoveredEdge||!!tracedNode&&(edge.dataset.from===tracedNode.dataset.node||edge.dataset.to===tracedNode.dataset.node));edge.classList.toggle('is-active',edge===activeEdge);edge.setAttribute('aria-pressed',String(edge===activeEdge))}const relation=hoveredEdge||activeEdge;for(const node of nodes){node.classList.toggle('edge-endpoint',!!relation&&(node.dataset.node===relation.dataset.from||node.dataset.node===relation.dataset.to))}};
+      let tracedNode,activeEdge=samePage?edges.find(edge=>edge.dataset.edgeKey===previous.cfgActiveEdge):undefined,hoveredEdge;
+      const paintTrace=()=>{canvas.classList.toggle('is-tracing',!!(tracedNode||activeEdge||hoveredEdge));for(const edge of edges){edge.classList.toggle('is-hovered',edge===hoveredEdge||!!tracedNode&&(edge.dataset.from===tracedNode.dataset.node||edge.dataset.to===tracedNode.dataset.node));edge.classList.toggle('is-active',edge===activeEdge)}const relation=hoveredEdge||activeEdge;for(const node of nodes){node.classList.toggle('edge-endpoint',!!relation&&(node.dataset.node===relation.dataset.from||node.dataset.node===relation.dataset.to))}graphOutline?.syncActiveEdge(activeEdge?.dataset.edgeKey)};
       const trace=node=>{tracedNode=node;paintTrace()};
-      const activateEdge=edge=>{activeEdge=edge;tracedNode=undefined;paintTrace()};
-      for(const node of nodes){node.addEventListener('pointerenter',()=>trace(node));node.addEventListener('pointerleave',()=>trace(document.activeElement?.closest('.call-node')));node.addEventListener('focus',()=>trace(node));node.addEventListener('blur',()=>trace(undefined));node.addEventListener('click',()=>{activeEdge=undefined;paintTrace()})}
-      for(const edge of edges){edge.addEventListener('pointerdown',event=>{if(event.button===0){event.stopPropagation()}});edge.addEventListener('pointerenter',()=>{hoveredEdge=edge;tracedNode=undefined;paintTrace()});edge.addEventListener('pointerleave',()=>{hoveredEdge=document.activeElement===edge?edge:undefined;paintTrace()});edge.addEventListener('focus',()=>{hoveredEdge=edge;tracedNode=undefined;paintTrace()});edge.addEventListener('blur',()=>{hoveredEdge=undefined;paintTrace()});edge.addEventListener('click',event=>{event.stopPropagation();activateEdge(edge)});edge.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();activateEdge(edge)}})}
-      canvas.addEventListener('click',event=>{if(event.target.closest('.call-node,.call-edge,.call-overview,.call-depth-controls,.call-function-actions')){return}activeEdge=undefined;paintTrace()});
-      canvas.addEventListener('keydown',event=>{if(event.key==='Escape'&&activeEdge){event.preventDefault();event.stopPropagation();activeEdge=undefined;hoveredEdge=undefined;tracedNode=undefined;paintTrace();canvas.focus({preventScroll:true})}});
-      canvas.addEventListener('pointerleave',()=>trace(document.activeElement?.closest('.call-node')));
+      const activateEdge=edge=>{activeEdge=edge;tracedNode=undefined;paintTrace();persist()};
+      for(const node of nodes){node.addEventListener('pointerenter',()=>trace(node));node.addEventListener('pointerleave',()=>trace(undefined));node.addEventListener('click',()=>{activeEdge=undefined;paintTrace();graphOutline?.focusNode(node.dataset.node);persist()})}
+      for(const edge of edges){edge.addEventListener('pointerdown',event=>{if(event.button===0){event.stopPropagation()}});edge.addEventListener('pointerenter',()=>{hoveredEdge=edge;tracedNode=undefined;paintTrace()});edge.addEventListener('pointerleave',()=>{hoveredEdge=undefined;paintTrace()});edge.addEventListener('click',event=>{event.stopPropagation();activateEdge(edge);graphOutline?.focusEdge(edge.dataset.edgeKey)})}
+      canvas.addEventListener('outline-activate-edge',event=>{activateEdge(edges.find(edge=>edge.dataset.edgeKey===event.detail?.edgeKey))});
+      canvas.addEventListener('outline-clear-edge',()=>{if(activeEdge){activeEdge=undefined;paintTrace()}});
+      canvas.addEventListener('click',event=>{if(event.target.closest('.call-node,.call-edge,.call-overview,.call-depth-controls,.call-function-actions')){return}activeEdge=undefined;paintTrace();persist()});
+      canvas.addEventListener('keydown',event=>{if(event.key==='Escape'&&activeEdge){event.preventDefault();event.stopPropagation();activeEdge=undefined;hoveredEdge=undefined;tracedNode=undefined;paintTrace();persist();canvas.focus({preventScroll:true})}});
+      canvas.addEventListener('pointerleave',()=>trace(undefined));
       menu.addEventListener('keydown',event=>{if(event.target===summary&&['ArrowDown','ArrowUp'].includes(event.key)){menu.open=true}if(event.target.matches('select,input')||!['ArrowDown','ArrowUp','ArrowLeft','ArrowRight','Home','End'].includes(event.key)){return}const items=[...menu.querySelectorAll('button:not(:disabled),select,summary')].filter(item=>!item.closest('[hidden]')&&item!==summary&&[...menu.querySelectorAll('details:not([open])')].every(details=>!details.contains(item)||details.querySelector(':scope > summary')===item));if(!items.length){return}event.preventDefault();const index=items.indexOf(document.activeElement),next=event.key==='Home'?0:event.key==='End'?items.length-1:(event.key==='ArrowDown'||event.key==='ArrowRight')?(index+1)%items.length:(index<0?items.length-1:(index-1+items.length)%items.length);items[next].focus()});
       menu.addEventListener('focusout',()=>requestAnimationFrame(()=>{if(menu.open&&!menu.contains(document.activeElement)){menu.open=false}}));
 
@@ -181,7 +183,7 @@ export const callGraphScript = String.raw`
       document.addEventListener('click',event=>{if(menu.open&&(!menu.contains(event.target)||event.target.closest('button[data-action]'))){menu.open=false}});
       document.addEventListener('keydown',event=>{if(event.key==='Escape'&&menu.open){event.preventDefault();menu.open=false;summary.focus()}else if(((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='f')||event.key==='/'&&!event.target.closest('input,select,textarea')){event.preventDefault();menu.open=false;openSearch()}});
       document.getElementById('call-center').addEventListener('click',()=>{menu.open=false});
-      document.addEventListener('contextmenu',event=>{if(event.target.closest('.call-node')){event.preventDefault();event.target.closest('.call-node').dispatchEvent(new MouseEvent('click',{bubbles:true}));event.target.closest('.call-node').querySelector('.node-decompile')?.focus()}});
-      update();
+      document.addEventListener('contextmenu',event=>{const node=event.target.closest('.call-node');if(node){event.preventDefault();node.dispatchEvent(new MouseEvent('click',{bubbles:true}));document.querySelector('.graph-outline-action[data-outline-action="decompile"][data-node-id="'+CSS.escape(node.dataset.node)+'"]')?.focus({preventScroll:true})}});
+      paintTrace();update();
     })();
 `;

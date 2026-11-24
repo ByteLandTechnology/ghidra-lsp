@@ -12,6 +12,7 @@ import { iconFontStyles } from './icon-font';
 import { displayAddress } from './names';
 import { pageStyles } from './page-styles';
 import { addrSpan, programViewStyles } from './program-views-styles';
+import { toolbarButton } from './toolbar-ui';
 import { viewStyles } from './view-ui';
 import { escape } from './web';
 
@@ -67,7 +68,7 @@ export function renderHexRowsHtml(chunk: HexChunk, selectedAddress: string, sele
             const byteStr = cell.value === null ? '??' : cell.value.toString(16).padStart(2, '0');
             const nullClass = cell.value === null ? ' is-null' : '';
             const title = `${cell.address}${cell.symbol ? ` · ${cell.symbol}` : ''}${cell.value === null ? ' (uninitialized)' : ''}`;
-            return `<span class="hb${gapClass}${nullClass}${isSel ? ' is-selected' : ''}" data-address="${escape(cell.address)}" data-byte="${cell.value === null ? '' : cell.value}" title="${escape(title)}" role="gridcell" tabindex="-1">${byteStr}</span>`;
+            return `<span class="hb${gapClass}${nullClass}${isSel ? ' is-selected' : ''}" data-address="${escape(cell.address)}" data-byte="${cell.value === null ? '' : cell.value}" title="${escape(title)}" tabindex="-1">${byteStr}</span>`;
         }).join(' ');
 
         const asciiHtml = row.cells.map(cell => {
@@ -95,13 +96,22 @@ export function renderDataInspectorHtml(
     endian: InspectorEndian = 'le',
 ): string {
     const shownAddr = displayAddress(address);
+    const endianText = endian === 'be' ? 'Big-endian' : 'Little-endian';
     const meta = [
         `${shownAddr} · ${block.name} (${permissionsLabel(block)})`,
+        endianText,
         symbol || '',
         selectionLength > 1 ? `${selectionLength} bytes selected` : '',
     ].filter(Boolean).join(' · ');
-    const endianLabel = endian === 'be' ? 'Big Endian' : 'Little Endian';
-    const headHtml = `<div class="hex-inspector-head"><h2>Data inspector</h2><button type="button" class="hex-endian-pill" data-toggle-endian data-endian="${endian}" aria-pressed="${endian === 'be'}" aria-label="Toggle byte order (${endianLabel})" title="Switch byte order">${endianLabel}</button></div>`;
+    const pillHtml = toolbarButton({
+        className: 'hex-endian-pill',
+        text: 'Big Endian',
+        labelDetail: 'byte order',
+        pressed: endian === 'be',
+        title: 'Switch byte order',
+        dataset: { 'toggle-endian': '', endian },
+    });
+    const headHtml = `<div class="hex-inspector-head"><h2>Data inspector</h2>${pillHtml}</div>`;
 
     if (!entries.length) {
         return `${headHtml}<p class="hex-inspector-meta" title="${escape(address)}">${escape(meta || 'Select a byte to inspect decoded values.')}</p>`;
@@ -275,7 +285,8 @@ const decodeLocalInspector = (startAddr, len) => {
   const cells = allByteCells();
   const idx = cells.findIndex(c => c.dataset.address?.toLowerCase() === startAddr.toLowerCase());
   const block = findBlockFor(startAddr);
-  const blockText = block ? shortAddr(startAddr) + ' · ' + block.name + ' (' + (block.read ? 'R' : '−') + (block.write ? 'W' : '−') + (block.execute ? 'X' : '−') + ')' + (len > 1 ? ' · ' + len + ' bytes selected' : '') : shortAddr(startAddr);
+  const endianText = state.endian === 'big' ? 'Big-endian' : 'Little-endian';
+  const blockText = block ? shortAddr(startAddr) + ' · ' + block.name + ' (' + (block.read ? 'R' : '−') + (block.write ? 'W' : '−') + (block.execute ? 'X' : '−') + ') · ' + endianText + (len > 1 ? ' · ' + len + ' bytes selected' : '') : shortAddr(startAddr) + ' · ' + endianText;
   if (idx < 0) return { meta: blockText, rows: [] };
   const slice = cells.slice(idx, idx + 32);
   if (slice[0].dataset.byte === '') {
@@ -319,15 +330,20 @@ const decodeLocalInspector = (startAddr, len) => {
 
 const applyInspector = (startAddr, metaText, rows) => {
   const mode = toInspectorEndian(state.endian);
-  const label = mode === 'be' ? 'Big Endian' : 'Little Endian';
-  const head = document.createElement('div'); head.className = 'hex-inspector-head';
-  const heading = document.createElement('h2'); heading.textContent = 'Data inspector';
-  const pill = document.createElement('button'); pill.type = 'button'; pill.className = 'hex-endian-pill';
-  pill.setAttribute('data-toggle-endian', ''); pill.dataset.endian = mode;
+  let head = inspectorEl.querySelector('.hex-inspector-head');
+  let pill = head?.querySelector('.hex-endian-pill');
+  if (!head || !pill) {
+    head = document.createElement('div'); head.className = 'hex-inspector-head';
+    const heading = document.createElement('h2'); heading.textContent = 'Data inspector';
+    pill = document.createElement('button'); pill.type = 'button'; pill.className = 'hex-endian-pill';
+    pill.setAttribute('data-toggle-endian', '');
+    pill.setAttribute('aria-label', 'Big Endian, byte order');
+    pill.title = 'Switch byte order';
+    pill.textContent = 'Big Endian';
+    head.append(heading, pill);
+  }
+  pill.dataset.endian = mode;
   pill.setAttribute('aria-pressed', String(mode === 'be'));
-  pill.setAttribute('aria-label', 'Toggle byte order (' + label + ')');
-  pill.title = 'Switch byte order'; pill.textContent = label;
-  head.append(heading, pill);
   const meta = document.createElement('p'); meta.className = 'hex-inspector-meta'; meta.title = startAddr; meta.textContent = metaText;
   const dl = document.createElement('dl');
   for (const r of rows) {
@@ -635,7 +651,8 @@ window.addEventListener('message', event => {
     if (addr === selected) {
       const len = msg.length || selectionLength || 1;
       const block = findBlockFor(addr);
-      const metaText = block ? shortAddr(addr) + ' · ' + block.name + ' (' + (block.read ? 'R' : '−') + (block.write ? 'W' : '−') + (block.execute ? 'X' : '−') + ')' + (len > 1 ? ' · ' + len + ' bytes selected' : '') : shortAddr(addr);
+      const endianText = state.endian === 'big' ? 'Big-endian' : 'Little-endian';
+      const metaText = block ? shortAddr(addr) + ' · ' + block.name + ' (' + (block.read ? 'R' : '−') + (block.write ? 'W' : '−') + (block.execute ? 'X' : '−') + ') · ' + endianText + (len > 1 ? ' · ' + len + ' bytes selected' : '') : shortAddr(addr) + ' · ' + endianText;
       applyInspector(addr, metaText, msg.entries);
     }
   } else if (msg.action === 'chunkData') {
