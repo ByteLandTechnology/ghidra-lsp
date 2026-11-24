@@ -318,24 +318,6 @@ export const browserStateScript = String.raw`
         activeRow.classList.add('selected');activeRow.setAttribute('aria-current','true');
       }
     };
-    const syncHexGridSelection=(gridBody,matchAddress,selLen)=>{
-      let firstRow=null;if(!gridBody){return null}
-      for(const row of gridBody.querySelectorAll('tr.hex-row')){
-        let rowSelected=false;
-        for(const cell of row.querySelectorAll('.hb[data-address],.hb[role="gridcell"]')){
-          const active=Boolean(cell.dataset.address&&matchAddress(cell.dataset.address));
-          cell.classList.toggle('is-selected',active);cell.setAttribute('aria-selected',active?'true':'false');
-          if(active){rowSelected=true}
-        }
-        for(const ascii of row.querySelectorAll('.ha[data-address]')){
-          ascii.classList.toggle('is-selected',Boolean(ascii.dataset.address&&matchAddress(ascii.dataset.address)));
-        }
-        row.classList.toggle('selected',rowSelected);row.setAttribute('aria-selected',rowSelected?'true':'false');
-        if(rowSelected&&selLen){row.dataset.selLen=String(selLen)}
-        if(rowSelected&&!firstRow){firstRow=row}
-      }
-      return firstRow;
-    };
     const stepRowFocus=(rows,currentRow,key)=>{
       if(!rows.length||!['ArrowDown','ArrowUp','Home','End'].includes(key)){return null}
       const index=rows.indexOf(currentRow);

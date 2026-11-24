@@ -5,7 +5,7 @@
  * HTML and client script renderer for the Memory and Bytes webview.
  */
 import { randomBytes } from 'node:crypto';
-import { MemoryBlockInfo, parseAddress, permissionsLabel, sameAddress } from './address-math';
+import { MemoryBlockInfo, parseAddress, permissionsLabel } from './address-math';
 import { callIcon, callIcons } from './call-graph-icons';
 import { DataInspectorEntry, HexChunk, ProgramEndian } from './hex-model';
 import { iconFontStyles } from './icon-font';
@@ -133,7 +133,7 @@ export function renderHexRowsHtml(chunk: HexChunk, selectedAddress: string, sele
 
         const rowAddr = row.firstInBlockAddress || row.rowAddress;
         const firstByte = row.cells.find(c => c.inBlock)?.address || rowAddr;
-        return `<tr class="hex-row${rowHasSel ? ' selected' : ''}" aria-selected="${rowHasSel ? 'true' : 'false'}" data-address="${escape(firstByte)}" data-kind="bytes" data-sel-len="${selectionLength}"><th scope="row" class="addr">${addrSpan(row.rowAddress)}</th>${bytesHtml}<td class="hex-ascii" aria-readonly="true">${asciiHtml}</td></tr>`;
+        return `<tr class="hex-row${rowHasSel ? ' selected' : ''}" data-address="${escape(firstByte)}" data-kind="bytes" data-sel-len="${selectionLength}"><th scope="row" class="addr">${addrSpan(row.rowAddress)}</th>${bytesHtml}<td class="hex-ascii" aria-readonly="true">${asciiHtml}</td></tr>`;
     }).join('');
 }
 
@@ -168,16 +168,11 @@ export function renderDataInspectorHtml(
 }
 
 /** Render the collapsible Memory Map summary table listing program memory blocks. */
-function renderMemoryMapHtml(blocks: MemoryBlockInfo[], selectedBlockAddress?: string): string {
-    let selectedMarked = false;
+function renderMemoryMapHtml(blocks: MemoryBlockInfo[]): string {
     const rowsHtml = blocks.map(block => {
         const perms = permissionsLabel(block);
         const initText = block.initialized ? 'Yes' : 'No';
-        const isSel = Boolean(!selectedMarked && selectedBlockAddress && sameAddress(block.start, selectedBlockAddress));
-        if (isSel) {
-            selectedMarked = true;
-        }
-        return `<tr${isSel ? ' class="selected" aria-current="true"' : ''} data-address="${escape(block.start)}" data-kind="block" data-label="${escape(block.name)}" tabindex="0"><td>${escape(block.name)}</td><td class="addr">${addrSpan(block.start)}</td><td class="addr">${addrSpan(block.end)}</td><td>${escape(block.length.toString(10))}</td><td>${escape(perms)}</td><td>${escape(initText)}</td></tr>`;
+        return `<tr data-address="${escape(block.start)}" data-kind="block" data-label="${escape(block.name)}" tabindex="0"><td>${escape(block.name)}</td><td class="addr">${addrSpan(block.start)}</td><td class="addr">${addrSpan(block.end)}</td><td>${escape(block.length.toString(10))}</td><td>${escape(perms)}</td><td>${escape(initText)}</td></tr>`;
     }).join('');
     return `<details class="memory-map"><summary>Memory map (${blocks.length} blocks)</summary><div class="table-wrap"><table><thead><tr><th scope="col">Block</th><th scope="col">Start</th><th scope="col">End</th><th scope="col">Length</th><th scope="col">Permissions</th><th scope="col">Initialized</th></tr></thead><tbody>${rowsHtml}</tbody></table></div></details>`;
 }
@@ -448,7 +443,7 @@ ${webviewShortcutScript}
 const updateSelectionTools = () => {
   const label = document.getElementById('selection-label');
   const bar = label.closest('.selection-tools');
-  const activeHex = hexBody.querySelector('.hb[aria-selected="true"]') || hexBody.querySelector('tr.hex-row[aria-selected="true"]');
+  const activeHex = hexBody.querySelector('.hb.is-selected') || hexBody.querySelector('tr.selected');
   const activeMap = memoryMap?.querySelector('tr[aria-current="true"]');
   const visible = (!!activeHex && !activeHex.closest('tr')?.hidden && !hexMain.hidden) || (!!activeMap && !activeMap.hidden && memoryMap?.open);
   bar.hidden = !visible;
@@ -501,10 +496,33 @@ const highlightRange = (startAddr, len = 1, notify = true, scroll = true) => {
   const clampedLen = Math.max(1, len);
   const endOffset = start.offset + BigInt(clampedLen) - 1n;
   setCurrentRow(null);
-  const firstMatchedRow = syncHexGridSelection(hexBody, rawAddr => {
-    const p = parseAddr(rawAddr);
-    return Boolean(p && p.space === start.space && p.offset >= start.offset && p.offset <= endOffset);
-  }, clampedLen);
+  for (const el of document.querySelectorAll('.hb.is-selected,.ha.is-selected,tr.selected')) {
+    el.classList.remove('is-selected', 'selected');
+  }
+  const byteCells = allByteCells();
+  for (const el of byteCells) {
+    el.setAttribute('aria-selected', 'false');
+  }
+  let firstMatchedRow = null;
+  for (const el of byteCells) {
+    const p = parseAddr(el.dataset.address);
+    if (p && p.space === start.space && p.offset >= start.offset && p.offset <= endOffset) {
+      el.classList.add('is-selected');
+      el.setAttribute('aria-selected', 'true');
+      const tr = el.closest('tr');
+      if (tr) {
+        tr.classList.add('selected');
+        tr.dataset.selLen = String(clampedLen);
+        firstMatchedRow ||= tr;
+      }
+    }
+  }
+  for (const el of allAsciiCells()) {
+    const p = parseAddr(el.dataset.address);
+    if (p && p.space === start.space && p.offset >= start.offset && p.offset <= endOffset) {
+      el.classList.add('is-selected');
+    }
+  }
   selected = startAddr;
   selectionLength = clampedLen;
   selectedKind = 'bytes';
@@ -632,10 +650,6 @@ hexBody.addEventListener('keydown', event => {
     nextCell = cells[0];
   } else if (event.key === 'End') {
     nextCell = cells[cells.length - 1];
-  } else if (event.key === ' ') {
-    const rowAddr = cell?.dataset.address || event.target.closest('tr.hex-row')?.dataset.address;
-    if (rowAddr) { event.preventDefault(); anchorAddress = rowAddr; highlightRange(rowAddr, 1, true, false); }
-    return;
   } else if (event.key === 'Enter' && selected) {
     event.preventDefault();
     vscode.postMessage({ action: 'listing', address: selected, kind: 'bytes' });
@@ -669,7 +683,8 @@ inspectorEl.addEventListener('click', event => {
 const mapBody = memoryMap?.querySelector('tbody');
 const selectMapRow = (row, scroll = false) => {
   if (!row) return;
-  syncHexGridSelection(hexBody, () => false);
+  for (const el of document.querySelectorAll('.hb.is-selected,.ha.is-selected,tr.selected')) el.classList.remove('is-selected', 'selected');
+  for (const el of allByteCells()) el.setAttribute('aria-selected', 'false');
   setCurrentRow(row);
   selected = row.dataset.address || '';
   selectedKind = 'block';
