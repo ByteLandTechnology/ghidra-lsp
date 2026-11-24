@@ -318,17 +318,16 @@ export class PatchingUI implements vscode.Disposable {
         });
         if (!mode) { return; }
 
+        const patch: Data = { bytes: { encoding: 'hex', data: hex, length } };
+        if (mode.clearExisting) { patch.clear_existing = true; }
+        if (mode.disassemble) { patch.disassemble = true; }
         await this.call<Data>('ghidra.mutate', {
             md5: target.md5,
             domain: 'memory',
             operation: 'write',
             params: {
                 selector: { address: target.address },
-                patch: {
-                    bytes: { encoding: 'hex', data: hex, length },
-                    clear_existing: mode.clearExisting,
-                    disassemble: mode.disassemble,
-                },
+                patch,
             },
         });
         await this.refreshAll(target.md5);

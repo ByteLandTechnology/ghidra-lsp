@@ -92,7 +92,7 @@ require('ghidra-lsp').setup({
 
 ---
 
-## 25 条用户命令参考（`editors/nvim/plugin/ghidra-lsp.lua`）
+## 29 条用户命令参考（`editors/nvim/plugin/ghidra-lsp.lua`）
 
 ### 会话与二进制管理
 
@@ -135,6 +135,10 @@ require('ghidra-lsp').setup({
 | `:GhidraEditFunction` | — | 打开当前函数签名、调用约定、属性（`varargs`/`noreturn`/`inline`）及参数浮动编辑表单。 |
 | `:GhidraEditVariables` | — | 选择参数或局部变量，交互修改名称与数据类型后原子提交。 |
 | `:GhidraEditType` | `[path]` | 打开可编辑的 `ghidra-type://<md5><path>.ghidra-type` JSONC 缓冲区（内置/复杂类型只读）。 |
+| `:GhidraAssemble` | `[address]` | 在光标处或指定地址汇编写入 Sleigh 指令。 |
+| `:GhidraDisassemble` | `[address\|start..end]` | 对光标处、可视范围或指定地址的未定义字节执行反汇编。 |
+| `:GhidraClear` | `[address\|start..end]` | 清除（Undefine）光标处、可视范围或指定地址的代码单元定义。 |
+| `:GhidraPatchBytes` | `[address]` | 在光标处或指定地址修补十六进制字节。 |
 | `:GhidraRefresh` | — | 从 Ghidra 重新抓取并刷新当前虚拟缓冲区。 |
 | `:GhidraDiscardRename` | — | 放弃当前会话中所有尚未提交的 `<F2>` 重命名预览并恢复原文。 |
 | `:GhidraOrigin` | — | 跳转回发起当前待决重命名的原始（Origin）反编译缓冲区以便执行 `:w`。 |
@@ -169,8 +173,8 @@ require('ghidra-lsp').setup({
 
 | 视图缓冲区 | 导航与同步按键 | 翻页 / 控制按键 |
 | --- | --- | --- |
-| `ghidra-listing://`（汇编清单） | `<CR>` 或 `d` 反编译定位；`m` 打开 Memory；`c` 编辑注释；`gr` 或 `x` 查交叉引用；`g` 跳转地址 | `]p` / `[p` 向前向后翻页；`]b` / `[b` 切换上下内存块；`r` 刷新；`q` 关闭 |
-| `ghidra-memory://`（内存十六进制） | `<CR>` 或 `l` 打开 Listing；`d` 反编译定位；`g` 跳转地址（移动光标即更新顶部两行实时 Data Inspector） | `e` 切换大小端序（`little`/`big`）；`]p` / `[p` 翻页；`r` 刷新；`q` 关闭 |
+| `ghidra-listing://`（汇编清单） | `<CR>` 或 `d` 反编译定位；`m` 打开 Memory；`c` 编辑注释；`a` 汇编指令；`D` 反汇编；`u` 清除定义；`p` 修补字节；`gr` 或 `x` 查交叉引用；`g` 跳转地址 | `]p` / `[p` 向前向后翻页；`]b` / `[b` 切换上下内存块；`r` 刷新；`q` 关闭 |
+| `ghidra-memory://`（内存十六进制） | `<CR>` 或 `l` 打开 Listing；`d` 反编译定位；`a` 汇编指令；`D` 反汇编；`u` 清除定义；`p` 修补字节；`g` 跳转地址（移动光标即更新顶部两行实时 Data Inspector） | `e` 切换大小端序（`little`/`big`）；`]p` / `[p` 翻页；`r` 刷新；`q` 关闭 |
 | `ghidra-cfg://`（控制流图） | `<CR>` 在反编译中揭示当前基本块；`l` 在 Listing 中打开 | `r` 刷新；`q` 关闭 |
 | `ghidra-callgraph://`（调用图） | `<CR>` 打开光标所在函数；`l` 在 Listing 中打开 | `+` / `-` 增减上下游遍历深度（`1` 到 `3`）；`r` 刷新；`q` 关闭 |
 | `ghidra-string://`（字符串预览） | `gr` / `x` 将传入交叉引用加载到 Quickfix；`<leader>gl` 打开 Listing；`<leader>gm` 打开 Memory | `q` 关闭 |

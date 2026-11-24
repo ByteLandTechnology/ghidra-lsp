@@ -111,14 +111,14 @@
 | `ghidra.validateTypeDocument` | `{ text, original }` | JSONC 構文・重複キー・スキーマ・型記法を検査し UTF-16 エラー範囲を返却 |
 | `ghidra.saveTypeDocument` | `{ md5?, path, text, original }` | 競合検査、型差分パッチ適用、`program.save`、正規化読み戻しを実行 |
 | `ghidra.query` | `{ md5?, domain, operation, params? }` | `workbench::READ` 許可リスト（32 操作）に含まれる読み取り MCP 操作のみ実行 |
-| `ghidra.mutate` | `{ md5?, domain, operation, params? }` | `workbench::WRITE` 許可リスト（22 操作）に含まれる書き込み操作を実行後に永続化・更新 |
+| `ghidra.mutate` | `{ md5?, domain, operation, params? }` | `workbench::WRITE` 許可リスト（25 操作）に含まれる書き込み操作を実行後に永続化・更新 |
 
 ### `workbench` 許可リスト（`src/workbench.rs`）
 
 - **`ghidra.query`（32 種の読み取り操作）**:
   `address.resolve`、`address_space.list`、`analysis.get`、`code_unit.list`、`comment.get`、`comment.list`、`data_type.get`、`data_type.list`、`data_type_category.list`、`data_unit.list`、`decompilation.get`、`flow_override.list`、`function.get`、`function.list`、`function_call.list`、`global_variable.get`、`global_variable.list`、`instruction.get`、`instruction.list`、`interface.get`、`job.get`、`job.wait`、`memory.read`、`memory_block.get`、`memory_block.list`、`program.get`、`program_language.get`、`reference.list`、`session.get`、`session.list`、`symbol.get`、`symbol.list`
-- **`ghidra.mutate`（22 種の書き込み操作）**:
-  `comment.{create,delete,patch,upsert}`、`data_type.{create,delete,patch,upsert}`、`flow_override.patch`、`function.patch`、`function_local_variable.patch`、`function_parameter.{create,delete,patch}`、`global_variable.{create,delete,patch,upsert}`、`memory.write`、`program.save`、`symbol.{patch,demangle}`
+- **`ghidra.mutate`（25 種の書き込み操作）**:
+  `code_unit.clear`、`comment.{create,delete,patch,upsert}`、`data_type.{create,delete,patch,upsert}`、`flow_override.patch`、`function.patch`、`function_local_variable.patch`、`function_parameter.{create,delete,patch}`、`global_variable.{create,delete,patch,upsert}`、`instruction.{assemble,disassemble}`、`memory.write`、`program.save`、`symbol.{patch,demangle}`
 
 ## 開発規約と CI（`AGENTS.md` / `cargo xtask ci`）
 

@@ -150,6 +150,23 @@ local function preview_hex(md5, address, count)
     return (res.bytes.data:gsub('(..)', '%1 '):gsub('%s+$', ''))
 end
 
+--- Format a mutation failure with upgrade guidance when `ghidra-mcp` lacks the operation.
+local function notify_patch_error(prefix, err)
+    local text = tostring(err or 'unknown error')
+    if text:find('does not support this operation', 1, true)
+        or text:find('unknown operation of ghidra_', 1, true)
+        or text:find('/patch/clear_existing is not allowed', 1, true)
+        or text:find('/patch/disassemble is not allowed', 1, true)
+    then
+        vim.notify(
+            prefix .. ': the installed ghidra-mcp backend does not support this operation yet. Run :GhidraInstall mcp (or update ghidra-mcp) and restart Neovim.',
+            vim.log.levels.ERROR
+        )
+        return
+    end
+    vim.notify(prefix .. ': ' .. text, vim.log.levels.ERROR)
+end
+
 --- Assemble one or more Sleigh instructions at the target address through `ghidra.mutate`.
 function M.assemble(arg)
     local target = resolve_target(arg)
@@ -168,7 +185,7 @@ function M.assemble(arg)
             },
         })
         if not ok then
-            vim.notify('Assemble failed: ' .. tostring(res), vim.log.levels.ERROR)
+            notify_patch_error('Assemble failed', res)
             return
         end
         refresh_program_buffers(target.md5)
@@ -214,7 +231,7 @@ function M.disassemble(arg)
         params = { selector = selector },
     })
     if not ok then
-        vim.notify('Disassemble failed: ' .. tostring(res), vim.log.levels.ERROR)
+        notify_patch_error('Disassemble failed', res)
         return
     end
     refresh_program_buffers(target.md5)
@@ -243,7 +260,7 @@ function M.clear_code_units(arg)
             params = { selector = selector },
         })
         if not ok then
-            vim.notify('Clear failed: ' .. tostring(res), vim.log.levels.ERROR)
+            notify_patch_error('Clear failed', res)
             return
         end
         refresh_program_buffers(target.md5)
@@ -275,21 +292,22 @@ function M.patch_bytes(arg)
     local disp = format.display_address(target.address)
 
     local function run_write(hex, length, clear_existing, disassemble)
+        local patch = {
+            bytes = { encoding = 'hex', data = hex, length = length },
+        }
+        if clear_existing == true then patch.clear_existing = true end
+        if disassemble == true then patch.disassemble = true end
         local ok, res = pcall(client.exec_sync, 'ghidra.mutate', {
             md5 = target.md5,
             domain = 'memory',
             operation = 'write',
             params = {
                 selector = { address = target.address },
-                patch = {
-                    bytes = { encoding = 'hex', data = hex, length = length },
-                    clear_existing = clear_existing == true,
-                    disassemble = disassemble == true,
-                },
+                patch = patch,
             },
         })
         if not ok then
-            vim.notify('Byte write failed: ' .. tostring(res), vim.log.levels.ERROR)
+            notify_patch_error('Byte write failed', res)
             return
         end
         refresh_program_buffers(target.md5)

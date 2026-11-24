@@ -91,8 +91,8 @@ Run **Ghidra: Open Analysis Views** (`ghidraLsp.openViews`) from a decompiled fu
 
 Run **Ghidra: Program Listing** (`ghidraLsp.browseListing`) or **Ghidra: Memory and Bytes (Hex)** (`ghidraLsp.showMemory`) to open full graphical workbench panels with a compact navigation toolbar:
 
-- **Program Listing**: Displays memory-block headers with permissions (`R/W/X`), collapsed undefined byte runs, function signatures, plate/pre/eol/post comments, mnemonic columns, and cross-reference counts with navigation history and subtle active-row highlights.
-- **Memory and Bytes (Hex)**: Displays a collapsible **Memory map** table, block selector, 8-byte or 16-byte row width, hex/ASCII cursor selection, and a 2-column **Data inspector** card grid decoding `Binary`, `int8 / uint8`, `int16 / uint16`, `int32 / uint32`, `int64 / uint64`, `float32`, `float64`, `Pointer`, `ASCII`, and `UTF-8` with a live **Little Endian** / **Big Endian** toggle pill that re-decodes values on click.
+- **Program Listing**: Displays memory-block headers with permissions (`R/W/X`), collapsed undefined byte runs, function signatures, plate/pre/eol/post comments, mnemonic columns, cross-reference counts, navigation history, active-row highlights, and selection actions to assemble instructions, disassemble bytes, clear code units, or patch bytes.
+- **Memory and Bytes (Hex)**: Displays a collapsible **Memory map** table, block selector, 8-byte or 16-byte row width, hex/ASCII cursor selection with patching actions, and a 2-column **Data inspector** card grid decoding `Binary`, `int8 / uint8`, `int16 / uint16`, `int32 / uint32`, `int64 / uint64`, `float32`, `float64`, `Pointer`, `ASCII`, and `UTF-8` with a live **Little Endian** / **Big Endian** toggle pill that re-decodes values on click.
 
 ### Bidirectional view synchronization
 
@@ -164,6 +164,10 @@ Opening a project data type creates a `ghidra-type://<md5><path>.ghidra-type?v=3
 - `ghidraLsp.editFunction`: **Ghidra: Edit Function Signature**
 - `ghidraLsp.editVariables`: **Ghidra: Edit Variables and Parameters**
 - `ghidraLsp.editSymbol`: **Ghidra: Edit Global Symbol**
+- `ghidraLsp.assembleInstruction`: **Ghidra: Assemble Instruction**
+- `ghidraLsp.disassembleBytes`: **Ghidra: Disassemble Bytes**
+- `ghidraLsp.clearCodeUnits`: **Ghidra: Clear Code Units (Undefine)**
+- `ghidraLsp.patchBytes`: **Ghidra: Patch Bytes**
 
 ### Data types
 
