@@ -1,20 +1,22 @@
 // Copyright 2026 ByteLand Technology Limited
 // SPDX-License-Identifier: MIT
 
-//! Bounded caller and callee neighborhood queries through `function` `call_graph.get`.
+//! Bounded caller and callee neighborhood queries through `function` `call_graph.get`, with a
+//! `function` `call.list` BFS fallback.
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
+use super::call_graph_fallback::fallback_call_graph;
 use super::{canonical_call_id, format_function_label, resolve_entry};
-use crate::backend::McpBackend;
+use crate::backend::{McpBackend, unsupported_operation};
 use crate::views::ViewCache;
 
 /// Maximum number of function nodes requested in one call-graph query.
-const CALL_GRAPH_NODE_LIMIT: usize = 80;
+pub(super) const CALL_GRAPH_NODE_LIMIT: usize = 80;
 /// Maximum number of directed call edges requested in one call-graph query.
-const CALL_GRAPH_EDGE_LIMIT: usize = 240;
+pub(super) const CALL_GRAPH_EDGE_LIMIT: usize = 240;
 /// Scan timeout in milliseconds kept below the 30-second MCP session lock limit.
 const CALL_GRAPH_TIMEOUT_MS: u64 = 25_000;
 
@@ -49,57 +51,57 @@ pub(crate) struct CallGraphRequest<'a> {
 /// Interactive expansion state and neighbor count for one call-graph branch.
 #[derive(Clone, Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct CallBranchState {
+pub(super) struct CallBranchState {
   /// Whether neighbors along this branch are expanded in the graph.
-  expanded: bool,
+  pub(super) expanded: bool,
   /// Unique neighbor count reported when this branch is expanded.
   #[serde(skip_serializing_if = "Option::is_none")]
-  count: Option<usize>,
+  pub(super) count: Option<usize>,
 }
 
 /// Caller and callee expansion states attached to one function node.
 #[derive(Clone, Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct CallBranches {
+pub(super) struct CallBranches {
   /// Inbound caller branch state, when evaluated.
   #[serde(skip_serializing_if = "Option::is_none")]
-  callers: Option<CallBranchState>,
+  pub(super) callers: Option<CallBranchState>,
   /// Outbound callee branch state, when evaluated.
   #[serde(skip_serializing_if = "Option::is_none")]
-  callees: Option<CallBranchState>,
+  pub(super) callees: Option<CallBranchState>,
 }
 
 /// Function vertex in a serialized call-graph payload.
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct CallNode {
+pub(super) struct CallNode {
   /// Canonical node identifier (`space:offset`).
-  id: String,
+  pub(super) id: String,
   /// Backend function entry address string.
-  entry: String,
+  pub(super) entry: String,
   /// Formatted function display name.
-  name: String,
+  pub(super) name: String,
   /// Shortest observed caller hop distance from the root node.
   #[serde(skip_serializing_if = "Option::is_none")]
-  caller_distance: Option<usize>,
+  pub(super) caller_distance: Option<usize>,
   /// Shortest observed callee hop distance from the root node.
   #[serde(skip_serializing_if = "Option::is_none")]
-  callee_distance: Option<usize>,
+  pub(super) callee_distance: Option<usize>,
   /// Interactive expansion flags when expansion mode is active.
   #[serde(skip_serializing_if = "Option::is_none")]
-  branches: Option<CallBranches>,
+  pub(super) branches: Option<CallBranches>,
 }
 
 /// Directed caller-to-callee edge with deduplicated call-site addresses.
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct CallEdge {
+pub(super) struct CallEdge {
   /// Canonical identifier of the caller function node.
-  from: String,
+  pub(super) from: String,
   /// Canonical identifier of the callee function node.
-  to: String,
+  pub(super) to: String,
   /// Distinct call-site addresses connecting `from` to `to`.
-  sites: Vec<String>,
+  pub(super) sites: Vec<String>,
 }
 
 /// Normalizes and sorts an expanded entry list for stable cache keys.
@@ -235,13 +237,19 @@ fn parse_edges(raw_edges: Option<&Vec<Value>>) -> Vec<CallEdge> {
   edges
 }
 
-/// Queries a bounded caller and callee neighborhood in one `function` `call_graph.get` call.
+/// Queries a bounded caller and callee neighborhood through `function` `call_graph.get`, or falls
+/// back to client-side `function` `call.list` traversal when `call_graph.get` is unavailable.
 pub(crate) async fn call_graph_with_cache(
   backend: &McpBackend,
   cache: Option<&ViewCache>,
   req: CallGraphRequest<'_>,
 ) -> Result<Value> {
   let initial_entry = resolve_entry(backend, req.md5, req.entry, req.address).await?;
+  if let Some(view_cache) = cache
+    && view_cache.is_native_call_graph_unsupported(req.md5).await
+  {
+    return fallback_call_graph(backend, cache, &req, &initial_entry).await;
+  }
   let canon_initial = canonical_call_id(&initial_entry);
   let normalized_expansion = req.expansion.as_ref().map(|exp| {
     (
@@ -288,9 +296,19 @@ pub(crate) async fn call_graph_with_cache(
         "callees": callees,
       });
     }
-    let fetched = backend
+    let fetched = match backend
       .call("function", "call_graph.get", Some(req.md5), params)
-      .await?;
+      .await
+    {
+      Ok(fetched) => fetched,
+      Err(error) if unsupported_operation(&error) => {
+        if let Some(view_cache) = cache {
+          view_cache.mark_native_call_graph_unsupported(req.md5).await;
+        }
+        return fallback_call_graph(backend, cache, &req, &initial_entry).await;
+      }
+      Err(error) => return Err(error),
+    };
     if let Some(view_cache) = cache {
       view_cache
         .insert_cached_call_graph(req.md5, cache_key.clone(), fetched.clone())

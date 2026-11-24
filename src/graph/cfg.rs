@@ -1,33 +1,59 @@
 // Copyright 2026 ByteLand Technology Limited
 // SPDX-License-Identifier: MIT
 
-//! Basic-block control-flow graph construction through `listing` `basic_block.list`.
+//! Basic-block control-flow graph construction through `listing` `basic_block.list`, with an
+//! `instruction.list` fallback.
 
 use std::collections::{HashMap, HashSet};
 
 use anyhow::Result;
 use serde_json::{Value, json};
 
+use super::cfg_fallback::{FallbackCfgRequest, fallback_control_flow_graph};
 use super::{format_function_label, resolve_entry};
 use crate::address::{display_address, paginate_operation, parse_address, same_address};
-use crate::backend::McpBackend;
+use crate::backend::{McpBackend, unsupported_operation};
+use crate::views::decode_bytes_vec;
 
 /// Maximum outgoing edges requested per `listing` `basic_block.list` page.
 const BASIC_BLOCK_MAX_EDGES: usize = 2_000;
 /// Scan timeout in milliseconds kept below the 30-second MCP session lock limit.
 const BASIC_BLOCK_TIMEOUT_MS: u64 = 25_000;
 
-/// Determines the byte length of one basic-block instruction summary, falling back to `1`.
+/// Normalized basic-block record shared by native and fallback CFG builders.
+pub(super) struct CfgBlockInput<'a> {
+  /// Block start address string.
+  pub(super) start: &'a str,
+  /// Ordered instruction records inside this basic block.
+  pub(super) instructions: &'a [Value],
+  /// Outgoing `(target_address, edge_label)` transitions from this block.
+  pub(super) destinations: Vec<(String, String)>,
+  /// True when this block ends in a jump or branch with zero resolved targets.
+  pub(super) unresolved_jump: bool,
+  /// True when outgoing flow edges were truncated at the backend edge limit.
+  pub(super) edges_limited: bool,
+}
+
+/// Determines the byte length of one instruction record, falling back to `1`.
 fn instruction_byte_length(instr: &Value) -> usize {
-  instr
+  if let Some(len) = instr
     .get("length")
     .and_then(Value::as_u64)
     .filter(|&len| len > 0)
-    .map_or(1, |len| usize::try_from(len).unwrap_or(usize::MAX))
+  {
+    return usize::try_from(len).unwrap_or(usize::MAX);
+  }
+  if let Some(bytes) = instr.get("bytes") {
+    let count = decode_bytes_vec(bytes).len();
+    if count > 0 {
+      return count;
+    }
+  }
+  1
 }
 
 /// Returns true when a flow or edge type describes a conditional branch.
-fn is_conditional_label(label: &str) -> bool {
+pub(super) fn is_conditional_label(label: &str) -> bool {
   let upper = label.to_ascii_uppercase();
   upper.contains("CONDITIONAL") && !upper.contains("UNCONDITIONAL")
 }
@@ -40,7 +66,7 @@ fn is_fall_through_type(edge_type: &str) -> bool {
 }
 
 /// Builds an empty CFG JSON response when a function has no body or instructions.
-fn empty_control_flow(
+pub(super) fn empty_control_flow(
   md5: &str,
   entry: &str,
   name: &str,
@@ -89,32 +115,26 @@ fn format_block_lines(instructions: &[Value]) -> Vec<String> {
 }
 
 /// Returns true when `block` starts at or contains the function `entry` address.
-fn block_contains_entry(block: &Value, entry: &str) -> bool {
-  if block
-    .get("start")
-    .and_then(Value::as_str)
-    .is_some_and(|start| same_address(start, entry))
-  {
+pub(super) fn block_input_contains_entry(block: &CfgBlockInput<'_>, entry: &str) -> bool {
+  if !block.start.is_empty() && same_address(block.start, entry) {
     return true;
   }
-  block
-    .get("instructions")
-    .and_then(Value::as_array)
-    .is_some_and(|instrs| {
-      instrs.iter().any(|instr| {
-        instr
-          .get("address")
-          .and_then(Value::as_str)
-          .is_some_and(|addr| same_address(addr, entry))
-      })
-    })
+  block.instructions.iter().any(|instr| {
+    instr
+      .get("address")
+      .and_then(Value::as_str)
+      .is_some_and(|addr| same_address(addr, entry))
+  })
 }
 
 /// Places the block containing `entry` at index zero while keeping remaining blocks ordered.
-fn order_entry_block_first(mut blocks: Vec<Value>, entry: &str) -> Vec<Value> {
+pub(super) fn order_block_inputs_entry_first<'a>(
+  mut blocks: Vec<CfgBlockInput<'a>>,
+  entry: &str,
+) -> Vec<CfgBlockInput<'a>> {
   if let Some(pos) = blocks
     .iter()
-    .position(|block| block_contains_entry(block, entry))
+    .position(|block| block_input_contains_entry(block, entry))
     && pos > 0
   {
     let entry_block = blocks.remove(pos);
@@ -157,8 +177,8 @@ fn insert_block_membership(
   }
 }
 
-/// Builds node, edge, and compact block payloads from `basic_block.list` items.
-fn build_cfg_graph_payload(raw_blocks: &[Value], entry: &str) -> CfgGraphPayload {
+/// Builds node, edge, and compact block payloads from normalized [`CfgBlockInput`] items.
+fn build_cfg_graph_payload(raw_blocks: &[CfgBlockInput<'_>], entry: &str) -> CfgGraphPayload {
   let mut exact_membership: HashMap<String, String> = HashMap::new();
   let mut canon_membership: HashMap<String, String> = HashMap::new();
   let mut nodes: Vec<Value> = Vec::with_capacity(raw_blocks.len());
@@ -168,21 +188,16 @@ fn build_cfg_graph_payload(raw_blocks: &[Value], entry: &str) -> CfgGraphPayload
 
   for (block_idx, block) in raw_blocks.iter().enumerate() {
     let block_id = format!("block:{block_idx}");
-    let instructions = block
-      .get("instructions")
-      .and_then(Value::as_array)
-      .map_or(&[][..], Vec::as_slice);
-    let first_addr = block
-      .get("start")
-      .and_then(Value::as_str)
-      .filter(|text| !text.is_empty())
-      .or_else(|| {
-        instructions
-          .first()
-          .and_then(|instr| instr.get("address"))
-          .and_then(Value::as_str)
-      })
-      .unwrap_or("");
+    let first_addr = if !block.start.is_empty() {
+      block.start
+    } else {
+      block
+        .instructions
+        .first()
+        .and_then(|instr| instr.get("address"))
+        .and_then(Value::as_str)
+        .unwrap_or("")
+    };
 
     insert_block_membership(
       &mut exact_membership,
@@ -190,7 +205,7 @@ fn build_cfg_graph_payload(raw_blocks: &[Value], entry: &str) -> CfgGraphPayload
       first_addr,
       &block_id,
     );
-    for instr in instructions {
+    for instr in block.instructions {
       let addr = instr.get("address").and_then(Value::as_str).unwrap_or("");
       insert_block_membership(
         &mut exact_membership,
@@ -200,14 +215,14 @@ fn build_cfg_graph_payload(raw_blocks: &[Value], entry: &str) -> CfgGraphPayload
       );
     }
 
-    if block.get("unresolved_jump").and_then(Value::as_bool) == Some(true) {
+    if block.unresolved_jump {
       unresolved_jumps += 1;
     }
-    if block.get("edges_limited").and_then(Value::as_bool) == Some(true) {
+    if block.edges_limited {
       edges_limited = true;
     }
 
-    let instr_count = instructions.len();
+    let instr_count = block.instructions.len();
     nodes.push(json!({
       "id": block_id,
       "title": display_address(first_addr),
@@ -215,10 +230,11 @@ fn build_cfg_graph_payload(raw_blocks: &[Value], entry: &str) -> CfgGraphPayload
       "address": first_addr,
       "entry": entry,
       "kind": "block",
-      "lines": format_block_lines(instructions),
+      "lines": format_block_lines(block.instructions),
     }));
 
-    let compact_instrs: Vec<Value> = instructions
+    let compact_instrs: Vec<Value> = block
+      .instructions
       .iter()
       .map(|instr| {
         let addr = instr.get("address").and_then(Value::as_str).unwrap_or("");
@@ -239,37 +255,10 @@ fn build_cfg_graph_payload(raw_blocks: &[Value], entry: &str) -> CfgGraphPayload
 
   for (block_idx, block) in raw_blocks.iter().enumerate() {
     let from_id = format!("block:{block_idx}");
-    let flow_type = block.get("flow_type").and_then(Value::as_str).unwrap_or("");
-    let destinations = block
-      .get("destinations")
-      .and_then(Value::as_array)
-      .map_or(&[][..], Vec::as_slice);
-    let conditional_block = is_conditional_label(flow_type)
-      || destinations.iter().any(|dest| {
-        dest
-          .get("type")
-          .and_then(Value::as_str)
-          .is_some_and(is_conditional_label)
-      });
-
-    for dest in destinations {
-      let Some(to_addr) = dest
-        .get("to")
-        .and_then(Value::as_str)
-        .filter(|text| !text.is_empty())
-      else {
+    for (to_addr, label) in &block.destinations {
+      if to_addr.is_empty() {
         continue;
-      };
-      let raw_type = dest.get("type").and_then(Value::as_str).unwrap_or("");
-      let label = if is_fall_through_type(raw_type) {
-        if conditional_block {
-          "Fall through".to_owned()
-        } else {
-          String::new()
-        }
-      } else {
-        raw_type.to_owned()
-      };
+      }
       let to_id = exact_membership
         .get(to_addr)
         .cloned()
@@ -290,7 +279,7 @@ fn build_cfg_graph_payload(raw_blocks: &[Value], entry: &str) -> CfgGraphPayload
           }
           ext_id
         });
-      raw_edges.push((from_id.clone(), to_id, label));
+      raw_edges.push((from_id.clone(), to_id, label.clone()));
     }
   }
 
@@ -331,6 +320,100 @@ fn build_cfg_graph_payload(raw_blocks: &[Value], entry: &str) -> CfgGraphPayload
   }
 }
 
+/// Serializes normalized basic blocks into the `ghidra.controlFlowGraph` JSON payload.
+pub(super) fn finish_control_flow(
+  md5: &str,
+  entry: &str,
+  name: &str,
+  blocks_in: &[CfgBlockInput<'_>],
+) -> Value {
+  let payload = build_cfg_graph_payload(blocks_in, entry);
+  let scope = match (payload.unresolved_jumps > 0, payload.edges_limited) {
+    (true, true) => format!(
+      "{} unresolved jumps; flow edges truncated at limit",
+      payload.unresolved_jumps
+    ),
+    (true, false) => format!("{} unresolved jumps", payload.unresolved_jumps),
+    (false, true) => "Flow edges truncated at limit".to_owned(),
+    (false, false) => String::new(),
+  };
+
+  json!({
+    "md5": md5,
+    "entry": entry,
+    "name": name,
+    "displayAddress": display_address(entry),
+    "hasBody": true,
+    "emptyReason": Value::Null,
+    "scope": scope,
+    "unresolvedJumps": payload.unresolved_jumps,
+    "blocks": payload.blocks,
+    "nodes": payload.nodes,
+    "edges": payload.edges,
+  })
+}
+
+/// Converts raw `basic_block.list` JSON items into normalized [`CfgBlockInput`] values.
+fn normalize_native_blocks<'a>(raw_blocks: &'a [Value], entry: &str) -> Vec<CfgBlockInput<'a>> {
+  let mut blocks_in = Vec::with_capacity(raw_blocks.len());
+  for block in raw_blocks {
+    let Some(instructions) = block
+      .get("instructions")
+      .and_then(Value::as_array)
+      .filter(|instrs| !instrs.is_empty())
+    else {
+      continue;
+    };
+    let start = block
+      .get("start")
+      .and_then(Value::as_str)
+      .filter(|text| !text.is_empty())
+      .or_else(|| instructions[0].get("address").and_then(Value::as_str))
+      .unwrap_or("");
+    let flow_type = block.get("flow_type").and_then(Value::as_str).unwrap_or("");
+    let raw_destinations = block
+      .get("destinations")
+      .and_then(Value::as_array)
+      .map_or(&[][..], Vec::as_slice);
+    let conditional_block = is_conditional_label(flow_type)
+      || raw_destinations.iter().any(|dest| {
+        dest
+          .get("type")
+          .and_then(Value::as_str)
+          .is_some_and(is_conditional_label)
+      });
+    let mut destinations = Vec::with_capacity(raw_destinations.len());
+    for dest in raw_destinations {
+      let Some(to_addr) = dest
+        .get("to")
+        .and_then(Value::as_str)
+        .filter(|text| !text.is_empty())
+      else {
+        continue;
+      };
+      let raw_type = dest.get("type").and_then(Value::as_str).unwrap_or("");
+      let label = if is_fall_through_type(raw_type) {
+        if conditional_block {
+          "Fall through".to_owned()
+        } else {
+          String::new()
+        }
+      } else {
+        raw_type.to_owned()
+      };
+      destinations.push((to_addr.to_owned(), label));
+    }
+    blocks_in.push(CfgBlockInput {
+      start,
+      instructions: instructions.as_slice(),
+      destinations,
+      unresolved_jump: block.get("unresolved_jump").and_then(Value::as_bool) == Some(true),
+      edges_limited: block.get("edges_limited").and_then(Value::as_bool) == Some(true),
+    });
+  }
+  order_block_inputs_entry_first(blocks_in, entry)
+}
+
 /// Builds basic-block nodes and control-flow edges for a function entry or address.
 pub(crate) async fn control_flow_graph(
   backend: &McpBackend,
@@ -359,16 +442,7 @@ pub(crate) async fn control_flow_graph(
     .to_owned();
   let name = format_function_label(&fn_val, &entry, show_template_arguments);
 
-  let bounds = fn_val.get("body").and_then(Value::as_object);
-  let has_start = bounds
-    .and_then(|body| body.get("start"))
-    .and_then(Value::as_str)
-    .is_some_and(|text| !text.is_empty());
-  let has_end = bounds
-    .and_then(|body| body.get("end"))
-    .and_then(Value::as_str)
-    .is_some_and(|text| !text.is_empty());
-  if !has_start || !has_end {
+  let Some(bounds) = fn_val.get("body").and_then(Value::as_object) else {
     return Ok(empty_control_flow(
       md5,
       &entry,
@@ -376,9 +450,26 @@ pub(crate) async fn control_flow_graph(
       "This function has no instruction body.",
       "External functions do not have a local control-flow graph.",
     ));
-  }
+  };
+  let start_opt = bounds
+    .get("start")
+    .and_then(Value::as_str)
+    .filter(|text| !text.is_empty());
+  let end_opt = bounds
+    .get("end")
+    .and_then(Value::as_str)
+    .filter(|text| !text.is_empty());
+  let (Some(start), Some(end)) = (start_opt, end_opt) else {
+    return Ok(empty_control_flow(
+      md5,
+      &entry,
+      &name,
+      "This function has no instruction body.",
+      "External functions do not have a local control-flow graph.",
+    ));
+  };
 
-  let fetched_blocks = paginate_operation(
+  let fetched_blocks = match paginate_operation(
     backend,
     "listing",
     "basic_block.list",
@@ -392,18 +483,28 @@ pub(crate) async fn control_flow_graph(
       "scan": { "timeout_ms": BASIC_BLOCK_TIMEOUT_MS },
     }),
   )
-  .await?;
+  .await
+  {
+    Ok(blocks) => blocks,
+    Err(error) if unsupported_operation(&error) => {
+      return fallback_control_flow_graph(
+        backend,
+        FallbackCfgRequest {
+          md5,
+          entry: &entry,
+          name: &name,
+          bounds,
+          start,
+          end,
+        },
+      )
+      .await;
+    }
+    Err(error) => return Err(error),
+  };
 
-  let non_empty_blocks: Vec<Value> = fetched_blocks
-    .into_iter()
-    .filter(|block| {
-      block
-        .get("instructions")
-        .and_then(Value::as_array)
-        .is_some_and(|instrs| !instrs.is_empty())
-    })
-    .collect();
-  if non_empty_blocks.is_empty() {
+  let blocks_in = normalize_native_blocks(&fetched_blocks, &entry);
+  if blocks_in.is_empty() {
     return Ok(empty_control_flow(
       md5,
       &entry,
@@ -413,29 +514,5 @@ pub(crate) async fn control_flow_graph(
     ));
   }
 
-  let ordered_blocks = order_entry_block_first(non_empty_blocks, &entry);
-  let payload = build_cfg_graph_payload(&ordered_blocks, &entry);
-  let scope = match (payload.unresolved_jumps > 0, payload.edges_limited) {
-    (true, true) => format!(
-      "{} unresolved jumps; flow edges truncated at limit",
-      payload.unresolved_jumps
-    ),
-    (true, false) => format!("{} unresolved jumps", payload.unresolved_jumps),
-    (false, true) => "Flow edges truncated at limit".to_owned(),
-    (false, false) => String::new(),
-  };
-
-  Ok(json!({
-    "md5": md5,
-    "entry": entry,
-    "name": name,
-    "displayAddress": display_address(&entry),
-    "hasBody": true,
-    "emptyReason": Value::Null,
-    "scope": scope,
-    "unresolvedJumps": payload.unresolved_jumps,
-    "blocks": payload.blocks,
-    "nodes": payload.nodes,
-    "edges": payload.edges,
-  }))
+  Ok(finish_control_flow(md5, &entry, &name, &blocks_in))
 }

@@ -19,6 +19,7 @@ use crate::document::{
   Document, SHOW_TEMPLATE_ARGUMENTS, Span, canonical_virtual_uri, in_address_range, position,
   same_address, virtual_uri,
 };
+use crate::graph::canonical_call_id;
 use crate::views::symbol_display_name;
 
 /// Aggregated caller or callee group built from `function` `call.list` items.
@@ -31,21 +32,6 @@ struct PeerCallGroup {
   raw_name: String,
   /// Ordered distinct call-site addresses connecting the two functions.
   call_sites: Vec<String>,
-}
-
-/// Normalizes an entry address string for case-insensitive peer grouping.
-fn canonical_peer_key(entry: &str) -> String {
-  match entry.rsplit_once(':') {
-    Some((space, offset)) => {
-      let norm_space = if space.eq_ignore_ascii_case("ram") {
-        "ram"
-      } else {
-        space
-      };
-      format!("{norm_space}:{}", offset.to_ascii_lowercase())
-    }
-    None => entry.to_ascii_lowercase(),
-  }
 }
 
 /// Groups paginated `function` `call.list` items by peer entry while preserving sibling call sites.
@@ -62,7 +48,7 @@ fn group_peer_calls(records: Vec<Value>) -> Vec<PeerCallGroup> {
     else {
       continue;
     };
-    let key = canonical_peer_key(peer_entry);
+    let key = canonical_call_id(peer_entry);
     let idx = if let Some(&existing) = index_by_key.get(&key) {
       existing
     } else {

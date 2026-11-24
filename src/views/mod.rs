@@ -24,7 +24,7 @@ use tokio::sync::RwLock;
 
 use crate::address::MemoryBlockInfo;
 
-pub(crate) use format::symbol_display_name;
+pub(crate) use format::{decode_bytes_vec, symbol_display_name};
 pub(crate) use inspector::inspect_bytes;
 pub(crate) use listing_fetch::{ListingWindowRequest, listing_window};
 pub(crate) use memory::{MemoryWindowRequest, memory_window};
@@ -75,11 +75,17 @@ pub(super) struct CachedProgramMeta {
   pub(super) functions: Vec<RawFunctionMeta>,
 }
 
-/// Per-session cache of bounded `function.call_graph.get` responses.
+/// Per-session cache of bounded call-graph payloads and fallback neighbor queries.
 #[derive(Clone, Debug, Default)]
 struct CallGraphCache {
   /// Cached `function.call_graph.get` payloads keyed by serialized query key.
   graphs: HashMap<String, Value>,
+  /// Cached `function.get` records keyed by canonical entry address for fallback queries.
+  functions: HashMap<String, Value>,
+  /// Cached caller or callee lists keyed by `(canonical_entry, direction)` for fallback queries.
+  calls: HashMap<(String, String), Vec<Value>>,
+  /// True after `function.call_graph.get` fails as an unsupported operation in this session.
+  native_unsupported: bool,
 }
 
 /// Shared asynchronous cache of program metadata and bounded call-graph queries.
@@ -140,6 +146,90 @@ impl ProgramMetaCache {
       cg.graphs.clear();
     }
     cg.graphs.insert(query_key, value);
+  }
+
+  /// Returns true if `function.call_graph.get` is marked unsupported for session `md5`.
+  pub(crate) async fn is_native_call_graph_unsupported(&self, md5: &str) -> bool {
+    self
+      .call_graph
+      .read()
+      .await
+      .get(&md5.to_ascii_lowercase())
+      .is_some_and(|cg| cg.native_unsupported)
+  }
+
+  /// Marks `function.call_graph.get` as unsupported for session `md5`.
+  pub(crate) async fn mark_native_call_graph_unsupported(&self, md5: &str) {
+    let mut guard = self.call_graph.write().await;
+    guard
+      .entry(md5.to_ascii_lowercase())
+      .or_default()
+      .native_unsupported = true;
+  }
+
+  /// Reads a cached function summary record for `canonical_entry` inside session `md5`.
+  pub(crate) async fn get_cached_function(
+    &self,
+    md5: &str,
+    canonical_entry: &str,
+  ) -> Option<Value> {
+    self
+      .call_graph
+      .read()
+      .await
+      .get(&md5.to_ascii_lowercase())
+      .and_then(|cg| cg.functions.get(canonical_entry).cloned())
+  }
+
+  /// Stores a function summary record for `canonical_entry` inside session `md5`.
+  pub(crate) async fn insert_cached_function(
+    &self,
+    md5: &str,
+    canonical_entry: String,
+    value: Value,
+  ) {
+    let mut guard = self.call_graph.write().await;
+    let cg = guard.entry(md5.to_ascii_lowercase()).or_default();
+    if cg.functions.len() >= 512 && !cg.functions.contains_key(&canonical_entry) {
+      cg.functions.clear();
+    }
+    cg.functions.insert(canonical_entry, value);
+  }
+
+  /// Reads cached neighbor records for `(canonical_entry, direction)` inside session `md5`.
+  pub(crate) async fn get_cached_calls(
+    &self,
+    md5: &str,
+    canonical_entry: &str,
+    direction: &str,
+  ) -> Option<Vec<Value>> {
+    self
+      .call_graph
+      .read()
+      .await
+      .get(&md5.to_ascii_lowercase())
+      .and_then(|cg| {
+        cg.calls
+          .get(&(canonical_entry.to_owned(), direction.to_owned()))
+          .cloned()
+      })
+  }
+
+  /// Stores neighbor records for `(canonical_entry, direction)` inside session `md5`.
+  pub(crate) async fn insert_cached_calls(
+    &self,
+    md5: &str,
+    canonical_entry: String,
+    direction: String,
+    items: Vec<Value>,
+  ) {
+    let mut guard = self.call_graph.write().await;
+    let cg = guard.entry(md5.to_ascii_lowercase()).or_default();
+    let key = (canonical_entry, direction);
+    if cg.calls.len() >= 512 && !cg.calls.contains_key(&key) {
+      cg.calls.clear();
+    }
+    cg.calls.insert(key, items);
   }
 
   /// Looks up cached program metadata for `md5`.
