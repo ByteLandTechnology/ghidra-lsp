@@ -182,8 +182,12 @@
       },
       {
         "command": "ghidraLsp.openBinary",
-        "title": "Ghidra: Open Binary",
+        "title": "Ghidra: Open Binary or Project",
         "icon": "$(add)"
+      },
+      {
+        "command": "ghidraLsp.openBinaryWithOptions",
+        "title": "Ghidra: Open Binary or Project with Options…"
       },
       {
         "command": "ghidraLsp.openFunction",
@@ -674,6 +678,11 @@
           "command": "ghidraLsp.openBinary",
           "when": "resourceScheme == file",
           "group": "navigation@20"
+        },
+        {
+          "command": "ghidraLsp.openBinaryWithOptions",
+          "when": "resourceScheme == file",
+          "group": "navigation@21"
         }
       ],
       "view/title": [

@@ -82,7 +82,7 @@ export function formatFriendlyError(error: unknown): string {
     }
 
     if (/Choose a local binary/i.test(raw)) {
-        return 'Choose a valid binary on a local disk.';
+        return 'Choose a valid binary or .gpr project on a local disk.';
     }
 
     if (/backend scan is incomplete/i.test(raw)) {
@@ -114,6 +114,9 @@ function extractMessageFromParsed(parsed: unknown, depth = 0): string | undefine
     }
 
     // Handle nested error
+    if (typeof obj.error === 'string' && obj.error) {
+        return obj.error;
+    }
     if (obj.error && typeof obj.error === 'object') {
         const res = extractMessageFromParsed(obj.error, depth + 1);
         if (res) { return res; }
