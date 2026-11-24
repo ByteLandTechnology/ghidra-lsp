@@ -25,6 +25,7 @@ import { plainAddress } from './listing-format';
 import { MemoryFiles, memoryAddressAt, memoryScheme } from './bytes';
 import { ViewSets } from './views';
 import { AnalysisMode, ControlFlowView } from './control-flow-view';
+import { singleKeyShortcutsEnabled } from './program-views-controller';
 import { DataTypeFiles, typeScheme } from './type-files';
 import { installManagedBinaries, resolveOrInstallBinaries, ResolvedBinaries } from './installer';
 
@@ -154,6 +155,11 @@ export async function activate(extension: vscode.ExtensionContext): Promise<void
     const listingFiles = new ListingFiles(call, context, byteFiles, extension.workspaceState);
     listingViews = new ListingViews(call, listingFiles);
     const graphView = new ControlFlowView(listingFiles, workbench, context, contrast);
+    extension.subscriptions.push(vscode.workspace.onDidChangeConfiguration(async event => {
+        if (!event.affectsConfiguration('ghidraLsp.views.singleKeyShortcuts')) { return; }
+        const enabled = singleKeyShortcutsEnabled();
+        await Promise.all([workbench.setSingleKeyShortcuts(enabled), graphView.setSingleKeyShortcuts(enabled)]);
+    }));
     const viewSets = new ViewSets(call, context, listingViews, graphView);
     const labels = new DocumentLabels(call, context, uri => {
         return uri.scheme === listingScheme ? listingFiles.entry(uri)?.window.name : undefined;
