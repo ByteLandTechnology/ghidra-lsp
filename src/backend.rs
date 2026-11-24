@@ -181,6 +181,7 @@ fn is_read_only_operation(domain: &str, operation: &str) -> bool {
     verb,
     "get"
       | "list"
+      | "find"
       | "read"
       | "wait"
       | "resolve"
@@ -301,4 +302,17 @@ pub(crate) async fn list_operation(
       return Ok(items);
     }
   }
+}
+
+/// Returns true if `error` reports an unknown or unsupported server operation.
+pub(crate) fn unsupported_operation(error: &anyhow::Error) -> bool {
+  let text = format!("{error:#}").to_ascii_lowercase();
+  text.contains("unknown operation")
+    || text.contains("unknown method")
+    || text.contains("unknown_operation")
+    || text.contains("unknown_method")
+    || text.contains("method not found")
+    || text.contains("unsupported operation")
+    || text.contains("is not one of")
+    || text.contains("unknown variant")
 }

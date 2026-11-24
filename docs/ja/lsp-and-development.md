@@ -73,7 +73,7 @@
 | `ghidra.symbols` | `{ md5? }` | 全シンボルをページング取得し、カバレッジ情報付きで返却 |
 | `ghidra.types` | `{ md5? }` | 全データ型をページング取得し、カバレッジ情報付きで返却 |
 | `ghidra.type` | `{ md5?, path }` | 指定 `path` の生データ型定義を取得 |
-| `ghidra.strings` | `{ md5? }` | `listing.string.list` から定義済み文字列一覧を取得 |
+| `ghidra.strings` | `{ md5? }` | `listing.string.list` から定義済み文字列一覧を取得（旧版サーバー時は `listing.data_unit.list` へフォールバック） |
 | `ghidra.binaryInterface` | `{ md5? }` | Ghidra セッション（`import.list` / `export.list`）から Import / Export 表を取得（旧版ブリッジ時はローカル `object` 解析へフォールバック） |
 | `ghidra.openFunction` | `{ md5?, entry }` | 指定関数を逆コンパイルし、正規 `ghidra://` URI を返却 |
 | `ghidra.openSymbol` | `{ md5?, id }` | シンボル ID を解決して開く対象 URI を返却 |

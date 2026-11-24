@@ -10,7 +10,7 @@ use anyhow::{Context, Result, bail, ensure};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::backend::McpBackend;
+use crate::backend::{McpBackend, unsupported_operation};
 
 /// Canonical parsed address components with explicit address space and 64-bit offset.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -476,6 +476,41 @@ pub(crate) async fn paginate_operation(
   }
 }
 
+/// Returns true if lowercase `lower` has `utf` and an optional separator before a digit.
+fn has_utf_digit(lower: &str) -> bool {
+  let bytes = lower.as_bytes();
+  let mut i = 0;
+  while i + 3 < bytes.len() {
+    if &bytes[i..i + 3] == b"utf" {
+      let next = bytes[i + 3];
+      if next.is_ascii_digit() {
+        return true;
+      }
+      if matches!(next, b'-' | b'_' | b' ') && i + 4 < bytes.len() && bytes[i + 4].is_ascii_digit()
+      {
+        return true;
+      }
+    }
+    i += 1;
+  }
+  false
+}
+
+/// Returns true if a Ghidra data-type name names string data.
+fn is_string_type_name(type_name: &str) -> bool {
+  let lower = type_name.to_ascii_lowercase();
+  lower.contains("string") || lower.contains("unicode") || has_utf_digit(&lower)
+}
+
+/// Returns true if a data-unit representation starts with a string quote prefix.
+fn is_string_representation(representation: &str) -> bool {
+  representation.starts_with('"')
+    || representation.starts_with("u8\"")
+    || representation.starts_with("u\"")
+    || representation.starts_with("U\"")
+    || representation.starts_with("L\"")
+}
+
 /// Extracts scalar JSON content as a string, returning an empty string for null or composite types.
 fn json_string_or_empty(value: Option<&Value>) -> String {
   match value {
@@ -486,16 +521,10 @@ fn json_string_or_empty(value: Option<&Value>) -> String {
   }
 }
 
-/// Paginates `listing` `string.list` for session `md5` and formats defined string items.
-pub(crate) async fn defined_strings(backend: &McpBackend, md5: &str) -> Result<Value> {
-  let params = json!({
-    "page": { "limit": 1000 },
-    "scan": { "timeout_ms": 60000 }
-  });
-  let units = paginate_operation(backend, "listing", "string.list", md5, params).await?;
-  let scanned = units.len();
+/// Formats `string.list` units for session `md5` into a `ghidra.strings` response.
+fn format_listed_strings(md5: &str, units: &[Value]) -> Value {
   let mut items = Vec::new();
-  for unit in &units {
+  for unit in units {
     let Some(address) = unit
       .get("address")
       .and_then(Value::as_str)
@@ -518,10 +547,69 @@ pub(crate) async fn defined_strings(backend: &McpBackend, md5: &str) -> Result<V
       "type": type_name,
     }));
   }
-
-  Ok(json!({
+  json!({
     "md5": md5,
-    "scanned": scanned,
+    "scanned": units.len(),
     "items": items,
-  }))
+  })
+}
+
+/// Formats `data_unit.list` units for session `md5` into a `ghidra.strings` response.
+fn format_data_unit_strings(md5: &str, units: &[Value]) -> Value {
+  let mut items = Vec::new();
+  for unit in units {
+    let Some(address) = unit
+      .get("address")
+      .and_then(Value::as_str)
+      .filter(|s| !s.is_empty())
+    else {
+      continue;
+    };
+    let type_name = unit
+      .pointer("/data_type/name")
+      .and_then(Value::as_str)
+      .unwrap_or("");
+    let representation = unit
+      .get("representation")
+      .and_then(Value::as_str)
+      .unwrap_or("");
+    if !is_string_type_name(type_name) && !is_string_representation(representation) {
+      continue;
+    }
+    let value = json_string_or_empty(
+      unit
+        .get("value")
+        .filter(|v| !v.is_null())
+        .or_else(|| unit.get("representation").filter(|v| !v.is_null())),
+    );
+    let length = json_string_or_empty(unit.get("length").filter(|v| !v.is_null()));
+    items.push(json!({
+      "address": address,
+      "displayAddress": display_address(address),
+      "value": value,
+      "length": length,
+      "type": type_name,
+    }));
+  }
+  json!({
+    "md5": md5,
+    "scanned": units.len(),
+    "items": items,
+  })
+}
+
+/// Reads defined strings from `listing` `string.list`, or from `data_unit.list` on older servers.
+pub(crate) async fn defined_strings(backend: &McpBackend, md5: &str) -> Result<Value> {
+  let params = json!({
+    "page": { "limit": 1000 },
+    "scan": { "timeout_ms": 60000 }
+  });
+  match paginate_operation(backend, "listing", "string.list", md5, params.clone()).await {
+    Ok(units) => Ok(format_listed_strings(md5, &units)),
+    Err(error) if unsupported_operation(&error) => {
+      let units = paginate_operation(backend, "listing", "data_unit.list", md5, params).await?;
+      Ok(format_data_unit_strings(md5, &units))
+    }
+    Err(error) => Err(error),
+  }
 }
