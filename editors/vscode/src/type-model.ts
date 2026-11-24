@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { applyEdits, createScanner, findNodeAtLocation, getNodeValue, modify, Node, ParseError, parseTree, printParseErrorCode, SyntaxKind } from 'jsonc-parser';
-import { Data, object, reference, rows, typeReference } from './web';
+import { Data, isArrayType, object, reference, rows, typeReference } from './web';
 
 /** Single backend mutation operation derived from a data type edit. */
 export interface TypeMutation { method: string; arguments: Data; }
@@ -90,7 +90,7 @@ function array(value: unknown, path: JsonPath): Data[] {
     return value as Data[];
 }
 /** Validate and parse a string data type reference at `path`. */
-function type(value: unknown, path: JsonPath): Data {
+function type(value: unknown, path: JsonPath): string {
     const name = string(value, path);
     try { return typeReference(name); } catch (error) { fail(String(error), path); }
 }
@@ -235,7 +235,7 @@ export function typeMutations(original: TypeModel, draft: TypeModel, raw: Data):
             if (rows(raw.fields).some(field => field.comment)) { fail('Moving these fields would lose Ghidra comments. Move them in Ghidra instead.', ['fields']); }
             return [op({ remove_fields: before.map(selector), add_fields: after.map(member => {
                 const dataType = typeReference(member.type), definition: Data = { name: member.name, data_type: dataType };
-                if (member.length !== undefined && dataType.kind !== 'array') { definition.length = member.length; }
+                if (member.length !== undefined && !isArrayType(dataType)) { definition.length = member.length; }
                 return definition;
             }) })];
         }
@@ -257,7 +257,7 @@ export function typeMutations(original: TypeModel, draft: TypeModel, raw: Data):
         } else {
             const dataType = typeReference(member.type), definition: Data = { data_type: dataType };
             // Arrays carry their length in the type; a changed type otherwise uses its natural size.
-            if (member.length !== undefined && dataType.kind !== 'array'
+            if (member.length !== undefined && !isArrayType(dataType)
                 && (!previous || member.length !== previous.length || member.type === previous.type)) { definition.length = member.length; }
             if (!previous) { additions.push({ name: member.name, ...definition, ...(kind === 'struct' ? { offset: member.offset } : {}) }); }
             else {

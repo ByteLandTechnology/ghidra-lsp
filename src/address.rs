@@ -361,44 +361,92 @@ pub(crate) fn permissions_label(block: &MemoryBlockInfo) -> String {
   )
 }
 
-/// Parses C-like type notation (`int`, `/pkg/Type`, `char *`, `int[4]`, `pointer`) into bridge JSON.
+/// Validates a C type expression and returns it as a string value for the bridge.
 pub(crate) fn parse_type_ref(raw: &str) -> Result<Value> {
   let name = raw.trim();
-  if name.is_empty() {
+  if name.is_empty() || name.bytes().all(|b| b == b'*' || b.is_ascii_whitespace()) {
     bail!("Choose a data type.");
   }
-  if name == "pointer" {
-    return Ok(json!({ "kind": "untyped_pointer" }));
+  validate_top_level_array_bounds(name)?;
+  Ok(Value::String(name.to_owned()))
+}
+
+/// Validates top-level array dimension counts in `expr` when bracket declarators are present.
+fn validate_top_level_array_bounds(expr: &str) -> Result<()> {
+  let bytes = expr.as_bytes();
+  let mut paren_depth: usize = 0;
+  let mut idx = 0;
+  while idx < bytes.len() {
+    match bytes[idx] {
+      b'(' => paren_depth += 1,
+      b')' => {
+        paren_depth = paren_depth.saturating_sub(1);
+      }
+      b'[' if paren_depth == 0 => {
+        if expr[..idx].trim().is_empty() {
+          bail!("Choose a data type.");
+        }
+        let rest = &expr[idx + 1..];
+        let Some(close_rel) = rest.find(']') else {
+          bail!("Array length must be an integer between 1 and 2147483647.");
+        };
+        let count_str = rest[..close_rel].trim();
+        let valid = !count_str.is_empty()
+          && count_str.bytes().all(|b| b.is_ascii_digit())
+          && count_str
+            .parse::<i64>()
+            .ok()
+            .is_some_and(|n| (1..=2_147_483_647).contains(&n));
+        if !valid {
+          bail!("Array length must be an integer between 1 and 2147483647.");
+        }
+        idx += close_rel + 1;
+        continue;
+      }
+      _ => {}
+    }
+    idx += 1;
   }
-  if let Some(without_close) = name.strip_suffix(']')
-    && let Some(open) = without_close.rfind('[')
-  {
-    let count_str = &without_close[open + 1..];
-    if !count_str.is_empty() && count_str.bytes().all(|b| b.is_ascii_digit()) {
-      let element = parse_type_ref(&without_close[..open])?;
-      let count = count_str
-        .parse::<i64>()
-        .ok()
-        .filter(|&n| (1..=2_147_483_647).contains(&n))
-        .context("Array length must be an integer between 1 and 2147483647.")?;
-      return Ok(json!({
-        "kind": "array",
-        "element": element,
-        "count": count,
-      }));
+  Ok(())
+}
+
+/// Returns true when `value` denotes an array data type in object or C declarator form.
+pub(crate) fn is_array_type(value: &Value) -> bool {
+  if value.get("kind").and_then(Value::as_str) == Some("array") {
+    return true;
+  }
+  let Some(raw) = value.as_str() else {
+    return false;
+  };
+  let trimmed = raw.trim();
+  if !trimmed.ends_with(']') {
+    return false;
+  }
+  let mut paren_depth: usize = 0;
+  let mut has_grouped_declarator = false;
+  let mut has_top_level_bracket = false;
+  let bytes = trimmed.as_bytes();
+  for (idx, &byte) in bytes.iter().enumerate() {
+    match byte {
+      b'(' => {
+        if paren_depth == 0 {
+          let inner = trimmed[idx + 1..].trim_start();
+          if inner.starts_with('*') || inner.starts_with('(') || inner.starts_with('[') {
+            has_grouped_declarator = true;
+          }
+        }
+        paren_depth += 1;
+      }
+      b')' => {
+        paren_depth = paren_depth.saturating_sub(1);
+      }
+      b'[' if paren_depth == 0 => {
+        has_top_level_bracket = true;
+      }
+      _ => {}
     }
   }
-  if let Some(target_raw) = name.strip_suffix('*') {
-    let target = parse_type_ref(target_raw)?;
-    return Ok(json!({
-      "kind": "pointer",
-      "target": target,
-    }));
-  }
-  Ok(json!({
-    "kind": "named",
-    "name": name,
-  }))
+  has_top_level_bracket && !has_grouped_declarator
 }
 
 /// Extracts scalar text from string or number JSON values, falling back to an em dash.

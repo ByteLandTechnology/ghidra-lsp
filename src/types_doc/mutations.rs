@@ -10,7 +10,7 @@ use serde_json::{Map, Value, json};
 use super::model::{non_undefined_fields, safe_i64_from_value, same_type_data};
 use super::parse::fail_path;
 use super::{PathSegment, TypeEditError, TypeMutation};
-use crate::address::parse_type_ref;
+use crate::address::{is_array_type, parse_type_ref};
 
 /// Builds a Ghidra member selector object for a struct offset or union/enum name.
 fn field_selector(kind: &str, member: &Value) -> Value {
@@ -164,7 +164,7 @@ pub(super) fn type_mutations(
         def.insert("name".into(), member["name"].clone());
         def.insert("data_type".into(), data_type.clone());
         if let Some(len) = member.get("length").filter(|v| !v.is_null())
-          && data_type.get("kind").and_then(Value::as_str) != Some("array")
+          && !is_array_type(&data_type)
         {
           def.insert("length".into(), len.clone());
         }
@@ -254,7 +254,7 @@ pub(super) fn type_mutations(
           ],
         )
       })?;
-      let is_array = data_type.get("kind").and_then(Value::as_str) == Some("array");
+      let is_array = is_array_type(&data_type);
       let member_len = member.get("length").filter(|v| !v.is_null());
       let prev_len = previous.and_then(|p| p.get("length").filter(|v| !v.is_null()));
       let include_length = if let Some(len) = member_len

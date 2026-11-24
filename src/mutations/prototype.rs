@@ -6,7 +6,7 @@
 use std::collections::HashSet;
 
 use anyhow::{Context, Result, bail, ensure};
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 
 use super::CONFLICT_FORM;
 use crate::address::{format_type_ref, parse_type_ref};
@@ -19,6 +19,32 @@ fn format_variable_type(val: &Value) -> String {
     Some(dt) if !dt.is_null() => format_type_ref(dt),
     _ => String::new(),
   }
+}
+
+/// Formats a structured or plain `storage` value into a display string.
+fn format_storage(val: Option<&Value>) -> String {
+  match val {
+    Some(Value::String(s)) => s.clone(),
+    Some(Value::Object(obj)) => match obj.get("kind").and_then(Value::as_str) {
+      Some("register") => obj
+        .get("register")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_owned(),
+      Some("serialization") => obj
+        .get("serialization")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_owned(),
+      _ => String::new(),
+    },
+    _ => String::new(),
+  }
+}
+
+/// Compares two data-type values across C string and structured object representations.
+fn same_data_type(left: &Value, right: &Value) -> bool {
+  left == right || format_type_ref(left).trim() == format_type_ref(right).trim()
 }
 
 /// Reads function prototype, parameters, and local variables at `entry` for form editing.
@@ -62,7 +88,7 @@ pub(crate) async fn function_prototype(
         "ordinal": param.get("ordinal").and_then(Value::as_u64).unwrap_or(index as u64),
         "name": param.get("name").and_then(Value::as_str).unwrap_or(""),
         "type": format_variable_type(param),
-        "storage": param.get("storage").and_then(Value::as_str).unwrap_or(""),
+        "storage": format_storage(param.get("storage")),
       })
     })
     .collect();
@@ -75,7 +101,7 @@ pub(crate) async fn function_prototype(
       json!({
         "name": local.get("name").and_then(Value::as_str).unwrap_or(""),
         "type": format_variable_type(local),
-        "storage": local.get("storage").and_then(Value::as_str).unwrap_or(""),
+        "storage": format_storage(local.get("storage")),
       })
     })
     .collect();
@@ -252,97 +278,146 @@ fn compile_function_prototype_ops(
     _ => Value::Null,
   };
 
-  let mut ops = vec![json!({
-    "method": "function.patch",
-    "arguments": {
-      "selector": { "entry": entry },
-      "patch": {
-        "name": name,
-        "return_type": return_type,
-        "calling_convention": calling_convention,
-        "has_var_args": has_var_args,
-        "has_no_return": has_no_return,
-        "is_inline": is_inline,
-        "comment": comment,
-      }
-    }
-  })];
+  let orig_name = original.get("name").and_then(Value::as_str).unwrap_or("");
+  let return_changed = match original.get("return_type").filter(|v| !v.is_null()) {
+    Some(orig_rt) => !same_data_type(&return_type, orig_rt),
+    None => format_type_ref(&return_type).trim() != "void",
+  };
+  let orig_cc = original
+    .get("calling_convention")
+    .and_then(Value::as_str)
+    .filter(|s| !s.is_empty())
+    .unwrap_or("default");
+  let orig_var_args = original
+    .get("has_var_args")
+    .and_then(Value::as_bool)
+    .unwrap_or(false);
+  let orig_no_return = original
+    .get("has_no_return")
+    .and_then(Value::as_bool)
+    .unwrap_or(false);
+  let orig_inline = original
+    .get("is_inline")
+    .and_then(Value::as_bool)
+    .unwrap_or(false);
+  let orig_comment = match original.get("comment").and_then(Value::as_str) {
+    Some(s) if !s.is_empty() => Value::String(s.to_owned()),
+    _ => Value::Null,
+  };
+  let header_changed = name != orig_name
+    || return_changed
+    || calling_convention != orig_cc
+    || has_var_args != orig_var_args
+    || has_no_return != orig_no_return
+    || is_inline != orig_inline
+    || comment != orig_comment;
+
+  let mut patch = Map::new();
+  patch.insert("name".into(), Value::String(name));
+  patch.insert("return_type".into(), return_type);
+  patch.insert(
+    "calling_convention".into(),
+    Value::String(calling_convention),
+  );
+  patch.insert("has_var_args".into(), Value::Bool(has_var_args));
+  patch.insert("has_no_return".into(), Value::Bool(has_no_return));
+  patch.insert("is_inline".into(), Value::Bool(is_inline));
+  patch.insert("comment".into(), comment);
 
   let orig_params = original
     .get("parameters")
     .and_then(Value::as_array)
     .map(Vec::as_slice)
     .unwrap_or(&[]);
+  let has_custom_storage = original
+    .get("has_custom_variable_storage")
+    .and_then(Value::as_bool)
+    .unwrap_or(false);
+  let mut params_changed = false;
 
   if let Some(params_val) = payload.get("parameters") {
     let parameters = params_val
       .as_array()
       .context("parameters must be an array")?;
-    let mut retained = HashSet::new();
-    let mut identities = Vec::with_capacity(parameters.len());
-    for (idx, param) in parameters.iter().enumerate() {
-      let identity =
-        resolve_indexed_identity(param, orig_params, idx, "Parameter identity", true, false)?;
-      if let Some(orig_idx) = identity {
-        retained.insert(orig_idx);
-      }
-      identities.push(identity);
+    if parameters.len() != orig_params.len() {
+      params_changed = true;
     }
+    let mut seen_originals = HashSet::new();
+    let mut seen_names = HashSet::new();
+    let mut compiled_params = Vec::with_capacity(parameters.len());
 
-    // Delete highest ordinals first so lower parameter ordinals do not shift mid-batch.
-    for index in (0..orig_params.len()).rev() {
-      if !retained.contains(&index) {
-        let orig_ordinal = orig_params[index]
-          .get("ordinal")
-          .and_then(Value::as_u64)
-          .unwrap_or(index as u64);
-        ops.push(json!({
-          "method": "function_parameter.delete",
-          "arguments": {
-            "selector": { "entry": entry, "ordinal": orig_ordinal }
-          }
-        }));
-      }
-    }
-
-    for (ordinal, (param, identity)) in parameters.iter().zip(identities).enumerate() {
+    for (ordinal, param) in parameters.iter().enumerate() {
+      let identity = resolve_indexed_identity(
+        param,
+        orig_params,
+        ordinal,
+        "Parameter identity",
+        true,
+        false,
+      )?;
       let param_name = required_str(param, "name", "Parameter name")?;
+      ensure!(
+        seen_names.insert(param_name.clone()),
+        "Parameter names must be unique."
+      );
       let data_type = parse_type_value(param.get("type").or_else(|| param.get("data_type")))?;
-      match identity {
-        None => {
-          ops.push(json!({
-            "method": "function_parameter.create",
-            "arguments": {
-              "selector": { "entry": entry },
-              "resource": {
-                "ordinal": ordinal,
-                "name": param_name,
-                "data_type": data_type,
-              }
-            }
-          }));
-        }
+      let explicit_storage = param.get("storage").filter(|v| v.is_object()).cloned();
+
+      let storage = match identity {
         Some(orig_idx) => {
+          ensure!(
+            seen_originals.insert(orig_idx),
+            "Duplicate original parameter identity."
+          );
           let previous = &orig_params[orig_idx];
           let prev_name = previous.get("name").and_then(Value::as_str).unwrap_or("");
-          if param_name != prev_name || data_type != previous["data_type"] {
-            ops.push(json!({
-              "method": "function_parameter.patch",
-              "arguments": {
-                "selector": { "entry": entry, "ordinal": ordinal },
-                "patch": {
-                  "name": param_name,
-                  "data_type": data_type,
-                }
-              }
-            }));
+          if orig_idx != ordinal
+            || param_name != prev_name
+            || !same_data_type(&data_type, &previous["data_type"])
+          {
+            params_changed = true;
+          }
+          if let Some(explicit) = explicit_storage {
+            if previous.get("storage") != Some(&explicit) {
+              params_changed = true;
+            }
+            Some(explicit)
+          } else if has_custom_storage {
+            previous.get("storage").filter(|v| v.is_object()).cloned()
+          } else {
+            None
           }
         }
+        None => {
+          params_changed = true;
+          explicit_storage
+        }
+      };
+
+      let mut item = Map::new();
+      item.insert("ordinal".into(), json!(ordinal));
+      item.insert("name".into(), Value::String(param_name));
+      item.insert("data_type".into(), data_type);
+      if let Some(storage_obj) = storage {
+        item.insert("storage".into(), storage_obj);
       }
+      compiled_params.push(Value::Object(item));
+    }
+
+    if params_changed {
+      patch.insert("parameters".into(), Value::Array(compiled_params));
     }
   }
 
-  Ok(ops)
+  ensure!(header_changed || params_changed, "No changes to save.");
+
+  Ok(vec![json!({
+    "method": "function.patch",
+    "arguments": {
+      "selector": { "entry": entry },
+      "patch": Value::Object(patch),
+    }
+  })])
 }
 
 /// Compiles `all_or_none` batch operations for renaming and retyping parameters and locals.
@@ -372,7 +447,7 @@ fn compile_variables_ops(entry: &str, original: &Value, payload: &Value) -> Resu
       let name = required_str(var, "name", "Variable name")?;
       let data_type = parse_type_value(var.get("type").or_else(|| var.get("data_type")))?;
       let prev_name = previous.get("name").and_then(Value::as_str).unwrap_or("");
-      if name == prev_name && data_type == previous["data_type"] {
+      if name == prev_name && same_data_type(&data_type, &previous["data_type"]) {
         continue;
       }
       let orig_ordinal = previous
@@ -402,7 +477,7 @@ fn compile_variables_ops(entry: &str, original: &Value, payload: &Value) -> Resu
       let name = required_str(var, "name", "Variable name")?;
       let data_type = parse_type_value(var.get("type").or_else(|| var.get("data_type")))?;
       let prev_name = previous.get("name").and_then(Value::as_str).unwrap_or("");
-      if name == prev_name && data_type == previous["data_type"] {
+      if name == prev_name && same_data_type(&data_type, &previous["data_type"]) {
         continue;
       }
       ops.push(json!({

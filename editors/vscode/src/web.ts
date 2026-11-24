@@ -31,15 +31,41 @@ export function reference(value: unknown): string {
         default: return text(ref.name);
     }
 }
-/** Parse a user-entered type string into a structured server type reference. */
-export function typeReference(value: unknown): Data {
+/** Validate a user-entered C type string and return it for the server. */
+export function typeReference(value: unknown): string {
     const name = String(value ?? '').trim();
-    if (!name) { throw new Error('Choose a data type.'); }
-    if (name === 'pointer') { return { kind: 'untyped_pointer' }; }
-    const array = /^(.*)\[([0-9]+)\]$/.exec(name);
-    if (array) { return { kind: 'array', element: typeReference(array[1]), count: integer(array[2], 'Array length', 1) }; }
-    if (/\*$/.test(name)) { return { kind: 'pointer', target: typeReference(name.slice(0, -1)) }; }
-    return { kind: 'named', name };
+    if (!name || /^\*+$/.test(name)) { throw new Error('Choose a data type.'); }
+    let depth = 0;
+    for (let i = 0; i < name.length; i++) {
+        const ch = name[i];
+        if (ch === '(') { depth++; }
+        else if (ch === ')') { depth = Math.max(0, depth - 1); }
+        else if (ch === '[' && depth === 0) {
+            if (!name.slice(0, i).trim()) { throw new Error('Choose a data type.'); }
+            const close = name.indexOf(']', i + 1);
+            if (close < 0) { throw new Error('Array length must be an integer between 1 and 2147483647.'); }
+            integer(name.slice(i + 1, close), 'Array length', 1);
+            i = close;
+        }
+    }
+    return name;
+}
+/** Return true when `value` denotes an array data type in object or C declarator form. */
+export function isArrayType(value: unknown): boolean {
+    if (value && typeof value === 'object' && !Array.isArray(value)) { return (value as Data).kind === 'array'; }
+    if (typeof value !== 'string') { return false; }
+    const trimmed = value.trim();
+    if (!trimmed.endsWith(']')) { return false; }
+    let depth = 0, grouped = false, topBracket = false;
+    for (let i = 0; i < trimmed.length; i++) {
+        const ch = trimmed[i];
+        if (ch === '(') {
+            if (depth === 0 && /^[*([\s]*[*([]/.test(trimmed.slice(i + 1))) { grouped = true; }
+            depth++;
+        } else if (ch === ')') { depth = Math.max(0, depth - 1); }
+        else if (ch === '[' && depth === 0) { topBracket = true; }
+    }
+    return topBracket && !grouped;
 }
 /** Parse and validate an integer within inclusive bounds. */
 export function integer(value: unknown, label: string, minimum = 0, maximum = 2147483647): number {

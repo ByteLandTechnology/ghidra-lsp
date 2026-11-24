@@ -412,7 +412,7 @@ export class EditingUI implements vscode.Disposable {
             const name = required(values, 'name', 'Symbol name'); const operations: Mutation[] = [];
             // A non-primary alias shares data with its primary symbol; rename the selected symbol identity only.
             if (name !== symbol.name) { operations.push({ method: 'symbol.patch', arguments: { selector: { id }, patch: { name } } }); }
-            if (global) { const dataType = typeReference(values.type); if (!equal(dataType, global.data_type)) { operations.push({ method: 'global_variable.patch', arguments: { selector: { address: symbol.address }, patch: { data_type: dataType } } }); } }
+            if (global) { const dataType = typeReference(values.type); if (dataType !== reference(global.data_type).trim()) { operations.push({ method: 'global_variable.patch', arguments: { selector: { address: symbol.address }, patch: { data_type: dataType } } }); } }
             await this.mutations(md5, operations);
         });
     }
