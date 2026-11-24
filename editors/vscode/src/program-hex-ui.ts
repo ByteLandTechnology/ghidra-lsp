@@ -101,7 +101,8 @@ export function renderDataInspectorHtml(
         selectionLength > 1 ? `${selectionLength} bytes selected` : '',
     ].filter(Boolean).join(' · ');
     const endianLabel = endian === 'be' ? 'Big Endian' : 'Little Endian';
-    const headHtml = `<div class="hex-inspector-head"><h2>Data inspector</h2><button type="button" class="hex-endian-pill" data-toggle-endian data-endian="${endian}" aria-pressed="${endian === 'be'}" aria-label="Toggle byte order (${endianLabel})" title="Switch byte order">${endianLabel}</button></div>`;
+    const endianActionLabel = `${endianLabel} · Switch byte order`;
+    const headHtml = `<div class="hex-inspector-head"><h2>Data inspector</h2><button type="button" class="hex-endian-pill" data-toggle-endian data-endian="${endian}" aria-label="${endianActionLabel}" title="${endianActionLabel}">${endianLabel}</button></div>`;
 
     if (!entries.length) {
         return `${headHtml}<p class="hex-inspector-meta" title="${escape(address)}">${escape(meta || 'Select a byte to inspect decoded values.')}</p>`;
@@ -324,9 +325,8 @@ const applyInspector = (startAddr, metaText, rows) => {
   const heading = document.createElement('h2'); heading.textContent = 'Data inspector';
   const pill = document.createElement('button'); pill.type = 'button'; pill.className = 'hex-endian-pill';
   pill.setAttribute('data-toggle-endian', ''); pill.dataset.endian = mode;
-  pill.setAttribute('aria-pressed', String(mode === 'be'));
-  pill.setAttribute('aria-label', 'Toggle byte order (' + label + ')');
-  pill.title = 'Switch byte order'; pill.textContent = label;
+  pill.setAttribute('aria-label', label + ' · Switch byte order');
+  pill.title = label + ' · Switch byte order'; pill.textContent = label;
   head.append(heading, pill);
   const meta = document.createElement('p'); meta.className = 'hex-inspector-meta'; meta.title = startAddr; meta.textContent = metaText;
   const dl = document.createElement('dl');

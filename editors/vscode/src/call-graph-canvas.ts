@@ -51,18 +51,19 @@ export const callGraphStyles = `
 .call-page .call-canvas{position:relative;min-height:160px;border:0;border-radius:0;background:var(--vscode-editor-background)}
 .call-canvas svg{overflow:visible}
 .call-node-controls{overflow:visible}
-.call-node .call-node-controls{opacity:0;pointer-events:none;transition:opacity 140ms ease}
-.call-node:hover .call-node-controls,.call-node:focus-within .call-node-controls{opacity:1;pointer-events:auto}
+.call-node .call-node-controls{opacity:1;pointer-events:auto}
+.call-node:has(>.graph-node.search-muted) .call-node-controls{opacity:.35}
 .node-control-content{display:flex;align-items:center;justify-content:center;width:100%;height:100%;font:12px var(--vscode-font-family);color:var(--vscode-foreground);cursor:default}
 .call-node-controls .call-icon{font-size:16px;flex-shrink:0}
 .call-page .node-decompile{display:flex;align-items:center;justify-content:center;width:28px;height:28px;min-height:0;padding:3px;background:transparent;border:0;border-radius:3px;color:var(--vscode-descriptionForeground)}
 .call-node:hover .node-decompile,.call-node:focus-within .node-decompile{color:var(--vscode-foreground)}
 .call-node .node-decompile:hover{background:var(--vscode-list-hoverBackground)}
+.call-node .node-decompile:focus-visible{outline:2px solid var(--vscode-focusBorder);outline-offset:-2px}
 .call-node.is-root .node-decompile{color:var(--vscode-list-activeSelectionForeground,var(--vscode-foreground))}
-.call-page .node-branch{display:inline-flex;align-items:center;justify-content:center;width:52px;height:12px;min-height:0;padding:0;border:0;border-radius:6px;background:transparent;color:color-mix(in srgb,var(--vscode-foreground) 32%,transparent);box-shadow:none;cursor:pointer;box-sizing:border-box;transition:color 150ms ease,transform 100ms ease-out}
-.call-node.is-root .node-branch{color:color-mix(in srgb,var(--vscode-list-activeSelectionForeground,var(--vscode-foreground)) 36%,transparent)}
-.call-page .node-branch[aria-expanded="true"]{color:color-mix(in srgb,var(--vscode-focusBorder) 55%,transparent)}
-.call-node.is-root .node-branch[aria-expanded="true"]{color:color-mix(in srgb,var(--vscode-list-activeSelectionForeground,var(--vscode-foreground)) 38%,transparent)}
+.call-page .node-branch{display:inline-flex;align-items:center;justify-content:center;width:52px;height:24px;min-width:52px;min-height:24px;padding:0;border:0;border-radius:6px;background:transparent;color:color-mix(in srgb,var(--vscode-foreground) 42%,transparent);box-shadow:none;cursor:pointer;box-sizing:border-box;transition:color 150ms ease,transform 100ms ease-out}
+.call-node.is-root .node-branch{color:color-mix(in srgb,var(--vscode-list-activeSelectionForeground,var(--vscode-foreground)) 46%,transparent)}
+.call-page .node-branch[aria-expanded="true"]{color:color-mix(in srgb,var(--vscode-focusBorder) 62%,transparent)}
+.call-node.is-root .node-branch[aria-expanded="true"]{color:color-mix(in srgb,var(--vscode-list-activeSelectionForeground,var(--vscode-foreground)) 50%,transparent)}
 .call-page .node-branch svg.branch-bar{width:48px;height:12px;flex:none;overflow:visible}
 .call-page .node-branch .branch-bar-path{stroke-width:3.4;d:path("M6 6 Q24 6 42 6");transition:d 180ms cubic-bezier(.23,1,.32,1),stroke-width 180ms ease}
 .call-page .node-branch[aria-expanded="true"] .branch-bar-path{stroke-width:2.8;d:path("M13 6 Q24 6 35 6")}
@@ -73,7 +74,7 @@ body.vscode-dark .call-page .node-branch:hover,body.vscode-dark .call-page .node
 .call-page .node-branch[data-direction="callers"][aria-expanded="true"]:hover .branch-bar-path,.call-page .node-branch[data-direction="callers"][aria-expanded="true"]:focus-visible .branch-bar-path{stroke-width:3.2;d:path("M10 5 Q24 9.4 38 5")}
 .call-page .node-branch[data-direction="callees"][aria-expanded="true"]:hover .branch-bar-path,.call-page .node-branch[data-direction="callees"][aria-expanded="true"]:focus-visible .branch-bar-path{stroke-width:3.2;d:path("M10 7 Q24 2.6 38 7")}
 .call-page .node-branch:active{transform:scale(0.95)}
-.call-page .node-branch:focus-visible{outline:1px solid var(--vscode-focusBorder);outline-offset:0}
+.call-page .node-branch:focus-visible{outline:2px solid var(--vscode-focusBorder);outline-offset:-2px}
 .call-page .node-branch:disabled{cursor:wait;opacity:.45}
 .call-edge{cursor:pointer;outline:none}
 .call-edge-hit{fill:none;stroke:transparent;stroke-width:14;vector-effect:non-scaling-stroke;pointer-events:stroke}
@@ -91,12 +92,12 @@ body.vscode-dark .call-page .node-branch:hover,body.vscode-dark .call-page .node
 .call-page [hidden]{display:none!important}
 .call-canvas .call-node-body{fill:var(--vscode-editor-background);stroke:var(--vscode-editorWidget-border,var(--vscode-panel-border));stroke-width:1;vector-effect:non-scaling-stroke;transition:stroke-width 120ms ease}
 .call-canvas .is-root .call-node-body{fill:var(--vscode-list-activeSelectionBackground);stroke:var(--vscode-focusBorder);stroke-width:2}
-.call-canvas .call-node.selected .call-node-body,.call-canvas .call-node:focus-visible .call-node-body{stroke:var(--vscode-focusBorder);stroke-width:2}
+.call-canvas .call-node .graph-node.selected .call-node-body,.call-canvas .call-node .graph-node:focus-visible .call-node-body{stroke:var(--vscode-focusBorder);stroke-width:2}
 .call-canvas .call-node .node-title{font:500 14px var(--vscode-font-family);fill:var(--vscode-foreground)}
 .call-canvas .is-root .node-title{font-size:15px;font-weight:600}
 .call-canvas .is-root .call-root-address{font:500 11.5px var(--vscode-editor-font-family,monospace);font-variant-numeric:tabular-nums;opacity:.85}
 .call-canvas .call-node:hover:not(.is-root) .call-node-body{fill:var(--vscode-list-hoverBackground);stroke:var(--vscode-focusBorder)}
-.call-canvas .call-node.selected:not(.is-root) .call-node-body{fill:var(--vscode-list-inactiveSelectionBackground,var(--vscode-list-hoverBackground))}
+.call-canvas .call-node:not(.is-root) .graph-node.selected .call-node-body{fill:var(--vscode-list-inactiveSelectionBackground,var(--vscode-list-hoverBackground))}
 .call-canvas .is-root text{fill:var(--vscode-list-activeSelectionForeground,var(--vscode-foreground))!important}
 .call-canvas .call-edge{color:var(--vscode-charts-blue,#64a8eb);opacity:.65;transition:opacity 120ms ease}
 .call-canvas .call-edge .edge{stroke-width:1.25;vector-effect:non-scaling-stroke}
@@ -106,7 +107,10 @@ body.vscode-dark .call-page .node-branch:hover,body.vscode-dark .call-page .node
 .call-canvas .call-edge.connected{opacity:.8}
 .call-canvas .call-edge.connected .edge{stroke-width:1.6}
 .call-canvas .call-edge.is-active,.call-canvas .call-edge:focus-visible{color:var(--vscode-focusBorder);opacity:1!important}
-.call-canvas .call-edge.is-active .edge,.call-canvas .call-edge:focus-visible .edge{stroke-width:3}
+.call-canvas .call-edge.is-active .edge{stroke-width:3}
+.call-canvas .call-edge:focus-visible .call-edge-hit{stroke:var(--vscode-focusBorder);stroke-width:9;stroke-linecap:round;stroke-linejoin:round}
+.call-canvas .call-edge:focus-visible .edge{stroke-width:2.4;filter:drop-shadow(0 0 1.2px var(--vscode-editor-background)) drop-shadow(0 0 1.2px var(--vscode-editor-background))}
+.call-canvas .call-edge.is-active:focus-visible .edge{stroke-width:3}
 .call-canvas .call-edge.is-hovered .edge{stroke-width:2.5}
 #call-arrow path{fill:var(--vscode-descriptionForeground);fill:context-stroke}
 .call-overview{margin:0;padding:0;position:absolute;right:16px;bottom:58px;width:176px;background:var(--vscode-editor-background);border:1px solid var(--vscode-editorWidget-border,var(--vscode-panel-border));border-radius:8px;box-shadow:0 2px 8px var(--vscode-widget-shadow);overflow:hidden;opacity:.95;cursor:default}
@@ -127,10 +131,8 @@ body.vscode-dark .call-page .node-branch:hover,body.vscode-dark .call-page .node
 @keyframes call-reveal{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:translateY(0)}}
 @media(prefers-reduced-motion:reduce){.call-page *{animation:none!important;transition:none!important}}
 .vscode-high-contrast .call-canvas .call-edge,.vscode-high-contrast-light .call-canvas .call-edge{opacity:1!important}
-@media(forced-colors:active){.call-canvas .call-node-body{stroke:CanvasText}.call-canvas .is-root .call-node-body{fill:Highlight;stroke:Highlight}.call-canvas .call-node.selected .call-node-body,.call-canvas .call-node:focus-visible .call-node-body{stroke:Highlight}.call-canvas .call-edge{color:CanvasText}.call-page .call-menu-content,.call-page .call-zoom{border-color:CanvasText}.call-page .node-branch{color:ButtonText}}
+@media(forced-colors:active){.call-canvas .call-node-body{stroke:CanvasText}.call-canvas .is-root .call-node-body{fill:Highlight;stroke:Highlight}.call-canvas .call-node .graph-node.selected .call-node-body,.call-canvas .call-node .graph-node:focus-visible .call-node-body{stroke:Highlight}.call-canvas .call-edge{color:CanvasText}.call-canvas .call-edge:focus-visible .call-edge-hit{stroke:Highlight}.call-canvas .call-edge:focus-visible .edge{filter:drop-shadow(0 0 1.2px Canvas)}.call-page .call-menu-content,.call-page .call-zoom{border-color:CanvasText}.call-page .node-branch{color:ButtonText}}
 @media(max-width:640px){.call-page .call-topbar{padding:8px 10px;gap:5px;min-height:48px}.call-page .call-topbar h1{font-size:13px}.call-page .call-search{position:absolute;z-index:4;top:52px;left:10px;right:10px;background:var(--vscode-editor-background)}.call-page .call-overview{width:120px;right:10px;bottom:54px}.call-page .call-overview svg{height:82px}.call-page .call-zoom{bottom:12px;right:10px}}
-
-@media(hover:none) and (pointer:coarse){.call-node.is-root .call-node-controls,.call-node.selected .call-node-controls{opacity:1;pointer-events:auto}}
 `;
 
 /** Runs after the common selection handlers; all browsing controls use the panel's owning program. */
@@ -162,7 +164,7 @@ export const callGraphScript = String.raw`
       const paintTrace=()=>{canvas.classList.toggle('is-tracing',!!(tracedNode||activeEdge||hoveredEdge));for(const edge of edges){edge.classList.toggle('is-hovered',edge===hoveredEdge||!!tracedNode&&(edge.dataset.from===tracedNode.dataset.node||edge.dataset.to===tracedNode.dataset.node));edge.classList.toggle('is-active',edge===activeEdge);edge.setAttribute('aria-pressed',String(edge===activeEdge))}const relation=hoveredEdge||activeEdge;for(const node of nodes){node.classList.toggle('edge-endpoint',!!relation&&(node.dataset.node===relation.dataset.from||node.dataset.node===relation.dataset.to))}};
       const trace=node=>{tracedNode=node;paintTrace()};
       const activateEdge=edge=>{activeEdge=edge;tracedNode=undefined;paintTrace()};
-      for(const node of nodes){node.addEventListener('pointerenter',()=>trace(node));node.addEventListener('pointerleave',()=>trace(document.activeElement?.closest('.call-node')));node.addEventListener('focus',()=>trace(node));node.addEventListener('blur',()=>trace(undefined));node.addEventListener('click',()=>{activeEdge=undefined;paintTrace()})}
+      for(const node of nodes){node.addEventListener('pointerenter',()=>trace(node));node.addEventListener('pointerleave',()=>trace(document.activeElement?.closest('.call-node')));node.addEventListener('focusin',()=>trace(node));node.addEventListener('focusout',()=>requestAnimationFrame(()=>trace(document.activeElement?.closest('.call-node'))));node.addEventListener('click',()=>{activeEdge=undefined;paintTrace()})}
       for(const edge of edges){edge.addEventListener('pointerdown',event=>{if(event.button===0){event.stopPropagation()}});edge.addEventListener('pointerenter',()=>{hoveredEdge=edge;tracedNode=undefined;paintTrace()});edge.addEventListener('pointerleave',()=>{hoveredEdge=document.activeElement===edge?edge:undefined;paintTrace()});edge.addEventListener('focus',()=>{hoveredEdge=edge;tracedNode=undefined;paintTrace()});edge.addEventListener('blur',()=>{hoveredEdge=undefined;paintTrace()});edge.addEventListener('click',event=>{event.stopPropagation();activateEdge(edge)});edge.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();activateEdge(edge)}})}
       canvas.addEventListener('click',event=>{if(event.target.closest('.call-node,.call-edge,.call-overview,.call-depth-controls,.call-function-actions')){return}activeEdge=undefined;paintTrace()});
       canvas.addEventListener('keydown',event=>{if(event.key==='Escape'&&activeEdge){event.preventDefault();event.stopPropagation();activeEdge=undefined;hoveredEdge=undefined;tracedNode=undefined;paintTrace();canvas.focus({preventScroll:true})}});
@@ -181,7 +183,7 @@ export const callGraphScript = String.raw`
       document.addEventListener('click',event=>{if(menu.open&&(!menu.contains(event.target)||event.target.closest('button[data-action]'))){menu.open=false}});
       document.addEventListener('keydown',event=>{if(event.key==='Escape'&&menu.open){event.preventDefault();menu.open=false;summary.focus()}else if(((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='f')||event.key==='/'&&!event.target.closest('input,select,textarea')){event.preventDefault();menu.open=false;openSearch()}});
       document.getElementById('call-center').addEventListener('click',()=>{menu.open=false});
-      document.addEventListener('contextmenu',event=>{if(event.target.closest('.call-node')){event.preventDefault();event.target.closest('.call-node').dispatchEvent(new MouseEvent('click',{bubbles:true}));event.target.closest('.call-node').querySelector('.node-decompile')?.focus()}});
+      document.addEventListener('contextmenu',event=>{const callNode=event.target.closest('.call-node');if(callNode){event.preventDefault();callNode.querySelector('.graph-node')?.dispatchEvent(new MouseEvent('click',{bubbles:true}));callNode.querySelector('.node-decompile')?.focus()}});
       update();
     })();
 `;
