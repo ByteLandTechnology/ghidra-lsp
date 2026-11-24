@@ -176,7 +176,7 @@ export const callGraphScript = String.raw`
       searchHost.addEventListener('focusout',event=>{if(!search.value&&event.relatedTarget&&event.relatedTarget!==searchToggle&&!searchHost.contains(event.relatedTarget)){searchHost.hidden=true;searchToggle.setAttribute('aria-expanded','false')}});
       search.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();search.value='';search.dispatchEvent(new Event('input'));closeSearch()}});
       if(search.value){searchHost.hidden=false;searchToggle.setAttribute('aria-expanded','true')}
-      document.addEventListener('keydown',event=>{if(((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='f')||event.key==='/'&&!event.target.closest('input,select,textarea')){event.preventDefault();openSearch()}});
+      document.addEventListener('keydown',event=>{if(isModShortcut(event,'f')||(event.key==='/'&&canUseSingleKeyShortcut(event))){event.preventDefault();const menu=document.getElementById('call-menu');if(menu){menu.open=false}openSearch()}});
       document.addEventListener('contextmenu',event=>{if(event.target.closest('.call-node')){event.preventDefault();event.target.closest('.call-node').dispatchEvent(new MouseEvent('click',{bubbles:true}));event.target.closest('.call-node').querySelector('.node-decompile')?.focus()}});
       update();
     })();
