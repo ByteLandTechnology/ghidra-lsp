@@ -13,6 +13,7 @@ use tower_lsp_server::ls_types::{
 };
 
 use super::{Engine, Pending, Refresh};
+use crate::backend::unsupported_storage_selector;
 use crate::document::{
   Document, Span, Symbol, apply_edits, canonical_virtual_uri, is_field_access, matches_text,
   position, same_address, storage_selector, valid_name,
@@ -296,19 +297,8 @@ impl Engine {
       if let Some(p) = self.pending.get_mut(&md5) {
         p.patched = true;
       }
-      let (tool_domain, operation) = match domain {
-        "function_local_variable" => ("function", "local_variable.patch"),
-        "function_parameter" => ("function", "parameter.patch"),
-        _ => (domain, "patch"),
-      };
       if let Err(err) = self
-        .backend
-        .call(
-          tool_domain,
-          operation,
-          Some(&md5),
-          json!({"selector": selector, "patch": {"name": pending.new_name}}),
-        )
+        .apply_rename_patch(&md5, domain, selector, &pending.new_name)
         .await
       {
         if !err.to_string().contains("timed out")
@@ -356,6 +346,53 @@ impl Engine {
     self.refresh_session(&md5, Some(&pending)).await.context(
       "Rename persisted, but regeneration failed. Use Ghidra: Refresh Documents to recover",
     )
+  }
+
+  /// Sends one rename patch and retries without `selector.storage` if an older server rejects it.
+  async fn apply_rename_patch(
+    &self,
+    md5: &str,
+    domain: &str,
+    selector: Value,
+    new_name: &str,
+  ) -> Result<()> {
+    let (tool_domain, operation) = match domain {
+      "function_local_variable" => ("function", "local_variable.patch"),
+      "function_parameter" => ("function", "parameter.patch"),
+      _ => (domain, "patch"),
+    };
+    let has_storage = domain == "function_local_variable" && selector.get("storage").is_some();
+    let patch = json!({"name": new_name});
+    match self
+      .backend
+      .call(
+        tool_domain,
+        operation,
+        Some(md5),
+        json!({"selector": selector.clone(), "patch": patch.clone()}),
+      )
+      .await
+    {
+      Ok(_) => Ok(()),
+      Err(err) if has_storage && unsupported_storage_selector(&err, false) => {
+        self.backend.disable_local_storage();
+        let mut fallback = selector;
+        if let Some(obj) = fallback.as_object_mut() {
+          obj.remove("storage");
+        }
+        self
+          .backend
+          .call(
+            tool_domain,
+            operation,
+            Some(md5),
+            json!({"selector": fallback, "patch": patch}),
+          )
+          .await
+          .map(|_| ())
+      }
+      Err(err) => Err(err),
+    }
   }
 
   /// Resolves the backend domain, selector payload, and live name for a pending rename target.
@@ -512,8 +549,9 @@ impl Engine {
       pending.symbol.name.as_str()
     };
     let mut selector = json!({"entry": pending.symbol.address, "name": selector_name});
-    if let Some(storage) =
-      storage_selector(matched.and_then(|v| v.get("storage")).or(expected_storage))
+    if self.backend.supports_local_storage()
+      && let Some(storage) =
+        storage_selector(matched.and_then(|v| v.get("storage")).or(expected_storage))
     {
       selector["storage"] = storage;
     }

@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 
 use super::CONFLICT_FORM;
 use crate::address::{format_type_ref, parse_type_ref};
-use crate::backend::McpBackend;
+use crate::backend::{McpBackend, unsupported_storage_selector};
 use crate::document::{format_storage_value, storage_selector};
 use crate::workbench;
 
@@ -356,7 +356,12 @@ fn compile_function_prototype_ops(
 }
 
 /// Compiles `all_or_none` batch operations for renaming and retyping parameters and locals.
-fn compile_variables_ops(entry: &str, original: &Value, payload: &Value) -> Result<Vec<Value>> {
+fn compile_variables_ops(
+  entry: &str,
+  original: &Value,
+  payload: &Value,
+  include_local_storage: bool,
+) -> Result<Vec<Value>> {
   let orig_params = original
     .get("parameters")
     .and_then(Value::as_array)
@@ -416,7 +421,7 @@ fn compile_variables_ops(entry: &str, original: &Value, payload: &Value) -> Resu
         continue;
       }
       let mut selector = json!({ "entry": entry, "name": prev_name });
-      if let Some(storage) = storage_selector(previous.get("storage")) {
+      if include_local_storage && let Some(storage) = storage_selector(previous.get("storage")) {
         selector["storage"] = storage;
       }
       ops.push(json!({
@@ -454,7 +459,47 @@ pub(crate) async fn prepare_variables_ops(
   payload: &Value,
 ) -> Result<Vec<Value>> {
   let entry = fetch_and_verify_function(backend, md5, entry, original).await?;
-  compile_variables_ops(&entry, original, payload)
+  compile_variables_ops(&entry, original, payload, backend.supports_local_storage())
+}
+
+/// Copies `ops` without `selector.storage` on local patches, or returns `None` if none had it.
+fn strip_local_storage_ops(ops: &[Value]) -> Option<Vec<Value>> {
+  let mut stripped = false;
+  let updated = ops
+    .iter()
+    .map(|op| {
+      let mut copy = op.clone();
+      if copy.get("method").and_then(Value::as_str) == Some("function_local_variable.patch")
+        && let Some(selector) = copy
+          .pointer_mut("/arguments/selector")
+          .and_then(Value::as_object_mut)
+        && selector.remove("storage").is_some()
+      {
+        stripped = true;
+      }
+      copy
+    })
+    .collect();
+  stripped.then_some(updated)
+}
+
+/// Builds an `all_or_none` `batch.execute` parameter payload from compiled mutation `ops`.
+fn build_batch_params(ops: &[Value]) -> Value {
+  let items: Vec<Value> = ops
+    .iter()
+    .enumerate()
+    .map(|(index, op)| {
+      json!({
+        "id": index.to_string(),
+        "method": op["method"],
+        "arguments": op["arguments"],
+      })
+    })
+    .collect();
+  json!({
+    "transaction_mode": "all_or_none",
+    "items": items,
+  })
 }
 
 /// Executes one single mutation or an atomic `all_or_none` batch through policy verification.
@@ -470,38 +515,58 @@ pub(crate) async fn execute_ops(backend: &McpBackend, md5: &str, ops: &[Value]) 
     let arguments = op.get("arguments").cloned().unwrap_or_else(|| json!({}));
     workbench::allow_write(domain, operation, &arguments)?;
     let (tool, tool_op) = workbench::mcp_operation(domain, operation);
-    let result = backend
-      .call(tool, &tool_op, Some(md5), arguments)
+    let has_storage =
+      method == "function_local_variable.patch" && arguments.pointer("/selector/storage").is_some();
+    let call_result = match backend
+      .call(tool, &tool_op, Some(md5), arguments.clone())
       .await
-      .context(
-        "Modification may have reached Ghidra; refresh and inspect the actual program state before retrying",
-      )?;
+    {
+      Ok(res) => Ok(res),
+      Err(err) if has_storage && unsupported_storage_selector(&err, false) => {
+        backend.disable_local_storage();
+        let mut fallback_args = arguments;
+        if let Some(selector) = fallback_args
+          .get_mut("selector")
+          .and_then(Value::as_object_mut)
+        {
+          selector.remove("storage");
+        }
+        workbench::allow_write(domain, operation, &fallback_args)?;
+        backend.call(tool, &tool_op, Some(md5), fallback_args).await
+      }
+      Err(err) => Err(err),
+    };
+    let result = call_result.context(
+      "Modification may have reached Ghidra; refresh and inspect the actual program state before retrying",
+    )?;
     workbench::check_write_result(domain, operation, &result)?;
     return Ok(result);
   }
 
-  let items: Vec<Value> = ops
-    .iter()
-    .enumerate()
-    .map(|(index, op)| {
-      json!({
-        "id": index.to_string(),
-        "method": op["method"],
-        "arguments": op["arguments"],
-      })
-    })
-    .collect();
-  let batch_params = json!({
-    "transaction_mode": "all_or_none",
-    "items": items,
-  });
+  let batch_params = build_batch_params(ops);
   workbench::allow_write("batch", "execute", &batch_params)?;
-  let result = backend
+  let call_result = match backend
     .call("batch", "execute", Some(md5), batch_params)
     .await
-    .context(
-      "Modification may have reached Ghidra; refresh and inspect the actual program state before retrying",
-    )?;
+  {
+    Ok(res) => Ok(res),
+    Err(err) if unsupported_storage_selector(&err, true) => {
+      if let Some(fallback_ops) = strip_local_storage_ops(ops) {
+        backend.disable_local_storage();
+        let fallback_params = build_batch_params(&fallback_ops);
+        workbench::allow_write("batch", "execute", &fallback_params)?;
+        backend
+          .call("batch", "execute", Some(md5), fallback_params)
+          .await
+      } else {
+        Err(err)
+      }
+    }
+    Err(err) => Err(err),
+  };
+  let result = call_result.context(
+    "Modification may have reached Ghidra; refresh and inspect the actual program state before retrying",
+  )?;
   workbench::check_write_result("batch", "execute", &result)?;
   Ok(result)
 }
