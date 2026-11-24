@@ -6,7 +6,7 @@ import { pageStyles } from './page-styles';
 import { displayAddress } from './names';
 import { iconFontStyles } from './icon-font';
 import { escape as escapeHtml } from './web';
-import { browserViewScript, viewStyles } from './view-ui';
+import { browserLiveRegions, browserStateScript, browserViewScript, viewStyles } from './view-ui';
 import { controlFlowStyles, controlFlowScript } from './control-flow-canvas';
 import { controlFlowToolbar, controlFlowUiStyles, controlFlowUiScript } from './control-flow-ui';
 import { callIcon, callIcons } from './call-graph-icons';
@@ -16,7 +16,7 @@ import { callColumnsStyles, callColumnsScript, callViewScript } from './call-col
 /** Target entity kind attached to interactive rows and graph nodes. */
 export type TargetKind = 'instruction' | 'data' | 'bytes' | 'function' | 'block' | 'symbol' | 'address' | 'reference-source' | 'reference-destination';
 /** Table row descriptor for workbench browser pages. */
-export type Row = { cells: string[]; address?: string; entry?: string; label?: string; kind?: TargetKind; detail?: string };
+export type Row = { cells: string[]; address?: string; entry?: string; label?: string; kind?: TargetKind; detail?: string; selected?: boolean };
 /** Graph node descriptor shared by control-flow and call graphs. */
 export type GraphNode = { id: string; title: string; subtitle?: string; lines?: string[]; address?: string; entry?: string; column?: number; kind?: TargetKind };
 /** Directed graph edge descriptor shared by control-flow and call graphs. */
@@ -34,7 +34,11 @@ const addressCell = (cell: unknown): string => {
     return shown === full ? escapeHtml(full) : `<span title="${escapeHtml(full)}">${escapeHtml(shown)}</span>`;
 };
 /** Render an interactive data table for a workbench browser panel. */
-export const table = (headers: string[], rows: Row[]): string => `<div class="table-wrap"><table><thead><tr>${headers.map(h => `<th scope="col">${escapeHtml(h)}</th>`).join('')}</tr></thead><tbody>${rows.map(row => `<tr${targetAttributes(row)}${row.address || row.entry ? ' tabindex="0"' : ''}>${row.cells.map((cell, index) => `<td${addrHeaders.has(headers[index]) ? ' class="addr"' : ''}>${row.detail && index === row.cells.length - 1 ? `<span class="cell-main">${escapeHtml(cell)}</span><span class="cell-detail">${escapeHtml(row.detail)}</span>` : addressCell(cell)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+export const table = (headers: string[], rows: Row[]): string => `<div class="table-wrap"><table><thead><tr>${headers.map(h => `<th scope="col">${escapeHtml(h)}</th>`).join('')}</tr></thead><tbody>${rows.map(row => {
+    const focusable = Boolean(row.address || row.entry);
+    const active = Boolean(focusable && row.selected);
+    return `<tr${targetAttributes(row)}${focusable ? ' tabindex="0"' : ''}${active ? ' class="selected" aria-current="true"' : ''}>${row.cells.map((cell, index) => `<td${addrHeaders.has(headers[index]) ? ' class="addr"' : ''}>${row.detail && index === row.cells.length - 1 ? `<span class="cell-main">${escapeHtml(cell)}</span><span class="cell-detail">${escapeHtml(row.detail)}</span>` : addressCell(cell)}</td>`).join('')}</tr>`;
+}).join('')}</tbody></table></div>`;
 /** Configuration options for rendering a workbench webview page. */
 export interface PageOptions { title: string; subtitle: string; body: string; address?: string; next?: boolean; previous?: boolean; scope?: string; scopeSummary?: string; actions?: boolean; graph?: boolean; controlFlow?: boolean; callGraph?: boolean; viewKind?: string; callView?: 'graph' | 'columns'; callTools?: string; callName?: string; callBack?: boolean; state?: unknown }
 /** Render one Codicon glyph from a hexadecimal code point string. */
@@ -86,11 +90,12 @@ export function page(options: PageOptions): string {
     ${cfg ? controlFlowUiStyles : ''}
     ${iconFontStyles}
     ${options.callGraph ? callGraphStyles + callColumnsStyles : ''}
-    ${browser ? viewStyles : ''}
+    ${browser ? viewStyles : '.flow-page #filter-status.sr-filter-status,.flow-page .sr-status{position:absolute;width:1px;height:1px;padding:0;margin:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}'}
     </style></head><body${flow ? ` class="flow-page${options.callGraph ? ' call-page' : cfg ? ' cfg-page' : ''}"` : ' class="browser-page"'} data-view-kind="${escapeHtml(options.viewKind || '')}"><main>${options.callGraph ? `<div class="call-topbar" role="group" aria-label="Call graph tools"><button class="call-icon-button" data-action="callGraphBack" aria-label="Back" title="Back" ${options.callBack ? '' : 'disabled'}>${icon('ea9b')}</button><h1 class="call-function-title" title="${escapeHtml(options.callName)}"><button id="call-function-picker" data-action="pickCallGraphFunction" aria-label="Choose function: ${escapeHtml(options.callName)}" title="${escapeHtml(options.callName)} · Choose function">${callIcon('function')}<span class="call-function-name">${escapeHtml(options.callName)}</span>${callIcon('down')}</button></h1><div class="call-search" hidden><input id="search" class="search" aria-label="Find functions" placeholder="Find functions…"></div><div class="call-view-switch" role="group" aria-label="Call graph presentation"><button id="call-view-graph" data-call-view="graph" aria-label="Graph view" title="Graph view" aria-pressed="${options.callView !== 'columns'}">${callIcon('graph')}<span>Graph</span></button><button id="call-view-columns" data-call-view="columns" aria-label="Column view" title="Column view" aria-pressed="${options.callView === 'columns'}">${callIcon('columns')}<span>Columns</span></button></div><button id="call-search-toggle" class="call-icon-button" aria-label="Find functions" aria-expanded="false" title="Find functions (/)">${icon('ea6d')}</button>${options.callView !== 'columns' ? `<button id="graph-fit" class="call-icon-button" aria-label="Fit graph" title="Fit the entire graph (0)">${callIcon('fit')}</button>` : ''}<details id="call-menu"><summary aria-label="Graph options" title="Graph options">${icon('ea7c')}</summary><div class="call-menu-content">${options.callTools || ''}</div></details></div>${options.callView !== 'columns' ? `<div class="call-zoom" role="group" aria-label="Zoom"><button id="graph-zoom-out" aria-label="Zoom out">${icon('eb3b')}</button><button id="graph-zoom" aria-label="Actual size" title="Actual size (100%)">100%</button><button id="graph-zoom-in" aria-label="Zoom in">${icon('ea60')}</button></div>` : ''}` : cfg ? controlFlowToolbar(options.title, options.subtitle, options.body.includes('data-control-flow')) : browserTools}
 
-    <p id="filter-status" role="status" aria-live="polite" hidden></p>${options.scope && !browser ? `<p class="scope">${escapeHtml(options.scope)}</p>` : ''}${options.body}${browser ? '<div class="no-results" hidden><span>No matching rows.</span><button type="button" id="clear-filter" class="icon-button" aria-label="Clear filter" title="Clear filter">' + callIcon('close') + '</button></div>' : ''}${options.next || options.previous ? `<div class="pagination"><button class="icon-button" data-action="previous" aria-label="Previous page" title="Previous page" ${!options.previous ? 'disabled' : ''}>${callIcon('left')}</button><button class="icon-button" data-action="next" aria-label="Next page" title="Next page" ${!options.next ? 'disabled' : ''}>${callIcon('right')}</button></div>` : ''}</main><script nonce="${nonce}">
+    ${browserLiveRegions}${options.scope && !browser ? `<p class="scope">${escapeHtml(options.scope)}</p>` : ''}${options.body}${browser ? '<div class="no-results" hidden><span>No matching rows.</span><button type="button" id="clear-filter" class="icon-button" aria-label="Clear filter" title="Clear filter">' + callIcon('close') + '</button></div>' : ''}${options.next || options.previous ? `<div class="pagination"><button class="icon-button" data-action="previous" aria-label="Previous page" title="Previous page" ${!options.previous ? 'disabled' : ''}>${callIcon('left')}</button><button class="icon-button" data-action="next" aria-label="Next page" title="Next page" ${!options.next ? 'disabled' : ''}>${callIcon('right')}</button></div>` : ''}</main><script nonce="${nonce}">
     const vscode=acquireVsCodeApi();const previous=vscode.getState()||{};const state=${JSON.stringify(options.state ?? {}).replace(/</g, '\\u003c')};
+    ${browserStateScript}
     const samePage=previous.md5===state.md5&&previous.kind===state.kind&&previous.address===state.address${flow ? '&&previous.entry===state.entry' : ''};
     let selected=samePage?previous.selected||state.selected||'':state.selected||'';let entry=samePage?previous.selectedEntry||'':state.selectedEntry||'';
     let selectedKind=samePage?previous.selectedKind||'':'';let selectedLabel=samePage?previous.selectedLabel||'':'';let primaryAction='decompile';
@@ -111,7 +116,8 @@ export function page(options: PageOptions): string {
     const pageOptions=document.getElementById('page-options');document.addEventListener('click',event=>{if(pageOptions&&(!pageOptions.contains(event.target)||event.target.closest('button'))){pageOptions.open=false}});document.addEventListener('keydown',event=>{if(event.key==='Escape'&&pageOptions?.open){pageOptions.open=false;pageOptions.querySelector('summary').focus()}});
     const target=()=>{
       const fn=entry||(!selected?state.entry||'':'');const address=selected||state.address||fn||'';
-      const row=selectable.find(item=>address&&item.dataset.address===address&&(!fn||item.dataset.entry===fn));
+      const currentRow=document.querySelector('table:not([role="grid"]) tr[aria-current="true"],.graph-node.selected');
+      const row=(currentRow&&(!address||sameAddr(currentRow.dataset.address,address))&&(!fn||sameAddr(currentRow.dataset.entry,fn))?currentRow:undefined)||selectable.find(item=>address&&sameAddr(item.dataset.address,address)&&(!fn||sameAddr(item.dataset.entry,fn)));
       return {address,entry:fn,kind:row?.dataset.kind||selectedKind||(fn?'function':state.kind==='memory'?'bytes':'address'),label:row?.dataset.label||selectedLabel||''};
     };
     const send=(action,extra={})=>vscode.postMessage({action,...target(),...extra});
@@ -119,7 +125,7 @@ export function page(options: PageOptions): string {
     const selectionTools=()=>{
       if(state.kind==='callGraph'){primaryAction='decompile';const focus=document.getElementById('call-focus');if(focus){const fn=target().entry;focus.disabled=!fn||fn===state.entry;focus.hidden=focus.disabled}return}
       const label=document.getElementById('selection-label');if(!label){return}
-      const activeRow=selectable.find(row=>selected?row.dataset.address===selected:entry&&row.dataset.entry===entry);
+      const activeRow=document.querySelector('table:not([role="grid"]) tr[aria-current="true"],.graph-node.selected')||selectable.find(row=>selected?sameAddr(row.dataset.address,selected):entry&&sameAddr(row.dataset.entry,entry));
       const visibleSelection=!!activeRow&&!activeRow.hidden&&!activeRow.closest('details:not([open])');
       label.closest('.selection-tools').hidden=!visibleSelection;document.body.classList.toggle('has-selection',visibleSelection);
       const current=target();const at=current.address;const fn=current.entry;const kind=current.kind;
@@ -152,15 +158,18 @@ export function page(options: PageOptions): string {
     document.addEventListener('click',event=>{const button=event.target.closest('button[data-action]');if(button&&!button.disabled){send(button.dataset.action);if(more){const returnFocus=more.open&&more.contains(button);more.open=false;if(returnFocus){moreSummary.focus({preventScroll:true})}}}else if(more&&!more.contains(event.target)){more.open=false}});
     document.addEventListener('keydown',event=>{if(event.key==='Escape'&&more?.open){event.preventDefault();more.open=false;moreSummary.focus()}});
     document.getElementById('goto')?.addEventListener('submit',event=>{event.preventDefault();send('goto',{address:document.getElementById('address').value})});
+    const matchesInitial=row=>(selected&&sameAddr(row.dataset.address,selected))||(!selected&&entry&&sameAddr(row.dataset.entry,entry));
+    const initialItem=(selectedLabel&&selectable.find(row=>matchesInitial(row)&&row.dataset.label===selectedLabel))||selectable.find(matchesInitial);
+    if(initialItem){if(initialItem.tagName==='TR'){setCurrentRow(initialItem)}else{setCurrentRow(null);initialItem.classList.add('selected')}}else{setCurrentRow(null)}
+    selectionTools();
     selectable.forEach(row=>{
-      if((selected&&row.dataset.address===selected)||(!selected&&entry&&row.dataset.entry===entry)){row.classList.add('selected')}
-      const pick=(notify=true)=>{document.querySelectorAll('.selected').forEach(item=>item.classList.remove('selected'));row.classList.add('selected');selected=row.dataset.address||'';entry=row.dataset.entry||'';selectedKind=row.dataset.kind||'';selectedLabel=row.dataset.label||'';graphViewport?.select([row],false);selectionTools();persist();if(notify){send('select')}};
-      row.addEventListener('click',event=>{if(!event.target.closest('.call-node-controls,.cfg-node-controls')){pick()}});row.addEventListener('dblclick',event=>{if(event.target.closest('.call-node-controls,.cfg-node-controls')){return}pick(false);if(primaryAction){send(state.kind==='callGraph'?'focusCallGraph':primaryAction)}});row.addEventListener('keydown',event=>{if(event.target.closest('.call-node-controls,.cfg-node-controls')){return}if(event.key==='Enter'){event.preventDefault();pick();if(primaryAction){send(state.kind==='callGraph'?'focusCallGraph':primaryAction)}}else if(event.key===' '){event.preventDefault();pick()}});
+      const pick=(notify=true)=>{document.querySelectorAll('.graph-node.selected').forEach(item=>item.classList.remove('selected'));if(row.tagName==='TR'){setCurrentRow(row)}else{setCurrentRow(null);row.classList.add('selected')}selected=row.dataset.address||'';entry=row.dataset.entry||'';selectedKind=row.dataset.kind||'';selectedLabel=row.dataset.label||'';graphViewport?.select([row],false);selectionTools();persist();if(notify){send('select')}};
+      row.addEventListener('click',event=>{if(!event.target.closest('.call-node-controls,.cfg-node-controls,button')){pick()}});row.addEventListener('dblclick',event=>{if(event.target.closest('.call-node-controls,.cfg-node-controls,button')){return}pick(false);if(primaryAction){send(state.kind==='callGraph'?'focusCallGraph':primaryAction)}});row.addEventListener('keydown',event=>{if(event.target.closest('.call-node-controls,.cfg-node-controls,button')){return}if(event.key==='Enter'){event.preventDefault();pick();if(primaryAction){send(state.kind==='callGraph'?'focusCallGraph':primaryAction)}}else if(event.key===' '){event.preventDefault();pick()}});
     });
     const filter=()=>{
       if(document.querySelector('[data-call-columns]')){return}
-      const query=search.value.toLowerCase(),rows=[...document.querySelectorAll('tbody tr')],browserPage=document.body.classList.contains('browser-page');let visible=0,total=0;
-      for(const row of rows){row.hidden=!row.textContent.toLowerCase().includes(query);if(!browserPage||!row.closest('details:not([open])')){total++;if(!row.hidden){visible++}}}
+      const query=search.value.trim().toLowerCase(),rows=[...document.querySelectorAll('tbody tr')],browserPage=document.body.classList.contains('browser-page');let visible=0,total=0;
+      for(const row of rows){row.hidden=!!query&&!row.textContent.toLowerCase().includes(query);if(!browserPage||!row.closest('details:not([open])')){total++;if(!row.hidden){visible++}}}
       const nodes=[...document.querySelectorAll('.graph-node')];let matched=0;
       for(const node of nodes){const match=!!query&&(node.textContent.toLowerCase().includes(query)||(node.dataset.address||'').toLowerCase().includes(query));node.classList.toggle('search-match',match);node.classList.toggle('search-muted',!!query&&!match);if(match){matched++}}
       if(browserPage){
@@ -171,14 +180,22 @@ export function page(options: PageOptions): string {
         }
         selectionTools();for(const message of document.querySelectorAll('.table-empty,.empty'))message.hidden=!!query;
       }
-      const status=document.getElementById('filter-status'),empty=document.querySelector('.no-results');
+      const empty=document.querySelector('.no-results');
       const collapsedMatches=browserPage&&!!query&&rows.some(row=>!row.hidden&&row.closest('.memory-map:not([open])'));
-      if(empty){empty.hidden=!query||visible>0;empty.querySelector('span').textContent=collapsedMatches?'Matches in collapsed memory map.':'No matching rows.'}status.hidden=!query;status.classList.toggle('sr-filter-status',!!empty&&!!query&&!visible);
-      status.textContent=nodes.length?matched+' of '+nodes.length+' nodes match'+(total?'; '+visible+' of '+total+' rows match.':'.'):visible?visible+' of '+total+' displayed rows match.':collapsedMatches?'Matches in collapsed memory map.':'No displayed rows match this filter.';
+      if(empty){empty.hidden=!query||visible>0;empty.querySelector('span').textContent=collapsedMatches?'Matches in collapsed memory map.':'No matching rows.'}
+      updateFilterStatus({
+        query,
+        visible:nodes.length?matched+visible:visible,
+        total,
+        visuallyHidden:empty?visible===0:false,
+        matchText:nodes.length?matched+' of '+nodes.length+' nodes match'+(total?'; '+visible+' of '+total+' rows match.':'.'):undefined,
+        emptyText:nodes.length?'0 of '+nodes.length+' nodes match'+(total?'; 0 of '+total+' rows match.':'.'):collapsedMatches?'Matches in collapsed memory map.':'No displayed rows match this filter.',
+        restoredText:nodes.length?'Filter cleared. Showing all '+nodes.length+' nodes.':undefined
+      });
     };
     search.addEventListener('input',()=>{filter();persist()});memoryMap?.addEventListener('toggle',filter);addressInput?.addEventListener('input',persist);filter();
     window.addEventListener('scroll',schedulePersist,{passive:true});document.addEventListener('focusin',persist);
-    window.addEventListener('message',event=>{if(event.data.action==='highlight'){document.querySelectorAll('.selected').forEach(item=>item.classList.remove('selected'));const addresses=event.data.addresses||[event.data.address];const rows=selectable.filter(item=>addresses.includes(item.dataset.address));rows.forEach(row=>row.classList.add('selected'));graphViewport?.select(rows,true);const row=rows[0];if(row){if(!graphViewport){row.scrollIntoView({block:'nearest'})}selected=row.dataset.address||'';entry=row.dataset.entry||'';selectedKind=row.dataset.kind||'';selectedLabel=row.dataset.label||'';selectionTools();persist()}}});
+    window.addEventListener('message',event=>{if(event.data.action==='highlight'){document.querySelectorAll('.graph-node.selected').forEach(item=>item.classList.remove('selected'));const addresses=(event.data.addresses||[event.data.address]).filter(Boolean);const rows=selectable.filter(item=>addresses.some(addr=>sameAddr(item.dataset.address,addr)));const firstTr=rows.find(item=>item.tagName==='TR');setCurrentRow(firstTr||null);rows.filter(item=>item.tagName!=='TR').forEach(node=>node.classList.add('selected'));graphViewport?.select(rows,true);const row=firstTr||rows[0];if(row){if(!graphViewport){row.scrollIntoView({block:'nearest'})}selected=row.dataset.address||'';entry=row.dataset.entry||'';selectedKind=row.dataset.kind||'';selectedLabel=row.dataset.label||'';selectionTools();persist()}}});
     ${browser ? browserViewScript : ''}
     ${options.callGraph ? callViewScript + callGraphScript + callColumnsScript : cfg ? controlFlowUiScript : ''}
     requestAnimationFrame(()=>{if(state.analysisUri){send('ready')}if(samePage){[...document.querySelectorAll('.table-wrap')].forEach((table,index)=>{table.scrollTop=previous.tableScroll?.[index]?.top||0;table.scrollLeft=previous.tableScroll?.[index]?.left||0});window.scrollTo(previous.scrollX||0,previous.scrollY||0);if(previous.focusId){document.getElementById(previous.focusId)?.focus({preventScroll:true})}}persist();document.body.dataset.viewReady='true'});

@@ -295,13 +295,104 @@ export const viewStyles = `
 @media(prefers-reduced-motion:reduce){.inspector-page.is-busy::before{width:100%;opacity:.6;animation:none}}
 `;
 
+/** Persistent polite live regions for filter results and action confirmations. */
+export const browserLiveRegions = '<p id="filter-status" class="sr-filter-status" role="status" aria-live="polite"></p><p id="action-status" class="sr-status" role="status" aria-live="polite"></p>';
+
+/** Shared client-side helpers for table selection state, keyboard row movement, and polite live status updates. */
+export const browserStateScript = String.raw`
+    const normAddr=raw=>{const m=/^(?:([A-Za-z_][A-Za-z0-9_.-]*):)?(?:0x)?([0-9a-f]+)$/i.exec(String(raw||'').trim());return m?((m[1]||'ram').toLowerCase()+':'+BigInt('0x'+m[2]).toString(16)):String(raw||'').trim().toLowerCase()};
+    const sameAddr=(left,right)=>Boolean(left&&right&&normAddr(left)===normAddr(right));
+    const setCurrentRow=(activeRow,root=document)=>{
+      for(const row of root.querySelectorAll('table:not([role="grid"]) tr.selected,table:not([role="grid"]) tr[aria-current]')){
+        if(row!==activeRow){row.classList.remove('selected');row.removeAttribute('aria-current')}
+      }
+      if(activeRow&&activeRow.tagName==='TR'&&!activeRow.closest('table[role="grid"]')){
+        activeRow.classList.add('selected');activeRow.setAttribute('aria-current','true');
+      }
+    };
+    const syncHexGridSelection=(gridBody,matchAddress)=>{
+      let firstRow=null;if(!gridBody){return null}
+      for(const row of gridBody.querySelectorAll('tr.hex-row')){
+        let rowSelected=false;
+        for(const cell of row.querySelectorAll('.hb[role="gridcell"]')){
+          const active=Boolean(cell.dataset.address&&matchAddress(cell.dataset.address));
+          cell.classList.toggle('is-selected',active);cell.setAttribute('aria-selected',active?'true':'false');
+          if(active){rowSelected=true}
+        }
+        for(const ascii of row.querySelectorAll('.ha[data-address]')){
+          ascii.classList.toggle('is-selected',Boolean(ascii.dataset.address&&matchAddress(ascii.dataset.address)));
+        }
+        row.classList.toggle('selected',rowSelected);row.setAttribute('aria-selected',rowSelected?'true':'false');
+        if(rowSelected&&!firstRow){firstRow=row}
+      }
+      return firstRow;
+    };
+    const stepRowFocus=(rows,currentRow,key)=>{
+      if(!rows.length||!['ArrowDown','ArrowUp','Home','End'].includes(key)){return null}
+      const index=rows.indexOf(currentRow);
+      const next=key==='Home'?0:key==='End'?rows.length-1:index<0?0:Math.max(0,Math.min(rows.length-1,index+(key==='ArrowDown'?1:-1)));
+      const target=rows[next];
+      if(target){target.focus();target.scrollIntoView({block:'nearest'})}
+      return target||null;
+    };
+    const bindMoreMenu=(menu,summary)=>{
+      if(!menu||!summary){return}
+      menu.addEventListener('keydown',event=>{
+        if(event.key==='Escape'){event.preventDefault();menu.open=false;summary.focus();return}
+        if(!['ArrowDown','ArrowUp','ArrowLeft','ArrowRight','Home','End'].includes(event.key)){return}
+        event.preventDefault();menu.open=true;
+        const buttons=[...menu.querySelectorAll('button:not(:disabled)')];if(!buttons.length){return}
+        const index=buttons.indexOf(document.activeElement);
+        const next=event.key==='Home'?0:event.key==='End'?buttons.length-1:(event.key==='ArrowDown'||event.key==='ArrowRight')?(index+1)%buttons.length:(index<=0?buttons.length-1:index-1);
+        buttons[next]?.focus();
+      });
+    };
+    let filterWasActive=false;
+    const updateFilterStatus=({query,visible,total,matchText,emptyText='No displayed rows match this filter.',restoredText,visuallyHidden})=>{
+      const status=document.getElementById('filter-status');if(!status){return}
+      status.removeAttribute('hidden');
+      const hasQuery=Boolean(query);
+      if(!hasQuery){
+        status.classList.add('sr-filter-status');
+        if(filterWasActive){
+          filterWasActive=false;
+          status.textContent=restoredText??(total===0?'Filter cleared. No displayed rows.':total===1?'Filter cleared. Showing 1 displayed row.':'Filter cleared. Showing all '+total+' displayed rows.');
+        }else{
+          status.textContent='';
+        }
+        return;
+      }
+      filterWasActive=true;
+      const hideVisually=visuallyHidden!==undefined?Boolean(visuallyHidden):visible===0;
+      status.classList.toggle('sr-filter-status',hideVisually);
+      status.textContent=visible>0?(matchText??(visible+' of '+total+' displayed rows match.')):emptyText;
+    };
+    let actionStatusFrame=0,actionStatusNextFrame=0;
+    const announceActionStatus=text=>{
+      const status=document.getElementById('action-status');if(!status){return}
+      status.removeAttribute('hidden');
+      if(actionStatusFrame){cancelAnimationFrame(actionStatusFrame);actionStatusFrame=0}
+      if(actionStatusNextFrame){cancelAnimationFrame(actionStatusNextFrame);actionStatusNextFrame=0}
+      const hadText=Boolean(status.textContent);
+      status.textContent='';
+      if(!text){return}
+      actionStatusFrame=requestAnimationFrame(()=>{
+        actionStatusFrame=0;
+        if(hadText){actionStatusNextFrame=requestAnimationFrame(()=>{actionStatusNextFrame=0;status.textContent=String(text)})}
+        else{status.textContent=String(text)}
+      });
+    };
+    window.addEventListener('message',event=>{if(event.data?.action==='actionStatus'){announceActionStatus(event.data.message||'')}});
+`;
+
 /** Client-side script for filterable browser tables and keyboard row navigation. */
 export const browserViewScript = String.raw`
     (()=>{
       if(!document.body.classList.contains('browser-page')){return}
-      for(const table of document.querySelectorAll('.table-wrap')){table.addEventListener('scroll',schedulePersist,{passive:true});if(!table.querySelector('tbody tr')){table.hidden=true;const next=table.nextElementSibling;const counted=/\(0\)\s*$/.test(table.closest('section')?.querySelector('h2')?.textContent||'');if(!counted&&!next?.classList.contains('empty')){const empty=document.createElement('p');empty.className='table-empty';empty.hidden=!!search.value;empty.setAttribute('role','status');empty.textContent='No entries.';table.after(empty)}}}
+      for(const table of document.querySelectorAll('.table-wrap')){table.addEventListener('scroll',schedulePersist,{passive:true});if(!table.querySelector('tbody tr')){table.hidden=true;const next=table.nextElementSibling;const counted=/\(0\)\s*$/.test(table.closest('section')?.querySelector('h2')?.textContent||'');if(!counted&&!next?.classList.contains('empty')){const empty=document.createElement('p');empty.className='table-empty';empty.hidden=!!search.value.trim();empty.textContent='No entries.';table.after(empty)}}}
       document.getElementById('clear-filter').addEventListener('click',()=>{search.value='';filter();persist();search.focus()});
-      for(const row of selectable){row.addEventListener('keydown',event=>{if(!['ArrowDown','ArrowUp','Home','End'].includes(event.key)){return}const rows=[...row.closest('tbody').querySelectorAll('tr[data-address]:not([hidden]),tr[data-entry]:not([hidden])')],index=rows.indexOf(row),next=event.key==='Home'?0:event.key==='End'?rows.length-1:Math.max(0,Math.min(rows.length-1,index+(event.key==='ArrowDown'?1:-1)));event.preventDefault();rows[next]?.focus();rows[next]?.scrollIntoView({block:'nearest'})})}
-      more?.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();more.open=false;moreSummary.focus();return}if(!['ArrowDown','ArrowUp','ArrowLeft','ArrowRight','Home','End'].includes(event.key)){return}event.preventDefault();more.open=true;const buttons=[...more.querySelectorAll('button:not(:disabled)')],index=buttons.indexOf(document.activeElement),next=event.key==='Home'?0:event.key==='End'?buttons.length-1:(event.key==='ArrowDown'||event.key==='ArrowRight')?(index+1)%buttons.length:(index<=0?buttons.length-1:index-1);buttons[next]?.focus()});
+      document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!pageOptions?.open&&!more?.open&&search.value){event.preventDefault();search.value='';filter();persist()}});
+      for(const row of selectable){row.addEventListener('keydown',event=>{if(event.target.closest('button')){return}const tbody=row.closest('tbody');if(!tbody||!['ArrowDown','ArrowUp','Home','End'].includes(event.key)){return}event.preventDefault();stepRowFocus([...tbody.querySelectorAll('tr[data-address]:not([hidden]),tr[data-entry]:not([hidden])')],row,event.key)})}
+      bindMoreMenu(more,moreSummary);
     })();
 `;

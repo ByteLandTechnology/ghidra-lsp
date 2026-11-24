@@ -557,6 +557,11 @@ export class ProgramViewsController {
         if (action === 'copyAddress' && address) {
             await vscode.env.clipboard.writeText(address);
             vscode.window.setStatusBarMessage(`Copied ${displayAddress(address)}`, 3000);
+            await state.panel.webview.postMessage({
+                action: 'actionStatus',
+                address,
+                message: `Copied ${displayAddress(address)} to clipboard.`,
+            });
             return true;
         }
         if (action === 'refresh') {

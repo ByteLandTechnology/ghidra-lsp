@@ -13,7 +13,7 @@ import { displayAddress } from './names';
 import { pageStyles } from './page-styles';
 import { addrSpan, programViewStyles } from './program-views-styles';
 import { highlightAsm, highlightName } from './syntax';
-import { viewStyles } from './view-ui';
+import { browserLiveRegions, browserStateScript, viewStyles } from './view-ui';
 import { escape } from './web';
 
 /** Full view-model payload used to render the graphical Program Listing HTML page. */
@@ -60,6 +60,7 @@ function linkifyInlineTargets(opHtml: string, targets: ListingTarget[]): string 
 /** Render HTML table rows for listing code units, headers, comments, and undefined runs. */
 export function renderListingRowsHtml(items: ListingRenderItem[], selectedAddress: string): string {
     const out: string[] = [];
+    let selectedMarked = false;
     const renderUnit = (unit: ListingUnit, hiddenRun = false): string => {
         const parts: string[] = [];
         if (unit.blockHeader) {
@@ -89,7 +90,10 @@ export function renderListingRowsHtml(items: ListingRenderItem[], selectedAddres
             parts.push(`<tr class="listing-aux-row listing-pre-row"${hiddenRun ? ' hidden' : ''}><td class="addr"></td><td colspan="4">; ${escape(unit.preComment)}</td></tr>`);
         }
 
-        const isSel = selectedAddress && unit.address.toLowerCase() === selectedAddress.toLowerCase();
+        const isSel = Boolean(!selectedMarked && selectedAddress && unit.address.toLowerCase() === selectedAddress.toLowerCase());
+        if (isSel) {
+            selectedMarked = true;
+        }
         const rawOpHtml = unit.kind === 'instruction'
             ? highlightAsm(unit.operandsText, 'span', false)
             : unit.typePath
@@ -101,7 +105,7 @@ export function renderListingRowsHtml(items: ListingRenderItem[], selectedAddres
             ? `<span class="target-chips">${visibleTargets.map(t => `<button type="button" class="target-link" data-jump="${escape(t.to)}" title="${escape(`Jump to ${t.to}${t.kind ? ` (${t.kind})` : ''}`)}">→ ${escape(t.label)}</button>`).join('')}</span>`
             : '';
         const eolHtml = unit.eolComment ? `; ${escape(unit.eolComment)}` : '';
-        parts.push(`<tr class="listing-unit-row${isSel ? ' selected' : ''}" tabindex="0" data-address="${escape(unit.address)}" data-byte-length="${unit.byteLength}" data-kind="${escape(unit.kind)}"${unit.entry ? ` data-entry="${escape(unit.entry)}"` : ''}${unit.functionName ? ` data-fn-name="${escape(unit.functionName)}"` : ''}${unit.targets[0]?.to ? ` data-jump-primary="${escape(unit.targets[0].to)}"` : ''}${hiddenRun ? ' data-run-member="true" hidden' : ''}><td class="addr">${addrSpan(unit.address)}</td><td class="col-bytes" title="${escape(unit.bytesText)}">${escape(unit.bytesShort)}</td><td class="col-mnemonic"><span class="tok-mnemonic">${escape(unit.mnemonic)}</span></td><td class="col-operands">${opHtml}${chipsHtml}</td><td class="col-comment">${eolHtml}</td></tr>`);
+        parts.push(`<tr class="listing-unit-row${isSel ? ' selected' : ''}"${isSel ? ' aria-current="true"' : ''} tabindex="0" data-address="${escape(unit.address)}" data-byte-length="${unit.byteLength}" data-kind="${escape(unit.kind)}"${unit.entry ? ` data-entry="${escape(unit.entry)}"` : ''}${unit.functionName ? ` data-fn-name="${escape(unit.functionName)}"` : ''}${unit.targets[0]?.to ? ` data-jump-primary="${escape(unit.targets[0].to)}"` : ''}${hiddenRun ? ' data-run-member="true" hidden' : ''}><td class="addr">${addrSpan(unit.address)}</td><td class="col-bytes" title="${escape(unit.bytesText)}">${escape(unit.bytesShort)}</td><td class="col-mnemonic"><span class="tok-mnemonic">${escape(unit.mnemonic)}</span></td><td class="col-operands">${opHtml}${chipsHtml}</td><td class="col-comment">${eolHtml}</td></tr>`);
 
         if (unit.postComment) {
             parts.push(`<tr class="listing-aux-row listing-post-row"${hiddenRun ? ' hidden' : ''}><td class="addr"></td><td colspan="4">; post: ${escape(unit.postComment)}</td></tr>`);
@@ -179,7 +183,7 @@ ${programViewStyles}
     </details>
   </div>
 </div>
-<p id="filter-status" role="status" aria-live="polite" hidden></p>
+${browserLiveRegions}
 <div class="table-wrap" id="listing-wrap">
   <table class="listing-table">
     <thead><tr><th scope="col">Address</th><th scope="col" class="col-bytes">Bytes</th><th scope="col" class="col-mnemonic">Mnemonic</th><th scope="col" class="col-operands">Operands</th><th scope="col" class="col-comment">Comments</th></tr></thead>
@@ -223,6 +227,8 @@ const scopeNote = document.getElementById('listing-scope-note');
 const more = document.getElementById('more-actions');
 const moreSummary = document.getElementById('more-summary');
 const icons = ${JSON.stringify(callIcons)};
+${browserStateScript}
+bindMoreMenu(more, moreSummary);
 
 if (samePage) {
   if (typeof previous.filter === 'string') search.value = previous.filter;
@@ -290,6 +296,7 @@ const updateSelectionTools = () => {
   primaryAction = canDecompile ? 'decompile' : 'memory';
   const main = items.filter(i => i.action === primaryAction);
   const extra = items.filter(i => i.action !== primaryAction);
+  const activeAction = document.activeElement?.dataset?.action;
   const hosts = [document.getElementById('selection-primary'), document.getElementById('selection-more')];
   for (const [idx, list] of [main, extra].entries()) {
     hosts[idx].replaceChildren(...list.map(item => {
@@ -309,12 +316,14 @@ const updateSelectionTools = () => {
     }));
   }
   more.hidden = !extra.length;
+  if (activeAction) {
+    document.getElementById('action-' + activeAction)?.focus({ preventScroll: true });
+  }
 };
 
 const selectRow = (row, notify = true, scroll = true) => {
   if (!row) return;
-  for (const r of tbody.querySelectorAll('tr.selected')) r.classList.remove('selected');
-  row.classList.add('selected');
+  setCurrentRow(row, tbody);
   selected = row.dataset.address || '';
   selectedEntry = row.dataset.entry || '';
   selectedKind = row.dataset.kind || 'instruction';
@@ -346,20 +355,15 @@ const applyFilter = () => {
     aux.hidden = !!q || (aux.classList.contains('listing-undef-run') && !optCollapse.checked);
   }
   const empty = document.querySelector('.no-results');
-  const status = document.getElementById('filter-status');
   const wrapTable = wrap.querySelector('table');
   if (wrapTable) wrapTable.hidden = !!q && visible === 0;
   empty.hidden = !q || visible > 0;
-  status.hidden = !q;
-  status.classList.toggle('sr-filter-status', !!q && visible === 0);
-  status.textContent = q ? (visible ? visible + ' of ' + rows.length + ' displayed rows match.' : 'No displayed rows match this filter.') : '';
+  updateFilterStatus({ query: q, visible, total: q ? rows.length : visible });
   updateSelectionTools();
 };
 
 const bindTableInteractions = () => {
-  for (const row of unitRows()) {
-    if (selected && row.dataset.address?.toLowerCase() === selected.toLowerCase()) row.classList.add('selected');
-  }
+  setCurrentRow(findUnitRow(selected) || null, tbody);
   applyViewClasses();
   applyFilter();
 };
@@ -395,16 +399,19 @@ tbody.addEventListener('dblclick', event => {
 });
 
 tbody.addEventListener('keydown', event => {
+  if (event.target.closest('button')) return;
   const row = event.target.closest('tr.listing-unit-row');
   if (!row) return;
-  const visible = unitRows().filter(r => !r.hidden);
-  const idx = visible.indexOf(row);
-  if (event.key === 'ArrowDown' && idx + 1 < visible.length) { event.preventDefault(); visible[idx + 1].focus(); selectRow(visible[idx + 1], true, true); }
-  else if (event.key === 'ArrowUp' && idx > 0) { event.preventDefault(); visible[idx - 1].focus(); selectRow(visible[idx - 1], true, true); }
-  else if (event.key === 'Home' && visible.length) { event.preventDefault(); visible[0].focus(); selectRow(visible[0], true, true); }
-  else if (event.key === 'End' && visible.length) { event.preventDefault(); visible[visible.length - 1].focus(); selectRow(visible[visible.length - 1], true, true); }
-  else if (event.key === 'Enter') {
+  if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
     event.preventDefault();
+    const next = stepRowFocus(unitRows().filter(r => !r.hidden), row, event.key);
+    if (next) selectRow(next, true, false);
+  } else if (event.key === ' ') {
+    event.preventDefault();
+    selectRow(row, true, false);
+  } else if (event.key === 'Enter') {
+    event.preventDefault();
+    if (!sameAddr(selected, row.dataset.address)) selectRow(row, false, false);
     const jump = row.dataset.jumpPrimary;
     if (jump) vscode.postMessage({ action: 'goto', address: jump });
     else if (primaryAction) vscode.postMessage({ action: primaryAction, address: selected, entry: selectedEntry, kind: selectedKind });
@@ -419,6 +426,8 @@ document.addEventListener('click', event => {
       vscode.postMessage({ action: act });
     } else if (act === 'copyAddress' && selected) {
       vscode.postMessage({ action: 'copyAddress', address: selected });
+      pageOptions.open = false;
+      return;
     } else if (selected) {
       vscode.postMessage({ action: act, address: selected, entry: selectedEntry, kind: selectedKind });
     }
