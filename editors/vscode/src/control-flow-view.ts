@@ -103,9 +103,13 @@ export class ControlFlowView implements vscode.CustomTextEditorProvider, vscode.
     private render(state: GraphState, panel: vscode.WebviewPanel): void {
         this.context.track(state.uri.authority);
         panel.title = this.title(state);
+        const selected = state.data.blocks.find(block => block.instructions.some(instruction => {
+            const range = addressRange(instruction.address, instruction.length);
+            return range && state.addresses.some(address => intersects(range, address));
+        }))?.address;
         panel.webview.html = page({ title: 'Control Flow', subtitle: `${state.data.name} · ${this.context.name(state.uri.authority)}`,
             body: state.data.body, scope: state.data.scope, graph: true, controlFlow: true,
-            state: { kind: 'controlFlow', md5: state.uri.authority, entry: state.entry, analysisUri: state.uri.toString() } });
+            state: { kind: 'controlFlow', md5: state.uri.authority, entry: state.entry, analysisUri: state.uri.toString(), ...(selected ? { selected } : {}) } });
     }
     /** Handle selection, refresh, and decompile messages posted by the CFG webview. */
     private async message(state: GraphState, panel: vscode.WebviewPanel, message: { action?: string; address?: string }): Promise<void> {

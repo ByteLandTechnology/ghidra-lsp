@@ -8,7 +8,7 @@ import { iconFontStyles } from './icon-font';
 import { escape as escapeHtml } from './web';
 import { browserViewScript, viewStyles } from './view-ui';
 import { controlFlowStyles, controlFlowScript } from './control-flow-canvas';
-import { controlFlowToolbar, controlFlowUiStyles, controlFlowUiScript } from './control-flow-ui';
+import { controlFlowToolbar, controlFlowZoom, controlFlowUiStyles, controlFlowUiScript } from './control-flow-ui';
 import { callIcon, callIcons } from './call-graph-icons';
 import { callGraphStyles, callGraphScript } from './call-graph-canvas';
 import { callColumnsStyles, callColumnsScript, callViewScript } from './call-columns-canvas';
@@ -34,7 +34,7 @@ const addressCell = (cell: unknown): string => {
     return shown === full ? escapeHtml(full) : `<span title="${escapeHtml(full)}">${escapeHtml(shown)}</span>`;
 };
 /** Render an interactive data table for a workbench browser panel. */
-export const table = (headers: string[], rows: Row[]): string => `<div class="table-wrap"><table><thead><tr>${headers.map(h => `<th scope="col">${escapeHtml(h)}</th>`).join('')}</tr></thead><tbody>${rows.map(row => `<tr${targetAttributes(row)}${row.address || row.entry ? ' tabindex="0"' : ''}>${row.cells.map((cell, index) => `<td${addrHeaders.has(headers[index]) ? ' class="addr"' : ''}>${row.detail && index === row.cells.length - 1 ? `<span class="cell-main">${escapeHtml(cell)}</span><span class="cell-detail">${escapeHtml(row.detail)}</span>` : addressCell(cell)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+export const table = (headers: string[], rows: Row[]): string => `<div class="table-wrap"><table><thead><tr>${headers.map(h => `<th scope="col">${escapeHtml(h)}</th>`).join('')}</tr></thead><tbody>${rows.map(row => `<tr${targetAttributes(row)}${row.address || row.entry ? ' tabindex="-1"' : ''}>${row.cells.map((cell, index) => `<td${addrHeaders.has(headers[index]) ? ' class="addr"' : ''}>${row.detail && index === row.cells.length - 1 ? `<span class="cell-main">${escapeHtml(cell)}</span><span class="cell-detail">${escapeHtml(row.detail)}</span>` : addressCell(cell)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
 /** Configuration options for rendering a workbench webview page. */
 export interface PageOptions { title: string; subtitle: string; body: string; address?: string; next?: boolean; previous?: boolean; scope?: string; scopeSummary?: string; actions?: boolean; graph?: boolean; controlFlow?: boolean; callGraph?: boolean; viewKind?: string; callView?: 'graph' | 'columns'; callTools?: string; callName?: string; callBack?: boolean; state?: unknown }
 /** Render one Codicon glyph from a hexadecimal code point string. */
@@ -45,7 +45,7 @@ export function page(options: PageOptions): string {
     const flow = options.controlFlow || options.callGraph;
     const cfg = options.controlFlow && !options.callGraph;
     const browser = !flow;
-    const browserTools = browser ? `<h1 class="page-context">${escapeHtml(options.title)}</h1>${['callers', 'callees'].includes(options.viewKind || '') ? `<p class="scope">${escapeHtml(options.subtitle)}</p>` : ''}<div class="toolbar" role="group" aria-label="Page tools">${options.address !== undefined ? `<form id="goto"><input id="address" aria-label="Address" value="${escapeHtml(displayAddress(options.address ?? ''))}" placeholder="Go to address…"><button type="submit" aria-label="Go to address" title="Go to address">${callIcon('right')}</button></form>` : ''}<div class="browser-search">${callIcon('search')}<input class="search" id="search" aria-label="Filter displayed rows" placeholder="Filter rows…"></div><details id="page-options" class="page-options"><summary aria-label="View options" title="View options">${callIcon('more')}</summary><div class="page-options-content"><div class="page-options-actions" role="group" aria-label="Page actions"><button class="icon-button" data-action="refresh" aria-label="Refresh" title="Refresh">${callIcon('refresh')}</button></div>${options.viewKind === 'listing' ? '<label><input id="listing-details" type="checkbox">Show bytes and kind</label>' : ''}${['strings', 'references', 'callers', 'callees', 'imports', 'exports'].includes(options.viewKind || '') ? '<label><input id="extra-columns" type="checkbox">Show details</label>' : ''}${options.scope ? `<p>${escapeHtml(options.subtitle)}</p><p>${escapeHtml(options.scope)}</p>` : ''}</div></details></div>${options.actions ? `<div class="toolbar selection-tools" role="group" aria-label="Selected item actions" aria-describedby="selection-label" hidden><span id="selection-label"></span><div id="selection-primary" class="selection-buttons"></div><details id="more-actions" class="more-actions" hidden><summary id="more-summary" aria-label="More actions" title="More actions">${callIcon('more')}</summary><div id="selection-more" class="selection-buttons" role="group" aria-label="Additional actions"></div></details></div>` : ''}` : '';
+    const browserTools = browser ? `<h1 class="page-context">${escapeHtml(options.title)}</h1>${['callers', 'callees'].includes(options.viewKind || '') ? `<p class="scope">${escapeHtml(options.subtitle)}</p>` : ''}<div class="toolbar" role="group" aria-label="Page tools">${options.address !== undefined ? `<form id="goto"><input id="address" aria-label="Address" value="${escapeHtml(displayAddress(options.address ?? ''))}" placeholder="Go to address…"><button type="submit" aria-label="Go to address" title="Go to address">${callIcon('right')}</button></form>` : ''}<div class="browser-search">${callIcon('search')}<input class="search" id="search" aria-label="Filter displayed rows" placeholder="Filter rows…"></div><details id="page-options" class="page-options"><summary id="page-options-summary" aria-label="View options" title="View options">${callIcon('more')}</summary><div class="page-options-content"><div class="page-options-actions" role="group" aria-label="Page actions"><button id="page-refresh" class="icon-button" data-action="refresh" aria-label="Refresh" title="Refresh">${callIcon('refresh')}</button></div>${options.viewKind === 'listing' ? '<label><input id="listing-details" type="checkbox">Show bytes and kind</label>' : ''}${['strings', 'references', 'callers', 'callees', 'imports', 'exports'].includes(options.viewKind || '') ? '<label><input id="extra-columns" type="checkbox">Show details</label>' : ''}${options.scope ? `<p>${escapeHtml(options.subtitle)}</p><p>${escapeHtml(options.scope)}</p>` : ''}</div></details></div>${options.actions ? `<div class="toolbar selection-tools" role="group" aria-label="Selected item actions" aria-describedby="selection-label" hidden><span id="selection-label"></span><div id="selection-primary" class="selection-buttons"></div><details id="more-actions" class="more-actions" hidden><summary id="more-summary" aria-label="More actions" title="More actions">${callIcon('more')}</summary><div id="selection-more" class="selection-buttons" role="group" aria-label="Additional actions"></div></details></div>` : ''}` : '';
     return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; font-src data:; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}';"><title>${escapeHtml(options.title)}</title><style nonce="${nonce}">
     ${pageStyles}
     main{max-width:1450px}
@@ -87,28 +87,72 @@ export function page(options: PageOptions): string {
     ${iconFontStyles}
     ${options.callGraph ? callGraphStyles + callColumnsStyles : ''}
     ${browser ? viewStyles : ''}
-    </style></head><body${flow ? ` class="flow-page${options.callGraph ? ' call-page' : cfg ? ' cfg-page' : ''}"` : ' class="browser-page"'} data-view-kind="${escapeHtml(options.viewKind || '')}"><main>${options.callGraph ? `<div class="call-topbar" role="group" aria-label="Call graph tools"><button class="call-icon-button" data-action="callGraphBack" aria-label="Back" title="Back" ${options.callBack ? '' : 'disabled'}>${icon('ea9b')}</button><h1 class="call-function-title" title="${escapeHtml(options.callName)}"><button id="call-function-picker" data-action="pickCallGraphFunction" aria-label="Choose function: ${escapeHtml(options.callName)}" title="${escapeHtml(options.callName)} · Choose function">${callIcon('function')}<span class="call-function-name">${escapeHtml(options.callName)}</span>${callIcon('down')}</button></h1><div class="call-search" hidden><input id="search" class="search" aria-label="Find functions" placeholder="Find functions…"></div><div class="call-view-switch" role="group" aria-label="Call graph presentation"><button id="call-view-graph" data-call-view="graph" aria-label="Graph view" title="Graph view" aria-pressed="${options.callView !== 'columns'}">${callIcon('graph')}<span>Graph</span></button><button id="call-view-columns" data-call-view="columns" aria-label="Column view" title="Column view" aria-pressed="${options.callView === 'columns'}">${callIcon('columns')}<span>Columns</span></button></div><button id="call-search-toggle" class="call-icon-button" aria-label="Find functions" aria-expanded="false" title="Find functions (/)">${icon('ea6d')}</button>${options.callView !== 'columns' ? `<button id="graph-fit" class="call-icon-button" aria-label="Fit graph" title="Fit the entire graph (0)">${callIcon('fit')}</button>` : ''}<details id="call-menu"><summary aria-label="Graph options" title="Graph options">${icon('ea7c')}</summary><div class="call-menu-content">${options.callTools || ''}</div></details></div>${options.callView !== 'columns' ? `<div class="call-zoom" role="group" aria-label="Zoom"><button id="graph-zoom-out" aria-label="Zoom out">${icon('eb3b')}</button><button id="graph-zoom" aria-label="Actual size" title="Actual size (100%)">100%</button><button id="graph-zoom-in" aria-label="Zoom in">${icon('ea60')}</button></div>` : ''}` : cfg ? controlFlowToolbar(options.title, options.subtitle, options.body.includes('data-control-flow')) : browserTools}
+    </style></head><body${flow ? ` class="flow-page${options.callGraph ? ' call-page' : cfg ? ' cfg-page' : ''}"` : ' class="browser-page"'} data-view-kind="${escapeHtml(options.viewKind || '')}"><main>${options.callGraph ? `<div class="call-topbar" role="group" aria-label="Call graph tools"><button id="call-back" class="call-icon-button" data-action="callGraphBack" aria-label="Back" title="Back" ${options.callBack ? '' : 'disabled'}>${icon('ea9b')}</button><h1 class="call-function-title" title="${escapeHtml(options.callName)}"><button id="call-function-picker" data-action="pickCallGraphFunction" aria-label="Choose function: ${escapeHtml(options.callName)}" title="${escapeHtml(options.callName)} · Choose function">${callIcon('function')}<span class="call-function-name">${escapeHtml(options.callName)}</span>${callIcon('down')}</button></h1><div class="call-search" hidden><input id="search" class="search" aria-label="Find functions" placeholder="Find functions…"></div><div class="call-view-switch" role="group" aria-label="Call graph presentation"><button id="call-view-graph" data-call-view="graph" aria-label="Graph view" title="Graph view" aria-pressed="${options.callView !== 'columns'}">${callIcon('graph')}<span>Graph</span></button><button id="call-view-columns" data-call-view="columns" aria-label="Column view" title="Column view" aria-pressed="${options.callView === 'columns'}">${callIcon('columns')}<span>Columns</span></button></div><button id="call-search-toggle" class="call-icon-button" aria-label="Find functions" aria-expanded="false" title="Find functions (/)">${icon('ea6d')}</button>${options.callView !== 'columns' ? `<button id="graph-fit" class="call-icon-button" aria-label="Fit graph" title="Fit the entire graph (0)">${callIcon('fit')}</button>` : ''}<details id="call-menu"><summary id="call-menu-summary" aria-label="Graph options" title="Graph options">${icon('ea7c')}</summary><div class="call-menu-content">${options.callTools || ''}</div></details></div>` : cfg ? controlFlowToolbar(options.title, options.subtitle, options.body.includes('data-control-flow')) : browserTools}
 
-    <p id="filter-status" role="status" aria-live="polite" hidden></p>${options.scope && !browser ? `<p class="scope">${escapeHtml(options.scope)}</p>` : ''}${options.body}${browser ? '<div class="no-results" hidden><span>No matching rows.</span><button type="button" id="clear-filter" class="icon-button" aria-label="Clear filter" title="Clear filter">' + callIcon('close') + '</button></div>' : ''}${options.next || options.previous ? `<div class="pagination"><button class="icon-button" data-action="previous" aria-label="Previous page" title="Previous page" ${!options.previous ? 'disabled' : ''}>${callIcon('left')}</button><button class="icon-button" data-action="next" aria-label="Next page" title="Next page" ${!options.next ? 'disabled' : ''}>${callIcon('right')}</button></div>` : ''}</main><script nonce="${nonce}">
+    <p id="filter-status" role="status" aria-live="polite" hidden></p>${options.body}${options.scope && !browser ? `<p class="scope">${escapeHtml(options.scope)}</p>` : ''}${options.callGraph && options.callView !== 'columns' ? `<div class="call-zoom" role="group" aria-label="Zoom"><button id="graph-zoom-out" aria-label="Zoom out">${icon('eb3b')}</button><button id="graph-zoom" aria-label="Actual size" title="Actual size (100%)">100%</button><button id="graph-zoom-in" aria-label="Zoom in">${icon('ea60')}</button></div>` : cfg ? controlFlowZoom(options.body.includes('data-control-flow')) : ''}${browser ? '<div class="no-results" hidden><span>No matching rows.</span><button type="button" id="clear-filter" class="icon-button" aria-label="Clear filter" title="Clear filter">' + callIcon('close') + '</button></div>' : ''}${options.next || options.previous ? `<div class="pagination"><button id="page-previous" class="icon-button" data-action="previous" aria-label="Previous page" title="Previous page" ${!options.previous ? 'disabled' : ''}>${callIcon('left')}</button><button id="page-next" class="icon-button" data-action="next" aria-label="Next page" title="Next page" ${!options.next ? 'disabled' : ''}>${callIcon('right')}</button></div>` : ''}</main><script nonce="${nonce}">
     const vscode=acquireVsCodeApi();const previous=vscode.getState()||{};const state=${JSON.stringify(options.state ?? {}).replace(/</g, '\\u003c')};
-    const samePage=previous.md5===state.md5&&previous.kind===state.kind&&previous.address===state.address${flow ? '&&previous.entry===state.entry' : ''};
+    const samePanel=previous.md5===state.md5&&previous.kind===state.kind;
+    const samePage=samePanel&&previous.address===state.address${flow ? '&&previous.entry===state.entry' : ''};
     let selected=samePage?previous.selected||state.selected||'':state.selected||'';let entry=samePage?previous.selectedEntry||'':state.selectedEntry||'';
     let selectedKind=samePage?previous.selectedKind||'':'';let selectedLabel=samePage?previous.selectedLabel||'':'';let primaryAction='decompile';
     const selectable=[...document.querySelectorAll('tr[data-address],tr[data-entry],.graph-node')];
+    selectable.forEach((item,index)=>{if(!item.id){item.id='selectable-row-'+index}});
     const search=document.getElementById('search');search.value=state.kind==='callGraph'&&!samePage?'':previous.filter||'';
     const addressInput=document.getElementById('address');if(addressInput&&samePage&&typeof previous.addressDraft==='string'){addressInput.value=previous.addressDraft}
     const extraColumns=document.getElementById('extra-columns');if(extraColumns){extraColumns.checked=samePage&&previous.extraColumns===true;document.body.classList.toggle('show-extra-columns',extraColumns.checked)}
     const memoryMap=document.querySelector('.memory-map');if(memoryMap&&samePage){memoryMap.open=previous.mapOpen===true}
     const listingDetails=document.getElementById('listing-details');if(listingDetails){listingDetails.checked=samePage&&previous.listingDetails===true;document.querySelector('.listing').classList.toggle('show-details',listingDetails.checked)}
-    let graphViewport;let branchAnchor;let cfgOverviewPosition=samePage?previous.cfgOverviewPosition:undefined;let cfgOverviewDismissed=samePage&&previous.cfgOverviewDismissed===true;let columnUi=samePage?previous.columnUi:undefined;
+    let graphViewport;let branchAnchor;let cfgOverviewDismissed=samePage&&previous.cfgOverviewDismissed===true;let columnUi=samePage?previous.columnUi:undefined;
     let persistFrame=0;
-    const persist=()=>{if(persistFrame){cancelAnimationFrame(persistFrame);persistFrame=0}vscode.setState({...state,selected,selectedEntry:entry,selectedKind,selectedLabel,filter:search.value,addressDraft:addressInput?.value,mapOpen:memoryMap?.open,listingDetails:listingDetails?.checked,extraColumns:extraColumns?.checked,branchAnchor,callDetails:document.querySelector('.call-details')?.open??(samePage?previous.callDetails:undefined),callOverview:document.querySelector('.call-overview')?.open??(samePage?previous.callOverview:undefined),cfgOverview:document.querySelector('.cfg-overview')?.open,cfgOverviewPosition,cfgOverviewDismissed,cfgActiveEdge:document.querySelector('.cfg-edge.is-active')?.dataset.edgeKey,tableScroll:[...document.querySelectorAll('.table-wrap')].map(table=>({top:table.scrollTop,left:table.scrollLeft})),scrollX:window.scrollX,scrollY:window.scrollY,focusId:branchAnchor?.focusId||document.activeElement?.id,columnUi,graphViewport:graphViewport?.snapshot()||(samePage?previous.graphViewport:undefined)})};
+    const persist=()=>{if(persistFrame){cancelAnimationFrame(persistFrame);persistFrame=0}vscode.setState({...state,selected,selectedEntry:entry,selectedKind,selectedLabel,filter:search.value,addressDraft:addressInput?.value,mapOpen:memoryMap?.open,listingDetails:listingDetails?.checked,extraColumns:extraColumns?.checked,branchAnchor,callDetails:document.querySelector('.call-details')?.open??(samePage?previous.callDetails:undefined),callOverview:document.querySelector('.call-overview')?.open??(samePage?previous.callOverview:undefined),cfgOverview:document.querySelector('.cfg-overview')?.open,cfgOverviewDismissed,cfgActiveEdge:document.querySelector('.cfg-edge.is-active')?.dataset.edgeKey,tableScroll:[...document.querySelectorAll('.table-wrap')].map(table=>({top:table.scrollTop,left:table.scrollLeft})),scrollX:window.scrollX,scrollY:window.scrollY,focusId:branchAnchor?.focusId||document.activeElement?.id,columnUi,graphViewport:graphViewport?.snapshot()||(samePage?previous.graphViewport:undefined)})};
     const schedulePersist=()=>{if(!persistFrame){persistFrame=requestAnimationFrame(()=>{persistFrame=0;persist()})}};
+    const tabbableOutside=root=>[...document.querySelectorAll('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),summary,[tabindex]:not([tabindex="-1"])')].filter(el=>!root.contains(el)&&!el.closest('[hidden]')&&[...document.querySelectorAll('details:not([open])')].every(d=>!d.contains(el)||d.querySelector(':scope > summary')===el)&&el.getClientRects().length>0);
+    const bindRoving=(root,getItems,pickInitial,handleKey)=>{
+      if(!root){return ()=>{}}
+      let current;
+      const sync=preferred=>{
+        const all=[...root.querySelectorAll('[tabindex]')],items=getItems();
+        if(!items.length){for(const el of all){el.setAttribute('tabindex','-1')}current=undefined;return}
+        const active=items.find(el=>el===document.activeElement);
+        current=active||(preferred&&items.includes(preferred)?preferred:current&&items.includes(current)?current:pickInitial(items)||items[0]);
+        for(const el of all){el.setAttribute('tabindex',el===current?'0':'-1')}
+      };
+      root.addEventListener('focusin',event=>{if(event.target===root){sync();current?.focus();return}const items=getItems(),hit=items.find(el=>el===event.target)||items.find(el=>el.contains(event.target));if(hit){sync(hit)}});
+      root.addEventListener('keydown',event=>{
+        if(event.key==='Tab'&&!event.altKey&&!event.ctrlKey&&!event.metaKey){
+          sync();
+          const outside=tabbableOutside(root);
+          const target=event.shiftKey?[...outside].reverse().find(el=>!!(root.compareDocumentPosition(el)&Node.DOCUMENT_POSITION_PRECEDING)):outside.find(el=>!!(root.compareDocumentPosition(el)&Node.DOCUMENT_POSITION_FOLLOWING));
+          if(target){event.preventDefault();target.focus()}
+          return;
+        }
+        if(handleKey){handleKey(event,getItems,sync)}
+      });
+      sync();
+      return sync;
+    };
+    const bindMenu=menu=>{
+      if(!menu){return}
+      const summary=menu.querySelector(':scope > summary');
+      menu.addEventListener('focusout',()=>requestAnimationFrame(()=>{if(menu.open&&!menu.contains(document.activeElement)){menu.open=false}}));
+      menu.addEventListener('keydown',event=>{
+        if(event.key==='Escape'&&menu.open){event.preventDefault();event.stopPropagation();menu.open=false;summary.focus({preventScroll:true});persist();return}
+        if(event.target.matches('select,input:not([type="checkbox"])')||!['ArrowDown','ArrowUp','ArrowLeft','ArrowRight','Home','End'].includes(event.key)){return}
+        if(event.target===summary&&!['ArrowDown','ArrowUp'].includes(event.key)){return}
+        menu.open=true;
+        const items=[...menu.querySelectorAll('button:not(:disabled),input:not(:disabled),select:not(:disabled),summary')].filter(item=>item!==summary&&!item.closest('[hidden]')&&[...menu.querySelectorAll('details:not([open])')].every(d=>d===menu||!d.contains(item)||d.querySelector(':scope > summary')===item));
+        if(!items.length){return}
+        event.preventDefault();event.stopPropagation();
+        const index=items.indexOf(document.activeElement),forward=event.key==='ArrowDown'||event.key==='ArrowRight';
+        const next=event.key==='Home'?0:event.key==='End'?items.length-1:forward?(index+1)%items.length:(index<=0?items.length-1:index-1);
+        items[next]?.focus();
+      });
+      menu.addEventListener('click',event=>{const button=event.target.closest('button');if(button&&!button.disabled&&menu.contains(button)&&menu.open){menu.open=false;summary.focus({preventScroll:true});persist()}});
+    };
     memoryMap?.addEventListener('toggle',persist);
     ${flow ? controlFlowScript : ''}
     listingDetails?.addEventListener('change',()=>{document.querySelector('.listing').classList.toggle('show-details',listingDetails.checked);persist()});
     extraColumns?.addEventListener('change',()=>{document.body.classList.toggle('show-extra-columns',extraColumns.checked);persist()});
-    const pageOptions=document.getElementById('page-options');document.addEventListener('click',event=>{if(pageOptions&&(!pageOptions.contains(event.target)||event.target.closest('button'))){pageOptions.open=false}});document.addEventListener('keydown',event=>{if(event.key==='Escape'&&pageOptions?.open){pageOptions.open=false;pageOptions.querySelector('summary').focus()}});
     const target=()=>{
       const fn=entry||(!selected?state.entry||'':'');const address=selected||state.address||fn||'';
       const row=selectable.find(item=>address&&item.dataset.address===address&&(!fn||item.dataset.entry===fn));
@@ -116,6 +160,8 @@ export function page(options: PageOptions): string {
     };
     const send=(action,extra={})=>vscode.postMessage({action,...target(),...extra});
     const more=document.getElementById('more-actions');const moreSummary=document.getElementById('more-summary');
+    const menus=[document.getElementById('call-menu'),document.getElementById('page-options'),more].filter(Boolean);
+    for(const menu of menus){bindMenu(menu)}
     const selectionTools=()=>{
       if(state.kind==='callGraph'){primaryAction='decompile';const focus=document.getElementById('call-focus');if(focus){const fn=target().entry;focus.disabled=!fn||fn===state.entry;focus.hidden=focus.disabled}return}
       const label=document.getElementById('selection-label');if(!label){return}
@@ -149,14 +195,45 @@ export function page(options: PageOptions): string {
       more.hidden=!extra.length;moreSummary.title='More actions'+(current.label?' for '+current.label:at?' at '+at:'');moreSummary.setAttribute('aria-label',moreSummary.title);
       if(active){const restore=document.getElementById('action-'+active);if(restore){restore.focus({preventScroll:true})}}
     };selectionTools();
-    document.addEventListener('click',event=>{const button=event.target.closest('button[data-action]');if(button&&!button.disabled){send(button.dataset.action);if(more){const returnFocus=more.open&&more.contains(button);more.open=false;if(returnFocus){moreSummary.focus({preventScroll:true})}}}else if(more&&!more.contains(event.target)){more.open=false}});
-    document.addEventListener('keydown',event=>{if(event.key==='Escape'&&more?.open){event.preventDefault();more.open=false;moreSummary.focus()}});
+    document.addEventListener('click',event=>{const button=event.target.closest('button[data-action]');if(button&&!button.disabled){const hostMenu=menus.find(menu=>menu.contains(button));if(!hostMenu&&document.activeElement!==button){button.focus({preventScroll:true})}persist();send(button.dataset.action)}for(const menu of menus){if(menu.open&&!menu.contains(event.target)){menu.open=false}}});
     document.getElementById('goto')?.addEventListener('submit',event=>{event.preventDefault();send('goto',{address:document.getElementById('address').value})});
+    let syncGraphRoving=()=>{};let tableSyncs=[];
+    const syncAllRoving=()=>{syncGraphRoving();for(const sync of tableSyncs){sync()}};
     selectable.forEach(row=>{
       if((selected&&row.dataset.address===selected)||(!selected&&entry&&row.dataset.entry===entry)){row.classList.add('selected')}
-      const pick=(notify=true)=>{document.querySelectorAll('.selected').forEach(item=>item.classList.remove('selected'));row.classList.add('selected');selected=row.dataset.address||'';entry=row.dataset.entry||'';selectedKind=row.dataset.kind||'';selectedLabel=row.dataset.label||'';graphViewport?.select([row],false);selectionTools();persist();if(notify){send('select')}};
+      const pick=(notify=true)=>{document.querySelectorAll('.selected').forEach(item=>item.classList.remove('selected'));row.classList.add('selected');selected=row.dataset.address||'';entry=row.dataset.entry||'';selectedKind=row.dataset.kind||'';selectedLabel=row.dataset.label||'';graphViewport?.select([row],false);selectionTools();syncAllRoving();persist();if(notify){send('select')}};
       row.addEventListener('click',event=>{if(!event.target.closest('.call-node-controls,.cfg-node-controls')){pick()}});row.addEventListener('dblclick',event=>{if(event.target.closest('.call-node-controls,.cfg-node-controls')){return}pick(false);if(primaryAction){send(state.kind==='callGraph'?'focusCallGraph':primaryAction)}});row.addEventListener('keydown',event=>{if(event.target.closest('.call-node-controls,.cfg-node-controls')){return}if(event.key==='Enter'){event.preventDefault();pick();if(primaryAction){send(state.kind==='callGraph'?'focusCallGraph':primaryAction)}}else if(event.key===' '){event.preventDefault();pick()}});
     });
+    const graphWorld=document.querySelector('.graph-world');
+    syncGraphRoving=bindRoving(graphWorld,()=>{
+      const nodes=[...graphWorld.querySelectorAll('.graph-node')].sort((a,b)=>(Number(a.dataset.y)-Number(b.dataset.y))||(Number(a.dataset.x)-Number(b.dataset.x)));
+      const edges=[...graphWorld.querySelectorAll('.cfg-edge,.call-edge')],used=new Set(),ordered=[];
+      for(const node of nodes){
+        ordered.push(node);
+        for(const btn of [node.querySelector('.node-branch[data-direction="callers"]:not(:disabled)'),node.querySelector('.node-decompile:not(:disabled)'),node.querySelector('.node-branch[data-direction="callees"]:not(:disabled)')]){if(btn){ordered.push(btn)}}
+        for(const edge of edges){if(edge.dataset.from===node.dataset.node&&!used.has(edge)){used.add(edge);ordered.push(edge)}}
+      }
+      for(const edge of edges){if(!used.has(edge)){ordered.push(edge)}}
+      return ordered;
+    },items=>items.find(el=>el.classList?.contains('selected'))||items.find(el=>el.classList?.contains('is-root'))||items.find(el=>el.classList?.contains('graph-node'))||items[0],(event,getItems,sync)=>{
+      if(!['ArrowDown','ArrowRight','ArrowUp','ArrowLeft','Home','End'].includes(event.key)){return}
+      const items=getItems();if(!items.length){return}
+      event.preventDefault();event.stopPropagation();
+      const index=items.indexOf(document.activeElement),forward=event.key==='ArrowDown'||event.key==='ArrowRight';
+      const next=event.key==='Home'?0:event.key==='End'?items.length-1:forward?(index+1)%items.length:(index<=0?items.length-1:index-1);
+      sync(items[next]);items[next]?.focus();
+    });
+    tableSyncs=[...document.querySelectorAll('.table-wrap tbody')].map(tbody=>bindRoving(tbody,
+      ()=>[...tbody.querySelectorAll('tr[data-address]:not([hidden]),tr[data-entry]:not([hidden])')],
+      items=>items.find(row=>row.classList.contains('selected'))||items[0],
+      (event,getItems,sync)=>{
+        if(!['ArrowDown','ArrowUp','Home','End'].includes(event.key)){return}
+        const rows=getItems();if(!rows.length){return}
+        const index=rows.indexOf(document.activeElement.closest('tr'));if(index<0){return}
+        const next=event.key==='Home'?0:event.key==='End'?rows.length-1:Math.max(0,Math.min(rows.length-1,index+(event.key==='ArrowDown'?1:-1)));
+        event.preventDefault();sync(rows[next]);rows[next]?.focus();rows[next]?.scrollIntoView({block:'nearest'});
+      }
+    ));
     const filter=()=>{
       if(document.querySelector('[data-call-columns]')){return}
       const query=search.value.toLowerCase(),rows=[...document.querySelectorAll('tbody tr')],browserPage=document.body.classList.contains('browser-page');let visible=0,total=0;
@@ -171,6 +248,7 @@ export function page(options: PageOptions): string {
         }
         selectionTools();for(const message of document.querySelectorAll('.table-empty,.empty'))message.hidden=!!query;
       }
+      syncAllRoving();
       const status=document.getElementById('filter-status'),empty=document.querySelector('.no-results');
       const collapsedMatches=browserPage&&!!query&&rows.some(row=>!row.hidden&&row.closest('.memory-map:not([open])'));
       if(empty){empty.hidden=!query||visible>0;empty.querySelector('span').textContent=collapsedMatches?'Matches in collapsed memory map.':'No matching rows.'}status.hidden=!query;status.classList.toggle('sr-filter-status',!!empty&&!!query&&!visible);
@@ -178,9 +256,21 @@ export function page(options: PageOptions): string {
     };
     search.addEventListener('input',()=>{filter();persist()});memoryMap?.addEventListener('toggle',filter);addressInput?.addEventListener('input',persist);filter();
     window.addEventListener('scroll',schedulePersist,{passive:true});document.addEventListener('focusin',persist);
-    window.addEventListener('message',event=>{if(event.data.action==='highlight'){document.querySelectorAll('.selected').forEach(item=>item.classList.remove('selected'));const addresses=event.data.addresses||[event.data.address];const rows=selectable.filter(item=>addresses.includes(item.dataset.address));rows.forEach(row=>row.classList.add('selected'));graphViewport?.select(rows,true);const row=rows[0];if(row){if(!graphViewport){row.scrollIntoView({block:'nearest'})}selected=row.dataset.address||'';entry=row.dataset.entry||'';selectedKind=row.dataset.kind||'';selectedLabel=row.dataset.label||'';selectionTools();persist()}}});
+    window.addEventListener('message',event=>{if(event.data.action==='highlight'){document.querySelectorAll('.selected').forEach(item=>item.classList.remove('selected'));const addresses=event.data.addresses||[event.data.address];const rows=selectable.filter(item=>addresses.includes(item.dataset.address));rows.forEach(row=>row.classList.add('selected'));graphViewport?.select(rows,true);const row=rows[0];if(row){if(!graphViewport){row.scrollIntoView({block:'nearest'})}selected=row.dataset.address||'';entry=row.dataset.entry||'';selectedKind=row.dataset.kind||'';selectedLabel=row.dataset.label||'';selectionTools();syncAllRoving();persist()}}});
     ${browser ? browserViewScript : ''}
     ${options.callGraph ? callViewScript + callGraphScript + callColumnsScript : cfg ? controlFlowUiScript : ''}
-    requestAnimationFrame(()=>{if(state.analysisUri){send('ready')}if(samePage){[...document.querySelectorAll('.table-wrap')].forEach((table,index)=>{table.scrollTop=previous.tableScroll?.[index]?.top||0;table.scrollLeft=previous.tableScroll?.[index]?.left||0});window.scrollTo(previous.scrollX||0,previous.scrollY||0);if(previous.focusId){document.getElementById(previous.focusId)?.focus({preventScroll:true})}}persist();document.body.dataset.viewReady='true'});
+    const restoreFocus=focusId=>{
+      if(!focusId){return false}
+      let targetEl=document.getElementById(focusId);
+      const closed=targetEl?.closest('details:not([open])');
+      if(closed){targetEl=closed.querySelector(':scope > summary')}
+      if(!targetEl){
+        const retry=/^call-column-retry-([0-9]+)$/.exec(focusId);
+        if(retry){const col=document.querySelector('.call-column[data-column="'+retry[1]+'"]');targetEl=col?.querySelector('.call-column-row:not([hidden]) .call-column-pick:not(:disabled)')||col?.querySelector('.call-column-source-code')}
+      }
+      if(targetEl&&!targetEl.disabled&&!targetEl.closest('[hidden]')){targetEl.focus({preventScroll:true});return document.activeElement===targetEl}
+      return false;
+    };
+    requestAnimationFrame(()=>{if(state.analysisUri){send('ready')}if(samePage){[...document.querySelectorAll('.table-wrap')].forEach((table,index)=>{table.scrollTop=previous.tableScroll?.[index]?.top||0;table.scrollLeft=previous.tableScroll?.[index]?.left||0});window.scrollTo(previous.scrollX||0,previous.scrollY||0);if(previous.focusId&&!restoreFocus(previous.focusId)){document.querySelector('.graph-world [tabindex="0"],.call-column-strip [tabindex="0"],.table-wrap tbody [tabindex="0"],#call-function-picker')?.focus({preventScroll:true})}}else if(samePanel&&previous.focusId){if(!restoreFocus(previous.focusId)){document.querySelector('.graph-world [tabindex="0"],.call-column-strip [tabindex="0"],.table-wrap tbody [tabindex="0"],#call-function-picker')?.focus({preventScroll:true})}}persist();document.body.dataset.viewReady='true'});
     </script></body></html>`;
 }
