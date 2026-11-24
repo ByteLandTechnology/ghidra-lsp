@@ -42,33 +42,69 @@ function input(field: Field): string {
 }
 /** Render an editable table grid section with optional row reorder and add/remove buttons. */
 function grid(spec: Grid): string {
-    const singular = spec.key === 'parameters' ? 'parameter' : 'row';
+    const singular = spec.key === 'parameters' ? 'parameter' : spec.key === 'locals' ? 'local variable' : 'row';
+    const prefix = singular[0].toUpperCase() + singular.slice(1);
     const hasActions = spec.reorder === true || spec.remove !== false;
-    const actionsCell = (): string => !hasActions ? '' : `<td><div class="row-actions">${spec.reorder ? `<button type="button" class="row-move secondary" data-move-row="up" aria-label="Move ${singular} up" title="Move ${singular} up">${callIcon('up')}</button><button type="button" class="row-move secondary" data-move-row="down" aria-label="Move ${singular} down" title="Move ${singular} down">${callIcon('down')}</button>` : ''}${spec.remove === false ? '' : `<button type="button" class="row-remove secondary" data-remove-row aria-label="Remove ${singular}" title="Remove ${singular}">${callIcon('trash')}</button>`}</div></td>`;
-    const row = (data: Data): string => `<tr data-original="${escape(data._original ?? '')}">${spec.columns.map(column => `<td><input data-column="${escape(column.key)}" aria-label="${escape(column.label)}" type="${column.kind === 'number' ? 'number' : 'text'}" value="${escape(data[column.key])}"${column.kind === 'type' ? ' list="type-options"' : ''}></td>`).join('')}${actionsCell()}</tr>`;
-    return section(spec.label, `<div class="table-wrap"><table class="editable" data-table="${escape(spec.key)}"><thead><tr>${spec.columns.map(column => `<th scope="col">${escape(column.label)}</th>`).join('')}${hasActions ? '<th></th>' : ''}</tr></thead><tbody>${spec.values.map(row).join('')}</tbody></table></div>${spec.add === false ? '' : `<template data-row-template="${escape(spec.key)}">${row({})}</template><button type="button" class="secondary icon-add" data-add-row="${escape(spec.key)}" aria-label="Add ${singular}" title="Add ${singular}">${callIcon('plus')}</button>`}`);
+    const row = (data: Data, index?: number): string => {
+        const number = index === undefined ? undefined : index + 1;
+        const cells = spec.columns.map(column => {
+            const id = number === undefined ? '' : ` id="grid-${escape(spec.key)}-${number}-${escape(column.key)}"`;
+            const label = number === undefined ? column.label : `${prefix} ${number} ${column.label.toLowerCase()}`;
+            return `<td><input${id} data-column="${escape(column.key)}" data-label="${escape(column.label)}" aria-label="${escape(label)}" type="${column.kind === 'number' ? 'number' : 'text'}" value="${escape(data[column.key])}"${column.kind === 'type' ? ' list="type-options"' : ''}></td>`;
+        }).join('');
+        const moveButtons = !spec.reorder ? '' : `<button${number === undefined ? '' : ` id="grid-${escape(spec.key)}-${number}-up"`} type="button" class="row-move secondary" data-move-row="up" aria-label="Move ${escape(singular)}${number === undefined ? '' : ` ${number}`} up" title="Move ${escape(singular)} up">${callIcon('up')}</button><button${number === undefined ? '' : ` id="grid-${escape(spec.key)}-${number}-down"`} type="button" class="row-move secondary" data-move-row="down" aria-label="Move ${escape(singular)}${number === undefined ? '' : ` ${number}`} down" title="Move ${escape(singular)} down">${callIcon('down')}</button>`;
+        const removeButton = spec.remove === false ? '' : `<button${number === undefined ? '' : ` id="grid-${escape(spec.key)}-${number}-remove"`} type="button" class="row-remove secondary" data-remove-row aria-label="Remove ${escape(singular)}${number === undefined ? '' : ` ${number}`}" title="Remove ${escape(singular)}">${callIcon('trash')}</button>`;
+        const actions = !hasActions ? '' : `<td><div class="row-actions">${moveButtons}${removeButton}</div></td>`;
+        return `<tr data-original="${escape(data._original ?? '')}">${cells}${actions}</tr>`;
+    };
+    const actionHeader = !hasActions ? '' : '<th class="editable-action-col" scope="col"><span class="type-sr-only">Actions</span></th>';
+    return section(spec.label, `<div class="table-wrap"><table class="editable" data-table="${escape(spec.key)}" data-singular="${escape(singular)}"${spec.reorder ? ' data-reorder="true"' : ''}><thead><tr>${spec.columns.map(column => `<th scope="col">${escape(column.label)}</th>`).join('')}${actionHeader}</tr></thead><tbody>${spec.values.map((data, index) => row(data, index)).join('')}</tbody></table></div>${spec.add === false ? '' : `<template data-row-template="${escape(spec.key)}">${row({})}</template><button type="button" class="secondary icon-add" data-add-row="${escape(spec.key)}" aria-label="Add ${escape(singular)}" title="Add ${escape(singular)}">${callIcon('plus')}</button>`}`);
 }
 /** Client-side webview script for table row edits, reordering, submission, and initial focus. */
 const formScript = `
+const reindex = table => {
+    const key = table.dataset.table, singular = table.dataset.singular || 'row';
+    const prefix = singular[0].toUpperCase() + singular.slice(1);
+    Array.from(table.tBodies[0].rows).forEach((row, index) => {
+        const number = index + 1;
+        for (const el of row.querySelectorAll('[data-column]')) {
+            el.id = 'grid-' + key + '-' + number + '-' + el.dataset.column;
+            el.setAttribute('aria-label', prefix + ' ' + number + ' ' + (el.dataset.label || el.dataset.column).toLowerCase());
+        }
+        for (const moveBtn of row.querySelectorAll('[data-move-row]')) {
+            const dir = moveBtn.dataset.moveRow;
+            moveBtn.id = 'grid-' + key + '-' + number + '-' + dir;
+            moveBtn.setAttribute('aria-label', 'Move ' + singular + ' ' + number + ' ' + dir);
+        }
+        const button = row.querySelector('[data-remove-row]');
+        if (button) {
+            button.id = 'grid-' + key + '-' + number + '-remove';
+            button.setAttribute('aria-label', 'Remove ' + singular + ' ' + number);
+        }
+    });
+};
 document.addEventListener('click', event => {
     const move = event.target.closest('[data-move-row]');
     if (move) {
-        const row = move.closest('tr'), dir = move.dataset.moveRow;
-        if (dir === 'up' && row.previousElementSibling) { row.parentNode.insertBefore(row, row.previousElementSibling); move.focus(); }
-        else if (dir === 'down' && row.nextElementSibling) { row.parentNode.insertBefore(row.nextElementSibling, row); move.focus(); }
+        const row = move.closest('tr'), table = row.closest('table'), dir = move.dataset.moveRow;
+        if (dir === 'up' && row.previousElementSibling) { row.parentNode.insertBefore(row, row.previousElementSibling); reindex(table); move.focus(); }
+        else if (dir === 'down' && row.nextElementSibling) { row.parentNode.insertBefore(row.nextElementSibling, row); reindex(table); move.focus(); }
     }
     const remove = event.target.closest('[data-remove-row]');
     if (remove) {
         const row = remove.closest('tr'), table = row.closest('table');
         const next = row.nextElementSibling?.querySelector('input') || row.previousElementSibling?.querySelector('input')
-            || [...document.querySelectorAll('[data-add-row]')].find(button => button.dataset.addRow === table.dataset.table);
+            || [...document.querySelectorAll('[data-add-row]')].find(button => button.dataset.addRow === table.dataset.table)
+            || document.getElementById('submit');
         row.remove();
+        reindex(table);
         next?.focus();
     }
     const add = event.target.closest('[data-add-row]');
     if (add) {
-        const key = add.dataset.addRow, body = document.querySelector('[data-table="' + key + '"] tbody');
+        const key = add.dataset.addRow, table = document.querySelector('[data-table="' + key + '"]'), body = table.tBodies[0];
         body.append(document.querySelector('[data-row-template="' + key + '"]').content.cloneNode(true));
+        reindex(table);
         body.lastElementChild?.querySelector('input')?.focus();
     }
 });

@@ -475,6 +475,11 @@
           "type": "boolean",
           "default": true,
           "markdownDescription": "Synchronize cursor selection across open Program Listing, Hex View, and Decompiler tabs for the same program."
+        },
+        "ghidraLsp.views.singleKeyShortcuts": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable single-character shortcuts (/, g, +, =, -, 0) in Ghidra analysis webviews. Modifier shortcuts such as Ctrl+F (Cmd+F) and Ctrl+G (Cmd+G) stay active when off."
         }
       }
     },
