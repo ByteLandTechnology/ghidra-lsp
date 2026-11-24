@@ -38,7 +38,7 @@ input:read-only{color:var(--vscode-descriptionForeground)}
 textarea{min-height:88px;resize:vertical}
 :focus-visible{outline:2px solid var(--vscode-focusBorder);outline-offset:2px}
 input:focus,select:focus,textarea:focus{outline:1px solid var(--vscode-focusBorder);outline-offset:0}
-.table-wrap{max-width:100%;overflow:auto;border:1px solid var(--vscode-panel-border);border-radius:2px}
+.table-wrap{scroll-padding:36px 4px 4px;max-width:100%;overflow:auto;border:1px solid var(--vscode-panel-border);border-radius:2px}
 table{width:100%;border-collapse:collapse;text-align:left;font-size:inherit;font-variant-numeric:tabular-nums}
 th,td{padding:7px 10px;border-bottom:1px solid var(--vscode-panel-border);vertical-align:top}
 th{font-size:12px;font-weight:600;color:var(--vscode-descriptionForeground);background:var(--vscode-editor-background)}
@@ -46,6 +46,8 @@ td{overflow-wrap:anywhere}
 tr:last-child td{border-bottom:0}
 tbody tr:hover{background:var(--vscode-list-hoverBackground)}
 .selected{background:var(--vscode-list-inactiveSelectionBackground);color:var(--vscode-list-inactiveSelectionForeground,var(--vscode-foreground));box-shadow:inset 2px 0 var(--vscode-focusBorder)}
+tbody tr.selected:focus{background:var(--vscode-list-activeSelectionBackground);color:var(--vscode-list-activeSelectionForeground,var(--vscode-foreground))}
+tr:focus-visible{outline:1px solid var(--vscode-focusBorder);outline-offset:-1px}
 dl{margin:0}
 dl>div{display:grid;grid-template-columns:150px minmax(0,1fr);gap:16px;padding:6px 0;border-bottom:1px solid var(--vscode-panel-border)}
 dl>div:last-child{border:0}
