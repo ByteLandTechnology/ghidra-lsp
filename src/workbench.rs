@@ -12,7 +12,7 @@ use tower_lsp_server::ls_types::{
 };
 
 use crate::backend::McpBackend;
-use crate::document::Document;
+use crate::document::{Document, advance_position};
 
 /// Returns the LSP semantic token legend used for decompiled virtual documents.
 pub(crate) fn semantic_legend() -> SemanticTokensLegend {
@@ -95,18 +95,6 @@ pub(crate) fn semantic_tokens(doc: &Document) -> Vec<SemanticToken> {
     }
   }
   tokens
-}
-
-/// Advances zero-based `line` and UTF-16 `character` coordinates across `text`.
-fn advance_position(text: &str, line: &mut u32, character: &mut u32) {
-  for c in text.chars() {
-    if c == '\n' {
-      *line += 1;
-      *character = 0;
-    } else {
-      *character += c.len_utf16() as u32;
-    }
-  }
 }
 
 /// Read-only workbench operations permitted in `ghidra.query`.

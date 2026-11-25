@@ -3,6 +3,7 @@
 
 import { displayAddress } from './names';
 import * as vscode from 'vscode';
+import { countLabel, inlineText, treeAccessibility } from './a11y';
 import { Call } from './memory';
 import { ProgramContext, viewDescription } from './context';
 import { formatFriendlyError } from './error';
@@ -61,7 +62,7 @@ export class StringsView implements vscode.TreeDataProvider<vscode.TreeItem>, vs
     private syncDescription(): void {
         const active = this.hasActiveFilter();
         void vscode.commands.executeCommand('setContext', 'ghidra.stringsFiltered', active);
-        const base = viewDescription(this.context, this.md5, active ? undefined : this.count);
+        const base = viewDescription(this.context, this.md5, active ? undefined : this.count, 'string');
         const summary = this.filterSummary();
         this.view.description = [base, summary].filter(Boolean).join(' · ') || undefined;
     }
@@ -213,13 +214,18 @@ export class StringsView implements vscode.TreeDataProvider<vscode.TreeItem>, vs
                     const label = item.value.replace(/\r/g, '\\r').replace(/\n/g, '\\n').replace(/\t/g, '\\t') || '""';
                     const node = new vscode.TreeItem(label);
                     node.id = `string:${md5}:${item.address}`;
-                    const addrLabel = displayAddress(item.address);
-                    node.description = item.encoding && item.encoding !== 'ascii' ? `${addrLabel} · ${item.encoding}` : addrLabel;
-                    node.tooltip = `${item.value}\n\n${item.address} · ${item.length} bytes · ${item.type}${item.symbol ? ` · ${item.symbol}` : ''}`;
+                    const parsedLength = Number(item.length);
+                    const lengthLabel = item.length
+                        ? (Number.isFinite(parsedLength) ? countLabel(parsedLength, 'byte') : `${item.length} bytes`)
+                        : '';
+                    const encLabel = item.encoding && item.encoding !== 'ascii' ? item.encoding : '';
+                    node.description = [displayAddress(item.address), encLabel, lengthLabel].filter(Boolean).join(' · ');
+                    node.tooltip = `${item.value}\n\n${[item.address, encLabel || item.encoding, lengthLabel, item.type, item.symbol].filter(Boolean).join(' · ')}`;
                     node.iconPath = new vscode.ThemeIcon('symbol-string');
                     node.contextValue = 'ghidra.string';
                     Object.assign(node, { md5, address: item.address });
                     node.command = { command: 'ghidraLsp.openString', title: 'Open string', arguments: [md5, item.address] };
+                    node.accessibilityInformation = treeAccessibility(label, node.description, 'Open string');
                     return node;
                 });
                 this.count = result.items.length;
@@ -230,7 +236,10 @@ export class StringsView implements vscode.TreeDataProvider<vscode.TreeItem>, vs
                     : 'Analysis is running; string results reflect the partial index.';
                 if (!this.nodes.length) {
                     const filtered = this.hasActiveFilter();
-                    const empty = new vscode.TreeItem(filtered ? 'No matching strings' : 'No strings found');
+                    const emptyTitle = filtered ? 'No matching strings' : 'No strings found';
+                    const empty = new vscode.TreeItem(emptyTitle);
+                    empty.id = `strings:empty:${md5}`;
+                    empty.description = filtered ? 'Clear or adjust filter' : undefined;
                     empty.iconPath = new vscode.ThemeIcon(filtered ? 'search-stop' : 'info');
                     empty.tooltip = filtered
                         ? 'No cached strings matched the current filter. Clear or adjust the filter.'
@@ -238,17 +247,27 @@ export class StringsView implements vscode.TreeDataProvider<vscode.TreeItem>, vs
                     if (filtered) {
                         empty.command = { command: 'ghidraLsp.clearStringsFilter', title: 'Clear string filter' };
                     }
+                    empty.accessibilityInformation = treeAccessibility(
+                        emptyTitle,
+                        empty.description,
+                        filtered ? 'No cached strings matched the current filter' : 'No ASCII or UTF-16 strings were indexed',
+                    );
                     this.nodes = [empty];
                 }
                 this.dirty = false;
             } catch (error) {
                 if (generation !== this.generation) { return; }
+                const cause = formatFriendlyError(error);
                 this.count = undefined;
                 this.syncDescription();
-                this.view.message = `Could not load strings: ${formatFriendlyError(error)}`;
+                this.view.message = `Could not load strings: ${cause}`;
                 const retry = new vscode.TreeItem('Retry loading strings');
+                retry.id = `strings:retry:${md5}`;
+                retry.description = inlineText(cause, 48);
+                retry.tooltip = `Could not load strings: ${cause}\nClick to retry loading strings.`;
                 retry.iconPath = new vscode.ThemeIcon('refresh');
                 retry.command = { command: 'ghidraLsp.refreshStrings', title: 'Retry loading strings' };
+                retry.accessibilityInformation = treeAccessibility('Retry loading strings', retry.description, cause, 'Click to refresh strings');
                 this.nodes = [retry];
             }
             if (generation === this.generation) { this.changed.fire(); }
