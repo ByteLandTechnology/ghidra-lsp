@@ -3,7 +3,7 @@
 
 /** Shared styles for control-flow, call-graph, and call-column pages. */
 export const controlFlowStyles = `
-.flow-page{overflow:hidden}
+.flow-page{overflow:hidden;overflow:clip}
 .flow-page main{height:100vh;max-width:none;padding:0;margin:0;position:relative;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto auto minmax(0,1fr);gap:0}
 .flow-page .flow-topbar{grid-row:1;position:relative;z-index:4;display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:6px 8px;padding:8px 14px;min-width:0;border-bottom:1px solid var(--vscode-panel-border);background:var(--vscode-editor-background)}
 .flow-page .flow-topbar:not(:has(.flow-topbar-controls)){grid-template-columns:minmax(0,1fr) auto}
@@ -24,10 +24,10 @@ export const controlFlowStyles = `
 .flow-page .scope{grid-row:3;margin:0;padding:4px 12px;font-size:11px;line-height:1.4;border-bottom:1px solid var(--vscode-panel-border);background:var(--vscode-editor-background);color:var(--ghidra-muted)}
 .flow-page .selection-tools{flex-wrap:wrap;padding-bottom:6px}
 .flow-page .flow-canvas,.flow-page .call-columns,.flow-page main>.empty,.flow-page main>.error{grid-row:4;min-width:0;min-height:0}
-.flow-page .flow-canvas{position:relative;width:100%;height:100%;overflow:hidden;cursor:grab;touch-action:none;border:0;border-radius:0;background:var(--vscode-editor-background)}
+.flow-page .flow-canvas{position:relative;width:100%;height:100%;overflow:hidden;overflow:clip;cursor:grab;touch-action:none;border:0;border-radius:0;background:var(--vscode-editor-background)}
 .flow-canvas.panning,.flow-canvas.panning .graph-node{cursor:grabbing}
 .flow-canvas>svg{display:block;width:100%;height:100%;overflow:visible;user-select:none}
-.flow-canvas .graph-cards{position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:1}
+.flow-canvas .graph-cards{position:absolute;inset:0;overflow:hidden;overflow:clip;pointer-events:none;z-index:1}
 .flow-canvas .graph-card-world{position:absolute;left:0;top:0;width:4096px;height:0;overflow:visible;transform-origin:0 0;pointer-events:none}
 .flow-canvas .graph-node{position:absolute;pointer-events:auto;box-sizing:border-box;outline:none;box-shadow:none;user-select:none}
 .flow-canvas .cfg-node{display:flex;flex-direction:column;width:max-content;min-width:220px;max-width:540px;border:1px solid var(--vscode-contrastBorder,var(--vscode-editorWidget-border,var(--vscode-panel-border)));border-radius:8px;background:var(--vscode-editor-background);color:var(--vscode-editor-foreground,var(--vscode-foreground))}
@@ -77,13 +77,13 @@ export const controlFlowStyles = `
 export const controlFlowScript = String.raw`
     graphViewport=(()=>{
       const canvas=document.querySelector('[data-control-flow],[data-call-graph]');if(!canvas){return undefined}
-      const svg=canvas.querySelector('svg'),world=svg.querySelector('.graph-world'),cardWorld=canvas.querySelector('.graph-card-world'),host=canvas.closest('main')||document;
+      const svg=canvas.querySelector('svg'),world=svg.querySelector('.graph-world'),cards=canvas.querySelector('.graph-cards'),cardWorld=canvas.querySelector('.graph-card-world'),host=canvas.closest('main')||document;
       let width=Math.max(1,Number(svg.dataset.width)||1),height=Math.max(1,Number(svg.dataset.height)||1);
       const saved=samePage?previous.graphViewport:undefined;
       const restored=saved&&[saved.scale,saved.x,saved.y].every(Number.isFinite)&&saved.scale>0;
       let scale=restored?saved.scale:1,x=restored?saved.x:0,y=restored?saved.y:24,fitted=!!(restored&&saved.fitted),userMoved=Boolean(restored),drag;
       let suppressClick=false,firstHighlight=true,pointerFocus=false;
-      // Subtract visible floating widgets to find clear viewport areas.
+      // Remove visible floating overlays from the viewport area.
       const safeBoxes=()=>{
         const rect=canvas.getBoundingClientRect(),vw=canvas.clientWidth||rect.width,vh=canvas.clientHeight||rect.height,pad=Math.min(12,Math.max(4,Math.floor(Math.min(vw,vh)*.04)));
         const base={left:pad,top:pad,right:Math.max(pad+1,vw-pad),bottom:Math.max(pad+1,vh-pad)};
@@ -106,9 +106,9 @@ export const controlFlowScript = String.raw`
       const boxArea=b=>Math.max(0,b.right-b.left)*Math.max(0,b.bottom-b.top);
       const largestSafe=()=>safeBoxes().reduce((best,b)=>boxArea(b)>boxArea(best)?b:best);
       const bestSafe=(tw,th)=>safeBoxes().reduce((best,b)=>{const fitA=Math.min(b.right-b.left,tw)*Math.min(b.bottom-b.top,th),fitB=Math.min(best.right-best.left,tw)*Math.min(best.bottom-best.top,th);return fitA>fitB+.5||Math.abs(fitA-fitB)<=.5&&boxArea(b)>boxArea(best)?b:best});
-      // Keep both graphs reachable while allowing edge items to pan clear of overlays.
+      // Keep the graph in view and let edge items move clear of overlays.
       const panBounds=()=>{const boxes=safeBoxes(),sLeft=Math.min(...boxes.map(b=>b.left)),sRight=Math.max(...boxes.map(b=>b.right)),sTop=Math.min(...boxes.map(b=>b.top)),sBottom=Math.max(...boxes.map(b=>b.bottom));const axis=(sMin,sMax,span)=>{const keep=Math.min(16,span/2);return {min:sMin+keep-span-8,max:sMax-keep+8}};return {x:axis(sLeft,sRight,width*scale),y:axis(sTop,sBottom,height*scale)}};
-      const update=()=>{const bounds=panBounds();if(bounds){x=Math.max(bounds.x.min,Math.min(bounds.x.max,x));y=Math.max(bounds.y.min,Math.min(bounds.y.max,y))}world.setAttribute('transform','translate('+x+','+y+') scale('+scale+')');if(cardWorld){cardWorld.style.transform='translate('+x+'px,'+y+'px) scale('+scale+')'}svg.dataset.zoom=String(scale);document.getElementById('graph-zoom').textContent=Math.round(scale*100)+'%';canvas.dispatchEvent(new CustomEvent('graph-viewport'));persist()};
+      const update=()=>{if(canvas.scrollLeft||canvas.scrollTop){canvas.scrollLeft=canvas.scrollTop=0}if(cards&&(cards.scrollLeft||cards.scrollTop)){cards.scrollLeft=cards.scrollTop=0}const bounds=panBounds();if(bounds){x=Math.max(bounds.x.min,Math.min(bounds.x.max,x));y=Math.max(bounds.y.min,Math.min(bounds.y.max,y))}world.setAttribute('transform','translate('+x+','+y+') scale('+scale+')');if(cardWorld){cardWorld.style.transform='translate('+x+'px,'+y+'px) scale('+scale+')'}svg.dataset.zoom=String(scale);document.getElementById('graph-zoom').textContent=Math.round(scale*100)+'%';canvas.dispatchEvent(new CustomEvent('graph-viewport'));persist()};
       const fit=()=>{const safe=largestSafe(),sw=Math.max(1,safe.right-safe.left),sh=Math.max(1,safe.bottom-safe.top);scale=Math.min(1,sw/width,sh/height);x=safe.left+(sw-width*scale)/2;y=safe.top+(sh-height*scale)/2;fitted=true;userMoved=true;update()};
       const zoom=(next,px=canvas.clientWidth/2,py=canvas.clientHeight/2)=>{next=Math.max(.05,Math.min(4,next));x=px-(px-x)*next/scale;y=py-(py-y)*next/scale;scale=next;fitted=false;userMoved=true;update()};
       const placeInitial=()=>{
