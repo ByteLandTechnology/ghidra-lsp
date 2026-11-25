@@ -468,7 +468,7 @@ pub(crate) async fn control_flow_graph(
     ));
   };
 
-  let fetched_blocks = match crate::address::paginate_operation(
+  let fetched_blocks = match crate::backend::list_operation(
     backend,
     "listing",
     "basic_block.list",

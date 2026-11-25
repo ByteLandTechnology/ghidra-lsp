@@ -13,8 +13,7 @@ use super::call_graph::{
   CallGraphRequest, CallNode,
 };
 use super::{canonical_call_id, format_function_label};
-use crate::address::paginate_operation;
-use crate::backend::McpBackend;
+use crate::backend::{McpBackend, list_operation};
 use crate::views::ViewCache;
 
 /// Maximum number of `function.call.list` queries run during one fallback graph request.
@@ -381,7 +380,7 @@ pub(super) async fn fallback_call_graph(
     let records = if let Some(cached) = cached_records {
       cached
     } else {
-      let fetched = match paginate_operation(
+      let fetched = match list_operation(
         backend,
         "function",
         "call.list",
