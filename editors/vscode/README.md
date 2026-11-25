@@ -37,7 +37,7 @@ When `ghidraLsp.serverPath` (`"ghidra-lsp"`) and `ghidraLsp.mcpCommand` (`"ghidr
 - `ghidraLsp.mcpArgs`: Array of extra CLI arguments forwarded to `ghidra-mcp`.
 - `ghidraLsp.requestTimeoutMs`: Request timeout in milliseconds (`100` to `300000`, default `35000`).
 - `ghidraLsp.liveRefreshIntervalMs`: Interval in milliseconds for refreshing visible, unmodified function tabs (`0` disables polling).
-- `ghidraLsp.templateArguments`: Set `"omit"` (default) to display outer C++ template lists as `<…>`, or `"show"` to display complete template argument lists. Full names remain in hover popups and tooltips.
+- `ghidraLsp.templateArguments`: Set `"omit"` (default) to display outer C++ template lists as `<…>` with concise inline badges when sibling templates collide, or `"show"` to display complete template argument lists. Full names remain in hover popups and tooltips.
 - `ghidraLsp.views.syncCursor`: Enable (`true`, default) or disable cursor synchronization across open Program Listing, Hex View, Control Flow, and Decompiler tabs.
 - `ghidraLsp.views.singleKeyShortcuts`: Enable (`true`, default) or disable bare single-character shortcuts (`/`, `g`, `+`, `=`, `-`, `0`) in Ghidra analysis webviews. Modifier shortcuts (`Ctrl+F` / `Cmd+F` and `Ctrl+G` / `Cmd+G`) stay active when off.
 - For manual save confirmation on renames and data types, set `"files.autoSave": "off"` and `"files.refactoring.autoSave": false`.

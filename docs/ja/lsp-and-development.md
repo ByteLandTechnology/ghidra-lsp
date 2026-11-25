@@ -86,7 +86,7 @@
 
 | コマンド名 | 主な入力パラメータ | 動作概要 |
 | --- | --- | --- |
-| `ghidra.location` | `{ uri, position?, address?, version? }` | カーソル UTF-16 位置 ↔ コードユニットアドレス／GUI 位置を相互変換 |
+| `ghidra.location` | `{ uri, position?, address?, version? }` | カーソル UTF-16 位置 ↔ コードユニットアドレス／GUI 位置を相互変換、または `position` と `address` 省略時に順序付き UTF-16 スパン位置スナップショットを返却 |
 | `ghidra.reveal` | `{ md5?, address }` | アドレスを所有する関数を開き、該当トークン範囲と一致精度（`exact`）を返却 |
 | `ghidra.resolveTarget` | `{ md5?, input, currentAddress? }` | 入力文字列（アドレス、オフセット式、シンボル名）をターゲットアドレスへ解決 |
 | `ghidra.typeAtPosition` | `{ uri, position }` | カーソル位置のシンボルまたはトークンに対応するデータ型定義を取得 |

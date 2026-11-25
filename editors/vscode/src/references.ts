@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import * as vscode from 'vscode';
+import { countLabel, statusAccessibility } from './a11y';
 import { ProgramContext } from './context';
 import { DocumentLabels, NamedResource, resourceLabels } from './labels';
 import { Call, VirtualDocument } from './memory';
@@ -144,9 +145,11 @@ export class ReferenceViews implements vscode.TextDocumentContentProvider, vscod
         const md5 = this.context.current;
         const summary = md5 && !this.context.isClosing(md5) ? this.summaries.get(md5) : undefined;
         if (!md5 || !summary) { this.status.hide(); return; }
-        this.status.text = `$(references) ${summary.count} address references`;
+        const count = countLabel(summary.count, 'address reference');
+        const target = summary.name && summary.name !== 'Address references' ? ` · ${summary.name}` : '';
+        this.status.text = `$(references) ${count}${target}`;
         this.status.tooltip = `${summary.name}${summary.address ? ` · ${summary.address}` : ''}\nThese binary references cannot be mapped precisely to decompiled text. Click to view their addresses and types.`;
-        this.status.accessibilityInformation = { label: `Ghidra: ${summary.count} binary address references, ${summary.name}`, role: 'button' };
+        this.status.accessibilityInformation = statusAccessibility(this.status.text, 'Show Ghidra binary address references');
         this.status.command = { command: 'ghidraLsp.showAddressReferences', title: 'Show binary address references', arguments: [{ md5, address: summary.address }] };
         this.status.show();
     }
