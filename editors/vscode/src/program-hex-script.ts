@@ -226,13 +226,22 @@ const updateSelectionTools = () => {
   const label = document.getElementById('selection-label');
   const bar = label.closest('.selection-tools');
   const hadBarFocus = bar.contains(document.activeElement);
-  const activeAction = hadBarFocus ? document.activeElement?.dataset?.action : '';
+  const focusedAction = hadBarFocus
+    ? (document.activeElement === moreSummary ? '__more__' : (document.activeElement?.dataset?.action || ''))
+    : '';
   const activeHex = hexBody.querySelector('tr.hex-row:not([hidden]) .hb.is-selected') || hexBody.querySelector('tr.selected:not([hidden])');
   const activeMap = memoryMap?.querySelector('tr[aria-current="true"]:not([hidden])');
   const visible = (!!activeHex && !hexMain.hidden) || (!!activeMap && memoryMap?.open);
   bar.hidden = !visible;
   document.body.classList.toggle('has-selection', visible);
-  if (!visible) return;
+  if (!visible) {
+    if (more) more.open = false;
+    if (hadBarFocus) {
+      const clearBtn = document.getElementById('clear-filter');
+      ((clearBtn && !clearBtn.closest('[hidden]')) ? clearBtn : search)?.focus({ preventScroll: true });
+    }
+    return;
+  }
 
   const isBlock = selectedKind === 'block' || (!!activeMap && !activeHex);
   const curBlock = findBlockFor(selected);
@@ -268,9 +277,11 @@ const updateSelectionTools = () => {
     }));
   }
   more.hidden = !extra.length;
-  if (activeAction) {
-    const restore = document.getElementById('action-' + activeAction) || document.getElementById('action-' + primaryAction);
-    restore?.focus({ preventScroll: true });
+  if (focusedAction) {
+    const restore = focusedAction === '__more__'
+      ? (!more.hidden ? moreSummary : null)
+      : document.getElementById('action-' + focusedAction);
+    (restore || document.getElementById('action-' + primaryAction) || (!more.hidden ? moreSummary : null))?.focus({ preventScroll: true });
   }
 };
 

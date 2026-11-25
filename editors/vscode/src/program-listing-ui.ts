@@ -5,7 +5,7 @@
  * HTML and client script renderer for the Program Listing webview.
  */
 import { randomBytes } from 'node:crypto';
-import { MemoryBlockInfo, parseAddress } from './address-math';
+import { MemoryBlockInfo, parseAddress, sameAddress } from './address-math';
 import { callIcon, callIcons } from './call-graph-icons';
 import { iconFontStyles } from './icon-font';
 import { ListingRenderItem, ListingTarget, ListingUnit, ListingUndefinedRun, ListingWindowModel } from './listing-model';
@@ -91,7 +91,7 @@ export function renderListingRowsHtml(items: ListingRenderItem[], selectedAddres
             parts.push(`<tr class="listing-aux-row listing-pre-row"${hiddenRun ? ' hidden' : ''}><td class="addr"></td><td colspan="4">; ${escape(unit.preComment)}</td></tr>`);
         }
 
-        const isSel = Boolean(!selectedMarked && selectedAddress && unit.address.toLowerCase() === selectedAddress.toLowerCase());
+        const isSel = Boolean(!selectedMarked && selectedAddress && (sameAddress(unit.address, selectedAddress) || unit.address.toLowerCase() === selectedAddress.toLowerCase()));
         if (isSel) {
             selectedMarked = true;
         }
@@ -270,16 +270,27 @@ const persist = () => {
 ${webviewShortcutScript}
 
 const unitRows = () => [...tbody.querySelectorAll('tr.listing-unit-row')];
-const findUnitRow = addr => addr ? unitRows().find(r => r.dataset.address?.toLowerCase() === addr.toLowerCase()) : undefined;
+const findUnitRow = addr => addr ? unitRows().find(r => sameAddr(r.dataset.address, addr)) : undefined;
 
 const updateSelectionTools = () => {
   const label = document.getElementById('selection-label');
   const bar = label.closest('.selection-tools');
+  const hadBarFocus = bar.contains(document.activeElement);
+  const focusedAction = hadBarFocus
+    ? (document.activeElement === moreSummary ? '__more__' : (document.activeElement?.dataset?.action || ''))
+    : '';
   const active = findUnitRow(selected);
   const visible = !!active && !active.hidden;
   bar.hidden = !visible;
   document.body.classList.toggle('has-selection', visible);
-  if (!visible) return;
+  if (!visible) {
+    if (more) more.open = false;
+    if (hadBarFocus) {
+      const clearBtn = document.getElementById('clear-filter');
+      ((clearBtn && !clearBtn.closest('[hidden]')) ? clearBtn : search)?.focus({ preventScroll: true });
+    }
+    return;
+  }
   const short = v => /^ram:[0-9a-f]+$/i.test(v || '') ? v.slice(4) : v;
   const fn = active.dataset.entry || '';
   const fnName = active.dataset.fnName || '';
@@ -302,7 +313,6 @@ const updateSelectionTools = () => {
   primaryAction = canDecompile ? 'decompile' : 'memory';
   const main = items.filter(i => i.action === primaryAction);
   const extra = items.filter(i => i.action !== primaryAction);
-  const activeAction = document.activeElement?.dataset?.action;
   const hosts = [document.getElementById('selection-primary'), document.getElementById('selection-more')];
   for (const [idx, list] of [main, extra].entries()) {
     hosts[idx].replaceChildren(...list.map(item => {
@@ -322,8 +332,11 @@ const updateSelectionTools = () => {
     }));
   }
   more.hidden = !extra.length;
-  if (activeAction) {
-    document.getElementById('action-' + activeAction)?.focus({ preventScroll: true });
+  if (focusedAction) {
+    const restored = focusedAction === '__more__'
+      ? (!more.hidden ? moreSummary : null)
+      : document.getElementById('action-' + focusedAction);
+    (restored || document.querySelector('#selection-primary button') || (!more.hidden ? moreSummary : null))?.focus({ preventScroll: true });
   }
 };
 

@@ -171,7 +171,7 @@ export const viewStyles = `
 .browser-page .browser-search input{width:100%;height:32px;padding-left:30px;min-width:0;max-width:none;font-size:12px}
 .browser-page .scope{font-size:11px;line-height:1.6;margin:10px 0 12px;color:var(--ghidra-muted)}
 .browser-page #filter-status{font-size:11px;margin:8px 0;color:var(--ghidra-muted)}
-.browser-page #filter-status.sr-filter-status{position:absolute;width:1px;height:1px;padding:0;margin:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.browser-page #filter-status.sr-filter-status{position:absolute;width:1px;height:1px;padding:0;margin:0;border:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .browser-page .selection-tools{position:fixed;z-index:4;left:50%;bottom:16px;transform:translateX(-50%);width:calc(100% - 32px);max-width:760px;box-shadow:0 3px 12px var(--vscode-widget-shadow);display:flex;align-items:center;gap:10px;padding:8px 10px;margin-bottom:10px;border:1px solid var(--vscode-panel-border);border-radius:4px;background:var(--vscode-sideBar-background,var(--vscode-editor-background))}
 .browser-page .selection-tools[hidden]{display:none!important}
 .browser-page #selection-label{flex:1;min-width:0;margin:0;font-size:11px;color:var(--ghidra-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -298,7 +298,7 @@ export const viewStyles = `
 .inspector-menu-content .icon-button{width:32px;min-height:0;padding:7px;justify-content:center}
 .inspector-menu-content .icon-button.danger{color:var(--vscode-errorForeground);margin:0 0 0 3px;padding:7px;border-top:0;position:relative}
 .inspector-menu-content .icon-button.danger::before{content:'';position:absolute;left:-3px;top:6px;bottom:6px;width:1px;background:var(--vscode-panel-border)}
-.sr-status{position:absolute;width:1px;height:1px;padding:0;margin:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.sr-status{position:absolute;width:1px;height:1px;padding:0;margin:0;border:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .inspector-page.is-busy::before{content:'';position:fixed;z-index:20;top:0;left:0;width:30%;height:2px;background:var(--vscode-progressBar-background,var(--vscode-focusBorder));opacity:0;animation:inspector-busy-in 0s linear 150ms forwards,inspector-busy 1.2s cubic-bezier(.4,0,.2,1) 150ms infinite}
 @keyframes inspector-busy-in{to{opacity:1}}
 @keyframes inspector-busy{from{transform:translateX(-100%)}to{transform:translateX(340%)}}
@@ -329,7 +329,8 @@ export const browserStateScript = String.raw`
       return target||null;
     };
     const bindMoreMenu=(menu,summary)=>{
-      if(!menu||!summary){return}
+      if(!menu||!summary||menu.dataset.moreBound){return}
+      menu.dataset.moreBound='true';
       menu.addEventListener('keydown',event=>{
         if(event.key==='Escape'){event.preventDefault();menu.open=false;summary.focus();return}
         if(!['ArrowDown','ArrowUp','ArrowLeft','ArrowRight','Home','End'].includes(event.key)){return}
@@ -341,6 +342,13 @@ export const browserStateScript = String.raw`
       });
     };
     let filterWasActive=false;
+    const setFilterStatusText=(status,text)=>{if(status.textContent!==text){status.textContent=text}};
+    const resetFilterStatus=()=>{
+      filterWasActive=false;
+      const status=document.getElementById('filter-status');if(!status){return}
+      status.removeAttribute('hidden');status.classList.add('sr-filter-status');
+      setFilterStatusText(status,'');
+    };
     const updateFilterStatus=({query,visible,total,matchText,emptyText='No displayed rows match this filter.',restoredText,visuallyHidden})=>{
       const status=document.getElementById('filter-status');if(!status){return}
       status.removeAttribute('hidden');
@@ -349,16 +357,16 @@ export const browserStateScript = String.raw`
         status.classList.add('sr-filter-status');
         if(filterWasActive){
           filterWasActive=false;
-          status.textContent=restoredText??(total===0?'Filter cleared. No displayed rows.':total===1?'Filter cleared. Showing 1 displayed row.':'Filter cleared. Showing all '+total+' displayed rows.');
+          setFilterStatusText(status,restoredText??(total===0?'Filter cleared. No displayed rows.':total===1?'Filter cleared. Showing 1 displayed row.':'Filter cleared. Showing all '+total+' displayed rows.'));
         }else{
-          status.textContent='';
+          setFilterStatusText(status,'');
         }
         return;
       }
       filterWasActive=true;
       const hideVisually=visuallyHidden!==undefined?Boolean(visuallyHidden):visible===0;
       status.classList.toggle('sr-filter-status',hideVisually);
-      status.textContent=visible>0?(matchText??(visible+' of '+total+' displayed rows match.')):emptyText;
+      setFilterStatusText(status,visible>0?(matchText??(visible+' of '+total+' displayed rows match.')):emptyText);
     };
     let actionStatusFrame=0,actionStatusNextFrame=0;
     const announceActionStatus=text=>{
@@ -421,12 +429,21 @@ syncShortcutHints();
 
 /** Client-side script for filterable browser tables and keyboard row navigation. */
 export const browserViewScript = String.raw`
-    (()=>{
+    const mountBrowserView=()=>{
       if(!document.body.classList.contains('browser-page')){return}
-      for(const table of document.querySelectorAll('.table-wrap')){table.addEventListener('scroll',schedulePersist,{passive:true});if(!table.querySelector('tbody tr')){table.hidden=true;const next=table.nextElementSibling;const counted=/\(0\)\s*$/.test(table.closest('section')?.querySelector('h2')?.textContent||'');if(!counted&&!next?.classList.contains('empty')){const empty=document.createElement('p');empty.className='table-empty';empty.hidden=!!search.value.trim();empty.textContent='No entries.';table.after(empty)}}}
-      document.getElementById('clear-filter').addEventListener('click',()=>{search.value='';filter();persist();search.focus()});
-      document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!pageOptions?.open&&!more?.open&&search.value){event.preventDefault();search.value='';filter();persist()}});
-      for(const row of selectable){row.addEventListener('keydown',event=>{if(event.target.closest('button')){return}const tbody=row.closest('tbody');if(!tbody||!['ArrowDown','ArrowUp','Home','End'].includes(event.key)){return}event.preventDefault();stepRowFocus([...tbody.querySelectorAll('tr[data-address]:not([hidden]),tr[data-entry]:not([hidden])')],row,event.key)})}
+      for(const table of document.querySelectorAll('.table-wrap')){
+        if(!table.dataset.browserBound){table.dataset.browserBound='true';table.addEventListener('scroll',schedulePersist,{passive:true})}
+        if(!table.querySelector('tbody tr')){table.hidden=true;const next=table.nextElementSibling;const counted=/\(0\)\s*$/.test(table.closest('section')?.querySelector('h2')?.textContent||'');if(!counted&&!next?.classList.contains('empty')&&!next?.classList.contains('table-empty')){const empty=document.createElement('p');empty.className='table-empty';empty.hidden=!!search.value.trim();empty.textContent='No entries.';table.after(empty)}}
+      }
+      const clearBtn=document.getElementById('clear-filter');
+      if(clearBtn&&!clearBtn.dataset.browserBound){clearBtn.dataset.browserBound='true';clearBtn.addEventListener('click',()=>{search.value='';filter();persist();search.focus()})}
+      if(!document.body.dataset.browserEscBound){document.body.dataset.browserEscBound='true';document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!pageOptions?.open&&!more?.open&&search.value){event.preventDefault();search.value='';filter();persist()}})}
+      for(const row of selectable){
+        if(row.dataset.rowNavBound){continue}
+        row.dataset.rowNavBound='true';
+        row.addEventListener('keydown',event=>{if(event.target.closest('button')){return}const tbody=row.closest('tbody');if(!tbody||!['ArrowDown','ArrowUp','Home','End'].includes(event.key)){return}event.preventDefault();stepRowFocus([...tbody.querySelectorAll('tr[data-address]:not([hidden]),tr[data-entry]:not([hidden])')],row,event.key)});
+      }
       bindMoreMenu(more,moreSummary);
-    })();
+    };
+    mountBrowserView();
 `;
