@@ -72,7 +72,7 @@ export function page(options: PageOptions): string {
     .more-actions>summary{font-weight:400;min-height:28px;padding:4px 10px;border:1px solid var(--vscode-contrastBorder,var(--vscode-panel-border));border-radius:2px;background:var(--vscode-button-secondaryBackground,var(--vscode-input-background));color:var(--vscode-button-secondaryForeground,var(--vscode-foreground))}
     .more-actions>summary:hover{background:var(--vscode-button-secondaryHoverBackground,var(--vscode-list-hoverBackground))}
     .more-actions[open]{flex-basis:100%}.more-actions[open]>summary{display:list-item;width:fit-content;margin-bottom:8px}
-    #selection-label{flex:0 1 auto;margin-right:4px;font-size:12px;color:var(--vscode-descriptionForeground);overflow-wrap:anywhere}
+    #selection-label{flex:0 1 auto;margin-right:4px;font-size:12px;color:var(--ghidra-muted);overflow-wrap:anywhere}
     td{white-space:pre-wrap}
     tr[data-address],tr[data-entry]{cursor:pointer}
     .mono table{table-layout:fixed;min-width:760px}
@@ -81,18 +81,18 @@ export function page(options: PageOptions): string {
     .listing-meta{display:none}
     .listing-options{display:flex;align-items:center;gap:8px;margin-bottom:8px}
     .listing:not(.show-details) th:nth-child(n+3),.listing:not(.show-details) td:nth-child(n+3){display:none}
-    .listing-meta{margin-top:5px;color:var(--vscode-descriptionForeground);font-size:11px}
+    .listing-meta{margin-top:5px;color:var(--ghidra-muted);font-size:11px}
     .listing-meta span{display:block;white-space:pre-wrap;overflow-wrap:anywhere}
     .hex table{min-width:780px}.hex td:nth-child(2){white-space:pre}
-    .scope,.notice{font-size:12px;color:var(--vscode-descriptionForeground);margin:12px 0}
+    .scope,.notice{font-size:12px;color:var(--ghidra-muted);margin:12px 0}
     .graph-wrap{max-width:100%;overflow:auto;border:1px solid var(--vscode-panel-border);border-radius:2px}
     .graph-node{cursor:pointer}.graph-node rect{fill:var(--vscode-editor-background);stroke:var(--vscode-panel-border)}
-    .graph-node:hover rect,.graph-node.selected rect,.graph-node:focus-visible rect{stroke:var(--vscode-focusBorder);stroke-width:2}
-    .graph-node.search-muted{opacity:.35}.graph-node.search-match rect{stroke:var(--vscode-focusBorder);stroke-width:2}
+    .graph-node:hover rect,.graph-node.selected rect,.graph-node:focus-visible rect{stroke:var(--ghidra-focus);stroke-width:2}
+    .graph-node.search-muted{opacity:.35}.graph-node.search-match rect{stroke:var(--ghidra-focus);stroke-width:2}
     .graph-node text{fill:var(--vscode-foreground);pointer-events:none}.node-title{font-weight:600;font-size:14px}
-    .node-subtitle,.node-line{font-size:11px}.node-subtitle{fill:var(--vscode-descriptionForeground)}
+    .node-subtitle,.node-line{font-size:11px}.node-subtitle{fill:var(--ghidra-muted)}
     .edge{fill:none;stroke:var(--vscode-charts-blue);stroke-width:1.5}marker path{fill:var(--vscode-charts-blue)}
-    .edge-label{fill:var(--vscode-descriptionForeground);font-size:10px}
+    .edge-label{fill:var(--ghidra-muted);font-size:10px}
     .pagination{display:flex;gap:8px;margin-top:16px}
     .pagination[hidden]{display:none}
     @media(max-width:720px){.listing table{min-width:0}.listing th:first-child{width:126px}.listing td:first-child{white-space:normal;overflow-wrap:anywhere}.listing th:nth-child(n+3),.listing td:nth-child(n+3){display:none}.listing-options{display:flex;align-items:center;gap:8px;margin-bottom:8px}.listing.show-details .listing-meta{display:block}}
