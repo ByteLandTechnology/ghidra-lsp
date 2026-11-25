@@ -13,8 +13,8 @@ use super::cfg::{
   order_block_inputs_entry_first,
 };
 use super::{BatchRequest, batch_query};
-use crate::address::{paginate_operation, parse_address, same_address};
-use crate::backend::{McpBackend, unsupported_schema};
+use crate::address::{parse_address, same_address};
+use crate::backend::{McpBackend, list_operation, unsupported_schema};
 
 /// Function metadata resolved before building a fallback control-flow graph.
 pub(super) struct FallbackCfgRequest<'a> {
@@ -269,7 +269,7 @@ pub(super) async fn fallback_control_flow_graph(
   backend: &McpBackend,
   req: FallbackCfgRequest<'_>,
 ) -> Result<Value> {
-  let scoped_instructions = paginate_operation(
+  let scoped_instructions = list_operation(
     backend,
     "listing",
     "instruction.list",
@@ -298,7 +298,7 @@ pub(super) async fn fallback_control_flow_graph(
         flow.contains("JUMP") || flow.contains("BRANCH")
       });
       let branch_refs = if has_branches {
-        match paginate_operation(
+        match list_operation(
           backend,
           "reference",
           "list",
@@ -326,7 +326,7 @@ pub(super) async fn fallback_control_flow_graph(
       (instructions, branch_refs)
     }
     Err(error) if unsupported_schema(&error) => {
-      let raw_instructions = paginate_operation(
+      let raw_instructions = list_operation(
         backend,
         "listing",
         "instruction.list",

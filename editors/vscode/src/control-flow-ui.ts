@@ -15,7 +15,7 @@ export function controlFlowToolbar(title: string, subtitle: string, active: bool
 export const controlFlowUiStyles = `
 /* Hallmark · v2.0.0 · redesign: full · shape: app screen · genre: modern-minimal · theme: Console (dealt 3/3) · material: VS Code theme tokens · signature: control-flow trace */
 /* Hallmark · pre-emit critique: P4 H4 E4 S4 R5 V4 · weakest: hierarchy, distinguish the graph identity from its tools */
-.cfg-page{--cfg-ground:var(--vscode-editor-background);--cfg-surface:var(--vscode-sideBar-background,var(--vscode-editor-background));--cfg-ink:var(--vscode-foreground);--cfg-muted:var(--vscode-descriptionForeground);--cfg-rule:var(--vscode-panel-border);--cfg-focus:var(--vscode-focusBorder)}
+.cfg-page{--cfg-ground:var(--vscode-editor-background);--cfg-surface:var(--vscode-sideBar-background,var(--vscode-editor-background));--cfg-ink:var(--vscode-foreground);--cfg-muted:var(--ghidra-muted);--cfg-rule:var(--vscode-panel-border);--cfg-focus:var(--ghidra-focus)}
 .cfg-page main{padding:0;gap:0;position:relative}
 .flow-page .call-icon{font:16px call-icons;display:inline-block;line-height:1;vertical-align:middle}
 .cfg-topbar{display:flex;align-items:center;gap:4px;min-height:56px;padding:8px 14px;border-bottom:1px solid var(--cfg-rule);background:var(--cfg-ground);flex-shrink:0}
@@ -24,10 +24,10 @@ export const controlFlowUiStyles = `
 .cfg-function-name{font-size:11px;line-height:1.25;font-weight:400;color:var(--cfg-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .cfg-page .cfg-icon-button{display:flex;align-items:center;justify-content:center;flex-shrink:0;width:32px;height:32px;min-height:0;padding:6px;border:0;border-radius:6px;background:transparent;color:var(--vscode-foreground);cursor:pointer}
 .cfg-page button:hover{background:var(--vscode-toolbar-hoverBackground,var(--vscode-list-hoverBackground))}
-.cfg-page .cfg-topbar [aria-pressed="true"],.cfg-page .cfg-topbar [aria-expanded="true"]{background:var(--vscode-toolbar-activeBackground,var(--vscode-list-hoverBackground));color:var(--vscode-focusBorder)}
+.cfg-page .cfg-topbar [aria-pressed="true"],.cfg-page .cfg-topbar [aria-expanded="true"]{background:var(--ghidra-pressed-bg);color:var(--ghidra-accent);box-shadow:inset 0 0 0 1px var(--ghidra-focus)}
 .cfg-search{flex:0 1 230px;min-width:0}
 .cfg-page .cfg-search input{width:100%;height:32px;min-width:0;border-radius:6px}
-.cfg-page .flow-canvas:focus-visible{outline:1px solid var(--vscode-focusBorder);outline-offset:-1px}
+.cfg-page .flow-canvas:focus-visible{outline:2px solid var(--cfg-focus);outline-offset:-2px}
 .cfg-page .flow-canvas{position:relative;border:0;border-radius:0;background:var(--vscode-editor-background)}
 .cfg-page .scope{position:absolute;bottom:19px;left:16px;z-index:2;max-width:calc(100% - 180px);margin:0;padding:3px 6px;background:var(--vscode-editor-background);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none}
 .cfg-page #filter-status{position:absolute;top:60px;left:16px;z-index:2;padding:3px 6px;background:var(--vscode-editor-background);font-size:11px}
@@ -62,19 +62,32 @@ export const controlFlowUiStyles = `
 .cfg-overview rect{fill:var(--vscode-editorWidget-border,var(--vscode-descriptionForeground));stroke:none}
 .cfg-overview .cfg-map-selected{fill:var(--vscode-focusBorder)}
 .cfg-overview #cfg-overview-window{fill:var(--vscode-focusBorder);fill-opacity:.12;stroke:var(--vscode-focusBorder);stroke-width:1;vector-effect:non-scaling-stroke;pointer-events:none}
-.cfg-page .empty{margin:auto;padding:24px;color:var(--vscode-descriptionForeground)}
+.cfg-page .empty{margin:auto;padding:24px;color:var(--ghidra-muted)}
 .cfg-page button:focus-visible,.cfg-page summary:focus-visible,.cfg-page .cfg-overview-close:focus-visible,.cfg-page #cfg-overview-map:focus-visible{outline:2px solid var(--cfg-focus);outline-offset:-2px}.cfg-page button:disabled{opacity:.5;cursor:not-allowed}
 .cfg-page button,.cfg-page summary{transition:background-color 120ms ease,color 120ms ease}
 @media(prefers-reduced-motion:reduce){.cfg-page *{animation:none!important;transition:none!important}}
 .vscode-high-contrast .cfg-edge,.vscode-high-contrast-light .cfg-edge{opacity:1!important}
 @media(max-width:640px){.cfg-topbar{min-height:48px;padding:8px 10px;gap:3px}.cfg-heading{gap:6px}.cfg-page .cfg-heading h1{font-size:12px}.cfg-function-name{font-size:11px}.cfg-search{position:absolute;top:52px;left:10px;right:10px;z-index:4;background:var(--vscode-editor-background)}.cfg-page .scope{left:10px;bottom:15px;font-size:10px}.cfg-page .cfg-zoom{right:10px;bottom:12px}.cfg-overview{width:130px;right:10px;bottom:54px}.cfg-page .cfg-overview svg{height:90px}}
+.cfg-page .cfg-icon-button{display:inline-flex}
+.cfg-page .cfg-topbar [aria-pressed="true"],.cfg-page .cfg-topbar [aria-expanded="true"]{width:auto;min-width:32px;gap:3px;padding-inline:6px;border:2px solid var(--ghidra-active-border)}
+.cfg-page .cfg-node.edge-endpoint:not(.selected):not(:focus-visible){border-color:var(--ghidra-focus);outline:1px solid var(--ghidra-focus);outline-offset:0}
+body.cfg-page:is(.vscode-high-contrast,.vscode-high-contrast-light) :is(.cfg-icon-button:not([aria-pressed="true"]):not([aria-expanded="true"]),.cfg-overview-close){border:1px solid var(--ghidra-hv-border)}
+body.cfg-page:is(.vscode-high-contrast,.vscode-high-contrast-light) .cfg-topbar :is([aria-pressed="true"],[aria-expanded="true"]){background:var(--vscode-editor-background);color:var(--vscode-foreground);border:2px solid var(--ghidra-active-border)}
+@media(prefers-contrast:more){.cfg-page .cfg-icon-button:not([aria-pressed="true"]):not([aria-expanded="true"]),.cfg-page .cfg-overview-close{border:1px solid var(--ghidra-hv-border)}}
+@media(forced-colors:active){
+  .cfg-topbar,.cfg-overview,.cfg-page .cfg-zoom{background:var(--ghidra-selection-bg);color:var(--ghidra-selection-fg);border-color:var(--ghidra-hv-border)}
+  .cfg-page .cfg-icon-button:not([aria-pressed="true"]):not([aria-expanded="true"]),.cfg-page .cfg-zoom button,.cfg-page .cfg-overview-close{background:ButtonFace;color:ButtonText;border:1px solid var(--ghidra-hv-border)}
+  .cfg-page .cfg-topbar [aria-pressed="true"],.cfg-page .cfg-topbar [aria-expanded="true"]{background:var(--ghidra-pressed-bg);color:var(--ghidra-selection-fg);border:2px solid var(--ghidra-active-border)}
+  .cfg-page .cfg-edge{opacity:1!important}
+  .cfg-page .flow-canvas svg .block-header,.cfg-page .flow-canvas svg .graph-node.selected .block-header{fill:var(--ghidra-selection-bg);stroke:var(--ghidra-hv-border);stroke-width:1}
+}
 `;
 
 /** Client-side script for block search, edge tracing, and keyboard shortcuts in CFG views. */
 export const controlFlowUiScript = String.raw`
     (()=>{
       const canvas=document.querySelector('[data-control-flow]');if(!canvas||!graphViewport){return}
-      const nodes=[...canvas.querySelectorAll('.graph-world>.graph-node')],edges=[...canvas.querySelectorAll('.cfg-edge')],svg=canvas.querySelector('svg');
+      const nodes=[...canvas.querySelectorAll('.graph-node')],edges=[...canvas.querySelectorAll('.cfg-edge')],svg=canvas.querySelector('svg');
       const searchToggle=document.getElementById('cfg-search-toggle'),searchHost=search.closest('.cfg-search');
       const openSearch=()=>{searchHost.hidden=false;searchToggle.setAttribute('aria-expanded','true');search.focus();search.select()};
       const closeSearch=()=>{searchHost.hidden=true;searchToggle.setAttribute('aria-expanded','false');searchToggle.focus()};
@@ -102,11 +115,11 @@ export const controlFlowUiScript = String.raw`
       const endDrag=event=>{if(overviewDrag&&event.pointerId===overviewDrag.id){overviewDrag=undefined;persist()}};handle.addEventListener('pointerup',endDrag);handle.addEventListener('pointercancel',endDrag);handle.addEventListener('lostpointercapture',endDrag);
       handle.addEventListener('click',event=>event.preventDefault());handle.addEventListener('keydown',event=>{const delta={ArrowLeft:[-16,0],ArrowRight:[16,0],ArrowUp:[0,-16],ArrowDown:[0,16]}[event.key];if(delta){event.preventDefault();event.stopPropagation();const box=overview.getBoundingClientRect(),bounds=canvas.getBoundingClientRect();setPosition(box.left-bounds.left+delta[0],box.top-bounds.top+delta[1]);persist()}});
       new ResizeObserver(()=>{if(overview.open&&cfgOverviewPosition){setPosition(cfgOverviewPosition.x,cfgOverviewPosition.y);persist()}}).observe(canvas);
-      const placeOverview=()=>{const bounds=canvas.getBoundingClientRect(),w=overview.offsetWidth,h=overview.offsetHeight,pad=16;const candidates=[[pad,pad],[Math.max(pad,canvas.clientWidth-w-pad),pad],[pad,Math.max(pad,canvas.clientHeight-h-58)],[Math.max(pad,canvas.clientWidth-w-pad),Math.max(pad,canvas.clientHeight-h-58)]];const blocks=nodes.map(node=>node.querySelector('.block-body').getBoundingClientRect());const overlap=([x,y])=>blocks.reduce((sum,block)=>sum+Math.max(0,Math.min(bounds.left+x+w,block.right)-Math.max(bounds.left+x,block.left))*Math.max(0,Math.min(bounds.top+y+h,block.bottom)-Math.max(bounds.top+y,block.top)),0);candidates.sort((a,b)=>overlap(a)-overlap(b));setPosition(...candidates[0])};
+      const placeOverview=()=>{const bounds=canvas.getBoundingClientRect(),w=overview.offsetWidth,h=overview.offsetHeight,pad=16;const candidates=[[pad,pad],[Math.max(pad,canvas.clientWidth-w-pad),pad],[pad,Math.max(pad,canvas.clientHeight-h-58)],[Math.max(pad,canvas.clientWidth-w-pad),Math.max(pad,canvas.clientHeight-h-58)]];const blocks=nodes.map(node=>(node.classList.contains('cfg-node')?node:node.querySelector('.block-body')||node).getBoundingClientRect());const overlap=([x,y])=>blocks.reduce((sum,block)=>sum+Math.max(0,Math.min(bounds.left+x+w,block.right)-Math.max(bounds.left+x,block.left))*Math.max(0,Math.min(bounds.top+y+h,block.bottom)-Math.max(bounds.top+y,block.top)),0);candidates.sort((a,b)=>overlap(a)-overlap(b));setPosition(...candidates[0])};
       const autoOverview=()=>{const view=graphViewport.snapshot(),width=Number(svg.dataset.width)*view.scale,height=Number(svg.dataset.height)*view.scale;const clipped=view.x < -1||view.y < -1||view.x+width>canvas.clientWidth+1||view.y+height>canvas.clientHeight+1;if(clipped&&!overview.open&&!cfgOverviewDismissed){overview.open=true;syncOverview();if(cfgOverviewPosition){setPosition(cfgOverviewPosition.x,cfgOverviewPosition.y)}else{placeOverview()}persist()}};
       canvas.addEventListener('graph-viewport',autoOverview);
       const updateMap=()=>{const view=graphViewport.snapshot(),box=map.viewBox.baseVal,left=Math.max(0,Math.min(box.width,-view.x/view.scale)),top=Math.max(0,Math.min(box.height,-view.y/view.scale)),right=Math.max(left,Math.min(box.width,(canvas.clientWidth-view.x)/view.scale)),bottom=Math.max(top,Math.min(box.height,(canvas.clientHeight-view.y)/view.scale));const w=Math.min(box.width,Math.max(4,right-left)),h=Math.min(box.height,Math.max(4,bottom-top)),wx=Math.max(0,Math.min(box.width-w,left)),wy=Math.max(0,Math.min(box.height-h,top));windowRect.setAttribute('x',wx);windowRect.setAttribute('y',wy);windowRect.setAttribute('width',w);windowRect.setAttribute('height',h);const ids=new Set(nodes.filter(node=>node.classList.contains('selected')).map(node=>node.dataset.node));for(const rect of map.querySelectorAll('[data-map-node]')){rect.classList.toggle('cfg-map-selected',ids.has(rect.dataset.mapNode))}};
-      canvas.addEventListener('graph-viewport',updateMap);new MutationObserver(updateMap).observe(canvas.querySelector('.graph-world'),{subtree:true,attributes:true,attributeFilter:['class']});
+      canvas.addEventListener('graph-viewport',updateMap);new MutationObserver(updateMap).observe(canvas.querySelector('.graph-card-world')||canvas.querySelector('.graph-world'),{subtree:true,attributes:true,attributeFilter:['class']});
       let pointer;const move=event=>{const matrix=map.getScreenCTM();if(!matrix){return}const p=map.createSVGPoint();p.x=event.clientX;p.y=event.clientY;const target=p.matrixTransform(matrix.inverse());graphViewport.center(target.x,target.y)};
       map.addEventListener('pointerdown',event=>{if(event.button!==0){return}event.preventDefault();event.stopPropagation();pointer=event.pointerId;map.setPointerCapture(pointer);map.focus({preventScroll:true});move(event)});map.addEventListener('pointermove',event=>{if(pointer===event.pointerId){move(event)}});for(const event of ['pointerup','pointercancel','lostpointercapture']){map.addEventListener(event,()=>{pointer=undefined})}
       map.addEventListener('keydown',event=>{const delta={ArrowLeft:[-50,0],ArrowRight:[50,0],ArrowUp:[0,-50],ArrowDown:[0,50]}[event.key];if(delta){event.preventDefault();event.stopPropagation();const view=graphViewport.snapshot();graphViewport.center((canvas.clientWidth/2-view.x+delta[0])/view.scale,(canvas.clientHeight/2-view.y+delta[1])/view.scale)}});

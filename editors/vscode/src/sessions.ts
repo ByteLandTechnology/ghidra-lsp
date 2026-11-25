@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import * as vscode from 'vscode';
+import { countLabel, inlineText, treeAccessibility } from './a11y';
 import { ProgramContext } from './context';
 import { Call } from './memory';
 import { formatFriendlyError } from './error';
@@ -85,6 +86,8 @@ export interface SessionInfo {
     fileName?: string;
     name?: string;
     path?: string;
+    error?: string;
+    reason?: string;
 }
 
 /** Return true when `session` is still open or active on the backend. */
@@ -142,7 +145,7 @@ export class SessionsView implements vscode.TreeDataProvider<SessionNode>, vscod
     /** Update the tree view description badge with `count`. */
     private applyCount(count: number): void {
         if (!this.view) { return; }
-        this.view.description = count > 0 ? String(count) : undefined;
+        this.view.description = count > 0 ? countLabel(count, 'session') : undefined;
     }
 
     /** Recompute and apply the session and task count in the view header. */
@@ -184,7 +187,7 @@ export class SessionsView implements vscode.TreeDataProvider<SessionNode>, vscod
     async getChildren(element?: SessionNode): Promise<SessionNode[]> {
         if (element) { return []; }
 
-        type Entry = { md5: string; name: string; path?: string; lastUsed: number; status: string; task?: ActiveTask };
+        type Entry = { md5: string; name: string; path?: string; lastUsed: number; status: string; error?: string; task?: ActiveTask };
         const entries = new Map<string, Entry>();
         for (const program of this.context.recent) {
             const md5 = program.md5.toLowerCase();
@@ -206,6 +209,7 @@ export class SessionsView implements vscode.TreeDataProvider<SessionNode>, vscod
                     path: entry?.path || session.path,
                     lastUsed: entry?.lastUsed || 0,
                     status: session.status,
+                    error: session.error || session.reason,
                 });
             }
         } catch (error) { failure = error; }
@@ -223,14 +227,18 @@ export class SessionsView implements vscode.TreeDataProvider<SessionNode>, vscod
             else { entry.task = task; }
         }
 
-        const taskDescription = (task: ActiveTask): string => {
-            const stage = task.stage === 'import' ? (task.background ? 'Background import' : 'Importing') : (task.background ? 'Background' : 'Analyzing');
+        const taskStageText = (task: ActiveTask): string => {
+            const stage = task.stage === 'import' ? (task.background ? 'Background import' : 'Importing') : (task.background ? 'Background analysis' : 'Analyzing');
             const percent = typeof task.percentage === 'number' ? ` ${Math.round(task.percentage)}%` : '';
             return `${stage}${percent}`;
         };
+        const taskDescription = (task: ActiveTask): string => {
+            const detail = task.detail ? ` · ${inlineText(task.detail, 32)}` : '';
+            return `${taskStageText(task)}${detail}`;
+        };
         const taskTooltip = (task: ActiveTask): string => {
             const elapsed = Math.max(1, Math.floor((Date.now() - task.startTime) / 1000));
-            return `${taskDescription(task)}${task.detail ? ` · ${task.detail}` : ''}\nElapsed: ${elapsed}s\nStopping the wait does not stop the background task.`;
+            return `${taskStageText(task)}${task.detail ? ` · ${task.detail}` : ''}\nElapsed: ${elapsed}s\nStopping the wait does not stop the background task.`;
         };
         const taskNode = (task: ActiveTask): SessionNode => {
             const node = new SessionNode(task.name, vscode.TreeItemCollapsibleState.None, 'task', task.md5, task);
@@ -239,6 +247,12 @@ export class SessionsView implements vscode.TreeDataProvider<SessionNode>, vscod
             node.iconPath = new vscode.ThemeIcon('sync~spin', new vscode.ThemeColor('progressBar.background'));
             node.tooltip = `Program: ${task.name}\n${taskTooltip(task)}`;
             node.contextValue = task.cancellable ? 'ghidra.activeTask' : 'ghidra.backgroundTask';
+            node.accessibilityInformation = treeAccessibility(
+                task.name,
+                node.description,
+                task.detail,
+                task.cancellable ? 'in progress, stop waiting available' : 'running in background',
+            );
             return node;
         };
 
@@ -257,18 +271,26 @@ export class SessionsView implements vscode.TreeDataProvider<SessionNode>, vscod
             const recoverable = ['closed', 'killed', 'stale', 'disconnected', 'saved', 'failed', 'error'].includes(entry.status);
             const status = ({ ready: active ? 'Current' : 'Open', closed: 'Closed', killed: 'Stopped', stale: 'Disconnected',
                 disconnected: 'Disconnected', saved: failure ? 'Unknown' : 'Not open', failed: 'Error', error: 'Error' } as Record<string, string>)[entry.status] || entry.status;
+            const errorCause = entry.error && ['failed', 'error'].includes(entry.status) ? formatFriendlyError(entry.error) : undefined;
             const node = new SessionNode(entry.name, vscode.TreeItemCollapsibleState.None, 'session', entry.md5, entry.task, entry.path);
             node.id = `session:${entry.md5}`;
             const sameName = names.get(entry.name.toLowerCase()) || [];
             let idLength = 8;
             while (idLength < entry.md5.length && sameName.some(other => other.md5 !== entry.md5 && other.md5.slice(0, idLength) === entry.md5.slice(0, idLength))) { idLength += 4; }
-            const description = entry.task ? `${active ? 'Current · ' : ''}${taskDescription(entry.task)}` : status;
-            node.description = sameName.length > 1 ? `${entry.md5.slice(0, idLength)} · ${description}` : description;
-            node.iconPath = entry.task || (!ready && !recoverable)
+            const stateText = entry.task
+                ? `${active ? 'Current · ' : ''}${taskDescription(entry.task)}`
+                : errorCause ? `Error: ${inlineText(errorCause, 32)}` : status;
+            const inlineAction = ready
+                ? (active ? 'Open overview' : 'Switch session')
+                : entry.task ? '' : recoverable ? 'Reopen' : 'Waiting for analysis';
+            const summary = inlineAction ? `${stateText} · ${inlineAction}` : stateText;
+            node.description = sameName.length > 1 ? `${entry.md5.slice(0, idLength)} · ${summary}` : summary;
+            const spinning = Boolean(entry.task || (!ready && !recoverable));
+            node.iconPath = spinning
                 ? new vscode.ThemeIcon('sync~spin', new vscode.ThemeColor('progressBar.background'))
                 : active ? new vscode.ThemeIcon('check', new vscode.ThemeColor('testing.iconPassed')) : new vscode.ThemeIcon('file-binary');
-            const action = ready ? 'Click to switch sessions' : recoverable && !entry.task ? 'Click to reopen' : 'Waiting for analysis';
-            node.tooltip = `Program: ${entry.name}\nStatus: ${status}\nMD5: ${entry.md5}${entry.path ? `\nPath: ${entry.path}` : ''}${entry.task ? `\n${taskTooltip(entry.task)}` : ''}\n${action}`;
+            const action = ready ? (active ? 'Click to open program overview' : 'Click to switch sessions') : recoverable && !entry.task ? 'Click to reopen' : 'Waiting for analysis';
+            node.tooltip = `Program: ${entry.name}\nStatus: ${errorCause ? `Error (${errorCause})` : status}\nMD5: ${entry.md5}${entry.path ? `\nPath: ${entry.path}` : ''}${entry.task ? `\n${taskTooltip(entry.task)}` : ''}\n${action}`;
             if (ready) {
                 node.contextValue = active ? 'ghidra.activeSession' : 'ghidra.session';
                 if (entry.task?.cancellable) { node.contextValue += 'Task'; }
@@ -279,19 +301,35 @@ export class SessionsView implements vscode.TreeDataProvider<SessionNode>, vscod
                 node.contextValue = 'ghidra.recentItem';
                 node.command = { command: 'ghidraLsp.openRecentItem', title: 'Reopen session', arguments: [entry.md5] };
             } else { node.contextValue = 'ghidra.analyzingSession'; }
+            node.accessibilityInformation = treeAccessibility(
+                entry.name,
+                node.description,
+                entry.task?.detail,
+                errorCause,
+                active ? 'active session' : spinning ? 'in progress' : undefined,
+                action,
+            );
             nodes.push(node);
         }
         if (failure) {
+            const cause = formatFriendlyError(failure);
             const error = new SessionNode('Unable to load sessions', vscode.TreeItemCollapsibleState.None, 'empty');
+            error.id = 'sessions:error';
+            error.description = `${inlineText(cause, 44)} · Retry`;
             error.iconPath = new vscode.ThemeIcon('warning');
-            error.tooltip = formatFriendlyError(failure);
+            error.tooltip = `${cause}\nClick to retry loading sessions.`;
             error.command = { command: 'ghidraLsp.refreshSessions', title: 'Retry' };
+            error.accessibilityInformation = treeAccessibility('Unable to load sessions', error.description, cause, 'warning, Click to retry');
             nodes.unshift(error);
         }
         if (!nodes.length) {
             const empty = new SessionNode('Open binary', vscode.TreeItemCollapsibleState.None, 'empty');
+            empty.id = 'sessions:empty';
+            empty.description = 'Choose a local file';
+            empty.tooltip = 'Open a local binary in Ghidra';
             empty.iconPath = new vscode.ThemeIcon('add');
             empty.command = { command: 'ghidraLsp.openBinary', title: 'Open binary' };
+            empty.accessibilityInformation = treeAccessibility('Open binary', empty.description, 'Click to open a binary in Ghidra');
             nodes.push(empty);
         }
         this.applyCount(nodes.filter(node => node.nodeType !== 'empty').length);

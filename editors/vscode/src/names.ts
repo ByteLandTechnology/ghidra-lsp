@@ -39,6 +39,133 @@ export function briefTemplates(name: string): string {
 /** Format any name-like string, such as a namespace, under the current template display setting. */
 export const displayTemplates = (name: string): string => showTemplateArguments ? name : briefTemplates(name);
 
+/** Candidate item for sibling C++ template collision disambiguation. */
+export interface TemplateItem {
+    /** Stable key identifying this sibling node. */
+    key: string;
+    /** Visible collapsed or expanded label shown on the tree item. */
+    label: string;
+    /** Complete uncollapsed symbol or namespace name. */
+    full: string;
+}
+
+/** Extract outermost `<...>` template argument lists using the same operator rules as `briefTemplates`. */
+export function templateArgumentLists(name: string): string[] {
+    const lists: string[] = [];
+    let depth = 0, start = 0;
+    for (let i = 0; i < name.length;) {
+        if (depth === 0 && name.startsWith('operator', i) && (i === 0 || !/[\w]/.test(name[i - 1]))) {
+            i += 8;
+            while (name[i] === ' ') { i++; }
+            const symbol = operatorSymbols.find(candidate => name.startsWith(candidate, i));
+            if (symbol) { i += symbol.length; }
+            continue;
+        }
+        const ch = name[i];
+        if (ch === '<' && (depth > 0 || (i > 0 && /[\w>]/.test(name[i - 1])))) {
+            if (depth === 0) { start = i + 1; }
+            depth++;
+        } else if (ch === '>' && depth > 0) {
+            depth--;
+            if (depth === 0) { lists.push(name.slice(start, i)); }
+        }
+        i++;
+    }
+    return depth > 0 ? [] : lists;
+}
+
+/** Split one template argument list on top-level commas outside nested brackets and parentheses. */
+function splitTemplateArguments(list: string): string[] {
+    const args: string[] = [];
+    let angle = 0, paren = 0, start = 0;
+    for (let i = 0; i < list.length; i++) {
+        const ch = list[i];
+        if (ch === '<') { angle++; }
+        else if (ch === '>' && angle > 0) { angle--; }
+        else if (ch === '(') { paren++; }
+        else if (ch === ')' && paren > 0) { paren--; }
+        else if (ch === ',' && angle === 0 && paren === 0) {
+            args.push(list.slice(start, i).trim());
+            start = i + 1;
+        }
+    }
+    const tail = list.slice(start).trim();
+    if (tail) { args.push(tail); }
+    return args;
+}
+
+/** Strip leading `ns::` scope prefixes on type identifiers while keeping cv-qualifiers and pointers. */
+function stripScopeQualifiers(typeText: string): string {
+    let current = typeText.replace(/\s+/g, ' ').trim();
+    let previous = '';
+    while (current !== previous) {
+        previous = current;
+        current = current.replace(/\b[A-Za-z_]\w*(?:<[^<>]*>)?::/g, '');
+    }
+    return current;
+}
+
+/** Format one template argument list at a progressive conciseness `level` (`0` = compact to `3` = full). */
+function formatTemplateBadgeList(list: string, level: number): string {
+    const normalized = list.replace(/\s+/g, ' ').trim();
+    if (level >= 3) { return `<${normalized}>`; }
+    const args = splitTemplateArguments(normalized);
+    if (!args.length) { return '<>'; }
+    const foldInner = level <= 1;
+    const firstOnly = (level === 0 || level === 2) && args.length > 1;
+    const formatArg = (arg: string): string => {
+        const unqualified = stripScopeQualifiers(arg);
+        return foldInner ? briefTemplates(unqualified) : unqualified;
+    };
+    if (firstOnly) { return `<${formatArg(args[0])}, …>`; }
+    return `<${args.map(formatArg).join(', ')}>`;
+}
+
+/** Build concise inline `<...>` badges for sibling C++ templates that collapse to identical labels. */
+export function templateCollisionBadges(items: ReadonlyArray<TemplateItem>): Map<string, string> {
+    const badges = new Map<string, string>();
+    if (showTemplateArguments) { return badges; }
+    const byLabel = new Map<string, TemplateItem[]>();
+    for (const item of items) {
+        if (!item.full || item.full === item.label) { continue; }
+        const group = byLabel.get(item.label) || [];
+        group.push(item);
+        byLabel.set(item.label, group);
+    }
+    for (const group of byLabel.values()) {
+        const specializations = [...new Set(group.map(item => item.full))];
+        if (specializations.length < 2) { continue; }
+        const parsed = new Map(specializations.map(full => [full, templateArgumentLists(full)]));
+        const lengths = [...new Set([...parsed.values()].map(lists => lists.length))];
+        const sharedCount = lengths.length === 1 ? lengths[0] : 0;
+        const varyingIndices = sharedCount > 1
+            ? Array.from({ length: sharedCount }, (_, index) => index)
+                .filter(index => new Set(specializations.map(full => parsed.get(full)![index])).size > 1)
+            : [];
+        const renderAtLevel = (full: string, level: number): string => {
+            const lists = parsed.get(full) || [];
+            if (!lists.length) { return full; }
+            const selected = level < 4 && varyingIndices.length ? varyingIndices.map(index => lists[index]) : lists;
+            const listLevel = level >= 4 ? 3 : level;
+            return selected.map(list => formatTemplateBadgeList(list, listLevel)).join(' · ');
+        };
+        let chosen = new Map<string, string>();
+        for (let level = 0; level <= 4; level++) {
+            const candidate = new Map(specializations.map(full => [full, renderAtLevel(full, level)]));
+            if (new Set(candidate.values()).size === specializations.length) {
+                chosen = candidate;
+                break;
+            }
+            chosen = candidate;
+        }
+        for (const item of group) {
+            const badge = chosen.get(item.full);
+            if (badge) { badges.set(item.key, badge); }
+        }
+    }
+    return badges;
+}
+
 /** Split a qualified name on `::` outside template argument lists. */
 export function splitScope(name: string): string[] {
     const parts: string[] = []; let depth = 0, start = 0;

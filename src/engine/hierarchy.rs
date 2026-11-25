@@ -14,7 +14,7 @@ use tower_lsp_server::ls_types::{
 };
 
 use super::Engine;
-use crate::address::paginate_operation;
+use crate::backend::list_operation;
 use crate::document::{
   Document, SHOW_TEMPLATE_ARGUMENTS, Span, canonical_virtual_uri, in_address_range, position,
   same_address, virtual_uri,
@@ -284,10 +284,9 @@ impl Engine {
         }
       } else if s.token.kind == "function" {
         let symbols = self.symbols(&md5).await?;
-        symbols.into_iter().find(|sym| {
-          sym.kind.eq_ignore_ascii_case("function")
-            && (sym.name == s.token.text || s.token.address.as_deref() == Some(&sym.address))
-        })
+        symbols
+          .find_function_by_name_or_exact_address(&s.token.text, s.token.address.as_deref())
+          .cloned()
       } else {
         None
       }
@@ -409,7 +408,7 @@ impl Engine {
       .and_then(Value::as_str)
       .unwrap_or(&item.name);
 
-    let records = paginate_operation(
+    let records = list_operation(
       self.backend.as_ref(),
       "function",
       "call.list",
@@ -490,7 +489,7 @@ impl Engine {
       .and_then(Value::as_str)
       .unwrap_or(&item.name);
 
-    let records = paginate_operation(
+    let records = list_operation(
       self.backend.as_ref(),
       "function",
       "call.list",
