@@ -12,36 +12,20 @@ use tower_lsp_server::ls_types::{
   TextEdit, Uri, WorkspaceEdit,
 };
 
-use super::{Engine, Pending, Refresh};
+use super::{ClientBuffer, Engine, EngineState, Pending, Refresh};
 use crate::document::{
   Document, Span, Symbol, apply_edits, canonical_virtual_uri, matches_text, position, same_address,
   valid_name,
 };
 
 impl Engine {
-  /// Drops every view, rename plan, and semantic cache belonging to closed session `md5`.
-  pub(crate) fn forget_session(&mut self, md5: &str) {
-    self.docs.retain(|_, d| d.md5 != md5);
-    self.pending.remove(md5);
-    self.symbols.remove(md5);
-    self.functions.retain(|(session, _), _| session != md5);
-    let local_prefix = format!("Local:{md5}:");
-    let parameter_prefix = format!("Parameter:{md5}:");
-    self
-      .local_details
-      .retain(|id, _| !id.starts_with(&local_prefix) && !id.starts_with(&parameter_prefix));
-    self.refresh_allowed.retain(|uri, _| {
-      url::Url::parse(uri.as_str())
-        .ok()
-        .and_then(|u| u.host_str().map(str::to_owned))
-        .as_deref()
-        != Some(md5)
-    });
-    if self.active.as_deref() == Some(md5) {
-      self.active = None;
-    }
+  /// Plans a scoped rename preview across open session documents without writing to Ghidra.
+  pub(crate) fn rename(&self, uri: &Uri, pos: Position, name: &str) -> Result<WorkspaceEdit> {
+    self.write_state().rename(uri, pos, name)
   }
+}
 
+impl EngineState {
   /// Plans a scoped rename preview across open session documents without writing to Ghidra.
   pub(crate) fn rename(&mut self, uri: &Uri, pos: Position, name: &str) -> Result<WorkspaceEdit> {
     let canon = canonical_virtual_uri(uri);
@@ -219,81 +203,105 @@ impl Engine {
 
     Some((pos, new_word.to_owned()))
   }
+}
 
-  /// Validates and commits a pending rename when saving the origin document `uri`.
-  pub(crate) async fn save(&mut self, uri: &Uri, text: Option<String>) -> Result<Vec<Refresh>> {
+impl Engine {
+  /// Acquires the per-session lock and commits a pending rename when saving `uri`.
+  pub(crate) async fn save(&self, uri: &Uri, text: Option<String>) -> Result<Vec<Refresh>> {
     let canon = canonical_virtual_uri(uri);
-    let uri = &canon;
-    let (md5, current_text, base_text) = {
-      let doc = self.docs.get(uri).context("Unknown document")?;
-      if let Some(text) = text {
+    let md5 = self
+      .read_state()
+      .docs
+      .get(&canon)
+      .context("Unknown document")?
+      .md5
+      .clone();
+    let _guard = self.lock_session(&md5).await;
+    self.save_locked(&md5, &canon, text).await
+  }
+
+  /// Validates and commits a pending rename while the caller holds the `md5` session lock.
+  pub(crate) async fn save_locked(
+    &self,
+    md5: &str,
+    uri: &Uri,
+    text: Option<String>,
+  ) -> Result<Vec<Refresh>> {
+    let pending = {
+      let mut state = self.write_state();
+      let (current_text, base_text) = {
+        let doc = state.docs.get(uri).context("Unknown document")?;
+        if let Some(text) = text {
+          ensure!(
+            matches_text(&text, &doc.current),
+            "Save text differs from the synchronized document"
+          );
+        }
+        (doc.current.clone(), doc.base.clone())
+      };
+      let Some(pending) = state.pending.get(md5).cloned() else {
         ensure!(
-          matches_text(&text, &doc.current),
-          "Save text differs from the synchronized document"
+          matches_text(&current_text, &base_text),
+          "Only an F2 rename can be saved to Ghidra; arbitrary text edits are not supported"
         );
+        if let Some(doc) = state.docs.get_mut(uri) {
+          doc.saved = doc.current.clone();
+        }
+        return Ok(vec![]);
+      };
+      if !pending.patched
+        && pending.expected.keys().all(|u| {
+          state
+            .docs
+            .get(u)
+            .is_some_and(|d| matches_text(&d.current, &d.base))
+        })
+      {
+        state.pending.remove(md5);
+        if let Some(doc) = state.docs.get_mut(uri) {
+          doc.saved = doc.current.clone();
+        }
+        return Ok(vec![]);
       }
-      (doc.md5.clone(), doc.current.clone(), doc.base.clone())
-    };
-    let Some(pending) = self.pending.get(&md5).cloned() else {
-      ensure!(
-        matches_text(&current_text, &base_text),
-        "Only an F2 rename can be saved to Ghidra; arbitrary text edits are not supported"
-      );
-      if let Some(doc) = self.docs.get_mut(uri) {
-        doc.saved = doc.current.clone();
+      if pending.origin != *uri {
+        ensure!(
+          pending
+            .expected
+            .get(uri)
+            .is_some_and(|exp| matches_text(&current_text, exp))
+            || matches_text(&current_text, &base_text),
+          "Saved text does not match the pending F2 rename"
+        );
+        if let Some(doc) = state.docs.get_mut(uri) {
+          doc.saved = doc.current.clone();
+        }
+        return Ok(vec![]);
       }
-      return Ok(vec![]);
-    };
-    if !pending.patched
-      && pending.expected.keys().all(|u| {
-        self
-          .docs
-          .get(u)
-          .is_some_and(|d| matches_text(&d.current, &d.base))
-      })
-    {
-      self.pending.remove(&md5);
-      if let Some(doc) = self.docs.get_mut(uri) {
-        doc.saved = doc.current.clone();
-      }
-      return Ok(vec![]);
-    }
-    if pending.origin != *uri {
       ensure!(
         pending
           .expected
           .get(uri)
-          .is_some_and(|exp| matches_text(&current_text, exp))
-          || matches_text(&current_text, &base_text),
+          .is_some_and(|exp| matches_text(&current_text, exp)),
         "Saved text does not match the pending F2 rename"
       );
-      if let Some(doc) = self.docs.get_mut(uri) {
-        doc.saved = doc.current.clone();
+      for (u, expected) in &pending.expected {
+        let doc = state
+          .docs
+          .get(u)
+          .context("Expected rename document is missing")?;
+        ensure!(
+          matches_text(&doc.current, &doc.base) || matches_text(&doc.current, expected),
+          "A rename document has unrelated edits; commit stopped"
+        );
       }
-      return Ok(vec![]);
-    }
-    ensure!(
       pending
-        .expected
-        .get(uri)
-        .is_some_and(|exp| matches_text(&current_text, exp)),
-      "Saved text does not match the pending F2 rename"
-    );
-    for (u, expected) in &pending.expected {
-      let doc = self
-        .docs
-        .get(u)
-        .context("Expected rename document is missing")?;
-      ensure!(
-        matches_text(&doc.current, &doc.base) || matches_text(&doc.current, expected),
-        "A rename document has unrelated edits; commit stopped"
-      );
-    }
+    };
 
-    let (domain, selector, current_name) = self.resolve_rename_target(&md5, &pending).await?;
+    let backend = self.backend();
+    let (domain, selector, current_name) = self.resolve_rename_target(md5, &pending).await?;
     if !pending.patched && current_name == pending.symbol.name {
       // Mark uncertain write outcomes before sending so retries re-check backend identity first.
-      if let Some(p) = self.pending.get_mut(&md5) {
+      if let Some(p) = self.write_state().pending.get_mut(md5) {
         p.patched = true;
       }
       let (tool_domain, operation) = match domain {
@@ -301,29 +309,29 @@ impl Engine {
         "function_parameter" => ("function", "parameter.patch"),
         _ => (domain, "patch"),
       };
-      if let Err(err) = self
-        .backend
+      let patch_result = backend
         .call(
           tool_domain,
           operation,
-          Some(&md5),
+          Some(md5),
           json!({"selector": selector, "patch": {"name": pending.new_name}}),
         )
-        .await
-      {
+        .await;
+      self.bump_epoch(md5);
+      if let Err(err) = patch_result {
         if !err.to_string().contains("timed out")
-          && let Some(p) = self.pending.get_mut(&md5)
+          && let Some(p) = self.write_state().pending.get_mut(md5)
         {
           p.patched = false;
         }
         return Err(err);
       }
     } else if current_name == pending.new_name {
-      if let Some(p) = self.pending.get_mut(&md5) {
+      if let Some(p) = self.write_state().pending.get_mut(md5) {
         p.patched = true;
       }
     } else if pending.patched && current_name == pending.symbol.name {
-      if let Some(p) = self.pending.get_mut(&md5) {
+      if let Some(p) = self.write_state().pending.get_mut(md5) {
         p.patched = false;
       }
       bail!("The earlier write did not apply. Save again to retry the rename.");
@@ -331,9 +339,8 @@ impl Engine {
       bail!("Symbol name changed externally; commit stopped");
     }
 
-    let saved = self
-      .backend
-      .call("program", "save", Some(&md5), json!({}))
+    let saved = backend
+      .call("program", "save", Some(md5), json!({}))
       .await
       .context(
         "Symbol renamed but not persisted; save the origin document again to retry persistence",
@@ -342,20 +349,27 @@ impl Engine {
       saved.get("saved").and_then(Value::as_bool) == Some(true),
       "Symbol renamed but backend did not confirm persistence; save again"
     );
-    self.symbols.remove(&md5);
-    // Keep the pending plan until persistence succeeds; after save, never reapply the patch.
-    self.pending.remove(&md5);
-    if let Some(doc) = self.docs.get_mut(uri) {
-      doc.saved = doc.current.clone();
-    }
-    for (u, expected) in &pending.expected {
-      if self.docs.get(u).is_some_and(|d| &d.current == expected) {
-        self.refresh_allowed.insert(u.clone(), expected.clone());
+    {
+      let mut state = self.write_state();
+      state.bump_epoch(md5);
+      state.symbols.remove(md5);
+      // Keep the pending plan until persistence succeeds; after save, never reapply the patch.
+      state.pending.remove(md5);
+      if let Some(doc) = state.docs.get_mut(uri) {
+        doc.saved = doc.current.clone();
+      }
+      for (u, expected) in &pending.expected {
+        if state.docs.get(u).is_some_and(|d| &d.current == expected) {
+          state.refresh_allowed.insert(u.clone(), expected.clone());
+        }
       }
     }
-    self.refresh_session(&md5, Some(&pending)).await.context(
-      "Rename persisted, but regeneration failed. Use Ghidra: Refresh Documents to recover",
-    )
+    self
+      .refresh_session_locked(md5, Some(&pending))
+      .await
+      .context(
+        "Rename persisted, but regeneration failed. Use Ghidra: Refresh Documents to recover",
+      )
   }
 
   /// Resolves the backend domain, selector payload, and live name for a pending rename target.
@@ -367,9 +381,9 @@ impl Engine {
     if pending.symbol.local() {
       return Ok(self.resolve_local_rename_target(md5, pending).await);
     }
+    let backend = self.backend();
     if pending.symbol.id.starts_with("Function:") {
-      let function = self
-        .backend
+      let function = backend
         .call(
           "function",
           "get",
@@ -391,8 +405,7 @@ impl Engine {
     if pending.symbol.id.starts_with("Label:") {
       return Ok(self.resolve_label_rename_target(md5, pending).await);
     }
-    let current = self
-      .backend
+    let current = backend
       .call(
         "symbol",
         "get",
@@ -417,9 +430,9 @@ impl Engine {
     md5: &str,
     pending: &Pending,
   ) -> (&'static str, Value, String) {
-    let detail = self.local_detail(&pending.symbol);
+    let detail = self.read_state().local_detail(&pending.symbol);
     let function = self
-      .backend
+      .backend()
       .call(
         "function",
         "get",
@@ -513,6 +526,7 @@ impl Engine {
     md5: &str,
     pending: &Pending,
   ) -> (&'static str, Value, String) {
+    let backend = self.backend();
     let mut matched: Option<(String, String)> = None;
     for filter in [
       json!({"address": pending.symbol.address}),
@@ -521,8 +535,7 @@ impl Engine {
       if matched.is_some() {
         break;
       }
-      if let Ok(list) = self
-        .backend
+      if let Ok(list) = backend
         .call(
           "symbol",
           "list",
@@ -540,73 +553,98 @@ impl Engine {
     ("symbol", json!({"id": sym_id}), current_name)
   }
 
-  /// Regenerates every clean or accepted document in session `md5`.
-  pub(crate) async fn refresh_session(
-    &mut self,
+  /// Regenerates every clean or accepted document in session `md5` while holding the session lock.
+  pub(crate) async fn refresh_session_locked(
+    &self,
     md5: &str,
     committed: Option<&Pending>,
   ) -> Result<Vec<Refresh>> {
-    if self.pending.get(md5).is_some_and(|p| {
-      !p.patched
-        && p
-          .expected
-          .keys()
-          .all(|u| self.docs.get(u).is_some_and(|d| d.current == d.base))
-    }) {
-      self.pending.remove(md5);
-    }
-    ensure!(
-      committed.is_some() || !self.pending.contains_key(md5),
-      "Save or discard the pending rename before refreshing"
-    );
-    self.symbols.remove(md5);
-    let documents: Vec<_> = self
-      .docs
-      .values()
-      .filter(|d| d.md5 == md5 && d.entry.is_some())
-      .cloned()
-      .collect();
+    let (documents, start_gen, start_epoch) = {
+      let mut state = self.write_state();
+      if state.pending.get(md5).is_some_and(|p| {
+        !p.patched
+          && p
+            .expected
+            .keys()
+            .all(|u| state.docs.get(u).is_some_and(|d| d.current == d.base))
+      }) {
+        state.pending.remove(md5);
+      }
+      ensure!(
+        committed.is_some() || !state.pending.contains_key(md5),
+        "Save or discard the pending rename before refreshing"
+      );
+      let generation = state.generation;
+      let epoch = state.bump_epoch(md5);
+      state.symbols.remove(md5);
+      let documents: Vec<_> = state
+        .docs
+        .values()
+        .filter(|doc| {
+          if doc.md5 != md5 || doc.entry.is_none() {
+            return false;
+          }
+          let accepted = committed.and_then(|p| p.expected.get(&doc.uri));
+          doc.clean()
+            || accepted == Some(&doc.current)
+            || state.refresh_allowed.get(&doc.uri) == Some(&doc.current)
+        })
+        .cloned()
+        .collect();
+      (documents, generation, epoch)
+    };
+
     let mut changes = vec![];
     for old in documents {
       let Some(entry) = old.entry.as_deref() else {
         continue;
       };
-      let accepted = committed.and_then(|p| p.expected.get(&old.uri));
-      if !old.clean()
-        && accepted != Some(&old.current)
-        && self.refresh_allowed.get(&old.uri) != Some(&old.current)
-      {
-        continue;
+      let generated = self.generate_function(md5, entry, None).await?;
+      let accepted = committed
+        .and_then(|p| p.expected.get(&old.uri))
+        .map(String::as_str);
+      let mut state = self.write_state();
+      ensure!(
+        !state.is_closed_since(md5, start_epoch, start_gen),
+        "Session was closed"
+      );
+      state.bump_epoch(md5);
+      if let Some((entry_key, function_val, local_details)) = generated.metadata {
+        state.apply_generated_metadata(md5, entry_key, function_val, local_details);
       }
-      let new = self.generate(md5, entry).await?;
-      if let Some(change) = self.replace_generated(old, new) {
+      if let Some(change) = replace_generated(&mut state, &old, generated.doc, accepted) {
         changes.push(change);
       }
     }
-    self.refresh_snapshots(md5).await;
+    self
+      .refresh_snapshots_locked(md5, start_epoch, start_gen)
+      .await;
     Ok(changes)
   }
 
   /// Refreshes clean read-only `symbol`, `references`, and `type` snapshots in session `md5`.
-  async fn refresh_snapshots(&mut self, md5: &str) {
-    let snapshots: Vec<_> = self
-      .docs
-      .values()
-      .filter(|doc| doc.md5 == md5 && doc.entry.is_none() && doc.clean())
-      .filter_map(|doc| {
-        let parsed = url::Url::parse(doc.uri.as_str()).ok()?;
-        let mut parts = parsed.path_segments()?;
-        let kind = parts.next()?.to_owned();
-        if !matches!(kind.as_str(), "symbol" | "references" | "type") {
-          return None;
-        }
-        let id = percent_encoding::percent_decode_str(parts.next()?)
-          .decode_utf8()
-          .ok()?
-          .into_owned();
-        Some((doc.uri.clone(), kind, id))
-      })
-      .collect();
+  async fn refresh_snapshots_locked(&self, md5: &str, start_epoch: u64, start_gen: u64) {
+    let snapshots: Vec<_> = {
+      let state = self.read_state();
+      state
+        .docs
+        .values()
+        .filter(|doc| doc.md5 == md5 && doc.entry.is_none() && doc.clean())
+        .filter_map(|doc| {
+          let parsed = url::Url::parse(doc.uri.as_str()).ok()?;
+          let mut parts = parsed.path_segments()?;
+          let kind = parts.next()?.to_owned();
+          if !matches!(kind.as_str(), "symbol" | "references" | "type") {
+            return None;
+          }
+          let id = percent_encoding::percent_decode_str(parts.next()?)
+            .decode_utf8()
+            .ok()?
+            .into_owned();
+          Some((doc.uri.clone(), kind, id))
+        })
+        .collect()
+    };
     for (uri, kind, id) in snapshots {
       let (text, warning) = match self.snapshot_text(md5, &kind, &id).await {
         Ok(text) => (text, None),
@@ -618,7 +656,13 @@ impl Engine {
           )
         }
       };
-      if let Some(doc) = self.docs.get_mut(&uri) {
+      let mut state = self.write_state();
+      if state.is_closed_since(md5, start_epoch, start_gen) {
+        return;
+      }
+      if let Some(doc) = state.docs.get_mut(&uri)
+        && doc.clean()
+      {
         doc.base = text.clone();
         doc.current = text.clone();
         doc.saved = text;
@@ -627,61 +671,55 @@ impl Engine {
     }
   }
 
-  /// Installs regenerated `new` document over `old` and returns an editor edit delta if needed.
-  fn replace_generated(&mut self, old: Document, mut new: Document) -> Option<Refresh> {
-    new.version = old.version;
-    let uri = new.uri.clone();
-    let mut change = None;
-    if old.version.is_some() {
-      new.current = old.current;
-      new.saved = old.saved;
-      if new.current != new.base {
-        self
-          .refresh_allowed
-          .insert(uri.clone(), new.current.clone());
-        change = Some(Refresh {
-          uri: uri.clone(),
-          old: new.current.clone(),
-          new: new.base.clone(),
-          version: old.version,
-        });
-      } else {
-        self.refresh_allowed.remove(&uri);
-      }
-    } else {
-      self.refresh_allowed.remove(&uri);
-    }
-    self.docs.insert(uri, new);
-    change
-  }
-
-  /// Regenerates a single clean function document `uri` when no rename is pending.
-  pub(crate) async fn refresh_document(&mut self, uri: &Uri) -> Result<Vec<Refresh>> {
+  /// Regenerates a single clean function document `uri` while holding the session lock.
+  pub(crate) async fn refresh_document_locked(&self, uri: &Uri) -> Result<Vec<Refresh>> {
     let canon = canonical_virtual_uri(uri);
     let uri = &canon;
-    let old = self
-      .docs
-      .get(uri)
-      .context("Unknown virtual document")?
-      .clone();
-    if !old.clean() || self.pending.contains_key(&old.md5) {
-      return Ok(vec![]);
-    }
-    let Some(entry) = old.entry.as_deref() else {
-      return Ok(vec![]);
+    let (old, entry, start_gen, start_epoch) = {
+      let mut state = self.write_state();
+      let old = state
+        .docs
+        .get(uri)
+        .context("Unknown virtual document")?
+        .clone();
+      if !old.clean() || state.pending.contains_key(&old.md5) {
+        return Ok(vec![]);
+      }
+      let Some(entry) = old.entry.clone() else {
+        return Ok(vec![]);
+      };
+      let generation = state.generation;
+      let epoch = state.bump_epoch(&old.md5);
+      (old, entry, generation, epoch)
     };
-    let new = self
-      .generate_inner(&old.md5, entry, Some(&old.base))
+    let generated = self
+      .generate_function(&old.md5, &entry, Some(&old.base))
       .await?;
-    if old.base != new.base {
-      self.refresh_snapshots(&old.md5).await;
+    let base_changed = old.base != generated.doc.base;
+    let change = {
+      let mut state = self.write_state();
+      ensure!(
+        !state.is_closed_since(&old.md5, start_epoch, start_gen),
+        "Session was closed"
+      );
+      state.bump_epoch(&old.md5);
+      if let Some((entry_key, function_val, local_details)) = generated.metadata {
+        state.apply_generated_metadata(&old.md5, entry_key, function_val, local_details);
+      }
+      replace_generated(&mut state, &old, generated.doc, None)
+    };
+    if base_changed {
+      self
+        .refresh_snapshots_locked(&old.md5, start_epoch, start_gen)
+        .await;
     }
-    Ok(self.replace_generated(old, new).into_iter().collect())
+    Ok(change.into_iter().collect())
   }
 
-  /// Reverts an unpatched pending rename across affected session documents.
-  pub(crate) async fn discard(&mut self, md5: &str) -> Result<Vec<Refresh>> {
-    let Some(pending) = self.pending.get(md5).cloned() else {
+  /// Reverts an unpatched pending rename across affected session documents under the session lock.
+  pub(crate) fn discard_locked(&self, md5: &str) -> Result<Vec<Refresh>> {
+    let mut state = self.write_state();
+    let Some(pending) = state.pending.get(md5).cloned() else {
       return Ok(vec![]);
     };
     ensure!(
@@ -690,14 +728,14 @@ impl Engine {
     );
     let mut changes = vec![];
     for (uri, expected) in &pending.expected {
-      let doc = self.docs.get_mut(uri).context("Missing rename document")?;
+      let doc = state.docs.get_mut(uri).context("Missing rename document")?;
       ensure!(
         doc.current == doc.base || &doc.current == expected,
         "Document has unrelated edits; discard or undo them first"
       );
     }
     for uri in pending.expected.keys() {
-      let Some(doc) = self.docs.get_mut(uri) else {
+      let Some(doc) = state.docs.get_mut(uri) else {
         continue;
       };
       if doc.version.is_some() && doc.current != doc.base {
@@ -714,9 +752,56 @@ impl Engine {
         doc.saved = doc.base.clone();
       }
     }
-    self.pending.remove(md5);
+    state.bump_epoch(md5);
+    state.pending.remove(md5);
     Ok(changes)
   }
+}
+
+/// Installs regenerated `new` over live state while preserving concurrent `did_change` edits.
+fn replace_generated(
+  state: &mut EngineState,
+  snapshot_old: &Document,
+  mut new: Document,
+  accepted: Option<&str>,
+) -> Option<Refresh> {
+  new.uri = canonical_virtual_uri(&new.uri);
+  let uri = new.uri.clone();
+  let live = state.docs.get(&uri).unwrap_or(snapshot_old);
+  new.version = live.version;
+  let mut change = None;
+  if live.version.is_some() {
+    new.current = live.current.clone();
+    new.saved = live.saved.clone();
+    let eligible = live.current == snapshot_old.base
+      || accepted == Some(live.current.as_str())
+      || state.refresh_allowed.get(&uri) == Some(&live.current);
+    if !eligible && new.current != new.base {
+      state.docs.insert(uri, new);
+      return None;
+    }
+    if new.current != new.base {
+      state
+        .refresh_allowed
+        .insert(uri.clone(), new.current.clone());
+      change = Some(Refresh {
+        uri: uri.clone(),
+        old: new.current.clone(),
+        new: new.base.clone(),
+        version: live.version,
+      });
+    } else {
+      state.refresh_allowed.remove(&uri);
+    }
+  } else {
+    if let Some(ClientBuffer::Open { version, text }) = state.client_buffers.remove(&uri) {
+      new.version = Some(version);
+      new.current = text;
+    }
+    state.refresh_allowed.remove(&uri);
+  }
+  state.docs.insert(uri, new);
+  change
 }
 
 /// Returns true when `span` refers to `symbol` or carries an unresolved fallback matching token.

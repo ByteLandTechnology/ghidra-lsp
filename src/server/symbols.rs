@@ -24,8 +24,8 @@ impl Server {
     params: DocumentSymbolParams,
   ) -> jsonrpc::Result<Option<DocumentSymbolResponse>> {
     let uri = canonical_virtual_uri(&params.text_document.uri);
-    let e = self.engine.lock().await;
-    let Some(doc) = e.docs.get(&uri) else {
+    let state = self.engine.read_state();
+    let Some(doc) = state.docs.get(&uri) else {
       return Ok(None);
     };
     if doc.current != doc.base {
@@ -100,63 +100,69 @@ impl Server {
     &self,
     params: WorkspaceSymbolParams,
   ) -> jsonrpc::Result<Option<WorkspaceSymbolResponse>> {
-    let mut e = self.engine.lock().await;
-    let Ok(md5) = e.session().map(str::to_owned) else {
-      return Ok(Some(WorkspaceSymbolResponse::Nested(vec![])));
+    let md5 = {
+      let state = self.engine.read_state();
+      let Ok(md5) = state.session().map(str::to_owned) else {
+        return Ok(Some(WorkspaceSymbolResponse::Nested(vec![])));
+      };
+      md5
     };
-    let symbols = e.symbols(&md5).await.map_err(rpc)?;
+    let symbols = self.engine.symbols(&md5).await.map_err(rpc)?;
     let mut result = vec![];
     let query = params.query.to_lowercase();
-    for symbol in symbols.into_iter().filter(|s| {
-      s.eligible()
-        && (s.full_name().to_lowercase().contains(&query)
-          || s.qualified().to_lowercase().contains(&query))
-    }) {
-      let sym_uri = virtual_uri(
-        &md5,
-        if symbol.kind.eq_ignore_ascii_case("function") {
-          "function"
+    let lazy = self.lazy_symbols.load(Ordering::Relaxed);
+    {
+      let state = self.engine.read_state();
+      for symbol in symbols.into_iter().filter(|s| {
+        s.eligible()
+          && (s.full_name().to_lowercase().contains(&query)
+            || s.qualified().to_lowercase().contains(&query))
+      }) {
+        let sym_uri = virtual_uri(
+          &md5,
+          if symbol.kind.eq_ignore_ascii_case("function") {
+            "function"
+          } else {
+            "symbol"
+          },
+          if symbol.kind.eq_ignore_ascii_case("function") {
+            &symbol.address
+          } else {
+            &symbol.id
+          },
+        )
+        .map_err(rpc)?;
+        let location = if lazy {
+          OneOf::Right(WorkspaceLocation { uri: sym_uri })
+        } else if symbol.kind.eq_ignore_ascii_case("function") {
+          let open_loc = state.docs.get(&sym_uri).map(|doc| {
+            let body_start = doc.body_start();
+            let range = doc
+              .spans
+              .iter()
+              .find(|s| s.token.kind == "function" && s.start < body_start)
+              .map(|s| doc.range(s))
+              .unwrap_or_default();
+            Location::new(doc.uri.clone(), range)
+          });
+          OneOf::Left(open_loc.unwrap_or_else(|| Location::new(sym_uri, Range::default())))
         } else {
-          "symbol"
-        },
-        if symbol.kind.eq_ignore_ascii_case("function") {
-          &symbol.address
-        } else {
-          &symbol.id
-        },
-      )
-      .map_err(rpc)?;
-      let location = if self.lazy_symbols.load(Ordering::Relaxed) {
-        OneOf::Right(WorkspaceLocation { uri: sym_uri })
-      } else if symbol.kind.eq_ignore_ascii_case("function") {
-        let open_loc = e.docs.get(&sym_uri).map(|doc| {
-          let body_start = doc.body_start();
-          let range = doc
-            .spans
-            .iter()
-            .find(|s| s.token.kind == "function" && s.start < body_start)
-            .map(|s| doc.range(s))
-            .unwrap_or_default();
-          Location::new(doc.uri.clone(), range)
+          OneOf::Left(Location::new(sym_uri, Range::default()))
+        };
+        let container = (!symbol.namespace.is_empty() && symbol.namespace != "Global")
+          .then(|| symbol.namespace.clone())
+          .or_else(|| Some(md5.clone()));
+        result.push(WorkspaceSymbol {
+          name: symbol.display_name(),
+          kind: kind(&symbol),
+          tags: None,
+          location,
+          container_name: container,
+          data: Some(json!({"md5": md5, "symbol": symbol})),
         });
-        OneOf::Left(open_loc.unwrap_or_else(|| Location::new(sym_uri, Range::default())))
-      } else {
-        OneOf::Left(Location::new(sym_uri, Range::default()))
-      };
-      let container = (!symbol.namespace.is_empty() && symbol.namespace != "Global")
-        .then(|| symbol.namespace.clone())
-        .or_else(|| Some(md5.clone()));
-      result.push(WorkspaceSymbol {
-        name: symbol.display_name(),
-        kind: kind(&symbol),
-        tags: None,
-        location,
-        container_name: container,
-        data: Some(json!({"md5": md5, "symbol": symbol})),
-      });
+      }
     }
-    let backend = e.backend.clone();
-    drop(e);
+    let backend = self.backend();
     if let Ok(types) = list_all(
       backend.as_ref(),
       "data_type",
@@ -165,7 +171,6 @@ impl Server {
     )
     .await
     {
-      let query = params.query.to_lowercase();
       for dt in types {
         let name = dt
           .get("name")
@@ -198,7 +203,7 @@ impl Server {
           Ok(u) => u,
           Err(_) => continue,
         };
-        let location = if self.lazy_symbols.load(Ordering::Relaxed) {
+        let location = if lazy {
           OneOf::Right(WorkspaceLocation { uri })
         } else {
           OneOf::Left(Location::new(uri, Range::default()))
@@ -228,28 +233,49 @@ impl Server {
     let md5 = data
       .get("md5")
       .and_then(serde_json::Value::as_str)
-      .ok_or_else(|| rpc("Missing session"))?;
-    if let Some(type_path) = data.get("type_path").and_then(serde_json::Value::as_str) {
-      let uri = virtual_uri(md5, "type", &format!("{type_path}.md")).map_err(rpc)?;
-      let mut e = self.engine.lock().await;
-      if e.docs.get(&uri).is_none_or(Document::clean) {
-        let code = e.snapshot_text(md5, "type", type_path).await.map_err(rpc)?;
-        let version = e.docs.get(&uri).and_then(|doc| doc.version);
-        e.install(Document {
-          uri: uri.clone(),
-          md5: md5.into(),
-          entry: None,
-          base: code.clone(),
-          current: code.clone(),
-          saved: code,
-          version,
-          spans: vec![],
-          warning: None,
-        })
-        .map_err(rpc)?;
+      .ok_or_else(|| rpc("Missing session"))?
+      .to_owned();
+    if let Some(type_path) = data
+      .get("type_path")
+      .and_then(serde_json::Value::as_str)
+      .map(str::to_owned)
+    {
+      let uri = virtual_uri(&md5, "type", &format!("{type_path}.md")).map_err(rpc)?;
+      let (need_fetch, start_gen, start_epoch) = {
+        let state = self.engine.read_state();
+        (
+          state.docs.get(&uri).is_none_or(Document::clean),
+          state.generation,
+          state.epoch(&md5),
+        )
+      };
+      if need_fetch {
+        let code = self
+          .engine
+          .snapshot_text(&md5, "type", &type_path)
+          .await
+          .map_err(rpc)?;
+        let mut state = self.engine.write_state();
+        if state.is_closed_since(&md5, start_epoch, start_gen) {
+          return Err(rpc("Session was closed"));
+        }
+        if state.docs.get(&uri).is_none_or(Document::clean) {
+          state
+            .install(Document {
+              uri: uri.clone(),
+              md5: md5.clone(),
+              entry: None,
+              base: code.clone(),
+              current: code.clone(),
+              saved: code,
+              version: None,
+              spans: vec![],
+              warning: None,
+            })
+            .map_err(rpc)?;
+        }
       }
-      drop(e);
-      self.changed(md5).await;
+      self.changed(&md5).await;
       params.location = OneOf::Left(Location::new(uri, Range::default()));
       return Ok(params);
     }
@@ -263,15 +289,13 @@ impl Server {
     params.location = OneOf::Left(
       self
         .engine
-        .lock()
-        .await
-        .symbol_location(md5, &symbol)
+        .symbol_location(&md5, &symbol)
         .await
         .map_err(rpc)?,
     );
     if matches!(&params.location, OneOf::Left(location) if location.uri.as_str().contains("/symbol/"))
     {
-      self.changed(md5).await;
+      self.changed(&md5).await;
     }
     Ok(params)
   }

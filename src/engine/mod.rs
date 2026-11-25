@@ -13,18 +13,26 @@ mod hierarchy;
 mod navigation;
 /// Scoped rename preview, origin save persistence, and document refresh.
 mod rename;
+/// Singleflight coordinators for concurrent decompilations and symbol loads.
+mod singleflight;
+/// Synchronous in-memory document, symbol, pending-rename, and epoch state.
+mod state;
 
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use anyhow::{Context, Result, ensure};
 use serde_json::{Value, json};
+use tokio::sync::OwnedMutexGuard;
 use tower_lsp_server::ls_types::Uri;
+
+pub(crate) use assist::format_type_markdown;
+pub(crate) use state::{ClientBuffer, EngineState};
 
 use crate::backend::{McpBackend, list_all};
 use crate::document::{
-  Document, Symbol, Token, align, canonical_virtual_uri, data_type_name, extract_label_address,
-  is_label_token, resolve, resolve_locals, same_address, virtual_uri,
+  Document, Symbol, Token, align, extract_label_address, is_label_token, resolve, resolve_locals,
+  same_address, virtual_uri,
 };
 
 /// Finds a function symbol by address first and by name or qualified name second.
@@ -73,108 +81,219 @@ pub(crate) struct Refresh {
   pub(crate) version: Option<i32>,
 }
 
-/// Manages active Ghidra sessions, opened virtual buffers, and cached analysis state.
+/// Generated function document paired with resolved function and local metadata.
+pub(super) struct GeneratedFunction {
+  /// Decompiled virtual C document with aligned token spans and warnings.
+  pub(super) doc: Document,
+  /// Optional `(entry, function_json, local_details)` produced when semantic resolution succeeds.
+  pub(super) metadata: Option<(String, Value, HashMap<String, Value>)>,
+}
+
+/// Coordinates active Ghidra sessions, singleflight RPCs, and isolated [`EngineState`].
 pub(crate) struct Engine {
-  /// Connected MCP child-process backend.
-  pub(crate) backend: Arc<McpBackend>,
-  /// Currently selected 32-character lowercase MD5 session hash.
-  pub(crate) active: Option<String>,
-  /// Virtual documents indexed by their canonical `ghidra://` URI.
-  pub(crate) docs: HashMap<Uri, Document>,
-  /// Pending scoped rename plan keyed by lowercase session MD5.
-  pub(crate) pending: HashMap<String, Pending>,
-  /// Cached symbol tables keyed by lowercase session MD5.
-  pub(crate) symbols: HashMap<String, Vec<Symbol>>,
-  /// Pre-accepted document text after a confirmed backend save, keyed by URI.
-  pub(crate) refresh_allowed: HashMap<Uri, String>,
-  /// Cached function JSON payloads indexed by session MD5 and entry address.
-  pub(crate) functions: HashMap<(String, String), Value>,
-  /// Cached local variable and parameter metadata keyed by synthetic symbol ID.
-  local_details: HashMap<String, Value>,
+  /// Connected MCP child-process backend behind a synchronous lock.
+  backend: RwLock<Arc<McpBackend>>,
+  /// Synchronous in-memory session, document, and symbol caches.
+  state: RwLock<EngineState>,
+  /// Per-session mutation locks keyed by lowercase 32-hex MD5 hash.
+  session_locks: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
+  /// Singleflight coordinator for `(md5, entry)` decompilations.
+  open_flights: singleflight::OpenFlights,
+  /// Singleflight coordinator for `md5` symbol-table loads.
+  symbol_flights: singleflight::SymbolFlights,
 }
 
 impl Engine {
   /// Creates a new engine backed by `backend`.
   pub(crate) fn new(backend: Arc<McpBackend>) -> Self {
     Self {
-      backend,
-      active: None,
-      docs: HashMap::new(),
-      pending: HashMap::new(),
-      symbols: HashMap::new(),
-      refresh_allowed: HashMap::new(),
-      functions: HashMap::new(),
-      local_details: HashMap::new(),
+      backend: RwLock::new(backend),
+      state: RwLock::new(EngineState::default()),
+      session_locks: Mutex::new(HashMap::new()),
+      open_flights: singleflight::OpenFlights::new(),
+      symbol_flights: singleflight::SymbolFlights::new(),
     }
   }
 
-  /// Returns the selected session MD5 or an error when no session is active.
-  pub(crate) fn session(&self) -> Result<&str> {
+  /// Replaces the backend transport and clears cached engine state during `initialize`.
+  pub(crate) fn reset(&self, backend: Arc<McpBackend>) {
+    *self.backend.write().unwrap_or_else(PoisonError::into_inner) = backend;
+    self.open_flights.clear();
+    self.symbol_flights.clear();
     self
-      .active
-      .as_deref()
-      .context("Select a Ghidra session first")
+      .session_locks
+      .lock()
+      .unwrap_or_else(PoisonError::into_inner)
+      .clear();
+    self.write_state().reset();
   }
 
-  /// Fetches and caches all symbols for session `md5`.
-  pub(crate) async fn symbols(&mut self, md5: &str) -> Result<Vec<Symbol>> {
-    if let Some(symbols) = self.symbols.get(md5) {
-      return Ok(symbols.clone());
+  /// Clones the active [`McpBackend`] handle without locking [`EngineState`].
+  pub(crate) fn backend(&self) -> Arc<McpBackend> {
+    self
+      .backend
+      .read()
+      .unwrap_or_else(PoisonError::into_inner)
+      .clone()
+  }
+
+  /// Acquires a shared synchronous read guard on [`EngineState`].
+  pub(crate) fn read_state(&self) -> RwLockReadGuard<'_, EngineState> {
+    self.state.read().unwrap_or_else(PoisonError::into_inner)
+  }
+
+  /// Acquires an exclusive synchronous write guard on [`EngineState`].
+  pub(crate) fn write_state(&self) -> RwLockWriteGuard<'_, EngineState> {
+    self.state.write().unwrap_or_else(PoisonError::into_inner)
+  }
+
+  /// Acquires the per-session async mutation lock for `md5` before any [`EngineState`] guard.
+  pub(crate) async fn lock_session(&self, md5: &str) -> OwnedMutexGuard<()> {
+    let key = md5.to_ascii_lowercase();
+    let mutex = {
+      let mut locks = self
+        .session_locks
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+      Arc::clone(
+        locks
+          .entry(key)
+          .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(()))),
+      )
+    };
+    mutex.lock_owned().await
+  }
+
+  /// Increments and returns the mutation and close epoch for session `md5`.
+  pub(crate) fn bump_epoch(&self, md5: &str) -> u64 {
+    self.write_state().bump_epoch(md5)
+  }
+
+  /// Evicts cached state and active singleflight slots for closed session `md5`.
+  pub(crate) fn forget_session(&self, md5: &str) {
+    let key = md5.to_ascii_lowercase();
+    self.open_flights.forget_session(&key);
+    self.symbol_flights.forget_session(&key);
+    self.write_state().forget_session(&key);
+  }
+
+  /// Fetches and caches all symbols for session `md5` with singleflight deduplication.
+  pub(crate) async fn symbols(&self, md5: &str) -> Result<Vec<Symbol>> {
+    let md5_key = md5.to_ascii_lowercase();
+    let (initial_gen, initial_epoch) = {
+      let state = self.read_state();
+      if let Some(symbols) = state.symbols.get(&md5_key) {
+        return Ok(symbols.clone());
+      }
+      (state.generation, state.epoch(&md5_key))
+    };
+    loop {
+      match self.symbol_flights.acquire(&md5_key) {
+        singleflight::Registration::Follower(receiver) => {
+          if let Some(symbols) = singleflight::wait_flight(receiver).await? {
+            let state = self.read_state();
+            ensure!(
+              !state.is_closed_since(&md5_key, initial_epoch, initial_gen),
+              "Session was closed"
+            );
+            return Ok(symbols);
+          }
+        }
+        singleflight::Registration::Leader(leader) => {
+          let result = self
+            .load_symbols_leader(&md5_key, initial_epoch, initial_gen)
+            .await;
+          leader.complete(&result);
+          return result;
+        }
+      }
     }
-    let items = list_all(
-      self.backend.as_ref(),
-      "symbol",
-      md5,
-      json!({"page": {"limit": 1000}, "scan": {"timeout_ms": 60000}}),
-    )
-    .await?;
-    let symbols = items
-      .into_iter()
-      .map(serde_json::from_value)
-      .collect::<std::result::Result<Vec<Symbol>, _>>()?;
-    self.symbols.insert(md5.into(), symbols.clone());
-    Ok(symbols)
   }
 
-  /// Returns cached parameter or local variable detail for `symbol` when present.
-  pub(crate) fn local_detail(&self, symbol: &Symbol) -> Option<Value> {
-    symbol
-      .local()
-      .then(|| self.local_details.get(&symbol.id).cloned())
-      .flatten()
+  /// Executes the leader symbol-table RPC load and epoch-checked cache insertion.
+  async fn load_symbols_leader(
+    &self,
+    md5_key: &str,
+    initial_epoch: u64,
+    initial_gen: u64,
+  ) -> Result<Vec<Symbol>> {
+    let backend = self.backend();
+    loop {
+      let (generation, epoch) = {
+        let state = self.read_state();
+        ensure!(
+          !state.is_closed_since(md5_key, initial_epoch, initial_gen),
+          "Session was closed"
+        );
+        if let Some(cached) = state.symbols.get(md5_key) {
+          return Ok(cached.clone());
+        }
+        (state.generation, state.epoch(md5_key))
+      };
+      let items = list_all(
+        backend.as_ref(),
+        "symbol",
+        md5_key,
+        json!({"page": {"limit": 1000}, "scan": {"timeout_ms": 60000}}),
+      )
+      .await?;
+      let symbols = items
+        .into_iter()
+        .map(serde_json::from_value)
+        .collect::<std::result::Result<Vec<Symbol>, _>>()?;
+      let mut state = self.write_state();
+      ensure!(
+        !state.is_closed_since(md5_key, initial_epoch, initial_gen)
+          && !state.is_closed_since(md5_key, epoch, generation),
+        "Session was closed"
+      );
+      if state.epoch(md5_key) == epoch {
+        state.symbols.insert(md5_key.to_owned(), symbols.clone());
+        return Ok(symbols);
+      }
+      if let Some(cached) = state.symbols.get(md5_key) {
+        return Ok(cached.clone());
+      }
+    }
   }
 
   /// Verifies that session `md5` is ready and marks it as active.
-  pub(crate) async fn select(&mut self, md5: &str) -> Result<()> {
+  pub(crate) async fn select(&self, md5: &str) -> Result<()> {
     ensure!(
       md5.len() == 32 && md5.bytes().all(|b| b.is_ascii_hexdigit()),
       "invalid session MD5"
     );
-    let result = self
-      .backend
-      .call("session", "get", Some(md5), json!({}))
+    let md5_key = md5.to_ascii_lowercase();
+    let (start_gen, start_epoch) = {
+      let state = self.read_state();
+      (state.generation, state.epoch(&md5_key))
+    };
+    let backend = self.backend();
+    let result = backend
+      .call("session", "get", Some(&md5_key), json!({}))
       .await?;
     let status = result
       .pointer("/session/status")
       .or_else(|| result.get("status"))
       .and_then(Value::as_str);
     ensure!(status == Some("ready"), "session is not ready: {result}");
-    self.active = Some(md5.to_lowercase());
+    let mut state = self.write_state();
+    ensure!(
+      !state.is_closed_since(&md5_key, start_epoch, start_gen),
+      "Session was closed"
+    );
+    state.active = Some(md5_key);
     Ok(())
   }
 
-  /// Decompiles `entry` in session `md5`, aligns GUI spans and comments, and resolves symbols.
-  async fn generate(&mut self, md5: &str, entry: &str) -> Result<Document> {
-    self.generate_inner(md5, entry, None).await
-  }
-
-  /// Decompiles `entry` and drops cached symbols if `previous_base` differs from the new code.
-  pub(super) async fn generate_inner(
-    &mut self,
+  /// Decompiles `entry` outside [`EngineState`] and drops cached symbols if `previous_base` differs.
+  pub(super) async fn generate_function(
+    &self,
     md5: &str,
     entry: &str,
     previous_base: Option<&str>,
-  ) -> Result<Document> {
+  ) -> Result<GeneratedFunction> {
+    let backend = self.backend();
     let params = json!({
       "selector": {"entry": entry},
       "scan": {"timeout_ms": 30000},
@@ -182,14 +301,12 @@ impl Engine {
       "include_comments": true,
     });
     let text =
-      match self
-        .backend
+      match backend
         .call("decompilation", "get", Some(md5), params)
         .await
       {
         Ok(value) => value,
-        Err(error) if legacy_format_error(&error) => self
-          .backend
+        Err(error) if legacy_format_error(&error) => backend
           .call(
             "decompilation",
             "get",
@@ -253,10 +370,11 @@ impl Engine {
     };
     // Clear stale symbol caches before semantic resolution when refreshed C text changed.
     if previous_base.is_some_and(|old| old != doc.base) {
-      self.symbols.remove(md5);
+      let mut state = self.write_state();
+      state.symbols.remove(md5);
+      state.bump_epoch(md5);
     }
-    let function = self
-      .backend
+    let function = backend
       .call(
         "function",
         "get",
@@ -270,8 +388,7 @@ impl Engine {
         ensure!(!doc.spans.is_empty(), "native GUI layout is unavailable");
         doc.spans.clone()
       } else {
-        let tokens = self
-          .backend
+        let tokens = backend
           .call(
             "decompilation",
             "get",
@@ -303,12 +420,8 @@ impl Engine {
         .collect();
       resolve(&mut spans, &symbols, &locals);
       let mut local_symbols = vec![];
+      let mut local_details = HashMap::new();
       let entry_str = doc.entry.as_deref().unwrap_or(entry);
-      let param_prefix = format!("Parameter:{md5}:{entry_str}:");
-      let local_prefix = format!("Local:{md5}:{entry_str}:");
-      self
-        .local_details
-        .retain(|k, _| !k.starts_with(&param_prefix) && !k.starts_with(&local_prefix));
       for (key, kind) in [("parameters", "Parameter"), ("local_variables", "Local")] {
         for variable in function
           .get(key)
@@ -332,19 +445,16 @@ impl Engine {
           } else {
             json!({"name": name})
           };
-          let id = format!(
-            "{kind}:{md5}:{}:{identity}",
-            doc.entry.as_deref().unwrap_or(entry)
-          );
+          let id = format!("{kind}:{md5}:{entry_str}:{identity}");
           let mut detail = variable.clone();
-          detail["entry"] = json!(doc.entry.as_deref().unwrap_or(entry));
+          detail["entry"] = json!(entry_str);
           detail["kind"] = json!(kind);
-          self.local_details.insert(id.clone(), detail);
+          local_details.insert(id.clone(), detail);
           local_symbols.push(Symbol {
             demangled_name: None,
             id,
             name: name.into(),
-            address: doc.entry.clone().unwrap_or_else(|| entry.into()),
+            address: entry_str.to_owned(),
             namespace: String::new(),
             kind: kind.into(),
           });
@@ -371,7 +481,7 @@ impl Engine {
         } else {
           format!("{prefix}symbol={}", native.id)
         };
-        if !self.local_details.contains_key(&scoped_id) {
+        if !local_details.contains_key(&scoped_id) {
           let target_name = if native.name.is_empty() {
             span.token.text.as_str()
           } else {
@@ -380,9 +490,9 @@ impl Engine {
           if let Some(matched) = local_symbols
             .iter()
             .find(|sym| sym.kind == kind && sym.name == target_name)
-            .and_then(|sym| self.local_details.get(&sym.id).cloned())
+            .and_then(|sym| local_details.get(&sym.id).cloned())
           {
-            self.local_details.insert(scoped_id.clone(), matched);
+            local_details.insert(scoped_id.clone(), matched);
           }
         }
         if native.name.is_empty() {
@@ -396,7 +506,6 @@ impl Engine {
       resolve_locals(&mut spans, &local_symbols);
       for span in &mut spans {
         if span.symbol.is_none() && matches!(span.token.kind.as_str(), "variable" | "parameter") {
-          let entry_str = doc.entry.as_deref().unwrap_or(entry);
           let kind = if span.token.kind == "parameter" {
             "Parameter"
           } else {
@@ -414,7 +523,6 @@ impl Engine {
           && (span.token.kind == "label"
             || is_label_token(&span.token.text, span.start, span.end, &doc.base))
         {
-          let entry_str = doc.entry.as_deref().unwrap_or(entry);
           let addr = span
             .token
             .address
@@ -441,42 +549,40 @@ impl Engine {
         .find(|s| s.token.kind == "function" && s.start < body_start)
         && decl_span.symbol.is_none()
       {
-        let entry_addr = doc.entry.as_deref().unwrap_or(entry);
-        if let Some(sym) = find_function_symbol(&symbols, Some(entry_addr), &decl_span.token.text) {
+        if let Some(sym) = find_function_symbol(&symbols, Some(entry_str), &decl_span.token.text) {
           decl_span.symbol = Some(sym.clone());
         } else {
           decl_span.symbol = Some(Symbol {
             demangled_name: None,
-            id: format!("Function:{md5}:{entry_addr}"),
+            id: format!("Function:{md5}:{entry_str}"),
             name: decl_span.token.text.clone(),
-            address: entry_addr.to_owned(),
+            address: entry_str.to_owned(),
             namespace: String::new(),
             kind: "Function".into(),
           });
         }
       }
-      self.functions.insert(
-        (
-          md5.into(),
-          doc.entry.clone().unwrap_or_else(|| entry.into()),
-        ),
-        function.clone(),
-      );
-      Ok::<_, anyhow::Error>(spans)
+      Ok::<_, anyhow::Error>((spans, entry_str.to_owned(), function.clone(), local_details))
     }
     .await;
-    match semantic {
-      Ok(spans) => doc.spans = spans,
-      Err(e) => append_warning(&mut doc, &format!("Navigation disabled: {e:#}")),
-    }
+    let metadata = match semantic {
+      Ok((spans, entry_key, function_val, local_details)) => {
+        doc.spans = spans;
+        Some((entry_key, function_val, local_details))
+      }
+      Err(e) => {
+        append_warning(&mut doc, &format!("Navigation disabled: {e:#}"));
+        None
+      }
+    };
     if let Some(error) = comment_err {
       append_warning(&mut doc, &format!("Ghidra comments unavailable: {error:#}"));
     }
-    Ok(doc)
+    Ok(GeneratedFunction { doc, metadata })
   }
 
-  /// Opens an already cached function document or generates and installs it.
-  pub(crate) async fn open(&mut self, md5: &str, entry: &str) -> Result<Uri> {
+  /// Opens an already cached function document or generates and installs it via singleflight.
+  pub(crate) async fn open(&self, md5: &str, entry: &str) -> Result<Uri> {
     ensure!(
       md5.len() == 32 && md5.bytes().all(|b| b.is_ascii_hexdigit()),
       "invalid session MD5"
@@ -485,61 +591,84 @@ impl Engine {
     let decoded_entry = percent_encoding::percent_decode_str(entry)
       .decode_utf8()
       .unwrap_or(std::borrow::Cow::Borrowed(entry));
-    if let Some(doc) = self.docs.values().find(|d| {
-      d.md5 == md5
-        && d.entry.as_deref().is_some_and(|e| {
-          e == entry || e == decoded_entry.as_ref() || same_address(e, &decoded_entry)
-        })
-    }) {
-      return Ok(doc.uri.clone());
+    let (initial_gen, initial_epoch) = {
+      let state = self.read_state();
+      if let Some(doc) = state.find_function_doc(&md5, entry, &decoded_entry) {
+        return Ok(doc.uri.clone());
+      }
+      (state.generation, state.epoch(&md5))
+    };
+    loop {
+      match self.open_flights.acquire(&md5, &decoded_entry) {
+        singleflight::Registration::Follower(receiver) => {
+          if let Some(uri) = singleflight::wait_flight(receiver).await? {
+            let state = self.read_state();
+            ensure!(
+              !state.is_closed_since(&md5, initial_epoch, initial_gen),
+              "Session was closed"
+            );
+            return Ok(uri);
+          }
+        }
+        singleflight::Registration::Leader(leader) => {
+          let result = self
+            .open_leader(&md5, entry, &decoded_entry, initial_epoch, initial_gen)
+            .await;
+          leader.complete(&result);
+          return result;
+        }
+      }
     }
-    let doc = self.generate(&md5, &decoded_entry).await?;
-    self.install(doc)
   }
 
-  /// Stores `doc` under its canonical URI while preserving client version and unsaved text.
-  pub(crate) fn install(&mut self, mut doc: Document) -> Result<Uri> {
-    doc.uri = canonical_virtual_uri(&doc.uri);
-    let uri = doc.uri.clone();
-    if doc.version.is_none()
-      && let Some(old) = self.docs.get(&uri)
-      && old.version.is_some()
-    {
-      doc.version = old.version;
-      if !old.clean() {
-        doc.current = old.current.clone();
+  /// Executes the leader `(md5, entry)` decompilation and epoch-checked document installation.
+  async fn open_leader(
+    &self,
+    md5: &str,
+    entry: &str,
+    decoded_entry: &str,
+    initial_epoch: u64,
+    initial_gen: u64,
+  ) -> Result<Uri> {
+    loop {
+      let (generation, epoch) = {
+        let state = self.read_state();
+        ensure!(
+          !state.is_closed_since(md5, initial_epoch, initial_gen),
+          "Session was closed"
+        );
+        if let Some(doc) = state.find_function_doc(md5, entry, decoded_entry) {
+          return Ok(doc.uri.clone());
+        }
+        (state.generation, state.epoch(md5))
+      };
+      let generated = self.generate_function(md5, decoded_entry, None).await?;
+      let mut state = self.write_state();
+      ensure!(
+        !state.is_closed_since(md5, initial_epoch, initial_gen)
+          && !state.is_closed_since(md5, epoch, generation),
+        "Session was closed"
+      );
+      if state.epoch(md5) != epoch {
+        if let Some(doc) = state.find_function_doc(md5, entry, decoded_entry) {
+          return Ok(doc.uri.clone());
+        }
+        continue;
       }
-      if old.saved != old.base {
-        doc.saved = old.saved.clone();
+      if let Some((entry_key, function_val, local_details)) = generated.metadata {
+        state.apply_generated_metadata(md5, entry_key, function_val, local_details);
       }
-    }
-    self.docs.insert(uri.clone(), doc);
-    Ok(uri)
-  }
-
-  /// Removes clean document `uri` when no uncommitted local edits or rename previews remain.
-  pub(crate) fn close_document(&mut self, uri: &Uri) {
-    let canon = canonical_virtual_uri(uri);
-    let keep = self.docs.get(&canon).is_some_and(|doc| {
-      !doc.clean()
-        || self
-          .pending
-          .get(&doc.md5)
-          .is_some_and(|p| p.expected.contains_key(&canon))
-    });
-    if !keep {
-      self.docs.remove(&canon);
-      self.refresh_allowed.remove(&canon);
+      return state.install(generated.doc);
     }
   }
 
   /// Builds synthetic read-only snapshot text for `type`, `symbol`, or `references` URIs.
   pub(crate) async fn snapshot_text(&self, md5: &str, kind: &str, id: &str) -> Result<String> {
+    let backend = self.backend();
     if kind == "type" {
       let path = id.strip_suffix(".md").unwrap_or(id);
       let type_data = if path.starts_with('/') {
-        self
-          .backend
+        backend
           .call(
             "data_type",
             "get",
@@ -549,7 +678,7 @@ impl Engine {
           .await?
       } else {
         let types = list_all(
-          self.backend.as_ref(),
+          backend.as_ref(),
           "data_type",
           md5,
           json!({"filter": {"query": path}, "page": {"limit": 1000}}),
@@ -569,8 +698,7 @@ impl Engine {
         } else {
           format!("/{full_path}")
         };
-        self
-          .backend
+        backend
           .call(
             "data_type",
             "get",
@@ -582,8 +710,7 @@ impl Engine {
       return Ok(format_type_markdown(&type_data));
     }
     let symbol: Symbol = serde_json::from_value(
-      self
-        .backend
+      backend
         .call("symbol", "get", Some(md5), json!({"selector": {"id": id}}))
         .await?,
     )?;
@@ -596,7 +723,7 @@ impl Engine {
       ));
     }
     let refs = list_all(
-      self.backend.as_ref(),
+      backend.as_ref(),
       "reference",
       md5,
       json!({"filter": {"direction": "to", "to": symbol.address}, "page": {"limit": 1000}}),
@@ -626,126 +753,6 @@ impl Engine {
     }
     Ok(code)
   }
-}
-
-/// Formats structured data-type JSON returned by `ghidra-mcp` into Markdown documentation.
-pub(crate) fn format_type_markdown(data: &Value) -> String {
-  let name = data
-    .get("name")
-    .and_then(Value::as_str)
-    .unwrap_or("Unknown");
-  let kind = data.get("kind").and_then(Value::as_str).unwrap_or("type");
-  let length = data
-    .get("length")
-    .or_else(|| data.get("size"))
-    .and_then(Value::as_u64)
-    .map(|s| format!("{s} bytes (`0x{s:x}`)"))
-    .unwrap_or_else(|| "Unknown / variable".into());
-  let category = data
-    .get("category_path")
-    .and_then(Value::as_str)
-    .unwrap_or("/");
-  let path = data.get("path").and_then(Value::as_str).unwrap_or("");
-
-  let mut md = format!("# {kind} {name}\n\n");
-  md.push_str(&format!("- **Kind**: `{kind}`\n"));
-  md.push_str(&format!("- **Path**: `{path}`\n"));
-  md.push_str(&format!("- **Category**: `{category}`\n"));
-  md.push_str(&format!("- **Size**: {length}\n"));
-
-  if let Some(desc) = data.get("description").and_then(Value::as_str)
-    && !desc.trim().is_empty()
-  {
-    md.push_str(&format!("- **Description**: {desc}\n"));
-  }
-  if let Some(base) = data.get("base_type") {
-    let base_name = data_type_name(base);
-    if !base_name.is_empty() && base_name != "unknown" {
-      md.push_str(&format!("- **Base Type**: `{base_name}`\n"));
-    }
-  }
-
-  if let Some(fields) = data
-    .get("fields")
-    .and_then(Value::as_array)
-    .filter(|f| !f.is_empty())
-  {
-    md.push_str("\n## Fields\n\n");
-    md.push_str("| Offset | Size | Name | Type | Notes |\n");
-    md.push_str("| :--- | :--- | :--- | :--- | :--- |\n");
-    for f in fields {
-      let offset = f
-        .get("offset")
-        .and_then(Value::as_u64)
-        .map(|o| format!("`+0x{o:04x}`"))
-        .unwrap_or_else(|| "-".into());
-      let size = f
-        .get("length")
-        .and_then(Value::as_u64)
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| "-".into());
-      let fname = f.get("name").and_then(Value::as_str).unwrap_or("(unnamed)");
-      let ftype = data_type_name(&f["data_type"]);
-      let notes = f.get("comment").and_then(Value::as_str).unwrap_or("");
-      md.push_str(&format!(
-        "| {offset} | {size} | `{fname}` | `{ftype}` | {notes} |\n"
-      ));
-    }
-  }
-
-  if let Some(values) = data
-    .get("values")
-    .and_then(Value::as_array)
-    .filter(|v| !v.is_empty())
-  {
-    md.push_str("\n## Enum Values\n\n");
-    md.push_str("| Name | Value | Comment |\n");
-    md.push_str("| :--- | :--- | :--- |\n");
-    for v in values {
-      let vname = v.get("name").and_then(Value::as_str).unwrap_or("");
-      let val = v
-        .get("value")
-        .map(|val| {
-          val
-            .as_str()
-            .map(str::to_owned)
-            .unwrap_or_else(|| val.to_string())
-        })
-        .unwrap_or_default();
-      let comm = v.get("comment").and_then(Value::as_str).unwrap_or("");
-      md.push_str(&format!("| `{vname}` | `{val}` | {comm} |\n"));
-    }
-  }
-
-  if let Some(sig) = data.get("signature") {
-    md.push_str("\n## Function Signature\n\n");
-    if let Some(sig_str) = sig.as_str() {
-      md.push_str(&format!("`{sig_str}`\n"));
-    } else if let Some(sig_obj) = sig.as_object() {
-      if let Some(ret) = sig_obj.get("return_type") {
-        md.push_str(&format!("- **Return Type**: `{}`\n", data_type_name(ret)));
-      }
-      if let Some(conv) = sig_obj.get("calling_convention").and_then(Value::as_str) {
-        md.push_str(&format!("- **Calling Convention**: `{conv}`\n"));
-      }
-      if let Some(params) = sig_obj
-        .get("parameters")
-        .and_then(Value::as_array)
-        .filter(|p| !p.is_empty())
-      {
-        md.push_str("\n### Parameters\n\n");
-        md.push_str("| Ordinal | Name | Type |\n");
-        md.push_str("| :--- | :--- | :--- |\n");
-        for (idx, p) in params.iter().enumerate() {
-          let pname = p.get("name").and_then(Value::as_str).unwrap_or("(unnamed)");
-          let ptype = data_type_name(&p["data_type"]);
-          md.push_str(&format!("| {idx} | `{pname}` | `{ptype}` |\n"));
-        }
-      }
-    }
-  }
-
-  md
 }
 
 /// Appends `message` to `doc.warning`, joining multiple warnings with semicolons.
