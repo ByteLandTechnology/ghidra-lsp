@@ -4,15 +4,46 @@
 import * as vscode from 'vscode';
 import { Call } from './memory';
 import { ProgramContext } from './context';
-import { DataTypeFiles, typePath, typeScheme } from './type-files';
+import { activeTypeUri, DataTypeFiles, typePath, typeScheme } from './type-files';
 import { Data, object, rows, escape, reference, typeReference, integer, page, section } from './web';
 import { formatFriendlyError } from './error';
 import { CodeLocation, cursorLocation } from './location';
-import { commentKinds, CommentKind, InlineComments } from './inline-comments';
+import { InlineComments } from './inline-comments';
 import { callIcon } from './call-graph-icons';
+import {
+    commentFieldSpecs,
+    CommentFormSession,
+    defaultCommentFocusKind,
+    isCommentSessionDirty,
+    loadCommentFormSession,
+    saveCommentFormSession,
+} from './comment-form';
+import { listingScheme } from './listing';
+import { memoryScheme } from './bytes';
 
 /** Input control descriptor inside a graphical edit form. */
-interface Field { key: string; label: string; value?: unknown; kind?: 'text' | 'number' | 'textarea' | 'checkbox' | 'type'; readonly?: boolean; autofocus?: boolean; }
+interface Field {
+    key: string;
+    label: string;
+    description?: string;
+    value?: unknown;
+    kind?: 'text' | 'number' | 'textarea' | 'checkbox' | 'type';
+    readonly?: boolean;
+    autofocus?: boolean;
+    alwaysVisible?: boolean;
+    rows?: number;
+}
+/** Additional behavior options for {@link EditingUI.form}. */
+interface FormOptions {
+    hint?: string;
+    cancelLabel?: string;
+    initialValues?: Data;
+    isDirty?: (values: Data) => boolean;
+    confirmDiscardMessage?: string;
+    initialUncertain?: boolean;
+    uncertainMessage?: string;
+    onReopenDirtyClose?: (values: Data, uncertain: boolean) => void;
+}
 /** Column descriptor for an editable table grid inside a form. */
 interface Column { key: string; label: string; kind?: 'number' | 'type'; }
 /** Editable table specification inside a graphical edit form. */
@@ -35,10 +66,16 @@ const checked = (data: Data, key: string): boolean => data[key] === true;
 const equal = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
 /** Render one labeled HTML form control from a {@link Field} descriptor. */
 function input(field: Field): string {
-    const attrs = `name="${escape(field.key)}"${field.readonly ? ' readonly' : ''}${field.autofocus ? ' autofocus' : ''}`;
-    if (field.kind === 'checkbox') { return `<label class="checkbox"><input ${attrs} type="checkbox"${field.value === true ? ' checked' : ''}>${escape(field.label)}</label>`; }
-    const control = field.kind === 'textarea' ? `<textarea ${attrs}>${escape(field.value)}</textarea>` : `<input ${attrs} type="${field.kind === 'number' ? 'number' : 'text'}" value="${escape(field.value)}"${field.kind === 'type' ? ' list="type-options"' : ''}>`;
-    return `<label${field.kind === 'textarea' ? ' class="full"' : ''}>${escape(field.label)}${control}</label>`;
+    const id = `field-${escape(field.key)}`;
+    const hintId = field.description ? `hint-${escape(field.key)}` : '';
+    const describedBy = hintId ? ` aria-describedby="${hintId}"` : '';
+    const attrs = `id="${id}" name="${escape(field.key)}"${describedBy}${field.readonly ? ' readonly' : ''}${field.autofocus ? ' autofocus' : ''}`;
+    if (field.kind === 'checkbox') { return `<label class="checkbox" for="${id}"><input ${attrs} type="checkbox"${field.value === true ? ' checked' : ''}>${escape(field.label)}</label>`; }
+    const control = field.kind === 'textarea'
+        ? `<textarea ${attrs} rows="${field.rows || 3}">${escape(field.value)}</textarea>`
+        : `<input ${attrs} type="${field.kind === 'number' ? 'number' : 'text'}" value="${escape(field.value)}"${field.kind === 'type' ? ' list="type-options"' : ''}>`;
+    const hintHtml = field.description ? `<span class="field-hint" id="${hintId}">${escape(field.description)}</span>` : '';
+    return `<label${field.kind === 'textarea' ? ' class="full"' : ''} for="${id}"><span>${escape(field.label)}</span>${hintHtml}${control}</label>`;
 }
 /** Render an editable table grid section with optional row add/remove buttons. */
 function grid(spec: Grid): string {
@@ -94,10 +131,42 @@ document.addEventListener('click', event => {
         body.lastElementChild?.querySelector('input')?.focus();
     }
 });
-document.getElementById('edit-form').addEventListener('submit', event => {
-    event.preventDefault();
+const collectFormValues = form => {
     const values = {};
-    for (const el of event.target.querySelectorAll('[name]')) { values[el.name] = el.type === 'checkbox' ? el.checked : el.value; }
+    for (const el of form.querySelectorAll('[name]')) { values[el.name] = el.type === 'checkbox' ? el.checked : el.value; }
+    return values;
+};
+const editFormEl = document.getElementById('edit-form');
+let baselineValues = editFormEl.dataset.baseline ? JSON.parse(editFormEl.dataset.baseline) : null;
+const syncDirtyBadge = values => {
+    const badge = document.getElementById('dirty-status');
+    if (!badge || !baselineValues) { return; }
+    const dirty = Object.keys(baselineValues).some(key => String(values[key] ?? '') !== String(baselineValues[key] ?? ''));
+    badge.textContent = dirty ? 'Unsaved changes' : '';
+};
+editFormEl.addEventListener('input', () => {
+    const values = collectFormValues(editFormEl);
+    syncDirtyBadge(values);
+    vscode.postMessage({ action: 'change', values });
+});
+document.getElementById('cancel')?.addEventListener('click', () => {
+    vscode.postMessage({ action: 'cancel', values: collectFormValues(editFormEl) });
+});
+document.addEventListener('keydown', event => {
+    if ((event.ctrlKey || event.metaKey) && (event.key.toLowerCase() === 's' || event.key === 'Enter')) {
+        event.preventDefault();
+        const submitBtn = document.getElementById('submit');
+        if (submitBtn && !submitBtn.disabled) { editFormEl.requestSubmit(); }
+        return;
+    }
+    if (event.key === 'Escape' && document.getElementById('cancel') && !event.defaultPrevented) {
+        event.preventDefault();
+        vscode.postMessage({ action: 'cancel', values: collectFormValues(editFormEl) });
+    }
+});
+editFormEl.addEventListener('submit', event => {
+    event.preventDefault();
+    const values = collectFormValues(event.target);
     const tables = {};
     for (const table of event.target.querySelectorAll('[data-table]')) {
         tables[table.dataset.table] = Array.from(table.tBodies[0].rows).map(row => {
@@ -114,12 +183,21 @@ document.getElementById('edit-form').addEventListener('submit', event => {
 window.addEventListener('message', event => {
     const message = event.data;
     if (message.action === 'result') {
-        document.getElementById('submit').disabled = !message.error || message.uncertain === true;
+        document.getElementById('submit').disabled = message.uncertain === true;
         document.getElementById('error').textContent = message.error || '';
         document.getElementById('status').textContent = message.error ? '' : message.message || 'Saved to the Ghidra project.';
+        if (!message.error && message.savedValues && typeof message.savedValues === 'object') {
+            baselineValues = message.savedValues;
+            for (const [key, val] of Object.entries(message.savedValues)) {
+                const field = editFormEl.querySelector('[name="' + key + '"]');
+                if (field && field.type !== 'checkbox') { field.value = String(val ?? ''); }
+            }
+            syncDirtyBadge(collectFormValues(editFormEl));
+        }
     }
 });
-const initialFocus = document.querySelector('[autofocus]') || document.querySelector('#edit-form input:not([readonly])');
+syncDirtyBadge(collectFormValues(editFormEl));
+const initialFocus = document.querySelector('[autofocus]') || document.querySelector('#edit-form input:not([readonly]), #edit-form textarea:not([readonly])');
 if (initialFocus) {
     initialFocus.focus();
     window.addEventListener('focus', () => { if (document.activeElement === document.body) { initialFocus.focus(); } }, { once: true });
@@ -131,10 +209,19 @@ export class EditingUI implements vscode.Disposable {
     private readonly disposables: vscode.Disposable[] = [];
     /** Open webview panels mapped to their owning program MD5. */
     private readonly panels = new Map<vscode.WebviewPanel, string>();
+    /** Program MD5s currently closing programmatically without dirty-reopen prompts. */
+    private readonly closingPrograms = new Set<string>();
+    /** Whether this UI manager has been disposed. */
+    private disposed = false;
     /** Inline five-kind comment controller for decompiled views. */
     private readonly comments: InlineComments;
     /** Register editing commands and initialize the inline comment controller. */
-    constructor(private readonly call: Call, private readonly context: ProgramContext, private readonly typeFiles: DataTypeFiles) {
+    constructor(
+        private readonly call: Call,
+        private readonly context: ProgramContext,
+        private readonly typeFiles: DataTypeFiles,
+        private readonly companionAddress?: (editor: vscode.TextEditor | undefined) => string | undefined,
+    ) {
         this.comments = new InlineComments(call);
         const commands: Record<string, (...args: any[]) => Promise<unknown>> = {
             createType: this.createType.bind(this), editType: this.editType.bind(this), deleteType: this.deleteType.bind(this), applyType: this.applyType.bind(this),
@@ -176,14 +263,36 @@ export class EditingUI implements vscode.Disposable {
     /** Fetch selectable data type names and paths for type-picker datalists. */
     private async types(md5: string): Promise<string[]> { const result = await this.query<{ items: Data[] }>(md5, 'data_type', 'list', {}, true); return [...new Set(['void', 'pointer', 'int', 'char', 'byte', 'undefined1', 'undefined4', 'uint', 'long', ...result.items.flatMap(item => [String(item.path), String(item.name)])])].sort(); }
     /** Open a webview form panel and wire submission validation and save feedback. */
-    private async form(md5: string, title: string, subtitle: string, fields: Field[], grids: Grid[], save: (submission: Submission) => Promise<void | Data>, hint = ''): Promise<void> {
+    private async form(md5: string, title: string, subtitle: string, fields: Field[], grids: Grid[], save: (submission: Submission) => Promise<void | Data>, hintOrOptions: string | FormOptions = ''): Promise<void> {
+        const options: FormOptions = typeof hintOrOptions === 'string' ? { hint: hintOrOptions } : hintOrOptions;
+        const hint = options.hint || '';
         const usesTypes = fields.some(field => field.kind === 'type') || grids.some(grid => grid.columns.some(column => column.kind === 'type'));
         const types = usesTypes ? await this.types(md5) : [];
         await this.context.activate(md5);
         const panel = vscode.window.createWebviewPanel('ghidra.edit', title, vscode.ViewColumn.Active, { enableScripts: true, localResourceRoots: [], retainContextWhenHidden: true });
-        this.panels.set(panel, md5); panel.onDidDispose(() => this.panels.delete(panel));
+        this.panels.set(panel, md5);
+        let currentValues: Data = Object.fromEntries(fields.map(field => [field.key, field.value ?? '']));
+        let uncertain = Boolean(options.initialUncertain);
+        let confirmedClose = false;
+        panel.onDidDispose(() => {
+            this.panels.delete(panel);
+            if (!confirmedClose && !this.disposed && !this.closingPrograms.has(md5) && options.isDirty?.(currentValues) && options.onReopenDirtyClose) {
+                const snapshot = { ...currentValues };
+                const wasUncertain = uncertain;
+                void vscode.window.showWarningMessage(
+                    options.confirmDiscardMessage || 'Discard unsaved changes?',
+                    { modal: true },
+                    'Keep editing',
+                    'Discard',
+                ).then(choice => {
+                    if (choice !== 'Discard' && !this.disposed && !this.closingPrograms.has(md5)) {
+                        options.onReopenDirtyClose!(snapshot, wasUncertain);
+                    }
+                });
+            }
+        });
         panel.onDidChangeViewState(event => { if (event.webviewPanel.active) { void this.context.activate(md5).catch(error => vscode.window.showErrorMessage(formatFriendlyError(error))); } });
-        const advanced = fields.filter(field => (field.kind === 'checkbox' && field.key !== 'confirmed' && field.value !== true) || (field.kind === 'textarea' && !field.value) || (field.key === 'category' && (!field.value || field.value === '/')) || (field.key === 'size' && !field.value) || (field.key === 'convention' && ['default', 'unknown', '__cdecl'].includes(String(field.value))));
+        const advanced = fields.filter(field => !field.alwaysVisible && ((field.kind === 'checkbox' && field.key !== 'confirmed' && field.value !== true) || (field.kind === 'textarea' && !field.value) || (field.key === 'category' && (!field.value || field.value === '/')) || (field.key === 'size' && !field.value) || (field.key === 'convention' && ['default', 'unknown', '__cdecl'].includes(String(field.value)))));
         const visibleFields = fields.filter(field => !advanced.includes(field));
         const controls = visibleFields.filter(field => field.kind !== 'checkbox' && field.kind !== 'textarea');
         const flags = visibleFields.filter(field => field.kind === 'checkbox');
@@ -192,19 +301,49 @@ export class EditingUI implements vscode.Disposable {
         const fieldBody = (controls.length ? `<div class="form-grid">${controls.map(input).join('')}</div>` : '')
             + (flags.length ? `<fieldset class="check-group"><legend>${title === 'Delete data type' ? 'Confirm deletion' : 'Behavior'}</legend>${flags.map(input).join('')}</fieldset>` : '')
             + (notes.length ? `<div class="form-grid form-notes">${notes.map(input).join('')}</div>` : '');
-        panel.webview.html = page(title, 'Edit analysis', subtitle, `<form id="edit-form">${fieldBody ? `<section class="form-fields">${fieldBody}</section>` : ''}${hint ? `<p class="form-hint">${escape(hint)}</p>` : ''}${grids.map(grid).join('')}${advanced.length ? `<details class="advanced-fields"><summary>Advanced options</summary><div class="form-grid">${advanced.map(input).join('')}</div></details>` : ''}<datalist id="type-options">${types.map(type => `<option value="${escape(type)}"></option>`).join('')}</datalist><div class="toolbar form-actions"><button class="primary icon-submit${label === 'Delete type' ? ' danger' : ''}" id="submit" type="submit" aria-label="${label}" title="${label}">${callIcon(label === 'Delete type' ? 'trash' : label === 'Create type' ? 'plus' : 'save')}</button></div><p id="status" class="success" role="status"></p></form>`, formScript);
+        const baselineAttr = options.initialValues ? ` data-baseline="${escape(JSON.stringify(options.initialValues))}"` : '';
+        const cancelHtml = options.cancelLabel ? `<button class="secondary" id="cancel" type="button">${escape(options.cancelLabel)}</button>` : '';
+        const dirtyBadgeHtml = options.initialValues ? '<span id="dirty-status" class="form-dirty" role="status" aria-live="polite"></span>' : '';
+        const submitDisabled = uncertain ? ' disabled' : '';
+        panel.webview.html = page(title, 'Edit analysis', subtitle, `<form id="edit-form"${baselineAttr}>${fieldBody ? `<section class="form-fields">${fieldBody}</section>` : ''}${hint ? `<p class="form-hint">${escape(hint)}</p>` : ''}${grids.map(grid).join('')}${advanced.length ? `<details class="advanced-fields"><summary>Advanced options</summary><div class="form-grid">${advanced.map(input).join('')}</div></details>` : ''}<datalist id="type-options">${types.map(type => `<option value="${escape(type)}"></option>`).join('')}</datalist><div class="toolbar form-actions"><button class="primary icon-submit${label === 'Delete type' ? ' danger' : ''}" id="submit" type="submit" aria-label="${label}" title="${label}"${submitDisabled}>${callIcon(label === 'Delete type' ? 'trash' : label === 'Create type' ? 'plus' : 'save')}</button>${cancelHtml}${dirtyBadgeHtml}</div><p id="status" class="success" role="status"></p></form>`, formScript);
+        if (uncertain && options.uncertainMessage) {
+            void panel.webview.postMessage({ action: 'result', error: options.uncertainMessage, uncertain: true });
+        }
         let busy = false;
         panel.webview.onDidReceiveMessage(async (message: unknown) => {
             const data = object(message);
-            if (data.action === 'cancel') { panel.dispose(); return; }
+            if (data.action === 'change') {
+                currentValues = object(data.values);
+                return;
+            }
+            if (data.action === 'cancel') {
+                if (data.values) { currentValues = object(data.values); }
+                if (busy) { return; }
+                if (options.isDirty?.(currentValues)) {
+                    const choice = await vscode.window.showWarningMessage(
+                        options.confirmDiscardMessage || 'Discard unsaved changes?',
+                        { modal: true },
+                        'Discard',
+                    );
+                    if (choice !== 'Discard') { return; }
+                }
+                confirmedClose = true;
+                panel.dispose();
+                return;
+            }
             if (data.action !== 'submit' || busy) { return; }
             busy = true;
+            currentValues = object(data.values);
             try {
-                const savedValues = await save({ values: object(data.values), tables: Object.fromEntries(Object.entries(object(data.tables)).map(([key, values]) => [key, rows(values)])) });
-                await panel.webview.postMessage({ action: 'result', savedValues, message: 'Saved to the Ghidra project.' });
+                const outcome = await save({ values: currentValues, tables: Object.fromEntries(Object.entries(object(data.tables)).map(([key, values]) => [key, rows(values)])) });
+                const payload = outcome && typeof outcome === 'object' ? outcome : {};
+                const savedValues = payload.savedValues && typeof payload.savedValues === 'object' ? object(payload.savedValues) : undefined;
+                if (savedValues) { currentValues = { ...savedValues }; }
+                const statusMessage = typeof payload.message === 'string' && payload.message ? payload.message : 'Saved to the Ghidra project.';
+                await panel.webview.postMessage({ action: 'result', savedValues, message: statusMessage });
             } catch (error) {
                 const message = String(error);
-                const uncertain = /may have reached|Modification reached|persistence failed|saving.*failed|saved.*failed|regeneration failed|editor rejected|outcome.*unknown|not persisted/i.test(message);
+                uncertain ||= /may have reached|timed out.*write|Modification reached|persistence failed|saving.*failed|saved.*failed|regeneration failed|editor rejected|outcome.*unknown|not persisted/i.test(message);
                 await panel.webview.postMessage({ action: 'result', error: formatFriendlyError(error), uncertain });
             }
             finally { busy = false; }
@@ -253,9 +392,9 @@ export class EditingUI implements vscode.Disposable {
     private signature(values: Data, parameters: Data[]): Data {
         if (value(values, 'convention').toLowerCase() === 'unknown') { throw new Error('Choose a known calling convention, such as default, for a function data type.'); }
         return { return_type: typeReference(values.returnType), calling_convention: required(values, 'convention', 'Calling convention'), has_var_args: checked(values, 'varargs'), has_no_return: checked(values, 'noreturn'), parameters: parameters.map(param => ({ name: value(param, 'name'), data_type: typeReference(param.type) })) }; }
-    /** Open an editable JSONC `ghidra-type://` document for the selected data type. */
+    /** Open a `ghidra-type://` document in `ghidra.dataTypeEditor` for the selected data type. */
     async editType(candidate?: unknown, pathArg?: string): Promise<void> {
-        const uri = candidate instanceof vscode.Uri ? candidate : vscode.window.activeTextEditor?.document.uri;
+        const uri = activeTypeUri(candidate);
         const scoped = uri?.scheme === typeScheme && !candidate ? uri : candidate;
         const md5 = this.md5(scoped);
         const path = await this.chooseType(md5, pathArg || this.resource(candidate, 'path')
@@ -360,30 +499,61 @@ export class EditingUI implements vscode.Disposable {
             await this.refreshBrowser(md5);
         });
     }
-    /** Open the inline five-kind comment widget at the resolved CodeUnit address. */
+    /** Open the inline comment thread at an open pseudocode token, or the 5-kind comment form otherwise. */
     async editComment(candidate?: unknown, addressArg?: string, typeArg?: string): Promise<void> {
         const md5 = this.md5(candidate);
-        const location = await this.commentAddress(md5, candidate, addressArg); if (!location) { return; }
+        const preferForm = object(candidate).preferForm === true;
+        const location = await this.commentAddress(md5, candidate, addressArg);
+        if (!location) { return; }
         const { address, entry } = location;
-        const type = typeArg && commentKinds.includes(typeArg as CommentKind) ? typeArg as CommentKind : address === entry ? 'plate' : 'pre';
-        let { uri, position } = location;
-        if (!uri) {
-            const tab = vscode.window.tabGroups.all.flatMap(group => group.tabs).find(tab => tab.input instanceof vscode.TabInputText
-                && tab.input.uri.scheme === 'ghidra' && tab.input.uri.authority === md5
-                && tab.input.uri.path.startsWith('/function/')
-                && decodeURIComponent(tab.input.uri.path.slice('/function/'.length)) === entry);
-            if (tab?.input instanceof vscode.TabInputText) { uri = tab.input.uri; }
+        const focusKind = defaultCommentFocusKind(address, entry, typeArg);
+        if (!preferForm && location.uri && location.position) {
+            await this.context.activate(md5);
+            await this.comments.open(md5, address, focusKind, { uri: location.uri, position: location.position });
+            return;
         }
-        if (!uri) { throw new Error('Open the corresponding function before editing comments inline.'); }
-        if (!position) {
-            const mapped = await this.call<{ position?: { line: number; character: number } }>('ghidra.location', { uri: uri.toString(), address });
-            if (mapped.position) { position = new vscode.Position(mapped.position.line, mapped.position.character); }
-        }
-        if (!position) { throw new Error('This address has no native location in the open pseudocode. Select a code token to edit comments inline.'); }
-        await this.context.activate(md5);
-        await this.comments.open(md5, address, type, { uri, position });
+        const session = await loadCommentFormSession(this.call, md5, address, entry, focusKind);
+        await this.openCommentForm(session);
     }
-    /** Resolve the CodeUnit address, function entry, and editor anchor for comment editing. */
+    /** Render and wire the 5-kind `EditingUI.form` webview for `session`. */
+    private async openCommentForm(session: CommentFormSession): Promise<void> {
+        const fields: Field[] = commentFieldSpecs.map(spec => ({
+            key: spec.kind,
+            label: spec.label,
+            description: spec.description,
+            kind: 'textarea',
+            value: session.drafts[spec.kind],
+            autofocus: spec.kind === session.focusKind,
+            alwaysVisible: true,
+            rows: 3,
+        }));
+        const subtitle = session.entry && session.entry !== session.address
+            ? `${session.address} · in ${session.entry}`
+            : session.address;
+        await this.form(
+            session.md5,
+            `Comments · ${session.address}`,
+            subtitle,
+            fields,
+            [],
+            ({ values }) => saveCommentFormSession(this.call, session, values, md5 => this.refreshBrowser(md5)),
+            {
+                hint: 'Leave a comment field blank to clear that comment kind in Ghidra. Press Ctrl+S or Ctrl+Enter to save, or Escape to close.',
+                cancelLabel: 'Cancel',
+                initialValues: { ...session.saved },
+                isDirty: values => isCommentSessionDirty(session, values),
+                confirmDiscardMessage: 'Discard unsaved comment drafts?',
+                initialUncertain: session.uncertain,
+                uncertainMessage: 'The previous save has an uncertain outcome. Close and reopen the comments before saving again.',
+                onReopenDirtyClose: (values, wasUncertain) => {
+                    isCommentSessionDirty(session, values);
+                    session.uncertain = wasUncertain;
+                    void this.openCommentForm(session).catch(error => vscode.window.showErrorMessage(formatFriendlyError(error)));
+                },
+            },
+        );
+    }
+    /** Resolve the CodeUnit address, function entry, and optional pseudocode anchor for comment editing. */
     private async commentAddress(md5: string, candidate?: unknown, explicit?: string): Promise<{ address: string; entry?: string; uri?: vscode.Uri; position?: vscode.Position } | undefined> {
         const selection = object(candidate);
         if (!explicit && selection.position !== undefined) {
@@ -398,35 +568,52 @@ export class EditingUI implements vscode.Disposable {
                 uri: uri.toString(), position,
                 ...(selection.version === undefined ? {} : { version: selection.version }),
             });
-            if (!location.native) { throw new Error('Upgrade ghidra-mcp and ghidra-lsp for native GUI comment locations.'); }
-            if (!location.code_unit_address) { throw new Error('The selected position has no CodeUnit. Select a code token before editing comments.'); }
-            return { address: location.code_unit_address, entry: location.entry, uri, position: new vscode.Position(Number(position.line), Number(position.character)) };
+            if (location.native && location.code_unit_address) {
+                return { address: location.code_unit_address, entry: location.entry, uri, position: new vscode.Position(Number(position.line), Number(position.character)) };
+            }
+            const fallbackAddr = location.code_unit_address || location.address || location.entry;
+            if (fallbackAddr) {
+                return this.resolveCodeUnitAddress(md5, fallbackAddr, location.entry);
+            }
+            throw new Error('The selected position has no CodeUnit. Select a code token before editing comments.');
         }
         let address = explicit || this.resource(candidate, 'address') || this.resource(candidate, 'entry');
+        const entryHint = this.resource(candidate, 'entry');
         const resource = candidate instanceof vscode.Uri ? candidate : undefined;
         if (!address) {
             const editor = vscode.window.activeTextEditor;
-            const position = editor?.selection.active;
-            const location = await cursorLocation(this.call, md5, resource);
-            if (location) {
-                if (!location.native) { throw new Error('Upgrade ghidra-mcp and ghidra-lsp for native GUI comment locations.'); }
-                if (!location.address) { throw new Error('The cursor has no valid code context. Select a code token before editing comments.'); }
-                if (location.code_unit_address) { return { address: location.code_unit_address, entry: location.entry, uri: editor?.document.uri, position }; }
-                address = location.address;
+            if (editor && [listingScheme, memoryScheme].includes(editor.document.uri.scheme) && editor.document.uri.authority.toLowerCase() === md5.toLowerCase()) {
+                address = this.companionAddress?.(editor);
+            }
+            if (!address) {
+                const position = editor?.selection.active;
+                const location = await cursorLocation(this.call, md5, resource);
+                if (location) {
+                    if (location.native && location.code_unit_address && editor?.document.uri.scheme === 'ghidra') {
+                        return { address: location.code_unit_address, entry: location.entry, uri: editor.document.uri, position };
+                    }
+                    address = location.code_unit_address || location.address || location.entry;
+                }
             }
         }
-        if (!address && resource?.scheme === 'ghidra' && resource.authority === md5 && resource.path.startsWith('/function/')) {
-            throw new Error('Open the function and select a code token before editing comments.');
-        }
-        address ||= await vscode.window.showInputBox({ title: 'Choose comment address — not comment text',
-            prompt: 'Enter an address in an open function; edit the comment beside its code.', placeHolder: 'ram:00401106', ignoreFocusOut: true,
-            validateInput: input => /^(?:[^:\s]+:)*(?:0x)?[a-f\d]+$/i.test(input.trim()) ? undefined : 'Enter an address such as ram:00401106.',
+        address ||= await vscode.window.showInputBox({
+            title: 'Choose comment address — not comment text',
+            prompt: 'Enter a code or data address in the program.',
+            placeHolder: 'ram:00401106',
+            ignoreFocusOut: true,
+            validateInput: raw => /^(?:[^:\s]+:)*(?:0x)?[a-f\d]+$/i.test(raw.trim()) ? undefined : 'Enter an address such as ram:00401106.',
         });
         if (!address) { return; }
-        const resolved = await this.query(md5, 'address', 'resolve', { selector: { address: address.trim() } });
+        return this.resolveCodeUnitAddress(md5, address, entryHint);
+    }
+    /** Resolve `rawAddress` via `address.resolve` to a canonical CodeUnit address and optional function entry. */
+    private async resolveCodeUnitAddress(md5: string, rawAddress: string, entryHint?: string): Promise<{ address: string; entry?: string }> {
+        const resolved = await this.query(md5, 'address', 'resolve', { selector: { address: rawAddress.trim() } });
         const unit = object(resolved.code_unit);
-        if (typeof unit.address !== 'string') { throw new Error('The backend did not report a CodeUnit at this address. Upgrade ghidra-mcp or select a code or data unit in Listing.'); }
-        return { address: unit.address, entry: this.resource(resolved.function, 'entry') };
+        if (typeof unit.address !== 'string' || !unit.address) {
+            throw new Error('The backend did not report a CodeUnit at this address. Select a code or data unit in Listing.');
+        }
+        return { address: unit.address, entry: this.resource(resolved.function, 'entry') || entryHint };
     }
     /** Open a form to rename a global symbol and optionally retype its backing global variable. */
     async editSymbol(candidate?: unknown, idArg?: string): Promise<void> {
@@ -447,7 +634,22 @@ export class EditingUI implements vscode.Disposable {
         });
     }
     /** Close inline comments and edit panels belonging to program `md5`. */
-    close(md5: string): void { this.comments.close(md5); for (const [panel, owner] of this.panels) { if (owner === md5) { panel.dispose(); } } }
+    close(md5: string): void {
+        this.closingPrograms.add(md5);
+        try {
+            this.comments.close(md5);
+            for (const [panel, owner] of this.panels) {
+                if (owner === md5) { panel.dispose(); }
+            }
+        } finally {
+            this.closingPrograms.delete(md5);
+        }
+    }
     /** Dispose the comment controller, open form panels, and registered commands. */
-    dispose(): void { this.comments.dispose(); this.panels.forEach((_md5, panel) => panel.dispose()); this.disposables.forEach(item => item.dispose()); }
+    dispose(): void {
+        this.disposed = true;
+        this.comments.dispose();
+        this.panels.forEach((_md5, panel) => panel.dispose());
+        this.disposables.forEach(item => item.dispose());
+    }
 }

@@ -39,6 +39,7 @@ use crate::document::{
   Document, SHOW_TEMPLATE_ARGUMENTS, canonical_virtual_uri, data_type_name, matches_text, offset,
 };
 use crate::engine::Engine;
+use crate::views::get_or_load_meta;
 use crate::workbench;
 
 impl LanguageServer for Server {
@@ -799,7 +800,17 @@ impl LanguageServer for Server {
     params: DocumentLinkParams,
   ) -> jsonrpc::Result<Option<Vec<DocumentLink>>> {
     let uri = canonical_virtual_uri(&params.text_document.uri);
+    let (md5, backend) = {
+      let e = self.engine.lock().await;
+      let Some(doc) = e.docs.get(&uri) else {
+        return Ok(None);
+      };
+      (doc.md5.clone(), Arc::clone(&e.backend))
+    };
+    let meta = get_or_load_meta(&backend, &self.view_cache, &md5)
+      .await
+      .ok();
     let e = self.engine.lock().await;
-    e.document_links(&uri).map_err(rpc)
+    e.document_links(&uri, meta.as_ref()).map_err(rpc)
   }
 }

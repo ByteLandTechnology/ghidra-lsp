@@ -14,7 +14,9 @@ use tower_lsp_server::ls_types::{
 };
 
 use super::Engine;
-use crate::document::{Span, canonical_virtual_uri, offset, position, virtual_uri};
+use crate::address::{find_memory_block, format_address, parse_address};
+use crate::document::{Span, canonical_virtual_uri, offset, position, same_address, virtual_uri};
+use crate::views::CachedProgramMeta;
 
 impl Engine {
   /// Returns same-document highlights for the symbol or type token under `pos`.
@@ -355,8 +357,12 @@ impl Engine {
     Ok(Some(ranges))
   }
 
-  /// Finds clickable `ghidra://`, `ram:`, and hexadecimal address links inside `uri`.
-  pub(crate) fn document_links(&self, uri: &Uri) -> Result<Option<Vec<DocumentLink>>> {
+  /// Finds clickable `ghidra://` URIs and verified function or memory-block address links in `uri`.
+  pub(crate) fn document_links(
+    &self,
+    uri: &Uri,
+    meta: Option<&CachedProgramMeta>,
+  ) -> Result<Option<Vec<DocumentLink>>> {
     let canon = canonical_virtual_uri(uri);
     let uri = &canon;
     let Some(doc) = self.docs.get(uri) else {
@@ -367,6 +373,7 @@ impl Engine {
     } else {
       &doc.current
     };
+    let default_space = meta.map_or("ram", |m| m.default_space.as_str());
     let mut links = Vec::new();
 
     for (line_idx, line) in text.lines().enumerate() {
@@ -420,18 +427,23 @@ impl Engine {
             end_byte = nb + nc.len_utf8();
             end_col += nc.len_utf16() as u32;
           }
-          if end_byte - byte_idx >= 7 {
+          let trailing_ident = iter
+            .peek()
+            .is_some_and(|&(_, nc)| nc.is_ascii_alphanumeric() || nc == '_');
+          if !trailing_ident && end_byte - byte_idx >= 7 {
             let addr_str = &line[byte_idx..end_byte];
-            if let Ok(target_uri) = virtual_uri(&doc.md5, "function", addr_str) {
-              links.push(DocumentLink {
-                range: Range::new(
-                  Position::new(line_num, start_col),
-                  Position::new(line_num, end_col),
-                ),
-                target: Some(target_uri),
-                tooltip: Some(format!("Go to function {addr_str}")),
-                data: None,
-              });
+            if let Some(link) = self.build_address_link(
+              &doc.md5,
+              addr_str,
+              addr_str,
+              default_space,
+              meta,
+              Range::new(
+                Position::new(line_num, start_col),
+                Position::new(line_num, end_col),
+              ),
+            ) {
+              links.push(link);
             }
           }
           utf16_col = end_col;
@@ -452,19 +464,24 @@ impl Engine {
             end_byte = nb + nc.len_utf8();
             end_col += nc.len_utf16() as u32;
           }
-          if end_byte - byte_idx >= 6 {
+          let trailing_ident = iter.peek().is_some_and(|&(_, nc)| {
+            (nc.is_ascii_alphanumeric() || nc == '_') && !matches!(nc, 'u' | 'U' | 'l' | 'L')
+          });
+          if !trailing_ident && end_byte - byte_idx >= 6 {
             let hex_str = &line[byte_idx..end_byte];
             let target_addr = &hex_str[2..];
-            if let Ok(target_uri) = virtual_uri(&doc.md5, "function", target_addr) {
-              links.push(DocumentLink {
-                range: Range::new(
-                  Position::new(line_num, start_col),
-                  Position::new(line_num, end_col),
-                ),
-                target: Some(target_uri),
-                tooltip: Some(format!("Go to function {hex_str}")),
-                data: None,
-              });
+            if let Some(link) = self.build_address_link(
+              &doc.md5,
+              target_addr,
+              hex_str,
+              default_space,
+              meta,
+              Range::new(
+                Position::new(line_num, start_col),
+                Position::new(line_num, end_col),
+              ),
+            ) {
+              links.push(link);
             }
           }
           utf16_col = end_col;
@@ -478,5 +495,82 @@ impl Engine {
     }
 
     Ok(Some(links))
+  }
+
+  /// Resolves `candidate` against cached functions and memory blocks to build a verified link.
+  fn build_address_link(
+    &self,
+    md5: &str,
+    candidate: &str,
+    display_text: &str,
+    default_space: &str,
+    meta: Option<&CachedProgramMeta>,
+    range: Range,
+  ) -> Option<DocumentLink> {
+    let parsed = parse_address(candidate, default_space)?;
+    let width = meta.map_or(parsed.width.max(8), |m| m.address_width);
+    let canonical = format_address(&parsed.space, parsed.offset, width);
+
+    let function_entry = meta
+      .and_then(|m| {
+        m.functions
+          .iter()
+          .find(|f| same_address(&f.entry, &canonical))
+          .map(|f| f.entry.as_str())
+      })
+      .or_else(|| {
+        self
+          .functions
+          .keys()
+          .find(|(f_md5, entry)| f_md5 == md5 && same_address(entry, &canonical))
+          .map(|(_, entry)| entry.as_str())
+      })
+      .or_else(|| {
+        self
+          .symbols
+          .get(md5)?
+          .iter()
+          .find(|s| s.kind.eq_ignore_ascii_case("function") && same_address(&s.address, &canonical))
+          .map(|s| s.address.as_str())
+      });
+
+    if let Some(entry) = function_entry {
+      let target = virtual_uri(md5, "function", entry).ok()?;
+      return Some(DocumentLink {
+        range,
+        target: Some(target),
+        tooltip: Some(format!("Go to function {display_text}")),
+        data: Some(json!({
+          "md5": md5,
+          "kind": "function",
+          "address": entry,
+        })),
+      });
+    }
+
+    let meta = meta?;
+    find_memory_block(&meta.blocks, &canonical)?;
+
+    let sym_key = self
+      .symbols
+      .get(md5)
+      .and_then(|syms| {
+        syms
+          .iter()
+          .find(|s| same_address(&s.address, &canonical))
+          .map(|s| s.id.as_str())
+      })
+      .unwrap_or(&canonical);
+    let target = virtual_uri(md5, "symbol", sym_key).ok()?;
+    Some(DocumentLink {
+      range,
+      target: Some(target),
+      tooltip: Some(format!("Go to address {canonical}")),
+      data: Some(json!({
+        "md5": md5,
+        "kind": "address",
+        "address": canonical,
+      })),
+    })
   }
 }

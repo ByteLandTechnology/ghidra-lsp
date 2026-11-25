@@ -13,6 +13,8 @@ mod hierarchy;
 mod navigation;
 /// Scoped rename preview, origin save persistence, and document refresh.
 mod rename;
+/// Read-only `type`, `symbol`, and `references` snapshot builders.
+mod snapshots;
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -21,10 +23,12 @@ use anyhow::{Context, Result, ensure};
 use serde_json::{Value, json};
 use tower_lsp_server::ls_types::Uri;
 
+pub(crate) use snapshots::format_type_markdown;
+
 use crate::backend::{McpBackend, list_all};
 use crate::document::{
-  Document, Symbol, Token, align, canonical_virtual_uri, data_type_name, extract_label_address,
-  is_label_token, resolve, resolve_locals, same_address, virtual_uri,
+  Document, Symbol, Token, align, canonical_virtual_uri, extract_label_address, is_label_token,
+  resolve, resolve_locals, same_address, virtual_uri,
 };
 
 /// Finds a function symbol by address first and by name or qualified name second.
@@ -532,220 +536,6 @@ impl Engine {
       self.refresh_allowed.remove(&canon);
     }
   }
-
-  /// Builds synthetic read-only snapshot text for `type`, `symbol`, or `references` URIs.
-  pub(crate) async fn snapshot_text(&self, md5: &str, kind: &str, id: &str) -> Result<String> {
-    if kind == "type" {
-      let path = id.strip_suffix(".md").unwrap_or(id);
-      let type_data = if path.starts_with('/') {
-        self
-          .backend
-          .call(
-            "data_type",
-            "get",
-            Some(md5),
-            json!({"selector": {"path": path}}),
-          )
-          .await?
-      } else {
-        let types = list_all(
-          self.backend.as_ref(),
-          "data_type",
-          md5,
-          json!({"filter": {"query": path}, "page": {"limit": 1000}}),
-        )
-        .await?;
-        let candidate = types.into_iter().find(|v| {
-          v.get("name").and_then(Value::as_str) == Some(path)
-            || v.get("path").and_then(Value::as_str) == Some(path)
-        });
-        let full_path = if let Some(cand) = &candidate {
-          cand.get("path").and_then(Value::as_str).unwrap_or(path)
-        } else {
-          path
-        };
-        let lookup_path = if full_path.starts_with('/') {
-          full_path.to_owned()
-        } else {
-          format!("/{full_path}")
-        };
-        self
-          .backend
-          .call(
-            "data_type",
-            "get",
-            Some(md5),
-            json!({"selector": {"path": lookup_path}}),
-          )
-          .await?
-      };
-      return Ok(format_type_markdown(&type_data));
-    }
-    let symbol: Symbol = serde_json::from_value(
-      self
-        .backend
-        .call("symbol", "get", Some(md5), json!({"selector": {"id": id}}))
-        .await?,
-    )?;
-    if kind == "symbol" {
-      return Ok(format!(
-        "// {}\n// Address: {}\n// Kind: {}\n",
-        symbol.display_name(),
-        symbol.address,
-        symbol.kind
-      ));
-    }
-    let refs = list_all(
-      self.backend.as_ref(),
-      "reference",
-      md5,
-      json!({"filter": {"direction": "to", "to": symbol.address}, "page": {"limit": 1000}}),
-    )
-    .await?;
-    let mut code = format!(
-      "// References to {} at {}\n",
-      symbol.display_name(),
-      symbol.address
-    );
-    for reference in refs {
-      code.push_str(&format!(
-        "// {} -> {} ({})\n",
-        reference
-          .get("from")
-          .and_then(Value::as_str)
-          .context("reference lacks from address")?,
-        reference
-          .get("to")
-          .and_then(Value::as_str)
-          .unwrap_or(&symbol.address),
-        reference
-          .get("type")
-          .and_then(Value::as_str)
-          .unwrap_or("reference")
-      ));
-    }
-    Ok(code)
-  }
-}
-
-/// Formats structured data-type JSON returned by `ghidra-mcp` into Markdown documentation.
-pub(crate) fn format_type_markdown(data: &Value) -> String {
-  let name = data
-    .get("name")
-    .and_then(Value::as_str)
-    .unwrap_or("Unknown");
-  let kind = data.get("kind").and_then(Value::as_str).unwrap_or("type");
-  let length = data
-    .get("length")
-    .or_else(|| data.get("size"))
-    .and_then(Value::as_u64)
-    .map(|s| format!("{s} bytes (`0x{s:x}`)"))
-    .unwrap_or_else(|| "Unknown / variable".into());
-  let category = data
-    .get("category_path")
-    .and_then(Value::as_str)
-    .unwrap_or("/");
-  let path = data.get("path").and_then(Value::as_str).unwrap_or("");
-
-  let mut md = format!("# {kind} {name}\n\n");
-  md.push_str(&format!("- **Kind**: `{kind}`\n"));
-  md.push_str(&format!("- **Path**: `{path}`\n"));
-  md.push_str(&format!("- **Category**: `{category}`\n"));
-  md.push_str(&format!("- **Size**: {length}\n"));
-
-  if let Some(desc) = data.get("description").and_then(Value::as_str)
-    && !desc.trim().is_empty()
-  {
-    md.push_str(&format!("- **Description**: {desc}\n"));
-  }
-  if let Some(base) = data.get("base_type") {
-    let base_name = data_type_name(base);
-    if !base_name.is_empty() && base_name != "unknown" {
-      md.push_str(&format!("- **Base Type**: `{base_name}`\n"));
-    }
-  }
-
-  if let Some(fields) = data
-    .get("fields")
-    .and_then(Value::as_array)
-    .filter(|f| !f.is_empty())
-  {
-    md.push_str("\n## Fields\n\n");
-    md.push_str("| Offset | Size | Name | Type | Notes |\n");
-    md.push_str("| :--- | :--- | :--- | :--- | :--- |\n");
-    for f in fields {
-      let offset = f
-        .get("offset")
-        .and_then(Value::as_u64)
-        .map(|o| format!("`+0x{o:04x}`"))
-        .unwrap_or_else(|| "-".into());
-      let size = f
-        .get("length")
-        .and_then(Value::as_u64)
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| "-".into());
-      let fname = f.get("name").and_then(Value::as_str).unwrap_or("(unnamed)");
-      let ftype = data_type_name(&f["data_type"]);
-      let notes = f.get("comment").and_then(Value::as_str).unwrap_or("");
-      md.push_str(&format!(
-        "| {offset} | {size} | `{fname}` | `{ftype}` | {notes} |\n"
-      ));
-    }
-  }
-
-  if let Some(values) = data
-    .get("values")
-    .and_then(Value::as_array)
-    .filter(|v| !v.is_empty())
-  {
-    md.push_str("\n## Enum Values\n\n");
-    md.push_str("| Name | Value | Comment |\n");
-    md.push_str("| :--- | :--- | :--- |\n");
-    for v in values {
-      let vname = v.get("name").and_then(Value::as_str).unwrap_or("");
-      let val = v
-        .get("value")
-        .map(|val| {
-          val
-            .as_str()
-            .map(str::to_owned)
-            .unwrap_or_else(|| val.to_string())
-        })
-        .unwrap_or_default();
-      let comm = v.get("comment").and_then(Value::as_str).unwrap_or("");
-      md.push_str(&format!("| `{vname}` | `{val}` | {comm} |\n"));
-    }
-  }
-
-  if let Some(sig) = data.get("signature") {
-    md.push_str("\n## Function Signature\n\n");
-    if let Some(sig_str) = sig.as_str() {
-      md.push_str(&format!("`{sig_str}`\n"));
-    } else if let Some(sig_obj) = sig.as_object() {
-      if let Some(ret) = sig_obj.get("return_type") {
-        md.push_str(&format!("- **Return Type**: `{}`\n", data_type_name(ret)));
-      }
-      if let Some(conv) = sig_obj.get("calling_convention").and_then(Value::as_str) {
-        md.push_str(&format!("- **Calling Convention**: `{conv}`\n"));
-      }
-      if let Some(params) = sig_obj
-        .get("parameters")
-        .and_then(Value::as_array)
-        .filter(|p| !p.is_empty())
-      {
-        md.push_str("\n### Parameters\n\n");
-        md.push_str("| Ordinal | Name | Type |\n");
-        md.push_str("| :--- | :--- | :--- |\n");
-        for (idx, p) in params.iter().enumerate() {
-          let pname = p.get("name").and_then(Value::as_str).unwrap_or("(unnamed)");
-          let ptype = data_type_name(&p["data_type"]);
-          md.push_str(&format!("| {idx} | `{pname}` | `{ptype}` |\n"));
-        }
-      }
-    }
-  }
-
-  md
 }
 
 /// Appends `message` to `doc.warning`, joining multiple warnings with semicolons.

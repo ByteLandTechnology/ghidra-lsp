@@ -6,7 +6,7 @@ import { Call } from './memory';
 import { ProgramContext } from './context';
 import { Data } from './web';
 import { formatFriendlyError } from './error';
-import { typeExtension } from './virtual-files';
+import { readonlyTypeExtension, typeEditorViewId, typeExtension } from './virtual-files';
 import { readonlyTypeReason, sameTypeData } from './type-model';
 
 /** URI scheme for virtual JSONC data type documents. */
@@ -24,7 +24,14 @@ interface SaveTypeResponse { md5: string; path: string; mutated: boolean; persis
 /** Memento key storing persisted data type draft snapshots. */
 const storageKey = 'ghidra.typeFileSnapshots';
 /** v3 ends in a Ghidra-only extension, so editor associations never target '*' or a type name's own suffix. */
-export function typeUri(md5: string, path: string): vscode.Uri { return vscode.Uri.from({ scheme: typeScheme, authority: md5.toLowerCase(), path: `${path}${typeExtension}`, query: 'v=3' }); }
+export function typeUri(md5: string, path: string, readonly = false): vscode.Uri {
+    const normalized = path.startsWith('/') ? path : `/${path}`;
+    return vscode.Uri.from({ scheme: typeScheme, authority: md5.toLowerCase(), path: `${normalized}${readonly ? readonlyTypeExtension : typeExtension}`, query: 'v=3' });
+}
+/** Return true when `uri` is a read-only `.ghidra-type-readonly` virtual document. */
+export function isReadonlyTypeUri(uri: vscode.Uri): boolean {
+    return uri.scheme === typeScheme && uri.query === 'v=3' && uri.path.endsWith(readonlyTypeExtension);
+}
 // Earlier shapes stay readable so restored tabs and saved drafts keep working.
 /** Build a v2 `ghidra-type://` URI without the `.ghidra-type` extension. */
 function v2TypeUri(md5: string, path: string): vscode.Uri { return vscode.Uri.from({ scheme: typeScheme, authority: md5.toLowerCase(), path, query: 'v=2' }); }
@@ -37,10 +44,27 @@ export function typePath(uri: vscode.Uri): string {
     if (uri.scheme !== typeScheme || !/^[a-f\d]{32}$/.test(uri.authority) || !uri.path.startsWith('/') || uri.path === '/' || uri.fragment) {
         throw vscode.FileSystemError.FileNotFound(uri);
     }
+    if (uri.query === 'v=3' && uri.path.endsWith(readonlyTypeExtension) && uri.path.length > readonlyTypeExtension.length + 1) {
+        return uri.path.slice(0, -readonlyTypeExtension.length);
+    }
     if (uri.query === 'v=3' && uri.path.endsWith(typeExtension) && uri.path.length > typeExtension.length + 1) { return uri.path.slice(0, -typeExtension.length); }
     if (uri.query === 'v=2') { return uri.path; }
     if (!uri.query && uri.path.endsWith('.jsonc')) { return uri.path.slice(0, -'.jsonc'.length); }
     throw vscode.FileSystemError.FileNotFound(uri);
+}
+/** Resolve the active `ghidra-type://` URI from a command resource, custom editor tab, or text editor. */
+export function activeTypeUri(resource?: unknown): vscode.Uri | undefined {
+    if (resource instanceof vscode.Uri) { return resource; }
+    const activeTab = vscode.window.tabGroups.activeTabGroup.activeTab;
+    if (activeTab?.input instanceof vscode.TabInputCustom && activeTab.input.uri.scheme === typeScheme) {
+        return activeTab.input.uri;
+    }
+    const editorUri = vscode.window.activeTextEditor?.document.uri;
+    if (editorUri?.scheme === typeScheme) { return editorUri; }
+    if (activeTab?.input instanceof vscode.TabInputText && activeTab.input.uri.scheme === typeScheme) {
+        return activeTab.input.uri;
+    }
+    return editorUri;
 }
 
 /** Editable JSONC snapshots; the program and type identity live in the URI, never in the focused tab. */
@@ -105,7 +129,7 @@ export class DataTypeFiles implements vscode.FileSystemProvider, vscode.Disposab
         })) {
             this.disposables.push(vscode.commands.registerCommand(`ghidraLsp.${name}`, async (resource?: vscode.Uri) => {
                 try {
-                    const uri = resource instanceof vscode.Uri ? resource : vscode.window.activeTextEditor?.document.uri;
+                    const uri = activeTypeUri(resource);
                     if (!uri || uri.scheme !== typeScheme) { throw new Error('Open a Ghidra data type document first.'); }
                     await action(uri);
                 } catch (error) { void vscode.window.showErrorMessage(formatFriendlyError(error)); }
@@ -175,7 +199,7 @@ export class DataTypeFiles implements vscode.FileSystemProvider, vscode.Disposab
         }
         const entry = await this.load(uri);
         return { type: vscode.FileType.File, ctime: 0, mtime: entry.mtime, size: Buffer.byteLength(entry.text),
-            ...(this.readonlyReason(entry) ? { permissions: vscode.FilePermission.Readonly } : {}) };
+            ...(this.readonlyReason(entry) || isReadonlyTypeUri(uri) ? { permissions: vscode.FilePermission.Readonly } : {}) };
     }
     /** Read UTF-8 JSONC bytes for `uri`. */
     async readFile(uri: vscode.Uri): Promise<Uint8Array> { return Buffer.from((await this.load(uri)).text); }
@@ -284,6 +308,10 @@ export class DataTypeFiles implements vscode.FileSystemProvider, vscode.Disposab
     }
     /** Validate an open type document against the server schema and update diagnostics. */
     private async validate(document: vscode.TextDocument): Promise<void> {
+        if (isReadonlyTypeUri(document.uri)) {
+            this.diagnostics.delete(document.uri);
+            return;
+        }
         const key = document.uri.toString();
         const entry = this.entries.get(key);
         if (entry?.requiresReadback && document.getText() === entry.text) {
@@ -307,15 +335,56 @@ export class DataTypeFiles implements vscode.FileSystemProvider, vscode.Disposab
             // Keep existing diagnostics if validation RPC fails transiently.
         }
     }
-    /** Open a `ghidra-type://` JSONC document for `path` and activate its program. */
+    /** Return a best-effort `ghidra-type://` URI from open tabs, cached snapshots, or a kind hint without RPC. */
+    cachedUriFor(md5: string, path: string, kindHint?: string): vscode.Uri {
+        const normMd5 = md5.toLowerCase();
+        const normPath = path.startsWith('/') ? path : `/${path}`;
+        const candidates = [typeUri(normMd5, normPath, false), typeUri(normMd5, normPath, true), v2TypeUri(normMd5, normPath), legacyTypeUri(normMd5, normPath)];
+        const openTab = candidates.find(candidate => this.hasTab(candidate));
+        if (openTab) { return openTab; }
+        const cached = [candidates[0], candidates[1]].find(candidate => this.entries.has(candidate.toString()));
+        if (cached) { return cached; }
+        if (kindHint && kindHint.trim()) {
+            const editable = ['struct', 'structure', 'union', 'enum', 'function', 'function_definition'].includes(kindHint.trim().toLowerCase());
+            return typeUri(normMd5, normPath, !editable);
+        }
+        return candidates[0];
+    }
+    /** Resolve and cache the editable `.ghidra-type` or read-only `.ghidra-type-readonly` URI for `path`. */
+    async uriFor(md5: string, path: string): Promise<vscode.Uri> {
+        const normMd5 = md5.toLowerCase();
+        const normPath = path.startsWith('/') ? path : `/${path}`;
+        const candidates = [typeUri(normMd5, normPath, false), typeUri(normMd5, normPath, true), v2TypeUri(normMd5, normPath), legacyTypeUri(normMd5, normPath)];
+        const openTab = candidates.find(candidate => this.hasTab(candidate));
+        if (openTab) { return openTab; }
+        const cached = [candidates[0], candidates[1]].find(candidate => this.entries.has(candidate.toString()));
+        if (cached) { return cached; }
+        const legacy = [candidates[2], candidates[3]].map(older => this.entries.get(older.toString())).find(Boolean);
+        if (legacy) {
+            const readonly = Boolean(this.readonlyReason(legacy));
+            const uri = typeUri(normMd5, normPath, readonly);
+            this.entries.set(uri.toString(), JSON.parse(JSON.stringify(legacy)));
+            await this.persist();
+            return uri;
+        }
+        const doc = await this.call<TypeDocumentPayload>('ghidra.typeDocument', { md5: normMd5, path: normPath });
+        const resolvedPath = doc.path ? (doc.path.startsWith('/') ? doc.path : `/${doc.path}`) : normPath;
+        const reason = doc.readonlyReason !== undefined ? doc.readonlyReason : readonlyTypeReason(doc.original);
+        const readonly = Boolean(doc.readonly || reason);
+        const uri = typeUri(normMd5, resolvedPath, readonly);
+        if (!this.entries.has(uri.toString())) {
+            this.entries.set(uri.toString(), { original: doc.original, text: doc.text, readonlyReason: doc.readonlyReason, mtime: Date.now() });
+            await this.persist();
+        }
+        return uri;
+    }
+    /** Open a `ghidra-type://` document in `ghidra.dataTypeEditor` by default and activate its program. */
     async open(md5: string, path: string): Promise<void> {
-        // Reuse an already-open document of an older shape, including a recovered dirty draft.
-        const uri = [v2TypeUri(md5, path), legacyTypeUri(md5, path)].find(older => this.hasTab(older)) || typeUri(md5, path);
-        let document = await vscode.workspace.openTextDocument(uri);
-        if (document.languageId !== 'jsonc') { document = await vscode.languages.setTextDocumentLanguage(document, 'jsonc'); }
-        await vscode.window.showTextDocument(document, { preview: false });
+        const uri = await this.uriFor(md5, path);
+        await vscode.commands.executeCommand('vscode.openWith', uri, typeEditorViewId);
         await this.context.activate(md5);
-        await this.validate(document);
+        const document = this.document(uri);
+        if (document) { await this.validate(document); }
     }
     /** Reload the latest server definition for a clean data type document. */
     private async reload(uri: vscode.Uri): Promise<void> {

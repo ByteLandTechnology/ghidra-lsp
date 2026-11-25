@@ -86,7 +86,7 @@ pub(super) fn canonical_key(address: &str, default_space: &str) -> String {
 }
 
 /// Extracts a readable type string from structured or plain JSON data-type values.
-pub(super) fn normalize_type_ref(value: &Value) -> String {
+pub(crate) fn normalize_type_ref(value: &Value) -> String {
   if let Some(s) = value.as_str() {
     return s.to_owned();
   }
@@ -189,7 +189,7 @@ fn parse_hex_bytes(hex_data: &str) -> Vec<u8> {
 }
 
 /// Decodes an MCP encoded `{encoding, data}` byte payload into raw bytes.
-pub(super) fn decode_bytes_vec(value: &Value) -> Vec<u8> {
+pub(crate) fn decode_bytes_vec(value: &Value) -> Vec<u8> {
   let Some(obj) = value.as_object() else {
     return Vec::new();
   };

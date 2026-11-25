@@ -45,7 +45,7 @@ code --install-extension editors/vscode/ghidra-lsp-<version>.vsix
 
 ### 2 つのカスタムエディタ（`customEditors`）
 
-`editors/vscode/package.json` には `priority: "option"` のカスタムエディタが 2 つ登録されており、通常のテキストタブとグラフィカル表示を **Ghidra: Switch Analysis View…**（`ghidraLsp.analysisView`）や **Reopen Editor With…** で切り替えられます。
+`editors/vscode/package.json` には 2 つのカスタムエディタが登録されています（`ghidra.analysisControlFlow` は `priority: "option"`、`ghidra.dataTypeEditor` は `priority: "default"`）。通常のテキストタブとグラフィカル表示は **Ghidra: Switch Analysis View…**（`ghidraLsp.analysisView`）、ヘッダの **`JSONC`** ボタン、または **Reopen Editor With…** で切り替えられます。
 
 1. **Ghidra Control Flow（`ghidra.analysisControlFlow`）**
    - 対象: `ghidra-listing:/listing/*`
@@ -59,7 +59,7 @@ code --install-extension editors/vscode/ghidra-lsp-<version>.vsix
    - `.ghidra-type` JSONC ドキュメントと**同一のテキストバッファとドラフトを共有**するグラフィカルフォームです。
    - 上部ヘッダに型種別バッジ（`struct` / `union` / `enum` / `function`）・型パス・バイト数・メンバ数、未保存ステータス、および隣のタブに `.ghidra-type` テキストエディタを開く **`JSONC`** ボタンを備えています（JSONC 本文へ `"$schema"` は追加しません）。
    - 構造体フィールドのドラッグ移動・矢印キー並び替え、ソート、フォーカス行ハイライト、点線枠の `+ Add field` スロットによる行追加／削除、列挙体値、関数シグネチャパラメータ編集を行いつつ、`ghidra-type` 診断結果（バリデーションエラー）をフォーム上部にリアルタイム表示します。
-   - 組み込み型や `typedef` などは読み取り専用として安全に表示されます。
+   - 組み込み型や `typedef` などは `.ghidra-type-readonly` としてスキーマ検証を除外したうえで、読み取り専用理由をインラインバナーに明示して安全に表示されます。クライアントミドルウェアにより、型定義ジャンプやワークスペースシンボルも既定でこのエディタへルーティングされます（メモリ上のグローバルシンボルは `ghidra-listing://` 行へ、データアドレスリンクは `ghidraLsp.goToAddress` へ変換されます）。
 
 ![VS Code でのデータ型グラフィカルエディタと JSONC 編集](../assets/screenshots/vscode-type-editor-and-jsonc.svg)
 
@@ -91,7 +91,7 @@ code --install-extension editors/vscode/ghidra-lsp-<version>.vsix
 
 ## 5 種類コメントスレッドとリネーム UI
 
-- **横並びタブ付きコメントスレッド**: エディタのガター／行上で `Ctrl+.`（macOS は `Cmd+.`）から **Edit comments at …** を選ぶと、ネイティブ VS Code コメントスレッド（`CommentThread`）が開きます。上部の **Comment type** 行に並んだ `PLATE`、`PRE`、`EOL`、`POST`、`REPEATABLE (ext)` の 5 つのバッジタブをクリックして `ghidraLsp.selectCommentKind`（Switch Comment Kind）で区分を切り替え、下の単一エディタ欄で `Edit` / `Save` / `Cancel` を使ってインライン編集できます。
+- **横並びタブ付きコメントスレッドと 5 種類コメントフォーム**: 擬似コード上のトークンで `Ctrl+.`（macOS は `Cmd+.`）から **Edit comments at …** を選ぶと、ネイティブ VS Code コメントスレッド（`CommentThread`）が開き、上部の **Comment type** 行に並んだ `PLATE`、`PRE`、`EOL`、`POST`、`REPEATABLE (ext)` の 5 つのバッジタブで区分を切り替えてインライン編集できます。一方、**Symbol Inspector**、**Function Inspector**、**Program Listing** ツールバー、グローバルシンボル、または閉じた関数から **Edit comment** を実行した場合は、擬似コードタブを開かずに `ghidra.commentsAt` / `ghidra.saveComment` 連携の 5 種類コメントフォームが開きます（未保存ドラフト破棄時はいずれも確認ダイアログを表示します）。
 - **リネームバッジとステータスバー**: `F2` でリネームをプレビューすると、影響を受けるすべての開いた `ghidra://` タブに `M` バッジが付き、ステータスバーに保留中のリネーム件数と元の関数へ戻るコマンド（`ghidraLsp.showPendingRename`）が表示されます。
 
 ![VS Code での 5 種インラインコメントと保留中リネーム](../assets/screenshots/vscode-comments-and-rename.svg)

@@ -291,6 +291,10 @@ export class InlineComments implements vscode.Disposable {
         for (const [key, state] of this.states) {
             if (state.thread !== thread) { continue; }
             while (state.busy) { await state.queue; }
+            if (state.comments.some(draft => draft.body !== draft.saved)) {
+                const choice = await vscode.window.showWarningMessage('Discard unsaved comment drafts?', { modal: true }, 'Discard');
+                if (choice !== 'Discard') { return; }
+            }
             state.closed = true; state.thread.dispose(); this.states.delete(key);
         }
     }

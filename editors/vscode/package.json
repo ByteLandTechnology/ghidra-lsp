@@ -1020,7 +1020,7 @@
     "jsonValidation": [
       {
         "fileMatch": [
-          "ghidra-type:/**/*"
+          "ghidra-type:/**/*.ghidra-type"
         ],
         "url": "./schemas/data-type.schema.json"
       }
@@ -1044,7 +1044,7 @@
             "filenamePattern": "ghidra-type:/**/*"
           }
         ],
-        "priority": "option"
+        "priority": "default"
       }
     ]
   },
