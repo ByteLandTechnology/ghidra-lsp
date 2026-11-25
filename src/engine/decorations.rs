@@ -529,8 +529,7 @@ impl Engine {
         self
           .symbols
           .get(md5)?
-          .iter()
-          .find(|s| s.kind.eq_ignore_ascii_case("function") && same_address(&s.address, &canonical))
+          .function_at(&canonical)
           .map(|s| s.address.as_str())
       });
 
@@ -554,12 +553,7 @@ impl Engine {
     let sym_key = self
       .symbols
       .get(md5)
-      .and_then(|syms| {
-        syms
-          .iter()
-          .find(|s| same_address(&s.address, &canonical))
-          .map(|s| s.id.as_str())
-      })
+      .and_then(|syms| syms.by_address(&canonical).map(|s| s.id.as_str()))
       .unwrap_or(&canonical);
     let target = virtual_uri(md5, "symbol", sym_key).ok()?;
     Some(DocumentLink {

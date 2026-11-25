@@ -3,12 +3,14 @@
 
 //! Read-only `type`, `symbol`, and `references` snapshot builders for `ghidra://` documents.
 
+use std::sync::Arc;
+
 use anyhow::{Context, Result, bail};
 use serde_json::{Value, json};
 
 use super::Engine;
 use crate::backend::{McpBackend, list_all};
-use crate::document::{Symbol, data_type_name, same_address};
+use crate::document::{Symbol, SymbolIndex, data_type_name};
 use crate::views::{decode_bytes_vec, normalize_type_ref};
 
 /// Default byte window read when a symbol has no explicit defined data length.
@@ -70,7 +72,7 @@ impl Engine {
 
     let symbol = self.resolve_snapshot_symbol(md5, id).await?;
     if kind == "symbol" {
-      let cached_symbols = self.symbols.get(md5).map(Vec::as_slice).unwrap_or(&[]);
+      let cached_symbols = self.symbols.get(md5).map(Arc::as_ref);
       return Ok(render_symbol_snapshot(self.backend.as_ref(), md5, &symbol, cached_symbols).await);
     }
 
@@ -117,11 +119,11 @@ impl Engine {
       Err(err) => err,
     };
 
-    if let Some(cached) = self.symbols.get(md5).and_then(|syms| {
-      syms
-        .iter()
-        .find(|s| s.id == id || same_address(&s.address, id))
-    }) {
+    if let Some(cached) = self
+      .symbols
+      .get(md5)
+      .and_then(|syms| syms.by_id(id).or_else(|| syms.by_address(id)))
+    {
       return Ok(cached.clone());
     }
 
@@ -243,7 +245,7 @@ async fn render_symbol_snapshot(
   backend: &McpBackend,
   md5: &str,
   symbol: &Symbol,
-  cached_symbols: &[Symbol],
+  cached_symbols: Option<&SymbolIndex>,
 ) -> String {
   let (global_res, refs_res) = tokio::join!(
     backend.call(
@@ -382,10 +384,7 @@ async fn render_symbol_snapshot(
             let entry = reference
               .pointer("/from_function/entry")
               .and_then(Value::as_str)?;
-            cached_symbols
-              .iter()
-              .find(|s| s.kind.eq_ignore_ascii_case("function") && same_address(&s.address, entry))
-              .map(|s| s.name.as_str())
+            cached_symbols?.function_at(entry).map(|s| s.name.as_str())
           });
         if let Some(fn_name) = caller {
           out.push_str(&format!("//   {from} in {fn_name} ({kind})\n"));

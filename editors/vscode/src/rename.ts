@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import * as vscode from 'vscode';
+import { countLabel, saveShortcut, statusAccessibility } from './a11y';
 import { Call, VirtualDocument } from './memory';
 import { formatFriendlyError } from './error';
 
@@ -45,6 +46,7 @@ export class ReadonlyRenames implements vscode.Disposable, vscode.FileDecoration
 
     /** Register document, editor, focus, and configuration listeners for rename previews. */
     constructor(private readonly call: Call, private readonly committed: (md5: string) => Promise<void>) {
+        this.status.name = 'Ghidra pending rename';
         this.status.command = 'ghidraLsp.showPendingRename';
         this.disposables = [this.status, this.decorations, vscode.window.registerFileDecorationProvider(this),
             vscode.workspace.onDidChangeTextDocument(event => {
@@ -106,8 +108,14 @@ export class ReadonlyRenames implements vscode.Disposable, vscode.FileDecoration
         void vscode.commands.executeCommand('setContext', 'ghidra.hasPendingRename', plans.length > 0);
         if (!plans.length) { this.status.hide(); return; }
         const plan = plans[plans.length - 1];
-        this.status.text = plans.length === 1 ? `$(edit) Ghidra: ${plan.newName} · pending` : `$(edit) Ghidra: ${plans.length} pending renames`;
-        this.status.tooltip = `${plan.oldName} → ${plan.newName}\nClick to return to the original view, then press Ctrl+S to save. Closing the view does not save; reloading the window discards pending previews.`;
+        const shortcut = saveShortcut();
+        this.status.text = plans.length === 1
+            ? `$(edit) Ghidra: ${plan.oldName} → ${plan.newName} · ${shortcut} to save`
+            : `$(edit) Ghidra: ${countLabel(plans.length, 'pending rename')} · ${shortcut} to save`;
+        this.status.tooltip = `${plan.oldName} → ${plan.newName}\nClick to return to the original view, then press ${shortcut} to save. Closing the view does not save; reloading the window discards pending previews.`;
+        this.status.accessibilityInformation = plans.length === 1
+            ? statusAccessibility(this.status.text, `pending rename from ${plan.oldName} to ${plan.newName}`, 'Open origin view')
+            : statusAccessibility(this.status.text, `latest ${plan.oldName} to ${plan.newName}`, 'Open origin view');
         this.status.show();
     }
 
@@ -156,7 +164,7 @@ export class ReadonlyRenames implements vscode.Disposable, vscode.FileDecoration
         if (this.attempted.get(md5) === identity) { return; }
         this.attempted.set(md5, identity);
         void this.save(vscode.Uri.parse(plan.origin)).catch(error => {
-            void vscode.window.showErrorMessage(`Ghidra rename was not saved. Press Ctrl+S to retry: ${formatFriendlyError(error)}`);
+            void vscode.window.showErrorMessage(`Ghidra rename was not saved. Press ${saveShortcut()} to retry: ${formatFriendlyError(error)}`);
         });
     }
 

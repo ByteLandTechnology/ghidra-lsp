@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.5.0](https://github.com/ByteLandTechnology/ghidra-lsp/compare/v0.4.0...v0.5.0) (2026-11-25)
+
+
+### Features
+
+* **vscode:** add inline disambiguation and accessible labels ([#43](https://github.com/ByteLandTechnology/ghidra-lsp/issues/43)) ([3396d0c](https://github.com/ByteLandTechnology/ghidra-lsp/commit/3396d0ce3cdfa72fe587bfaac89d278987bb7960))
+
+
+### Bug Fixes
+
+* **vscode:** normalize webview css tokens and selection contrast ([#46](https://github.com/ByteLandTechnology/ghidra-lsp/issues/46)) ([61e90d5](https://github.com/ByteLandTechnology/ghidra-lsp/commit/61e90d5516ae65dfc9789e00cad3578b59fc6942))
+* **vscode:** restore keyboard operability and focus in hex view ([#15](https://github.com/ByteLandTechnology/ghidra-lsp/issues/15)) ([5007a83](https://github.com/ByteLandTechnology/ghidra-lsp/commit/5007a83147888daeccbf76a6163b917a5f25593a))
+
+
+### Performance Improvements
+
+* cache versioned span snapshots in source selection ([#49](https://github.com/ByteLandTechnology/ghidra-lsp/issues/49)) ([fa6f290](https://github.com/ByteLandTechnology/ghidra-lsp/commit/fa6f290d29c437b256d6ab77282ee38143eb8827))
+* index session symbols with SymbolIndex ([#42](https://github.com/ByteLandTechnology/ghidra-lsp/issues/42)) ([775dac4](https://github.com/ByteLandTechnology/ghidra-lsp/commit/775dac4b930e68f57e3dd1153c56d9e36bad05dd))
+
 ## [0.4.0](https://github.com/ByteLandTechnology/ghidra-lsp/compare/v0.3.1...v0.4.0) (2026-11-24)
 
 
