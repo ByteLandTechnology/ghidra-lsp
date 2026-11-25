@@ -11,7 +11,7 @@ use super::{Engine, find_function_symbol};
 use crate::backend::list_all;
 use crate::document::{
   Document, Symbol, canonical_virtual_uri, extract_label_address, in_address_range, is_label_token,
-  offset, same_address, virtual_uri, word_at,
+  same_address, virtual_uri, word_at,
 };
 
 impl Engine {
@@ -146,7 +146,7 @@ impl Engine {
       if !doc.clean() {
         return Ok(None);
       }
-      let Some(c) = offset(&doc.base, pos) else {
+      let Some(c) = doc.offset(pos) else {
         return Ok(None);
       };
       let span = doc
@@ -315,17 +315,9 @@ impl Engine {
     if self.docs.get(&uri).is_none_or(Document::clean) {
       let code = self.snapshot_text(md5, "symbol", &symbol.id).await?;
       let version = self.docs.get(&uri).and_then(|doc| doc.version);
-      self.install(Document {
-        uri: uri.clone(),
-        md5: md5.into(),
-        entry: None,
-        base: code.clone(),
-        current: code.clone(),
-        saved: code,
-        version,
-        spans: vec![],
-        warning: None,
-      })?;
+      let mut snapshot = Document::new(uri.clone(), md5.into(), None, code);
+      snapshot.version = version;
+      self.install(snapshot)?;
     }
     Ok(Location::new(uri, Range::default()))
   }
@@ -445,17 +437,9 @@ impl Engine {
       // Never overwrite a user-modified reference document.
       if self.docs.get(&uri).is_none_or(Document::clean) {
         let version = self.docs.get(&uri).and_then(|doc| doc.version);
-        self.install(Document {
-          uri: uri.clone(),
-          md5: md5.into(),
-          entry: None,
-          base: code.clone(),
-          current: code.clone(),
-          saved: code,
-          version,
-          spans: vec![],
-          warning: None,
-        })?;
+        let mut snapshot = Document::new(uri.clone(), md5.into(), None, code);
+        snapshot.version = version;
+        self.install(snapshot)?;
         for (line, text) in unmapped.iter().enumerate() {
           locations.push(Location::new(
             uri.clone(),

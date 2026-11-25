@@ -76,7 +76,7 @@ All 45 commands declared in `COMMANDS` (`src/server/mod.rs`) and dispatched acro
 | Command | Arguments | Description |
 | --- | --- | --- |
 | `ghidra.resolveTarget` | `{"md5?", "input" \| "target", "currentAddress?"}` | Resolve user input (address, relative offset `-0x80`, or symbol) to a canonical target |
-| `ghidra.location` | `{"uri", "position" \| "address", "version?"}` | Map cursor UTF-16 `Position` to native `CodeLocation`, or map `code_unit_address` back to `Position` |
+| `ghidra.location` | `{"uri", "position" \| "address" \| "addressRanges" \| "selections", "version?"}` | Map one UTF-16 `Position` to its native `CodeLocation`, map one `code_unit_address` to `Position`, map inclusive `addressRanges` (`{"start", "end"}`) to merged UTF-16 `ranges`, or map UTF-16 `selections` to unique `addresses` in document order |
 | `ghidra.reveal` | `{"md5?", "address"}` | Open containing function and return UTF-16 `Range` for `address` |
 | `ghidra.typeAtPosition` | `{"uri", "position"}` | Resolve data type metadata at a decompiler token position |
 | `ghidra.listingWindow` | `{"md5?", "address?", "cursor?", "limit?", "showTemplateArguments?", "exactStart?"}` | Fetch bounded disassembly listing window with collapsed undefined byte runs and xrefs |
@@ -115,7 +115,7 @@ ghidra-lsp/
 │   ├── address.rs              # Checked u64 address math, type refs, defined strings
 │   ├── binary.rs               # Binary loader import/export inspection (object crate)
 │   ├── comments.rs             # Supplemental repeatable comment insertion and span shifting
-│   ├── document.rs             # Virtual Document state, UTF-8/UTF-16 mapping, template folding
+│   ├── document/               # Virtual Document state, UTF-8/UTF-16 mapping, batch locations, template folding
 │   ├── gui.rs                  # Native Ghidra GUI line layout validation
 │   ├── workbench.rs            # Semantic tokens and query/mutate policy allowlists
 │   ├── engine/                 # Decompilation, navigation, completion, hierarchy, rename lifecycle

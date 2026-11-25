@@ -14,9 +14,7 @@ use tower_lsp_server::ls_types::{
 
 use super::{Engine, find_function_symbol, format_type_markdown};
 use crate::backend::list_all;
-use crate::document::{
-  Document, Symbol, canonical_virtual_uri, data_type_name, offset, virtual_uri,
-};
+use crate::document::{Document, Symbol, canonical_virtual_uri, data_type_name, virtual_uri};
 
 /// Built-in decompiler type names offered alongside program and local symbols.
 const COMMON_TYPES: &[&str] = &[
@@ -68,7 +66,7 @@ impl Engine {
       doc.clean(),
       "Refresh modified decompilation before requesting semantic completion"
     );
-    let cursor = offset(&doc.base, pos).context("Invalid completion position")?;
+    let cursor = doc.offset(pos).context("Invalid completion position")?;
     let prefix: String = doc.base[..cursor]
       .chars()
       .rev()
@@ -151,7 +149,7 @@ impl Engine {
     if !doc.clean() {
       return Ok(None);
     }
-    let cursor = offset(&doc.base, pos).context("Invalid signature position")?;
+    let cursor = doc.offset(pos).context("Invalid signature position")?;
     let mut stack: Vec<Option<(Symbol, u32)>> = vec![];
     let mut previous = None;
     for span in doc.spans.iter().take_while(|s| s.start < cursor) {
@@ -441,17 +439,7 @@ impl Engine {
     let key = format!("{path}.md");
     let type_uri = virtual_uri(&md5, "type", &key)?;
     let md = format_type_markdown(&type_data);
-    self.install(Document {
-      uri: type_uri.clone(),
-      md5,
-      entry: None,
-      base: md.clone(),
-      current: md.clone(),
-      saved: md,
-      version: None,
-      spans: vec![],
-      warning: None,
-    })?;
+    self.install(Document::new(type_uri.clone(), md5, None, md))?;
     let range = Range::new(
       Position::new(0, 0),
       Position::new(0, (2 + name.encode_utf16().count()) as u32),

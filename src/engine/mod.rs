@@ -214,17 +214,7 @@ impl Engine {
       .unwrap_or(entry)
       .to_owned();
     let uri = virtual_uri(md5, "function", &canonical)?;
-    let mut doc = Document {
-      uri,
-      md5: md5.into(),
-      entry: Some(canonical),
-      base: code.clone(),
-      current: code.clone(),
-      saved: code,
-      version: None,
-      spans: vec![],
-      warning: None,
-    };
+    let mut doc = Document::new(uri, md5.into(), Some(canonical), code);
     let native = text.get("lines").filter(|value| value.is_array());
     if let Some(lines) = native {
       match crate::gui::spans(&doc.base, lines) {

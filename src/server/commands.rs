@@ -7,12 +7,13 @@ use std::sync::atomic::Ordering;
 
 use anyhow::{Context, Result, bail, ensure};
 use serde_json::{Value, json};
-use tower_lsp_server::ls_types::{Position, Uri};
+use tower_lsp_server::ls_types::{Position, Range, Uri};
 
 use super::Server;
 use crate::backend::{McpBackend, list_all};
 use crate::document::{
-  Document, SHOW_TEMPLATE_ARGUMENTS, canonical_virtual_uri, matches_text, same_address,
+  AddressBounds, Document, SHOW_TEMPLATE_ARGUMENTS, canonical_virtual_uri, matches_text,
+  same_address,
 };
 use crate::workbench;
 
@@ -101,17 +102,7 @@ impl Server {
             doc_uri = e.open(md5, &key).await?;
           } else if matches!(kind, "symbol" | "references" | "type") {
             let text = e.snapshot_text(md5, kind, &key).await?;
-            doc_uri = e.install(Document {
-              uri: uri.clone(),
-              md5: md5.into(),
-              entry: None,
-              base: text.clone(),
-              current: text.clone(),
-              saved: text,
-              version: None,
-              spans: vec![],
-              warning: None,
-            })?;
+            doc_uri = e.install(Document::new(uri.clone(), md5.into(), None, text))?;
           } else {
             bail!("Open this symbol through Ghidra first");
           }
@@ -146,61 +137,7 @@ impl Server {
         }
         Ok(json!({}))
       }
-      "ghidra.location" => {
-        let raw_uri: Uri = arg
-          .get("uri")
-          .and_then(Value::as_str)
-          .context("uri is required")?
-          .parse()?;
-        let uri = canonical_virtual_uri(&raw_uri);
-        let e = self.engine.lock().await;
-        let doc = e.docs.get(&uri).context("Unknown virtual document")?;
-        if let Some(version) = arg.get("version") {
-          ensure!(
-            *version == json!(doc.version),
-            "The decompiled document changed. Request Code Actions again before editing comments"
-          );
-        }
-        if let Some(address) = arg.get("address").and_then(Value::as_str) {
-          ensure!(
-            doc.clean(),
-            "Save or discard the pending edit before mapping a code selection"
-          );
-          ensure!(
-            doc.spans.iter().any(|span| span.location.is_some()),
-            "Upgrade ghidra-mcp for GUI cursor locations; this document has no native layout"
-          );
-          let span = doc.spans.iter().find(|span| {
-            span.token.kind != "comment"
-              && span
-                .location
-                .as_ref()
-                .and_then(|location| location.code_unit_address.as_deref())
-                .is_some_and(|unit| same_address(unit, address))
-          });
-          return Ok(json!({
-            "md5": doc.md5,
-            "entry": doc.entry,
-            "position": span.map(|span| doc.range(span).start),
-            "native": true,
-          }));
-        }
-        let p: Position = serde_json::from_value(
-          arg
-            .get("position")
-            .cloned()
-            .context("position is required")?,
-        )?;
-        let location = doc.code_location(p)?;
-        Ok(json!({
-          "md5": doc.md5,
-          "entry": doc.entry,
-          "address": location.map(|l| &l.address),
-          "code_unit_address": location.and_then(|l| l.code_unit_address.as_deref()),
-          "exact": location.is_some_and(|l| l.exact),
-          "native": doc.spans.iter().any(|s| s.location.is_some()),
-        }))
-      }
+      "ghidra.location" => self.execute_location(&arg).await,
       "ghidra.reveal" => {
         let md5 = self.scoped_md5(&arg).await?;
         let address_text = arg
@@ -273,5 +210,82 @@ impl Server {
       }
       _ => bail!("Unknown command: {command}"),
     }
+  }
+
+  /// Resolves single or batch `ghidra.location` queries with one engine lock and one clean check.
+  pub(super) async fn execute_location(&self, arg: &Value) -> Result<Value> {
+    let raw_uri: Uri = arg
+      .get("uri")
+      .and_then(Value::as_str)
+      .context("uri is required")?
+      .parse()?;
+    let uri = canonical_virtual_uri(&raw_uri);
+    let e = self.engine.lock().await;
+    let doc = e.docs.get(&uri).context("Unknown virtual document")?;
+    if let Some(version) = arg.get("version") {
+      ensure!(
+        *version == json!(doc.version),
+        "The decompiled document changed. Request Code Actions again before editing comments"
+      );
+    }
+    if let Some(address) = arg.get("address").and_then(Value::as_str) {
+      ensure!(
+        doc.clean(),
+        "Save or discard the pending edit before mapping a code selection"
+      );
+      ensure!(
+        doc.has_native_locations(),
+        "Upgrade ghidra-mcp for GUI cursor locations; this document has no native layout"
+      );
+      let span = doc.spans.iter().find(|span| {
+        span.token.kind != "comment"
+          && span
+            .location
+            .as_ref()
+            .and_then(|location| location.code_unit_address.as_deref())
+            .is_some_and(|unit| same_address(unit, address))
+      });
+      return Ok(json!({
+        "md5": doc.md5,
+        "entry": doc.entry,
+        "position": span.map(|span| doc.range(span).start),
+        "native": true,
+      }));
+    }
+    if let Some(raw_ranges) = arg.get("addressRanges").filter(|v| !v.is_null()) {
+      let address_ranges: Vec<AddressBounds> = serde_json::from_value(raw_ranges.clone())?;
+      let ranges = doc.ranges_for_addresses(&address_ranges)?;
+      return Ok(json!({
+        "md5": doc.md5,
+        "entry": doc.entry,
+        "ranges": ranges,
+        "native": true,
+      }));
+    }
+    if let Some(raw_selections) = arg.get("selections").filter(|v| !v.is_null()) {
+      let selections: Vec<Range> = serde_json::from_value(raw_selections.clone())?;
+      let addresses = doc.addresses_for_selections(&selections)?;
+      return Ok(json!({
+        "md5": doc.md5,
+        "entry": doc.entry,
+        "addresses": addresses,
+        "native": true,
+      }));
+    }
+    let p: Position = serde_json::from_value(
+      arg
+        .get("position")
+        .cloned()
+        .context("position is required")?,
+    )?;
+    let location = doc.code_location(p)?;
+    Ok(json!({
+      "md5": doc.md5,
+      "entry": doc.entry,
+      "address": location.map(|l| &l.address),
+      "code_unit_address": location.and_then(|l| l.code_unit_address.as_deref()),
+      "exact": location.is_some_and(|l| l.exact),
+      "native": true,
+    }))
   }
 }

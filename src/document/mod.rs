@@ -11,6 +11,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tower_lsp_server::ls_types::{Position, Range, TextEdit, Uri};
 
+mod location;
+
+pub(crate) use location::AddressBounds;
+
 /// Display flag that controls whether full C++ template arguments appear in text.
 pub(crate) static SHOW_TEMPLATE_ARGUMENTS: AtomicBool = AtomicBool::new(false);
 
@@ -185,6 +189,8 @@ pub(crate) struct Document {
   pub(crate) entry: Option<String>,
   /// Last fetched clean decompilation or snapshot text.
   pub(crate) base: String,
+  /// Precomputed UTF-8 start byte offsets of each `\n`-delimited line in `base`.
+  line_starts: Vec<usize>,
   /// Current editor buffer contents reported through LSP synchronization.
   pub(crate) current: String,
   /// Last text persisted through a controlled save operation.
@@ -198,9 +204,60 @@ pub(crate) struct Document {
 }
 
 impl Document {
+  /// Creates a clean virtual document with precomputed line-start byte offsets.
+  pub(crate) fn new(uri: Uri, md5: String, entry: Option<String>, text: String) -> Self {
+    let starts = line_starts(&text);
+    Self {
+      uri,
+      md5,
+      entry,
+      base: text.clone(),
+      line_starts: starts,
+      current: text.clone(),
+      saved: text,
+      version: None,
+      spans: Vec::new(),
+      warning: None,
+    }
+  }
+
+  /// Replaces `base`, `current`, and `saved` with `text` and recomputes `line_starts`.
+  pub(crate) fn set_clean_text(&mut self, text: String) {
+    self.line_starts = line_starts(&text);
+    self.base = text.clone();
+    self.current = text.clone();
+    self.saved = text;
+  }
+
   /// Returns true when the client buffer matches the clean `base` text.
   pub(crate) fn clean(&self) -> bool {
     self.current == self.base
+  }
+
+  /// Returns true when at least one token span carries native GUI location metadata.
+  pub(crate) fn has_native_locations(&self) -> bool {
+    self.spans.iter().any(|span| span.location.is_some())
+  }
+
+  /// Returns the inclusive start and exclusive end byte offsets (without `\n`) of zero-based `line`.
+  fn line_bounds(&self, line: usize) -> Option<(usize, usize)> {
+    let start = *self.line_starts.get(line)?;
+    let end = self
+      .line_starts
+      .get(line + 1)
+      .map_or(self.base.len(), |next| next - 1);
+    Some((start, end))
+  }
+
+  /// Converts a UTF-8 byte index in `base` into an LSP UTF-16 `Position` using `line_starts`.
+  pub(crate) fn position(&self, byte: usize) -> Position {
+    position_with_lines(&self.base, &self.line_starts, byte)
+  }
+
+  /// Converts an LSP UTF-16 `Position` in `base` into a UTF-8 byte offset using `line_starts`.
+  pub(crate) fn offset(&self, pos: Position) -> Option<usize> {
+    let (start, end) = self.line_bounds(pos.line as usize)?;
+    line_utf16_offset(&self.base[start..end], pos.character).map(|rel| start + rel)
   }
 
   /// Finds the token span containing `pos` when the buffer is clean.
@@ -208,19 +265,13 @@ impl Document {
     if self.current != self.base {
       return None;
     }
-    let offset = offset(&self.base, pos)?;
-    self
-      .spans
-      .iter()
-      .find(|s| s.start <= offset && offset < s.end)
+    let byte = self.offset(pos)?;
+    self.spans.iter().find(|s| s.start <= byte && byte < s.end)
   }
 
   /// Converts the byte span of `span` into an LSP UTF-16 `Range`.
   pub(crate) fn range(&self, span: &Span) -> Range {
-    Range::new(
-      position(&self.base, span.start),
-      position(&self.base, span.end),
-    )
+    Range::new(self.position(span.start), self.position(span.end))
   }
 
   /// Returns the UTF-8 byte offset of the opening `{` of the function body.
@@ -230,61 +281,6 @@ impl Document {
       .iter()
       .find(|span| span.token.kind != "comment" && span.token.text == "{")
       .map_or(self.base.len(), |span| span.start)
-  }
-
-  /// Maps an LSP cursor position on a clean document to its native GUI [`CodeLocation`].
-  pub(crate) fn code_location(&self, pos: Position) -> Result<Option<&CodeLocation>> {
-    anyhow::ensure!(
-      self.clean(),
-      "Save or discard the pending edit before mapping a code selection"
-    );
-    let byte = offset(&self.base, pos).context("position is outside the document")?;
-    anyhow::ensure!(
-      self.spans.iter().any(|s| s.location.is_some()),
-      "Upgrade ghidra-mcp for GUI cursor locations; this document has no native layout"
-    );
-    let start = self.base[..byte].rfind('\n').map_or(0, |index| index + 1);
-    let end = self.base[byte..]
-      .find('\n')
-      .map_or(self.base.len(), |index| byte + index);
-    let first = self.spans.partition_point(|span| span.start < start);
-    let mut line = self.spans[first..]
-      .iter()
-      .take_while(|span| span.start <= end)
-      .filter(|span| span.location.is_some())
-      .peekable();
-    // The GUI selects the first token in indentation and the last token at end of line.
-    while let Some(span) = line.next() {
-      if byte < span.end || line.peek().is_none() {
-        return Ok(span.location.as_ref());
-      }
-    }
-    Ok(None)
-  }
-
-  /// Finds the first non-comment span whose address or address range matches `target`.
-  pub(crate) fn span_for_address(&self, target: &str) -> Option<&Span> {
-    self.spans.iter().find(|span| {
-      span.token.kind != "comment"
-        && (span
-          .token
-          .address
-          .as_deref()
-          .is_some_and(|a| same_address(a, target))
-          || span.location.as_ref().is_some_and(|location| {
-            same_address(&location.address, target)
-              || location
-                .code_unit_address
-                .as_deref()
-                .is_some_and(|a| same_address(a, target))
-              || span
-                .token
-                .address
-                .as_deref()
-                .zip(location.token_max_address.as_deref())
-                .is_some_and(|(start, end)| in_address_range(target, start, end))
-          }))
-    })
   }
 }
 
@@ -450,6 +446,53 @@ pub(crate) fn data_type_name(value: &Value) -> String {
   }
 }
 
+/// Computes the UTF-8 start byte offset of every `\n`-delimited line in `text`.
+fn line_starts(text: &str) -> Vec<usize> {
+  let mut starts = vec![0];
+  for (index, byte) in text.bytes().enumerate() {
+    if byte == b'\n' {
+      starts.push(index + 1);
+    }
+  }
+  starts
+}
+
+/// Converts `byte` in `text` into an LSP UTF-16 `Position` using precomputed `starts`.
+fn position_with_lines(text: &str, starts: &[usize], byte: usize) -> Position {
+  let byte = byte.min(text.len());
+  let byte = (0..=byte)
+    .rev()
+    .find(|&b| text.is_char_boundary(b))
+    .unwrap_or(0);
+  let line = starts
+    .partition_point(|&start| start <= byte)
+    .saturating_sub(1);
+  let start = starts.get(line).copied().unwrap_or(0);
+  let slice = &text[start..byte];
+  let character = if slice.is_ascii() {
+    slice.len() as u32
+  } else {
+    slice.encode_utf16().count() as u32
+  };
+  Position::new(line as u32, character)
+}
+
+/// Converts UTF-16 column `character` within single-line `line` into a relative UTF-8 byte offset.
+fn line_utf16_offset(line: &str, character: u32) -> Option<usize> {
+  if line.is_ascii() {
+    let col = character as usize;
+    return (col <= line.len()).then_some(col);
+  }
+  let mut units = 0;
+  for (i, c) in line.char_indices() {
+    if units == character {
+      return Some(i);
+    }
+    units += c.len_utf16() as u32;
+  }
+  (units == character).then_some(line.len())
+}
+
 /// Converts a UTF-8 byte index in `text` into an LSP UTF-16 `Position`.
 pub(crate) fn position(text: &str, byte: usize) -> Position {
   let byte = byte.min(text.len());
@@ -476,14 +519,7 @@ pub(crate) fn offset(text: &str, pos: Position) -> Option<usize> {
     start += text.get(start..)?.find('\n')? + 1;
   }
   let line = text.get(start..)?.split('\n').next()?;
-  let mut units = 0;
-  for (i, c) in line.char_indices() {
-    if units == pos.character {
-      return Some(start + i);
-    }
-    units += c.len_utf16() as u32;
-  }
-  (units == pos.character).then_some(start + line.len())
+  line_utf16_offset(line, pos.character).map(|rel| start + rel)
 }
 
 /// Applies non-overlapping LSP `TextEdit` changes to `text` in reverse order.

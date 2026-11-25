@@ -15,7 +15,7 @@ use tower_lsp_server::ls_types::{
 
 use super::{Server, rpc};
 use crate::backend::list_all;
-use crate::document::{Document, Symbol, canonical_virtual_uri, position, virtual_uri};
+use crate::document::{Document, Symbol, canonical_virtual_uri, virtual_uri};
 
 impl Server {
   /// Builds nested outline symbols for the opened decompilation buffer in `params`.
@@ -69,7 +69,7 @@ impl Server {
             .map_or_else(|| s.token.text.clone(), Symbol::display_name)
         })
         .unwrap_or_else(|| format!("func_{entry}"));
-      let full_range = Range::new(Position::new(0, 0), position(&doc.base, doc.base.len()));
+      let full_range = Range::new(Position::new(0, 0), doc.position(doc.base.len()));
       let header_range = decl.map(|s| doc.range(s)).unwrap_or_else(|| {
         Range::new(
           Position::new(0, 0),
@@ -235,18 +235,9 @@ impl Server {
       if e.docs.get(&uri).is_none_or(Document::clean) {
         let code = e.snapshot_text(md5, "type", type_path).await.map_err(rpc)?;
         let version = e.docs.get(&uri).and_then(|doc| doc.version);
-        e.install(Document {
-          uri: uri.clone(),
-          md5: md5.into(),
-          entry: None,
-          base: code.clone(),
-          current: code.clone(),
-          saved: code,
-          version,
-          spans: vec![],
-          warning: None,
-        })
-        .map_err(rpc)?;
+        let mut snapshot = Document::new(uri.clone(), md5.into(), None, code);
+        snapshot.version = version;
+        e.install(snapshot).map_err(rpc)?;
       }
       drop(e);
       self.changed(md5).await;

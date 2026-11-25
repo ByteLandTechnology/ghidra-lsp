@@ -36,7 +36,7 @@ use tower_lsp_server::{LanguageServer, jsonrpc};
 use super::{COMMANDS, Server, format_storage, rpc};
 use crate::backend::{Config, McpBackend};
 use crate::document::{
-  Document, SHOW_TEMPLATE_ARGUMENTS, canonical_virtual_uri, data_type_name, matches_text, offset,
+  Document, SHOW_TEMPLATE_ARGUMENTS, canonical_virtual_uri, data_type_name, matches_text,
 };
 use crate::engine::Engine;
 use crate::workbench;
@@ -192,17 +192,7 @@ impl LanguageServer for Server {
         } else if matches!(kind, "symbol" | "references" | "type")
           && let Ok(text) = e.snapshot_text(md5, kind, &key).await
         {
-          let _ = e.install(Document {
-            uri: uri.clone(),
-            md5: md5.into(),
-            entry: None,
-            base: text.clone(),
-            current: text.clone(),
-            saved: text,
-            version: None,
-            spans: vec![],
-            warning: None,
-          });
+          let _ = e.install(Document::new(uri.clone(), md5.into(), None, text));
         }
       }
     }
@@ -503,7 +493,7 @@ impl LanguageServer for Server {
     if !doc.clean() {
       return Ok(Some(vec![]));
     }
-    let Some(byte) = offset(&doc.base, params.range.start) else {
+    let Some(byte) = doc.offset(params.range.start) else {
       return Ok(Some(vec![]));
     };
     let mut actions = Vec::new();

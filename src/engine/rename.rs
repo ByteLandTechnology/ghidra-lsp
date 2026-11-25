@@ -619,9 +619,7 @@ impl Engine {
         }
       };
       if let Some(doc) = self.docs.get_mut(&uri) {
-        doc.base = text.clone();
-        doc.current = text.clone();
-        doc.saved = text;
+        doc.set_clean_text(text);
         doc.warning = warning;
       }
     }

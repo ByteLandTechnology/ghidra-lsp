@@ -14,9 +14,7 @@ use tower_lsp_server::ls_types::{
 
 use super::Engine;
 use crate::backend::list_all;
-use crate::document::{
-  canonical_virtual_uri, in_address_range, position, same_address, virtual_uri,
-};
+use crate::document::{canonical_virtual_uri, in_address_range, same_address, virtual_uri};
 
 impl Engine {
   /// Builds the root [`CallHierarchyItem`] for the function or call expression at `pos`.
@@ -32,7 +30,7 @@ impl Engine {
       if !doc.clean() {
         return Ok(None);
       }
-      let Some(cursor) = crate::document::offset(&doc.base, pos) else {
+      let Some(cursor) = doc.offset(pos) else {
         return Ok(None);
       };
       let span = doc
@@ -118,7 +116,7 @@ impl Engine {
           )
         }
       });
-      let range = Range::new(Position::new(0, 0), position(&doc.base, doc.base.len()));
+      let range = Range::new(Position::new(0, 0), doc.position(doc.base.len()));
       (uri.clone(), range, sel)
     } else {
       match self.open(&md5, &func_entry).await {
@@ -138,7 +136,7 @@ impl Engine {
               Position::new(0, func_name.encode_utf16().count() as u32),
             )
           });
-          let range = Range::new(Position::new(0, 0), position(&doc.base, doc.base.len()));
+          let range = Range::new(Position::new(0, 0), doc.position(doc.base.len()));
           (callee_uri, range, sel)
         }
         Err(_) => (uri.clone(), span_range, span_range),
@@ -275,7 +273,7 @@ impl Engine {
           });
           let range = Range::new(
             Position::new(0, 0),
-            position(&caller_doc.base, caller_doc.base.len()),
+            caller_doc.position(caller_doc.base.len()),
           );
           let clean_ranges: Vec<Range> = ranges.into_iter().filter(|r| r.start != r.end).collect();
           let final_ranges = if !clean_ranges.is_empty() {
@@ -407,7 +405,7 @@ impl Engine {
         });
         let range = Range::new(
           Position::new(0, 0),
-          position(&callee_doc.base, callee_doc.base.len()),
+          callee_doc.position(callee_doc.base.len()),
         );
         (range, sel)
       } else {

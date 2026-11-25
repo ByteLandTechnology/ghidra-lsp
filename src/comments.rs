@@ -201,7 +201,5 @@ fn render(document: &mut Document, comments: Vec<Comment>) {
   }
   document.spans.extend(additions);
   document.spans.sort_by_key(|span| span.start);
-  document.base = output.clone();
-  document.current = output.clone();
-  document.saved = output;
+  document.set_clean_text(output);
 }

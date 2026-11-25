@@ -14,7 +14,7 @@ use tower_lsp_server::ls_types::{
 };
 
 use super::Engine;
-use crate::document::{Span, canonical_virtual_uri, offset, position, virtual_uri};
+use crate::document::{Span, canonical_virtual_uri, virtual_uri};
 
 impl Engine {
   /// Returns same-document highlights for the symbol or type token under `pos`.
@@ -31,7 +31,7 @@ impl Engine {
     if !doc.clean() {
       return Ok(None);
     }
-    let Some(cursor) = offset(&doc.base, pos) else {
+    let Some(cursor) = doc.offset(pos) else {
       return Ok(None);
     };
     let Some(current_span) = doc
@@ -158,7 +158,8 @@ impl Engine {
       .iter()
       .find(|s| s.token.kind == "function" && s.start < body_start);
     let (range, pos) = if let Some(s) = fn_span {
-      (doc.range(s), position(&doc.base, s.start))
+      let r = doc.range(s);
+      (r, r.start)
     } else {
       (
         Range::new(Position::new(0, 0), Position::new(0, 0)),

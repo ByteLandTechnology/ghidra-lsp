@@ -80,7 +80,7 @@
 | 命令 | 参数载荷 | 说明 |
 | --- | --- | --- |
 | `ghidra.resolveTarget` | `{"md5?", "input" \| "target", "currentAddress?"}` | 将地址、相对偏移（如 `-0x80`）或符号输入解析为规范目标地址 |
-| `ghidra.location` | `{"uri", "position" \| "address", "version?"}` | 将光标 UTF-16 `Position` 映射为原生 `CodeLocation`，或将 `code_unit_address` 反向映射为 `Position` |
+| `ghidra.location` | `{"uri", "position" \| "address" \| "addressRanges" \| "selections", "version?"}` | 将单个光标 UTF-16 `Position` 映射为原生 `CodeLocation`、将单个 `code_unit_address` 反向映射为 `Position`、将闭区间 `addressRanges`（`{"start", "end"}`）批量映射为合并后的 UTF-16 `ranges`，或将 UTF-16 `selections` 批量映射为按文档顺序去重的 `addresses` |
 | `ghidra.reveal` | `{"md5?", "address"}` | 打开包含该地址的函数并返回对应 UTF-16 `Range` |
 | `ghidra.typeAtPosition` | `{"uri", "position"}` | 解析反编译 Token 光标处的数据类型元数据 |
 | `ghidra.listingWindow` | `{"md5?", "address?", "cursor?", "limit?", "showTemplateArguments?", "exactStart?"}` | 分页加载有界汇编清单窗口，包含未定义字节折叠与交叉引用汇总 |
@@ -121,7 +121,7 @@ ghidra-lsp/
 │   ├── address.rs             # 规范地址解析、checked u64 数学与定义字符串查询
 │   ├── binary.rs              # PE/ELF/Mach-O 加载器导入导出表解析与 MD5 校验
 │   ├── comments.rs            # 可重复注释在虚拟 C 文档中的锚定与偏移重算
-│   ├── document.rs            # 虚拟文档状态、UTF-16 坐标与模板名折叠
+│   ├── document/              # 虚拟文档状态、UTF-16 坐标、批量位置查询与模板名折叠
 │   ├── gui.rs                 # Ghidra 原生 GUI 行列布局反序列化与校验
 │   ├── workbench.rs           # LSP 语义 Token 生成与 ghidra.query/mutate 白名单校验
 │   ├── engine/                # 会话管理、单次反编译生成、导航、高亮与 F2 重命名计划
