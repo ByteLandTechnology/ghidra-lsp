@@ -21,7 +21,7 @@ export const controlFlowStyles = `
 .flow-page .zoom-step{min-width:28px;font-size:16px;padding:0 7px}
 .flow-page #graph-zoom{min-width:51px;font-variant-numeric:tabular-nums}
 .flow-page #filter-status{grid-row:2;margin:0;padding:4px 12px;font-size:11px;line-height:1.4;border-bottom:1px solid var(--vscode-panel-border);background:var(--vscode-editor-background);color:var(--vscode-foreground)}
-.flow-page .scope{grid-row:3;margin:0;padding:4px 12px;font-size:11px;line-height:1.4;border-bottom:1px solid var(--vscode-panel-border);background:var(--vscode-editor-background);color:var(--vscode-descriptionForeground)}
+.flow-page .scope{grid-row:3;margin:0;padding:4px 12px;font-size:11px;line-height:1.4;border-bottom:1px solid var(--vscode-panel-border);background:var(--vscode-editor-background);color:var(--ghidra-muted)}
 .flow-page .selection-tools{flex-wrap:wrap;padding-bottom:6px}
 .flow-page .flow-canvas,.flow-page .call-columns,.flow-page main>.empty,.flow-page main>.error{grid-row:4;min-width:0;min-height:0}
 .flow-page .flow-canvas{position:relative;width:100%;height:100%;overflow:hidden;cursor:grab;touch-action:none;border:0;border-radius:0;background:var(--vscode-editor-background)}
@@ -33,43 +33,69 @@ export const controlFlowStyles = `
 .flow-canvas .cfg-node{display:flex;flex-direction:column;width:max-content;min-width:220px;max-width:540px;border:1px solid var(--vscode-contrastBorder,var(--vscode-editorWidget-border,var(--vscode-panel-border)));border-radius:8px;background:var(--vscode-editor-background);color:var(--vscode-editor-foreground,var(--vscode-foreground))}
 .flow-canvas .cfg-node .block-header{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;padding:7px 12px;border-bottom:1px solid var(--vscode-panel-border);border-radius:7px 7px 0 0;background:color-mix(in srgb,var(--vscode-foreground) 7%,var(--vscode-editor-background))}
 .flow-canvas .cfg-node .block-body{display:flex;flex-direction:column;gap:2px;padding:8px 12px 10px;min-width:0}
-.flow-canvas .cfg-node:hover,.flow-canvas .cfg-node.search-match,.flow-canvas .cfg-node.edge-endpoint{border-color:var(--vscode-focusBorder);outline:1px solid var(--vscode-focusBorder);outline-offset:0}
-.flow-canvas .cfg-node.selected,.flow-canvas .cfg-node:focus-visible{background:var(--vscode-editor-background);color:var(--vscode-editor-foreground,var(--vscode-foreground));border-color:var(--vscode-focusBorder);outline:2px solid var(--vscode-focusBorder);outline-offset:0;box-shadow:none}
+.flow-canvas .cfg-node .block-header .cfg-entry-badge{flex-shrink:0;padding:0 6px;border:1px solid currentColor;border-radius:999px;font-size:11px;line-height:1.35;font-weight:600;color:var(--ghidra-accent)}
+.flow-canvas .cfg-node:is(:hover,.search-match,.edge-endpoint):not(.selected):not(:focus-visible){border-color:var(--ghidra-focus);outline:1px solid var(--ghidra-focus);outline-offset:0}
+.flow-canvas .cfg-node:is(.selected,:focus-visible){background:var(--vscode-editor-background);color:var(--vscode-editor-foreground,var(--vscode-foreground));border-color:var(--ghidra-active-border);outline:2px solid var(--ghidra-active-border);outline-offset:0;box-shadow:none}
 .flow-canvas .cfg-node.selected .block-header{background:color-mix(in srgb,var(--vscode-focusBorder) 12%,var(--vscode-editor-background))}
-.flow-canvas .cfg-node .node-title{font:500 13px/1.35 var(--vscode-editor-font-family,monospace);font-variant-numeric:tabular-nums;color:var(--vscode-foreground);min-width:0;overflow-wrap:anywhere}
-.flow-canvas .cfg-node .node-subtitle{font-size:11px;line-height:1.4;color:var(--vscode-descriptionForeground);overflow-wrap:anywhere}
-.flow-canvas .cfg-node .cfg-entry-badge{flex-shrink:0;font-size:11px;line-height:1.35;font-weight:600;color:var(--vscode-textLink-foreground,var(--vscode-focusBorder))}
+.flow-canvas .cfg-node .node-title{font:600 13px/1.35 var(--vscode-editor-font-family,monospace);font-variant-numeric:tabular-nums;color:var(--vscode-foreground);min-width:0;overflow-wrap:anywhere}
+.flow-canvas .cfg-node .node-subtitle{font-size:11px;line-height:1.4;color:var(--ghidra-muted);overflow-wrap:anywhere}
 .flow-canvas .cfg-node .node-line{font:13px/1.45 var(--vscode-editor-font-family,monospace);font-variant-numeric:tabular-nums;color:var(--vscode-editor-foreground,var(--vscode-foreground));white-space:pre-wrap;overflow-wrap:anywhere;min-width:0}
-.flow-canvas .tok-mnemonic{font-weight:500}
+.flow-canvas .tok-mnemonic{font-weight:600}
 .flow-page .taken{color:var(--vscode-charts-green,#5fa77f)}
 .flow-page .fallthrough{color:var(--vscode-charts-red,#e47777)}
 .flow-page .flow{color:var(--vscode-charts-blue,#64a8eb)}
 .flow-canvas .edge{stroke:currentColor;stroke-width:1.6;stroke-linejoin:round;fill:none}
-.flow-canvas .backward .edge{stroke-dasharray:5 3}
+.flow-canvas .fallthrough .edge{stroke-dasharray:7 4}
+.flow-canvas .backward .edge{stroke-dasharray:3 3}
+.flow-canvas .fallthrough.backward .edge{stroke-dasharray:8 3 2 3}
+.flow-canvas .cfg-edge-badge{pointer-events:none}
+.flow-canvas .cfg-edge-badge rect{fill:var(--vscode-editor-background);stroke:currentColor;stroke-width:1.5;vector-effect:non-scaling-stroke}
+.flow-canvas .cfg-edge-badge text{font:700 10px var(--vscode-editor-font-family,monospace);fill:currentColor}
 .flow-canvas .cfg-edge.dimmed{opacity:.55}
 .flow-canvas .cfg-edge.connected .edge{stroke-width:2.5}
-#cfg-arrow-taken path{fill:var(--vscode-charts-green,#5fa77f)}
-#cfg-arrow-fallthrough path{fill:var(--vscode-charts-red,#e47777)}
-#cfg-arrow-flow path{fill:var(--vscode-charts-blue,#64a8eb)}
+#cfg-arrow-taken path{fill:var(--vscode-charts-green,#5fa77f);fill:context-stroke}
+#cfg-arrow-fallthrough path{fill:var(--vscode-charts-red,#e47777);fill:context-stroke}
+#cfg-arrow-flow path{fill:var(--vscode-charts-blue,#64a8eb);fill:context-stroke}
+body.flow-page.vscode-high-contrast .taken{color:#89d185}
+body.flow-page.vscode-high-contrast .fallthrough{color:#f48771}
+body.flow-page.vscode-high-contrast .flow{color:#75beff}
+body.flow-page.vscode-high-contrast-light .taken{color:#136324}
+body.flow-page.vscode-high-contrast-light .fallthrough{color:#a61b0b}
+body.flow-page.vscode-high-contrast-light .flow{color:#0f4a85}
+body.flow-page:is(.vscode-high-contrast,.vscode-high-contrast-light) .flow-canvas .cfg-edge{opacity:1!important}
+body.flow-page:is(.vscode-high-contrast,.vscode-high-contrast-light) .flow-canvas .cfg-node{background:var(--vscode-editor-background);color:var(--vscode-foreground);border:1.5px solid var(--ghidra-hv-border)}
+body.flow-page:is(.vscode-high-contrast,.vscode-high-contrast-light) .flow-canvas .cfg-node .block-header{background:var(--vscode-editor-background);border-bottom:1px solid var(--ghidra-hv-border)}
+body.flow-page:is(.vscode-high-contrast,.vscode-high-contrast-light) .flow-canvas .cfg-node:is(.selected,:focus-visible){background:var(--vscode-editor-background);color:var(--vscode-foreground);border-color:var(--ghidra-active-border);outline:2px solid var(--ghidra-active-border);outline-offset:0}
+body.flow-page:is(.vscode-high-contrast,.vscode-high-contrast-light) .flow-canvas .cfg-node :is(.node-title,.node-subtitle,.cfg-entry-badge,.node-line){color:var(--vscode-foreground)}
+@media(prefers-contrast:more){
+  .flow-canvas .cfg-node{border:1.5px solid var(--ghidra-hv-border)}
+  .flow-canvas .cfg-node .block-header{border-bottom-color:var(--ghidra-hv-border)}
+}
 @media(forced-colors:active){
-.flow-page .flow-topbar,.flow-page #filter-status,.flow-page .scope{border-color:CanvasText}
-.flow-page :is(button:not(.link),#call-menu>summary,.cfg-overview-close){border:1px solid ButtonText}
-.flow-page [aria-pressed="true"],.flow-page [aria-expanded="true"],.flow-page [aria-current]{border-color:Highlight;outline:1px solid Highlight}
-.flow-canvas .cfg-node,.flow-canvas .cfg-node .block-header{border-color:CanvasText;forced-color-adjust:none;background:Canvas;color:CanvasText}
-.flow-canvas .cfg-node.selected,.flow-canvas .cfg-node:focus-visible,.flow-canvas .cfg-node.search-match,.flow-canvas .cfg-node.edge-endpoint{border-color:Highlight;outline:2px solid Highlight}
-.flow-canvas .cfg-edge{opacity:1!important}
+  .flow-page .flow-topbar,.flow-page #filter-status,.flow-page .scope{border-color:var(--ghidra-hv-border)}
+  .flow-page .flow-canvas{background:var(--ghidra-selection-bg)}
+  .flow-canvas .cfg-node{background:var(--ghidra-selection-bg);color:var(--ghidra-selection-fg);border:1.5px solid var(--ghidra-hv-border);forced-color-adjust:none}
+  .flow-canvas .cfg-node .block-header,.flow-canvas .cfg-node.selected .block-header{background:var(--ghidra-selection-bg);color:var(--ghidra-selection-fg);border-bottom:1px solid var(--ghidra-hv-border)}
+  .flow-canvas .cfg-node:is(.selected,:focus-visible,.search-match,.edge-endpoint){background:var(--ghidra-active-selection-bg);color:var(--ghidra-active-selection-fg);border-color:var(--ghidra-active-border);outline:2px solid var(--ghidra-active-border);outline-offset:0}
+  .flow-canvas .cfg-node :is(.node-title,.node-subtitle,.cfg-entry-badge,.node-line){color:var(--ghidra-selection-fg)}
+  .flow-page .cfg-edge,.flow-page .taken,.flow-page .fallthrough,.flow-page .flow{color:var(--ghidra-selection-fg);opacity:1!important}
+  .flow-page .cfg-edge.is-active,.flow-page .cfg-edge.is-hovered,.flow-page .cfg-edge:focus-visible{color:var(--ghidra-active-border);opacity:1!important}
+  #cfg-arrow-taken path,#cfg-arrow-fallthrough path,#cfg-arrow-flow path{fill:var(--ghidra-selection-fg);fill:context-stroke}
+  .flow-canvas .cfg-edge-badge rect{fill:var(--ghidra-selection-bg);stroke:var(--ghidra-selection-fg)}
+  .flow-canvas .cfg-edge-badge text{fill:var(--ghidra-selection-fg)!important}
+  .flow-page .cfg-edge.is-active .cfg-edge-badge rect,.flow-page .cfg-edge.is-hovered .cfg-edge-badge rect,.flow-page .cfg-edge:focus-visible .cfg-edge-badge rect{stroke:var(--ghidra-active-border)}
 }
 @media(max-width:640px){
-.flow-page .flow-topbar{grid-template-columns:minmax(0,1fr) auto;padding:6px 8px;gap:4px 6px}
-.flow-page .flow-topbar:has(.flow-topbar-controls) .flow-topbar-primary{grid-column:1/-1}
-.flow-page .flow-topbar-controls{grid-column:1;justify-self:start}
-.flow-page .flow-topbar:has(.flow-topbar-controls) .flow-topbar-actions{grid-column:2;justify-self:end}
-.flow-page .flow-topbar-actions{gap:2px}
-.flow-page #filter-status,.flow-page .scope{padding:3px 8px}
+  .flow-page .flow-topbar{grid-template-columns:minmax(0,1fr) auto;padding:6px 8px;gap:4px 6px}
+  .flow-page .flow-topbar:has(.flow-topbar-controls) .flow-topbar-primary{grid-column:1/-1}
+  .flow-page .flow-topbar-controls{grid-column:1;justify-self:start}
+  .flow-page .flow-topbar:has(.flow-topbar-controls) .flow-topbar-actions{grid-column:2;justify-self:end}
+  .flow-page .flow-topbar-actions{gap:2px}
+  .flow-page #filter-status,.flow-page .scope{padding:3px 8px}
 }
 @media(max-width:300px){
-.flow-page .flow-topbar{grid-template-columns:minmax(0,1fr)}
-.flow-page .flow-topbar-controls,.flow-page .flow-topbar:has(.flow-topbar-controls) .flow-topbar-actions,.flow-page .flow-topbar-actions{grid-column:1/-1;justify-self:start}
+  .flow-page .flow-topbar{grid-template-columns:minmax(0,1fr)}
+  .flow-page .flow-topbar-controls,.flow-page .flow-topbar:has(.flow-topbar-controls) .flow-topbar-actions,.flow-page .flow-topbar-actions{grid-column:1/-1;justify-self:start}
 }
 `;
 
@@ -173,6 +199,8 @@ export const controlFlowScript = String.raw`
             rect.setAttribute('width',String(item.width));rect.setAttribute('height',String(item.height));
           }
         }
+        const boxes=Array.isArray(msg.nodes)&&msg.nodes.length?msg.nodes:[...canvas.querySelectorAll('.graph-node')].map(n=>({x:Number(n.dataset.x)||0,y:Number(n.dataset.y)||0,width:Number(n.dataset.width)||0,height:Number(n.dataset.height)||0}));
+        const placed=[],half=10,clear=(cx,cy)=>boxes.every(n=>cx+half<=n.x||cx-half>=n.x+n.width||cy+half<=n.y||cy-half>=n.y+n.height)&&placed.every(b=>Math.abs(cx-b.x)>=half*2||Math.abs(cy-b.y)>=half*2);
         const edgeEls=new Map([...svg.querySelectorAll('[data-edge-index]')].map(edge=>[Number(edge.dataset.edgeIndex),edge]));
         const mapEdges=new Map([...(mapSvg?.querySelectorAll('[data-map-edge]')||[])].map(path=>[Number(path.dataset.mapEdge),path]));
         for(const item of msg.edges||[]){
@@ -180,6 +208,21 @@ export const controlFlowScript = String.raw`
           if(edgeEl&&typeof item.path==='string'){
             for(const pathEl of edgeEl.querySelectorAll('path')){pathEl.setAttribute('d',item.path)}
             if(typeof item.backward==='boolean'){edgeEl.classList.toggle('backward',item.backward)}
+          }
+          if(edgeEl){
+            const badgeEl=edgeEl.querySelector('.cfg-edge-badge');
+            if(badgeEl){
+              let anchor=item.badge&&Number.isFinite(item.badge.x)&&Number.isFinite(item.badge.y)&&clear(item.badge.x,item.badge.y)?item.badge:undefined;
+              if(!anchor){
+                const pathEl=edgeEl.querySelector('path.edge'),total=pathEl?.getTotalLength?.()||0,start=Math.min(16,total/2),endAt=Math.max(start,total-16);
+                for(let d=start;d<=endAt&&total>1;d+=6){
+                  const pt=pathEl.getPointAtLength(d),pt2=pathEl.getPointAtLength(Math.min(total,d+1)),dx=pt2.x-pt.x,dy=pt2.y-pt.y,len=Math.hypot(dx,dy)||1,nx=-dy/len,ny=dx/len;
+                  for(const off of [0,12,-12]){const cx=Math.round(pt.x+nx*off),cy=Math.round(pt.y+ny*off);if(clear(cx,cy)){anchor={x:cx,y:cy};break}}
+                  if(anchor){break}
+                }
+              }
+              if(anchor){placed.push(anchor);badgeEl.removeAttribute('hidden');badgeEl.setAttribute('transform','translate('+anchor.x+','+anchor.y+')')}
+            }
           }
           const mapPath=mapEdges.get(Number(item.index));
           if(mapPath&&typeof item.path==='string'){mapPath.setAttribute('d',item.path)}

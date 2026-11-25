@@ -74,7 +74,7 @@ function estimateCallNodeSize(node: CallNode, root: boolean): MeasuredSize {
     const lines = Math.max(1, Math.ceil(Math.max(1, columns(label)) / usableCols));
     const portCount = Number(Boolean(node.branches?.callers && node.branches.callers.count !== 0))
         + Number(Boolean(node.branches?.callees && node.branches.callees.count !== 0));
-    const height = Math.max(48, 22 + lines * 20 + (root ? 18 : 0) + portCount * 24);
+    const height = Math.max(48, 22 + lines * 20 + (root ? 36 : 0) + portCount * 24);
     return { width, height };
 }
 
@@ -116,6 +116,9 @@ export async function layoutCalls(
     };
 }
 
+/** Render the decorative non-color badge identifying the root function card. */
+export const callRootBadge = (): string => '<span class="call-root-badge" aria-hidden="true">ROOT</span>';
+
 /** Render one caller or callee branch toggle bar when the node has expandable peers. */
 function renderBranchPort(node: CallNode, direction: CallDirection): string {
     const branch = node.branches?.[direction];
@@ -146,9 +149,10 @@ export async function callGraph(
                 : node.callerDistance
                     ? `Caller · ${node.callerDistance} ${node.callerDistance === 1 ? 'level' : 'levels'}`
                     : `Callee · ${node.calleeDistance} ${node.calleeDistance === 1 ? 'level' : 'levels'}`;
+        const rootBadge = root ? callRootBadge() : '';
         const rootAddress = root ? `<span class="node-subtitle call-root-address">${escapeHtml(displayAddress(node.entry))}</span>` : '';
         const action = `<div class="call-node-actions call-node-controls node-code"><button ${root ? 'id="action-decompile" ' : ''}type="button" class="node-decompile" data-node-action="decompile" aria-label="${escapeHtml(`Decompile ${labelText}`)}" title="${escapeHtml(`Decompile ${labelText}`)}">${callIcon('decompile')}</button></div>`;
-        return `<div class="graph-node call-node${root ? ' is-root' : ''}" data-node="${escapeHtml(node.id)}" data-entry="${escapeHtml(node.entry)}" data-address="${escapeHtml(node.entry)}" data-kind="function" data-label="${escapeHtml(labelText)}" data-x="${node.x}" data-y="${node.y}" data-width="${node.width}" data-height="${node.height}" style="left:${node.x}px;top:${node.y}px" tabindex="0" role="group" aria-label="${escapeHtml(labelText)}" aria-description="${escapeHtml(`${relation}, ${node.entry}`)}" title="${escapeHtml(`${labelText}\n${node.entry}\n${relation}\nDouble-click or Enter to focus this function's call graph`)}">${renderBranchPort(node, 'callers')}<div class="call-node-main"><div class="call-node-copy"><span class="node-title">${breakableTitle(labelText)}</span>${rootAddress}</div>${action}</div>${renderBranchPort(node, 'callees')}</div>`;
+        return `<div class="graph-node call-node${root ? ' is-root' : ''}" data-node="${escapeHtml(node.id)}" data-entry="${escapeHtml(node.entry)}" data-address="${escapeHtml(node.entry)}" data-kind="function" data-label="${escapeHtml(labelText)}" data-x="${node.x}" data-y="${node.y}" data-width="${node.width}" data-height="${node.height}" style="left:${node.x}px;top:${node.y}px" tabindex="0" role="group" aria-label="${escapeHtml(labelText)}" aria-description="${escapeHtml(`${relation}, ${node.entry}`)}" title="${escapeHtml(`${labelText}\n${node.entry}\n${relation}\nDouble-click or Enter to focus this function's call graph`)}">${renderBranchPort(node, 'callers')}<div class="call-node-main"><div class="call-node-copy">${rootBadge}<span class="node-title">${breakableTitle(labelText)}</span>${rootAddress}</div>${action}</div>${renderBranchPort(node, 'callees')}</div>`;
     }).join('');
     const overviewNodes = layout.nodes.map(node => `<rect data-map-node="${escapeHtml(node.id)}" class="${node.id === graph.root ? 'overview-root' : ''}" x="${node.x}" y="${node.y}" width="${node.width}" height="${node.height}"/>`).join('');
     return `<div class="graph-wrap flow-canvas call-canvas" data-call-graph data-root="${escapeHtml(graph.root)}" tabindex="0" role="region" aria-label="Call graph canvas. Callers above, callees below. Wheel to zoom, drag to pan, double-click a function to focus."><svg role="group" aria-label="Static call graph" data-width="${layout.width}" data-height="${layout.height}"><defs><marker id="call-arrow" markerUnits="userSpaceOnUse" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z"/></marker></defs><g class="graph-world">${edgeSvg}</g></svg><div class="graph-cards"><div class="graph-card-world">${nodeCards}</div></div><details class="call-overview" hidden><summary title="Hide overview">${callIcon('overview')}<span>Overview</span>${callIcon('close')}</summary><svg id="call-overview-map" viewBox="0 0 ${layout.width} ${layout.height}" preserveAspectRatio="xMidYMid meet" tabindex="0" role="button" aria-label="Graph overview. Click to move the viewport; arrow keys to pan."><g>${layout.edges.map(edge => `<path data-map-edge="${edge.index}" d="${edge.path}"/>`).join('')}${overviewNodes}</g><rect id="call-overview-window"/></svg></details></div>`;

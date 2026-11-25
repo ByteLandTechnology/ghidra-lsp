@@ -25,7 +25,7 @@ export interface FlowNode extends GraphNode {
     height: number;
 }
 
-/** Directed control-flow edge with routed points, SVG path, and branch kind. */
+/** Directed control-flow edge with routed points, SVG path, branch kind, and optional badge anchor. */
 export interface FlowEdge extends GraphEdge {
     /** Stable edge index in the rendered edge list. */
     index: number;
@@ -33,10 +33,12 @@ export interface FlowEdge extends GraphEdge {
     points: LayoutPoint[];
     /** Rounded orthogonal SVG path string. */
     path: string;
-    /** Branch classification used for stroke color and arrowhead marker. */
+    /** Branch classification used for stroke, dash pattern, and `T`/`F` badge. */
     kind: 'taken' | 'fallthrough' | 'flow';
     /** True when the edge points upward to an earlier or equal layer. */
     backward: boolean;
+    /** Collision-free SVG coordinate for conditional `T`/`F` edge badges. */
+    badge?: LayoutPoint;
 }
 
 /** Positioned control-flow graph model returned by `layoutControlFlow`. */
@@ -54,10 +56,51 @@ export interface ControlFlowLayout {
 /** Estimate display column width for ASCII and wide characters. */
 const columns = (text: string): number => [...text].reduce((width, ch) => width + (ch.charCodeAt(0) > 255 ? 2 : 1), 0);
 
+/** Select a badge position on `points` that does not overlap basic blocks or previous badges. */
+export function placeEdgeBadge(
+    points: { x: number; y: number }[],
+    nodes: { x: number; y: number; width: number; height: number }[],
+    placed: { x: number; y: number }[],
+): LayoutPoint | undefined {
+    if (points.length < 2) { return undefined; }
+    const half = 10;
+    const clear = (cx: number, cy: number): boolean => (
+        nodes.every(n => cx + half <= n.x || cx - half >= n.x + n.width || cy + half <= n.y || cy - half >= n.y + n.height)
+        && placed.every(b => Math.abs(cx - b.x) >= half * 2 || Math.abs(cy - b.y) >= half * 2)
+    );
+    const candidates: LayoutPoint[] = [];
+    for (let i = 0; i + 1 < points.length; i++) {
+        const a = points[i], b = points[i + 1];
+        const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy);
+        if (len < 1) { continue; }
+        const nx = -dy / len, ny = dx / len;
+        const start = i === 0 ? Math.min(16, len / 2) : 4;
+        const end = i + 2 === points.length ? Math.max(start, len - 16) : len - 4;
+        for (let d = start; d <= end; d += 6) {
+            const px = a.x + (dx * d) / len, py = a.y + (dy * d) / len;
+            for (const off of [0, 12, -12]) {
+                candidates.push({ x: Math.round(px + nx * off), y: Math.round(py + ny * off) });
+            }
+        }
+        candidates.push({ x: Math.round((a.x + b.x) / 2), y: Math.round((a.y + b.y) / 2) });
+    }
+    for (const c of candidates) {
+        if (clear(c.x, c.y)) { placed.push(c); return c; }
+    }
+    const seed = candidates[0] || { x: Math.round(points[0].x), y: Math.round(points[0].y + 20) };
+    for (let radius = 12; radius <= 160; radius += 8) {
+        for (const [ox, oy] of [[0, radius], [radius, 0], [-radius, 0], [0, -radius], [radius, radius], [-radius, radius]]) {
+            const cx = seed.x + ox, cy = seed.y + oy;
+            if (clear(cx, cy)) { const hit = { x: cx, y: cy }; placed.push(hit); return hit; }
+        }
+    }
+    return undefined;
+}
+
 /** Estimate fallback dimensions for one basic-block HTML card before DOM measurement. */
 function estimateBlockSize(node: GraphNode): MeasuredSize {
     const rawLines = (node.lines || []).map(line => line.replace(/\t/g, '    '));
-    const titleWidth = columns(node.title) * 8.4 + (node.address && node.address === node.entry ? 84 : 32);
+    const titleWidth = columns(node.title) * 8.4 + (node.address && node.address === node.entry ? 96 : 32);
     const widestLine = rawLines.reduce((max, line) => Math.max(max, columns(line) * 8.2 + 28), 0);
     const subtitleWidth = !rawLines.length && node.subtitle ? columns(node.subtitle) * 7.4 + 28 : 0;
     const width = Math.min(maxBlockWidth, Math.max(minBlockWidth, Math.ceil(Math.max(titleWidth, widestLine, subtitleWidth))));
@@ -84,23 +127,25 @@ export async function layoutControlFlow(
         layoutOptions: {
             'elk.padding': '[top=24,left=24,bottom=24,right=24]',
             'elk.spacing.nodeNode': '42',
-            'elk.layered.spacing.nodeNodeBetweenLayers': '48',
-            'elk.layered.spacing.edgeNodeBetweenLayers': '18',
-            'elk.spacing.edgeNode': '18',
+            'elk.layered.spacing.nodeNodeBetweenLayers': '56',
+            'elk.layered.spacing.edgeNodeBetweenLayers': '22',
+            'elk.spacing.edgeNode': '22',
             'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
         },
         measured,
     });
     const placed = new Map(result.nodes.map(node => [node.id, node]));
+    const placedNodes: FlowNode[] = nodes.map(node => {
+        const box = placed.get(node.id)!;
+        return { ...node, x: box.x, y: box.y, width: box.width, height: box.height };
+    });
     const conditional = (edge: GraphEdge): boolean => /CONDITIONAL/.test(edge.label || '') && !/UNCONDITIONAL/.test(edge.label || '');
     const branches = new Set(validEdges.filter(conditional).map(edge => edge.from));
+    const placedBadges: LayoutPoint[] = [];
     return {
         width: result.width,
         height: result.height,
-        nodes: nodes.map(node => {
-            const box = placed.get(node.id)!;
-            return { ...node, x: box.x, y: box.y, width: box.width, height: box.height };
-        }),
+        nodes: placedNodes,
         edges: result.edges.map(edge => {
             const index = Number(edge.id);
             const original = validEdges[index];
@@ -111,6 +156,9 @@ export async function layoutControlFlow(
                 : /^fall[ -]through$/i.test(original.label || '') && branches.has(original.from)
                     ? 'fallthrough'
                     : 'flow';
+            const badge = kind === 'taken' || kind === 'fallthrough'
+                ? placeEdgeBadge(edge.points, placedNodes, placedBadges)
+                : undefined;
             return {
                 ...original,
                 index,
@@ -118,6 +166,7 @@ export async function layoutControlFlow(
                 path: edge.path,
                 kind,
                 backward: toBox.y <= fromBox.y,
+                badge,
             };
         }),
     };
@@ -128,6 +177,19 @@ function instructionLine(line: string): string {
     return `<div class="node-line">${highlightAsm(line.replace(/\t/g, '    '), 'span', true)}</div>`;
 }
 
+/** Render a decorative `T` or `F` SVG badge for conditional control-flow edges. */
+export function renderCfgEdgeBadge(
+    edgeOrKind: { kind: 'taken' | 'fallthrough' | 'flow'; badge?: { x: number; y: number } } | 'taken' | 'fallthrough' | 'flow',
+    badge?: { x: number; y: number },
+): string {
+    const kind = typeof edgeOrKind === 'string' ? edgeOrKind : edgeOrKind.kind;
+    const anchor = typeof edgeOrKind === 'string' ? badge : (badge ?? edgeOrKind.badge);
+    const label = kind === 'taken' ? 'T' : kind === 'fallthrough' ? 'F' : '';
+    if (!label) { return ''; }
+    const attr = anchor ? ` transform="translate(${anchor.x},${anchor.y})"` : ' hidden';
+    return `<g class="cfg-edge-badge" aria-hidden="true"${attr}><rect x="-9" y="-9" width="18" height="18" rx="4"/><text y="3.5" text-anchor="middle">${label}</text></g>`;
+}
+
 /** Render the interactive HTML-card + SVG-edge control-flow graph and overview map. */
 export async function controlFlowGraph(
     nodes: GraphNode[],
@@ -136,7 +198,7 @@ export async function controlFlowGraph(
 ): Promise<string> {
     const layout = await layoutControlFlow(nodes, edges, measured);
     const titles = new Map(nodes.map(node => [node.id, node.title]));
-    const edgeSvg = layout.edges.map(edge => `<g class="cfg-edge ${edge.kind}${edge.backward ? ' backward' : ''}" tabindex="0" role="button" aria-pressed="false" aria-label="${escapeHtml(`${edge.label || 'Flow'} from ${titles.get(edge.from)} to ${titles.get(edge.to)}`)}" data-edge-index="${edge.index}" data-edge-key="${escapeHtml(JSON.stringify([edge.from, edge.to, edge.kind]))}" data-from="${escapeHtml(edge.from)}" data-to="${escapeHtml(edge.to)}" data-kind="${edge.kind}"><title>${escapeHtml(edge.label || 'Flow')} · ${escapeHtml(titles.get(edge.from))} → ${escapeHtml(titles.get(edge.to))}</title><path class="cfg-edge-hit" d="${edge.path}"/><path class="edge" d="${edge.path}" marker-end="url(#cfg-arrow-${edge.kind})"/></g>`).join('');
+    const edgeSvg = layout.edges.map(edge => `<g class="cfg-edge ${edge.kind}${edge.backward ? ' backward' : ''}" tabindex="0" role="button" aria-pressed="false" aria-label="${escapeHtml(`${edge.label || 'Flow'} from ${titles.get(edge.from)} to ${titles.get(edge.to)}`)}" data-edge-index="${edge.index}" data-edge-key="${escapeHtml(JSON.stringify([edge.from, edge.to, edge.kind]))}" data-from="${escapeHtml(edge.from)}" data-to="${escapeHtml(edge.to)}" data-kind="${edge.kind}"><title>${escapeHtml(edge.label || 'Flow')} · ${escapeHtml(titles.get(edge.from))} → ${escapeHtml(titles.get(edge.to))}</title><path class="cfg-edge-hit" d="${edge.path}"/><path class="edge" d="${edge.path}" marker-end="url(#cfg-arrow-${edge.kind})"/>${renderCfgEdgeBadge(edge)}</g>`).join('');
     const nodeCards = layout.nodes.map(node => {
         const tooltip = [node.title, ...(node.lines?.length ? [] : [node.subtitle]), ...(node.lines || [])].filter(Boolean).join('\n');
         const entryBadge = node.address && node.address === node.entry ? '<span class="node-subtitle cfg-entry-badge">Entry</span>' : '';

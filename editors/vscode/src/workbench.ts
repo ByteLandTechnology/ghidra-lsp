@@ -271,6 +271,7 @@ export class Workbench implements vscode.Disposable {
         const key = `${kind}:${md5}:${entry || ''}`;
         const existing = kind === 'callGraph' ? [...this.panels.values()].find(panel => panel.kind === kind && panel.md5 === md5 && panel.entry === entry) : this.panels.get(key);
         if (existing) {
+            existing.pendingFocusId = undefined;
             if (address) {
                 if (kind === 'listing' || kind === 'memory') {
                     const resolved = await this.programViews.prepareNavigation(existing, address, true);
@@ -300,7 +301,9 @@ export class Workbench implements vscode.Disposable {
     }
     /** Build the serializable state snapshot stored inside webview HTML for VS Code reload. */
     private snapshot(state: PanelState): Data {
+        const focusId = state.pendingFocusId; state.pendingFocusId = undefined;
         return { kind: state.kind, md5: state.md5, address: state.kind === 'listing' ? state.displayAddress || state.address : state.address, entry: state.entry, cursor: state.cursor, previous: state.previous, singleKeyShortcuts: singleKeyShortcutsEnabled(),
+            ...(focusId ? { focusId } : {}),
             ...(state.kind === 'listing' || state.kind === 'memory' ? { selected: state.selected, syncEnabled: state.syncEnabled, bytesPerRow: state.pvBytesPerRow, endian: state.pvEndian } : {}),
             ...(state.kind === 'callGraph' ? { selected: state.entry, selectedEntry: state.entry, callExpansion: state.callExpansion || { callers: [state.entry!], callees: [state.entry!] }, callHistory: state.callHistory || [], callView: state.callView || 'graph', callColumnDirection: state.callColumnDirection || 'callees', callColumnPath: state.callColumnPath || [] } : {}) };
     }
@@ -532,6 +535,8 @@ export class Workbench implements vscode.Disposable {
     }
     /** Handle interactive navigation, filtering, and graph actions posted by a workbench webview. */
     private async message(state: PanelState, message: Data): Promise<void> {
+        const focusId = stringOf(message.focusId);
+        state.pendingFocusId = focusId && ['refresh', 'goto', 'next', 'previous'].includes(stringOf(message.action)) ? focusId : undefined;
         if (await this.programViews.handleMessage(state, message)) { return; }
         const action = stringOf(message.action), address = stringOf(message.address), entry = stringOf(message.entry);
         if (action === 'measureGraph') {
@@ -547,7 +552,7 @@ export class Workbench implements vscode.Disposable {
                     width: layout.width,
                     height: layout.height,
                     nodes: layout.nodes.map(node => ({ id: node.id, x: node.x, y: node.y, width: node.width, height: node.height })),
-                    edges: layout.edges.map(edge => ({ index: edge.index, from: edge.from, to: edge.to, path: edge.path, kind: edge.kind, backward: edge.backward })),
+                    edges: layout.edges.map(edge => ({ index: edge.index, from: edge.from, to: edge.to, path: edge.path, kind: edge.kind, backward: edge.backward, badge: edge.badge })),
                 });
             } else if (state.kind === 'callGraph' && state.callView !== 'columns' && state.callGraphModel?.nodes.length) {
                 if (message.graphRoot && message.graphRoot !== state.entry) { return; }

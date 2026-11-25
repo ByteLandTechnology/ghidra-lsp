@@ -127,7 +127,7 @@ export class ControlFlowView implements vscode.CustomTextEditorProvider, vscode.
                 width: layout.width,
                 height: layout.height,
                 nodes: layout.nodes.map(node => ({ id: node.id, x: node.x, y: node.y, width: node.width, height: node.height })),
-                edges: layout.edges.map(edge => ({ index: edge.index, from: edge.from, to: edge.to, path: edge.path, kind: edge.kind, backward: edge.backward })),
+                edges: layout.edges.map(edge => ({ index: edge.index, from: edge.from, to: edge.to, path: edge.path, kind: edge.kind, backward: edge.backward, badge: edge.badge })),
             });
             return;
         }
