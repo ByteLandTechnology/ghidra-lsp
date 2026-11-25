@@ -475,6 +475,20 @@ pub(crate) struct CodeLocation {
   pub(crate) exact: bool,
 }
 
+/// One-line UTF-16 token span record from `ghidra.location` snapshot mode.
+#[derive(Clone, Debug, Serialize)]
+pub(crate) struct LocationSpan<'a> {
+  /// Zero-based line number in `Document::base`.
+  pub(crate) line: u32,
+  /// Inclusive UTF-16 start column on `line`.
+  pub(crate) start: u32,
+  /// Exclusive UTF-16 end column on `line`.
+  pub(crate) end: u32,
+  /// The `code_unit_address`, or `address` when `code_unit_address` is absent or empty.
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub(crate) address: Option<&'a str>,
+}
+
 /// In-memory state of an opened `ghidra://` virtual document.
 #[derive(Clone, Debug)]
 pub(crate) struct Document {
@@ -561,6 +575,57 @@ impl Document {
       }
     }
     Ok(None)
+  }
+
+  /// Builds ordered UTF-16 [`LocationSpan`] records for a clean native GUI document in one pass.
+  pub(crate) fn location_spans(&self) -> Result<Vec<LocationSpan<'_>>> {
+    anyhow::ensure!(
+      self.clean(),
+      "Save or discard the pending edit before mapping a code selection"
+    );
+    anyhow::ensure!(
+      self.spans.iter().any(|span| span.location.is_some()),
+      "Upgrade ghidra-mcp for GUI cursor locations; this document has no native layout"
+    );
+    let mut out = Vec::with_capacity(self.spans.len());
+    let (mut byte, mut line, mut character) = (0usize, 0u32, 0u32);
+    for span in &self.spans {
+      let Some(location) = &span.location else {
+        continue;
+      };
+      let address = location
+        .code_unit_address
+        .as_deref()
+        .filter(|value| !value.is_empty())
+        .or_else(|| (!location.address.is_empty()).then_some(location.address.as_str()));
+      let gap = self
+        .base
+        .get(byte..span.start)
+        .context("span start is out of order or outside the document")?;
+      advance_position(gap, &mut line, &mut character);
+      byte = span.start;
+      let slice = self
+        .base
+        .get(span.start..span.end)
+        .context("span bounds are outside the document")?;
+      if !slice.contains('\n') {
+        let start = character;
+        advance_position(slice, &mut line, &mut character);
+        byte = span.end;
+        push_location_span(&mut out, line, start, character, address);
+      } else {
+        for segment in slice.split_inclusive('\n') {
+          let content = segment.trim_end_matches(['\r', '\n']);
+          let length = content.encode_utf16().count() as u32;
+          if length > 0 || !segment.ends_with('\n') {
+            push_location_span(&mut out, line, character, character + length, address);
+          }
+          advance_position(segment, &mut line, &mut character);
+          byte += segment.len();
+        }
+      }
+    }
+    Ok(out)
   }
 
   /// Finds the first non-comment span whose address or address range matches `target`.
@@ -694,6 +759,53 @@ pub(crate) fn data_type_name(value: &Value) -> String {
     Some("array") => format!("{}[{}]", data_type_name(&value["element"]), value["count"]),
     Some("untyped_pointer") => "void *".into(),
     _ => value.as_str().unwrap_or("unknown").into(),
+  }
+}
+
+/// Adds a UTF-16 [`LocationSpan`], or joins it with the last span on the same line and address.
+fn push_location_span<'a>(
+  out: &mut Vec<LocationSpan<'a>>,
+  line: u32,
+  start: u32,
+  end: u32,
+  address: Option<&'a str>,
+) {
+  if let Some(previous) = out.last_mut()
+    && previous.line == line
+    && previous.end == start
+    && previous.address == address
+  {
+    previous.end = end;
+    return;
+  }
+  out.push(LocationSpan {
+    line,
+    start,
+    end,
+    address,
+  });
+}
+
+/// Advances zero-based `line` and UTF-16 `character` coordinates across `text`.
+pub(crate) fn advance_position(text: &str, line: &mut u32, character: &mut u32) {
+  if text.is_ascii() {
+    for segment in text.split_inclusive('\n') {
+      if segment.ends_with('\n') {
+        *line += 1;
+        *character = 0;
+      } else {
+        *character += segment.len() as u32;
+      }
+    }
+    return;
+  }
+  for c in text.chars() {
+    if c == '\n' {
+      *line += 1;
+      *character = 0;
+    } else {
+      *character += c.len_utf16() as u32;
+    }
   }
 }
 
