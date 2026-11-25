@@ -9,6 +9,8 @@ import { Data, object, rows, escape, reference, typeReference, integer, page, se
 import { formatFriendlyError } from './error';
 import { CodeLocation, cursorLocation } from './location';
 import { commentKinds, CommentKind, InlineComments } from './inline-comments';
+import { ListingViews, listingScheme } from './listing';
+import { plainAddress } from './listing-format';
 import { callIcon } from './call-graph-icons';
 
 /** Input control descriptor inside a graphical edit form. */
@@ -134,7 +136,12 @@ export class EditingUI implements vscode.Disposable {
     /** Inline five-kind comment controller for decompiled views. */
     private readonly comments: InlineComments;
     /** Register editing commands and initialize the inline comment controller. */
-    constructor(private readonly call: Call, private readonly context: ProgramContext, private readonly typeFiles: DataTypeFiles) {
+    constructor(
+        private readonly call: Call,
+        private readonly context: ProgramContext,
+        private readonly typeFiles: DataTypeFiles,
+        private readonly listingViews: () => ListingViews | undefined = () => undefined,
+    ) {
         this.comments = new InlineComments(call);
         const commands: Record<string, (...args: any[]) => Promise<unknown>> = {
             createType: this.createType.bind(this), editType: this.editType.bind(this), deleteType: this.deleteType.bind(this), applyType: this.applyType.bind(this),
@@ -253,13 +260,16 @@ export class EditingUI implements vscode.Disposable {
     private signature(values: Data, parameters: Data[]): Data {
         if (value(values, 'convention').toLowerCase() === 'unknown') { throw new Error('Choose a known calling convention, such as default, for a function data type.'); }
         return { return_type: typeReference(values.returnType), calling_convention: required(values, 'convention', 'Calling convention'), has_var_args: checked(values, 'varargs'), has_no_return: checked(values, 'noreturn'), parameters: parameters.map(param => ({ name: value(param, 'name'), data_type: typeReference(param.type) })) }; }
-    /** Open an editable JSONC `ghidra-type://` document for the selected data type. */
+    /** Open an editable `ghidra-type://` document for the selected data type. */
     async editType(candidate?: unknown, pathArg?: string): Promise<void> {
-        const uri = candidate instanceof vscode.Uri ? candidate : vscode.window.activeTextEditor?.document.uri;
+        const tab = vscode.window.tabGroups.activeTabGroup.activeTab;
+        const uri = candidate instanceof vscode.Uri ? candidate
+            : tab?.input instanceof vscode.TabInputCustom ? tab.input.uri
+            : vscode.window.activeTextEditor?.document.uri;
         const scoped = uri?.scheme === typeScheme && !candidate ? uri : candidate;
         const md5 = this.md5(scoped);
         const path = await this.chooseType(md5, pathArg || this.resource(candidate, 'path')
-            || (uri?.scheme === typeScheme && uri.authority === md5 ? typePath(uri) : undefined));
+            || (uri?.scheme === typeScheme && uri.authority.toLowerCase() === md5 ? typePath(uri) : undefined));
         if (path) { await this.typeFiles.open(md5, path); }
     }
     /** Open a confirmation form to delete a project data type. */
@@ -365,21 +375,36 @@ export class EditingUI implements vscode.Disposable {
         const md5 = this.md5(candidate);
         const location = await this.commentAddress(md5, candidate, addressArg); if (!location) { return; }
         const { address, entry } = location;
-        const type = typeArg && commentKinds.includes(typeArg as CommentKind) ? typeArg as CommentKind : address === entry ? 'plate' : 'pre';
+        const isEntry = Boolean(entry) && plainAddress(address) === plainAddress(entry!);
+        const type = typeArg && commentKinds.includes(typeArg as CommentKind) ? typeArg as CommentKind : isEntry ? 'plate' : 'pre';
         let { uri, position } = location;
-        if (!uri) {
+        if (!uri && entry) {
             const tab = vscode.window.tabGroups.all.flatMap(group => group.tabs).find(tab => tab.input instanceof vscode.TabInputText
-                && tab.input.uri.scheme === 'ghidra' && tab.input.uri.authority === md5
+                && tab.input.uri.scheme === 'ghidra' && tab.input.uri.authority.toLowerCase() === md5
                 && tab.input.uri.path.startsWith('/function/')
-                && decodeURIComponent(tab.input.uri.path.slice('/function/'.length)) === entry);
-            if (tab?.input instanceof vscode.TabInputText) { uri = tab.input.uri; }
+                && plainAddress(decodeURIComponent(tab.input.uri.path.slice('/function/'.length))) === plainAddress(entry));
+            if (tab?.input instanceof vscode.TabInputText) {
+                uri = tab.input.uri;
+            } else {
+                try {
+                    const opened = await this.call<{ uri?: string }>('ghidra.openFunction', { md5, entry });
+                    if (typeof opened.uri === 'string' && opened.uri) { uri = vscode.Uri.parse(opened.uri); }
+                } catch { /* Fall back to Listing if opening the function pseudocode fails. */ }
+            }
         }
-        if (!uri) { throw new Error('Open the corresponding function before editing comments inline.'); }
-        if (!position) {
-            const mapped = await this.call<{ position?: { line: number; character: number } }>('ghidra.location', { uri: uri.toString(), address });
-            if (mapped.position) { position = new vscode.Position(mapped.position.line, mapped.position.character); }
+        if (uri && !position && uri.scheme === 'ghidra') {
+            try {
+                const mapped = await this.call<{ position?: { line: number; character: number } }>('ghidra.location', { uri: uri.toString(), address });
+                if (mapped.position) { position = new vscode.Position(mapped.position.line, mapped.position.character); }
+            } catch { /* Fall back to Listing when pseudocode has no native token location. */ }
         }
-        if (!position) { throw new Error('This address has no native location in the open pseudocode. Select a code token to edit comments inline.'); }
+        if (!uri || !position) {
+            const views = this.listingViews();
+            if (!views) { throw new Error('Open a function or Listing view before editing comments.'); }
+            const editor = await views.open(md5, address, entry);
+            uri = editor.document.uri;
+            position = editor.selection.active;
+        }
         await this.context.activate(md5);
         await this.comments.open(md5, address, type, { uri, position });
     }
@@ -389,7 +414,7 @@ export class EditingUI implements vscode.Disposable {
         if (!explicit && selection.position !== undefined) {
             const position = object(selection.position);
             const uri = typeof selection.uri === 'string' ? vscode.Uri.parse(selection.uri) : undefined;
-            if (!uri || uri.scheme !== 'ghidra' || uri.authority !== md5 || !uri.path.startsWith('/function/')
+            if (!uri || uri.scheme !== 'ghidra' || uri.authority.toLowerCase() !== md5 || !uri.path.startsWith('/function/')
                 || !Number.isInteger(position.line) || Number(position.line) < 0
                 || !Number.isInteger(position.character) || Number(position.character) < 0) {
                 throw new Error('The comment Code Action has no valid function selection. Request Code Actions again.');
@@ -405,6 +430,25 @@ export class EditingUI implements vscode.Disposable {
         let address = explicit || this.resource(candidate, 'address') || this.resource(candidate, 'entry');
         const resource = candidate instanceof vscode.Uri ? candidate : undefined;
         if (!address) {
+            const views = this.listingViews();
+            const listingEditor = resource?.scheme === listingScheme
+                ? vscode.window.visibleTextEditors.find(ed => ed.document.uri.toString() === resource.toString())
+                : (!resource && vscode.window.activeTextEditor?.document.uri.scheme === listingScheme ? vscode.window.activeTextEditor : undefined);
+            if (views && (listingEditor || resource?.scheme === listingScheme)) {
+                const rowAddr = listingEditor ? views.addressAt(listingEditor) : views.targetAddress(resource!);
+                if (rowAddr) {
+                    const resolved = await this.query(md5, 'address', 'resolve', { selector: { address: rowAddr } });
+                    const unit = object(resolved.code_unit);
+                    const unitAddr = typeof unit.address === 'string' ? unit.address : rowAddr;
+                    const entry = this.resource(resolved.function, 'entry');
+                    if (listingEditor && views.isListingMode(listingEditor.document.uri)) {
+                        return { address: unitAddr, entry, uri: listingEditor.document.uri, position: new vscode.Position(listingEditor.selection.active.line, 0) };
+                    }
+                    return { address: unitAddr, entry };
+                }
+            }
+        }
+        if (!address) {
             const editor = vscode.window.activeTextEditor;
             const position = editor?.selection.active;
             const location = await cursorLocation(this.call, md5, resource);
@@ -415,11 +459,11 @@ export class EditingUI implements vscode.Disposable {
                 address = location.address;
             }
         }
-        if (!address && resource?.scheme === 'ghidra' && resource.authority === md5 && resource.path.startsWith('/function/')) {
+        if (!address && resource?.scheme === 'ghidra' && resource.authority.toLowerCase() === md5 && resource.path.startsWith('/function/')) {
             throw new Error('Open the function and select a code token before editing comments.');
         }
         address ||= await vscode.window.showInputBox({ title: 'Choose comment address — not comment text',
-            prompt: 'Enter an address in an open function; edit the comment beside its code.', placeHolder: 'ram:00401106', ignoreFocusOut: true,
+            prompt: 'Enter a code or data address in program memory to edit its comments.', placeHolder: 'ram:00401106', ignoreFocusOut: true,
             validateInput: input => /^(?:[^:\s]+:)*(?:0x)?[a-f\d]+$/i.test(input.trim()) ? undefined : 'Enter an address such as ram:00401106.',
         });
         if (!address) { return; }

@@ -4,16 +4,18 @@
 import * as vscode from 'vscode';
 import { Call } from './memory';
 import { formatFriendlyError } from './error';
+import { listingScheme } from './listing';
+import { sameListingRow } from './listing-format';
 
 /** Supported Ghidra comment categories displayed in the inline comment thread. */
 export const commentKinds = ['plate', 'pre', 'eol', 'post', 'repeatable'] as const;
 /** One Ghidra comment category name. */
 export type CommentKind = typeof commentKinds[number];
-/** Target decompiler document and line/character anchor for a comment thread. */
+/** Target virtual document and line/character anchor for a comment thread. */
 interface Anchor {
-    /** Virtual `ghidra://` pseudocode document URI. */
+    /** Virtual `ghidra://` or `ghidra-listing://` document URI. */
     uri: vscode.Uri;
-    /** Target line and character offset inside the pseudocode document. */
+    /** Target line and character offset inside the document. */
     position: vscode.Position;
 }
 /** State for one open five-kind comment thread at an instruction or data address. */
@@ -174,6 +176,12 @@ export class InlineComments implements vscode.Disposable {
                 state.comments = commentKinds.map(kind => new Draft(current[kind], kind, state!));
                 this.states.set(key, state);
             }
+        } else if (state.thread.uri.toString() !== anchor.uri.toString() && !state.busy && !state.uncertain) {
+            state.thread.dispose();
+            const thread = this.controller.createCommentThread(anchor.uri, range, []);
+            thread.canReply = false;
+            thread.label = `Ghidra comments · ${address}`;
+            state.thread = thread;
         }
         const draft = state.comments.find(draft => draft.kind === selected)!;
         this.live(draft);
@@ -274,8 +282,20 @@ export class InlineComments implements vscode.Disposable {
             if (!state.closed) { this.render(state); }
         }
     }
-    /** Move a comment thread anchor to match updated pseudocode line positions. */
+    /** Move a comment thread anchor to match updated pseudocode or listing line positions. */
     private async reanchor(state: State): Promise<void> {
+        if (state.thread.uri.scheme === listingScheme) {
+            const doc = vscode.workspace.textDocuments.find(item => item.uri.toString() === state.thread.uri.toString());
+            if (!doc || state.closed) { return; }
+            for (let line = 0; line < doc.lineCount; line++) {
+                if (sameListingRow(doc.lineAt(line).text, state.address)) {
+                    const point = new vscode.Position(line, 0);
+                    state.thread.range = new vscode.Range(point, point);
+                    return;
+                }
+            }
+            return;
+        }
         try {
             const location = await this.call<{ position?: { line: number; character: number } }>('ghidra.location', {
                 uri: state.thread.uri.toString(), address: state.address,
@@ -286,11 +306,20 @@ export class InlineComments implements vscode.Disposable {
             }
         } catch { /* A pending rename has no current native layout; the next refresh restores the anchor. */ }
     }
-    /** Close a single comment thread after any queued save operations finish. */
+    /** Close a single comment thread after queued saves finish, confirming unsaved drafts first. */
     private async remove(thread: vscode.CommentThread): Promise<void> {
         for (const [key, state] of this.states) {
             if (state.thread !== thread) { continue; }
             while (state.busy) { await state.queue; }
+            if (state.closed) { return; }
+            if (state.comments.some(draft => draft.body !== draft.saved)) {
+                const choice = await vscode.window.showWarningMessage(
+                    'Discard unsaved comment drafts?',
+                    { modal: true },
+                    'Discard',
+                );
+                if (choice !== 'Discard' || state.closed) { return; }
+            }
             state.closed = true; state.thread.dispose(); this.states.delete(key);
         }
     }

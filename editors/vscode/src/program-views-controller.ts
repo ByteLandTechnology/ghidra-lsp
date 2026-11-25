@@ -693,6 +693,10 @@ export class ProgramViewsController {
             await this.host.navigate(state.md5, stringOf(message.entry) || address, Boolean(stringOf(message.entry) || message.kind === 'instruction'));
             return true;
         }
+        if (action === 'comment' && address) {
+            await vscode.commands.executeCommand('ghidraLsp.editComment', state.md5, address);
+            return true;
+        }
         if (['references', 'callGraph', 'controlFlow'].includes(action) && (stringOf(message.entry) || address)) {
             await this.host.openWorkbench(action as 'references' | 'callGraph' | 'controlFlow', state.md5, stringOf(message.entry) || address);
             return true;

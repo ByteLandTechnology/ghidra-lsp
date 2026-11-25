@@ -28,9 +28,9 @@
 | URI 方案 | 典型路径形态 | 读写属性 | 维护位置与用途 |
 | --- | --- | --- | --- |
 | `ghidra://` | `ghidra://<md5>/function/<entry>`、`ghidra://<md5>/symbol/<id>`、`ghidra://<md5>/references/<id>`、`ghidra://<md5>/type/<name-or-path>` | 反编译 C 仅允许 `<F2>` 作用域重命名预览；其余快照只读 | 由服务端 `Engine::docs` 管理，提供完整 LSP 语言服务与只读辅助视图 |
-| `ghidra-listing://` | `ghidra-listing://<md5>/listing/<target>.ghidra-listing?...`（VS Code）、`ghidra-listing://<md5>/<addr>`（Neovim） | 只读 | 分页加载程序汇编指令与定义数据单元窗口，自动折叠连续未定义字节区间（`>= 8` 字节） |
+| `ghidra-listing://` | `ghidra-listing://<md5>/listing/<encoded-addr>.ghidra-listing` | 只读 | 分页加载程序汇编指令与定义数据单元窗口，自动折叠连续未定义字节区间（`>= 8` 字节） |
 | `ghidra-memory://` | `ghidra-memory://<md5>/memory/<target>.ghidra-bytes?...`（VS Code）、`ghidra-memory://<md5>/<addr>`（Neovim） | 只读 | 按块分页读取十六进制字节窗口，联动实时数据检视器（整数、IEEE-754 浮点、指针、字符串解码） |
-| `ghidra-type://` | `ghidra-type://<md5>/<path>.ghidra-type?v=3`（VS Code）、`ghidra-type://<md5><path>.ghidra-type`（Neovim） | 可编辑（内置/复杂类型只读） | `.ghidra-type` JSONC 虚拟文档，支持实时语法/结构校验与图形化表单双向绑定 |
+| `ghidra-type://` | `ghidra-type://<md5><encoded-path>.ghidra-type` | 可编辑（内置/复杂类型只读） | `.ghidra-type` JSONC 虚拟文档，支持实时语法/结构校验与图形化表单双向绑定 |
 | `ghidra-string://` | `ghidra-string://<md5>/string/<display-addr>?{"address":...}` | 只读 | 以纯文本精确呈现在 Ghidra 中已定义的字符串内容，方便检索与复制 |
 | `ghidra-reference://` | `ghidra-reference://<md5>/...?{"source":...}` | 只读 | 为跨函数与汇编行交叉引用提供人类可读的预览标题与位置映射，激活时跳转至真实 `ghidra://` 或 `ghidra-listing://` 目标 |
 

@@ -168,21 +168,8 @@ function M.render_listing_into_buf(buf, md5, target_addr, focus_addr, cursor_opt
     ui.refresh_statuslines()
 end
 
---- Open the Program Listing view synced to the given argument or cursor location.
-function M.open_listing(arg)
-    local md5 = common.require_md5(arg)
-    if not md5 then return nil end
-
-    local ok, target_addr = pcall(common.resolve_target_address, md5, arg)
-    if not ok or not target_addr then
-        vim.notify('Listing error: ' .. tostring(target_addr or 'no target address'), vim.log.levels.ERROR)
-        return nil
-    end
-
-    local buf_name = string.format('ghidra-listing://%s/%s', md5, format.url_encode(target_addr))
-    local buf = common.open_split_buffer(buf_name, 'ghidra-listing://' .. md5 .. '/', true)
-    M.render_listing_into_buf(buf, md5, target_addr, target_addr, nil)
-
+--- Attach navigation, comment, memory, xref, and paging keymaps to a listing buffer.
+local function attach_listing_keymaps(buf, md5, default_addr)
     local commands = require('ghidra-lsp.commands')
     local kopts = { buffer = buf, silent = true, nowait = true }
     local function cur_addr()
@@ -241,7 +228,7 @@ function M.open_listing(arg)
         end
     end, kopts)
     vim.keymap.set('n', '[p', function()
-        local start_a = vim.b[buf].ghidra_listing_start or target_addr
+        local start_a = vim.b[buf].ghidra_listing_start or default_addr
         local ok_prev, res = pcall(client.exec_sync, 'ghidra.resolveTarget', {
             md5 = md5,
             input = '-0x80',
@@ -261,13 +248,48 @@ function M.open_listing(arg)
     vim.keymap.set('n', ']b', function() step_block(1) end, kopts)
     vim.keymap.set('n', '[b', function() step_block(-1) end, kopts)
     vim.keymap.set('n', 'r', function()
-        local start_a = vim.b[buf].ghidra_listing_start or target_addr
+        local start_a = vim.b[buf].ghidra_listing_start or default_addr
         local focus = cur_addr() or start_a
         M.render_listing_into_buf(buf, md5, start_a, focus, nil, vim.b[buf].ghidra_listing_start ~= nil)
     end, kopts)
     vim.keymap.set('n', 'q', function()
         if #vim.api.nvim_tabpage_list_wins(0) > 1 then vim.cmd('close') end
     end, kopts)
+end
+
+--- Load a ghidra-listing:// URI into `buf` when opened by LSP navigation or BufReadCmd.
+function M.load_listing_buffer(buf, uri)
+    local buffer_mod = require('ghidra-lsp.buffer')
+    local md5, target_addr = buffer_mod.parse_listing_uri(uri)
+    if not md5 or not target_addr then
+        vim.notify('Invalid ghidra-listing URI: ' .. tostring(uri), vim.log.levels.ERROR)
+        return
+    end
+    client.current_md5 = md5
+    client.open_sessions[md5] = true
+    pcall(function()
+        local win = vim.fn.bufwinid(buf)
+        if win ~= -1 then vim.wo[win].wrap = false end
+    end)
+    attach_listing_keymaps(buf, md5, target_addr)
+    M.render_listing_into_buf(buf, md5, target_addr, target_addr, nil)
+end
+
+--- Open the Program Listing view synced to the given argument or cursor location.
+function M.open_listing(arg)
+    local md5 = common.require_md5(arg)
+    if not md5 then return nil end
+
+    local ok, target_addr = pcall(common.resolve_target_address, md5, arg)
+    if not ok or not target_addr then
+        vim.notify('Listing error: ' .. tostring(target_addr or 'no target address'), vim.log.levels.ERROR)
+        return nil
+    end
+
+    local buf_name = require('ghidra-lsp.buffer').listing_uri(md5, target_addr)
+    local buf = common.open_split_buffer(buf_name, 'ghidra-listing://' .. md5 .. '/', true)
+    attach_listing_keymaps(buf, md5, target_addr)
+    M.render_listing_into_buf(buf, md5, target_addr, target_addr, nil)
     return buf
 end
 

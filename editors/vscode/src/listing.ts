@@ -4,7 +4,7 @@
 import * as vscode from 'vscode';
 import { Call } from './memory';
 import { ProgramContext } from './context';
-import { formatListing, listingUnits, ListingUnit, plainAddress } from './listing-format';
+import { formatListing, listingUnits, ListingUnit, plainAddress, sameListingRow } from './listing-format';
 import { symbolName } from './names';
 import { MemoryFiles, memoryScheme, defaultByteWindow, memoryAddress, memorySelectedAddresses, memoryRanges } from './bytes';
 import { AddressRange, addressRange, intersects, selectedLines } from './view-ranges';
@@ -96,7 +96,7 @@ export class ListingFiles implements vscode.FileSystemProvider, vscode.Disposabl
     /** Return a no-op file watcher disposable for virtual listing documents. */
     watch(): vscode.Disposable { return new vscode.Disposable(() => { }); }
     /** Extract program MD5, target address, and optional function entry from `uri`. */
-    private target(uri: vscode.Uri): { md5: string; address: string; entry?: string } | undefined {
+    target(uri: vscode.Uri): { md5: string; address: string; entry?: string } | undefined {
         const match = /^\/listing\/([^/]+)$/.exec(uri.path);
         if (!match || !/^[a-f\d]{32}$/i.test(uri.authority)) { return undefined; }
         let address = decodeURIComponent(withoutExtension(match[1], listingExtension));
@@ -234,8 +234,14 @@ export class ListingViews implements vscode.Disposable {
     private readonly disposables: vscode.Disposable[];
     /** In-flight display-mode switch promises keyed by URI string. */
     private readonly switching = new Map<string, Promise<void>>();
+    /** Open listing URIs whose initial target row has already been revealed. */
+    private readonly revealed = new Set<string>();
     /** Return true while `uri` is switching between listing and byte modes. */
     isSwitching(uri: vscode.Uri): boolean { return this.switching.has(uri.toString()); }
+    /** Return true when `uri` is currently displayed in disassembly/data listing mode. */
+    isListingMode(uri: vscode.Uri): boolean { return this.files.mode(uri) === 'listing'; }
+    /** Return the target address encoded in `uri` when valid. */
+    targetAddress(uri: vscode.Uri): string | undefined { return this.files.target(uri)?.address; }
     /** Wait for any active mode switch on `uri` to finish. */
     async ready(uri: vscode.Uri): Promise<void> { await this.switching.get(uri.toString()); }
     /** Register language synchronization and F12 Go to Definition for listing tabs. */
@@ -244,6 +250,19 @@ export class ListingViews implements vscode.Disposable {
             vscode.workspace.onDidOpenTextDocument(document => {
                 if (document.uri.scheme === listingScheme && document.languageId !== this.files.language(document.uri)) {
                     void Promise.resolve(vscode.languages.setTextDocumentLanguage(document, this.files.language(document.uri))).catch(console.error);
+                }
+            }),
+            vscode.workspace.onDidCloseTextDocument(document => {
+                if (document.uri.scheme === listingScheme) { this.revealed.delete(document.uri.toString()); }
+            }),
+            vscode.window.onDidChangeActiveTextEditor(editor => {
+                if (!editor || editor.document.uri.scheme !== listingScheme || this.files.mode(editor.document.uri) !== 'listing') { return; }
+                const key = editor.document.uri.toString();
+                if (this.revealed.has(key)) { return; }
+                this.revealed.add(key);
+                if (editor.selection.isEmpty && editor.selection.active.line === 0 && editor.selection.active.character === 0) {
+                    const target = this.files.target(editor.document.uri);
+                    if (target?.address) { this.revealRow(editor, target.address); }
                 }
             }),
             vscode.languages.registerDefinitionProvider({ scheme: listingScheme }, {
@@ -355,14 +374,14 @@ export class ListingViews implements vscode.Disposable {
         const notes = this.files.entry(uri)?.notes || [];
         if (notes.length) { void vscode.window.showWarningMessage(notes.join(' ')); }
         if (this.files.mode(uri) !== 'listing') { await this.switchTo(editor, 'listing', address); }
+        this.revealed.add(uri.toString());
         this.revealRow(editor, address);
         return editor;
     }
     /** Put the cursor on the row of the requested address, the way Ghidra scrolls to it. */
     private revealRow(editor: vscode.TextEditor, address: string): void {
-        const plain = plainAddress(address);
         for (let line = 0; line < editor.document.lineCount; line++) {
-            if (!editor.document.lineAt(line).text.trim().toUpperCase().startsWith(plain)) { continue; }
+            if (!sameListingRow(editor.document.lineAt(line).text, address)) { continue; }
             const position = new vscode.Position(line, 0);
             editor.selection = new vscode.Selection(position, position);
             editor.revealRange(new vscode.Range(position, position), vscode.TextEditorRevealType.InCenterIfOutsideViewport);

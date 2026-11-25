@@ -287,6 +287,7 @@ const updateSelectionTools = () => {
   const items = [
     { action: 'decompile', label: 'Decompile containing function', available: canDecompile },
     { action: 'memory', label: 'View bytes in Hex', available: true },
+    { action: 'comment', label: 'Edit comment', available: true },
     { action: 'references', label: 'References at location', available: true },
     { action: 'copyAddress', label: 'Copy address', available: true },
     { action: 'callGraph', label: 'Call graph of containing function', available: canDecompile },
@@ -294,8 +295,8 @@ const updateSelectionTools = () => {
   ].filter(i => i.available);
 
   primaryAction = canDecompile ? 'decompile' : 'memory';
-  const main = items.filter(i => i.action === primaryAction);
-  const extra = items.filter(i => i.action !== primaryAction);
+  const main = items.filter(i => i.action === primaryAction || i.action === 'comment');
+  const extra = items.filter(i => i.action !== primaryAction && i.action !== 'comment');
   const hosts = [document.getElementById('selection-primary'), document.getElementById('selection-more')];
   for (const [idx, list] of [main, extra].entries()) {
     hosts[idx].replaceChildren(...list.map(item => {
@@ -499,6 +500,7 @@ document.addEventListener('keydown', event => {
   }
   if (event.key === '/' && canUseSingleKeyShortcut(event)) { event.preventDefault(); search.focus(); search.select(); }
   else if ((event.key || '').toLowerCase() === 'g' && canUseSingleKeyShortcut(event)) { event.preventDefault(); addressInput.focus(); addressInput.select(); }
+  else if ((event.key || '').toLowerCase() === 'c' && canUseSingleKeyShortcut(event) && selected) { event.preventDefault(); vscode.postMessage({ action: 'comment', address: selected, entry: selectedEntry, kind: selectedKind }); }
 });
 
 window.addEventListener('message', event => {

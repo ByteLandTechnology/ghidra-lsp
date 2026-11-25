@@ -141,11 +141,10 @@ function M.refresh_buffer(buf)
     end
     if not vim.api.nvim_buf_is_valid(buf) then return end
     local name = vim.api.nvim_buf_get_name(buf)
-    local l_md5, l_addr = name:match('^ghidra%-listing://([^/]+)/(.*)$')
-    if l_md5 then
-        local md5 = l_md5:lower()
-        local start_a = vim.b[buf].ghidra_listing_start or format.url_decode(l_addr)
-        listing.render_listing_into_buf(buf, md5, start_a, start_a, nil, vim.b[buf].ghidra_listing_start ~= nil)
+    local l_md5, l_addr = require('ghidra-lsp.buffer').parse_listing_uri(name)
+    if l_md5 and l_addr then
+        local start_a = vim.b[buf].ghidra_listing_start or l_addr
+        listing.render_listing_into_buf(buf, l_md5, start_a, start_a, nil, vim.b[buf].ghidra_listing_start ~= nil)
         return
     end
     local m_md5, m_addr = name:match('^ghidra%-memory://([^/]+)/(.*)$')

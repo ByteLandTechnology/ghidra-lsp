@@ -298,7 +298,8 @@
       },
       {
         "command": "ghidraLsp.editComment",
-        "title": "Ghidra: Edit Comment"
+        "title": "Ghidra: Edit Comment",
+        "icon": "$(comment)"
       },
       {
         "command": "ghidraLsp.editCommentText",
@@ -634,6 +635,11 @@
           "group": "navigation@2"
         },
         {
+          "command": "ghidraLsp.editComment",
+          "when": "resourceScheme == ghidra-listing && activeCustomEditorId != ghidra.analysisControlFlow",
+          "group": "1_modification@0"
+        },
+        {
           "command": "ghidraLsp.listingBrowse",
           "when": "resourceScheme == ghidra-listing && activeCustomEditorId != ghidra.analysisControlFlow",
           "group": "1_modification@1"
@@ -956,6 +962,10 @@
           "group": "navigation@2"
         },
         {
+          "command": "ghidraLsp.editComment",
+          "group": "navigation@3"
+        },
+        {
           "command": "ghidraLsp.listingCopyAddress",
           "group": "navigation@4"
         },
@@ -1044,7 +1054,7 @@
             "filenamePattern": "ghidra-type:/**/*"
           }
         ],
-        "priority": "option"
+        "priority": "default"
       }
     ]
   },

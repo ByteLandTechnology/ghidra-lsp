@@ -14,7 +14,9 @@ use tower_lsp_server::ls_types::{
 };
 
 use super::Engine;
-use crate::document::{Span, canonical_virtual_uri, offset, position, virtual_uri};
+use crate::address::{find_memory_block, format_address, parse_address, same_address};
+use crate::document::{Span, canonical_virtual_uri, listing_uri, offset, position, virtual_uri};
+use crate::views::CachedProgramMeta;
 
 impl Engine {
   /// Returns same-document highlights for the symbol or type token under `pos`.
@@ -355,8 +357,12 @@ impl Engine {
     Ok(Some(ranges))
   }
 
-  /// Finds clickable `ghidra://`, `ram:`, and hexadecimal address links inside `uri`.
-  pub(crate) fn document_links(&self, uri: &Uri) -> Result<Option<Vec<DocumentLink>>> {
+  /// Finds clickable virtual URIs and validated function or memory-block links inside `uri`.
+  pub(crate) fn document_links(
+    &self,
+    uri: &Uri,
+    meta: Option<&CachedProgramMeta>,
+  ) -> Result<Option<Vec<DocumentLink>>> {
     let canon = canonical_virtual_uri(uri);
     let uri = &canon;
     let Some(doc) = self.docs.get(uri) else {
@@ -376,7 +382,10 @@ impl Engine {
       let mut prev_ident = false;
       while let Some((byte_idx, ch)) = iter.next() {
         let tail = &line[byte_idx..];
-        if tail.starts_with("ghidra://") {
+        if tail.starts_with("ghidra://")
+          || tail.starts_with("ghidra-listing://")
+          || tail.starts_with("ghidra-type://")
+        {
           let start_col = utf16_col;
           let mut end_byte = byte_idx + ch.len_utf8();
           let mut end_col = utf16_col + ch.len_utf16() as u32;
@@ -422,14 +431,17 @@ impl Engine {
           }
           if end_byte - byte_idx >= 7 {
             let addr_str = &line[byte_idx..end_byte];
-            if let Ok(target_uri) = virtual_uri(&doc.md5, "function", addr_str) {
+            if let Some(meta) = meta
+              && let Some((target_uri, tooltip)) =
+                resolve_address_link(&doc.md5, addr_str, addr_str, meta)
+            {
               links.push(DocumentLink {
                 range: Range::new(
                   Position::new(line_num, start_col),
                   Position::new(line_num, end_col),
                 ),
                 target: Some(target_uri),
-                tooltip: Some(format!("Go to function {addr_str}")),
+                tooltip: Some(tooltip),
                 data: None,
               });
             }
@@ -454,15 +466,17 @@ impl Engine {
           }
           if end_byte - byte_idx >= 6 {
             let hex_str = &line[byte_idx..end_byte];
-            let target_addr = &hex_str[2..];
-            if let Ok(target_uri) = virtual_uri(&doc.md5, "function", target_addr) {
+            if let Some(meta) = meta
+              && let Some((target_uri, tooltip)) =
+                resolve_address_link(&doc.md5, &hex_str[2..], hex_str, meta)
+            {
               links.push(DocumentLink {
                 range: Range::new(
                   Position::new(line_num, start_col),
                   Position::new(line_num, end_col),
                 ),
                 target: Some(target_uri),
-                tooltip: Some(format!("Go to function {hex_str}")),
+                tooltip: Some(tooltip),
                 data: None,
               });
             }
@@ -479,4 +493,53 @@ impl Engine {
 
     Ok(Some(links))
   }
+}
+
+/// Resolves a candidate address literal against session functions and memory blocks.
+fn resolve_address_link(
+  md5: &str,
+  raw_address: &str,
+  display_token: &str,
+  meta: &CachedProgramMeta,
+) -> Option<(Uri, String)> {
+  let default_space = if meta.default_space.is_empty() {
+    "ram"
+  } else {
+    meta.default_space.as_str()
+  };
+  let parsed = parse_address(raw_address, default_space)?;
+  if parsed.space.eq_ignore_ascii_case("external") {
+    return None;
+  }
+  let candidate = format_address(
+    &parsed.space,
+    parsed.offset,
+    meta.address_width.max(parsed.width),
+  );
+  if let Some(func) = meta.functions.iter().find(|f| {
+    !f.entry.to_ascii_lowercase().starts_with("external:") && same_address(&candidate, &f.entry)
+  }) {
+    let uri = virtual_uri(md5, "function", &func.entry).ok()?;
+    let label = if func.name.is_empty() {
+      display_token
+    } else {
+      func.name.as_str()
+    };
+    return Some((uri, format!("Go to function {label}")));
+  }
+  let block = find_memory_block(&meta.blocks, &candidate)?;
+  if block.name.eq_ignore_ascii_case("external") {
+    return None;
+  }
+  let block_parsed = parse_address(&block.start, default_space)?;
+  if block_parsed.space.eq_ignore_ascii_case("external") {
+    return None;
+  }
+  let canonical = format_address(
+    &block_parsed.space,
+    parsed.offset,
+    block_parsed.width.max(meta.address_width),
+  );
+  let uri = listing_uri(md5, &canonical).ok()?;
+  Some((uri, format!("Open Listing at {display_token}")))
 }

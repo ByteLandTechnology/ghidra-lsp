@@ -4,13 +4,13 @@
 import * as vscode from 'vscode';
 import { applyEdits, modify, parse, ParseError } from 'jsonc-parser';
 import { typePath } from './type-files';
+import { typeEditorView } from './virtual-files';
 import { callIcon } from './call-graph-icons';
 import { Data, escape, object, page, properties, reference, rows } from './web';
 import { Call } from './memory';
 import { parseType, reorderTypeMembers, typeModel, typeMutations } from './type-model';
 
-/** Custom editor viewType identifier for the graphical data type editor. */
-export const typeEditorView = 'ghidra.dataTypeEditor';
+export { typeEditorView };
 /** Control focus restoration target sent to the type editor webview. */
 interface EditorFocus { path?: (string | number)[]; move?: { key: string; index: number }; sort?: { key: string; field: string }; start?: number | null; end?: number | null; }
 /** Active table sort field and direction inside the type editor webview. */
@@ -141,15 +141,21 @@ export class DataTypeEditorView implements vscode.CustomTextEditorProvider, vsco
             if (readonly && !errors.length && model && typeof model === 'object' && !Array.isArray(model)) {
                 const m = model as Record<string, any>;
                 const reason = document.getText().split('\n').find(line => line.startsWith('// Read-only: '))?.slice('// Read-only: '.length) || 'This type is read-only.';
+                const memberType = (item: unknown): string => {
+                    const obj = object(item);
+                    return typeof obj.type === 'string' && obj.type ? obj.type : reference(obj.data_type);
+                };
                 const information: [string, unknown][] = [['Kind', m.kind], ['Size', m.length ?? m.size]];
-                if (m.base_type) { information.push(['Base type', reference(m.base_type)]); }
-                body = `<section class="type-definition"><p class="hint" title="${escape(reason)}">Read-only</p>${properties(information)}</section>`;
-                if (Array.isArray(m.fields)) { body += list('fields', m.fields.map((field: unknown) => ({ ...object(field), type: reference(object(field).data_type) })), ['offset', 'name', 'type', 'length']); }
+                if (m.base_type) { information.push(['Base type', typeof m.base_type === 'string' ? m.base_type : reference(m.base_type)]); }
+                if (typeof m.description === 'string' && m.description) { information.push(['Description', m.description]); }
+                body = `<section class="type-definition"><div class="type-readonly-banner" role="note" aria-label="Read-only data type"><strong>Read-only:</strong> <span>${escape(reason)}</span></div>${properties(information)}</section>`;
+                if (Array.isArray(m.fields)) { body += list('fields', m.fields.map((field: unknown) => ({ ...object(field), type: memberType(field) })), ['offset', 'name', 'type', 'length']); }
                 if (Array.isArray(m.values)) { body += list('values', m.values, ['name', 'value']); }
                 if (m.signature && typeof m.signature === 'object') {
                     const sig = object(m.signature);
-                    body += `<section><h2>Signature</h2>${properties([['Return type', reference(sig.return_type)], ['Calling convention', sig.calling_convention], ['Variadic', sig.has_var_args === true ? 'Yes' : 'No']])}</section>`;
-                    if (Array.isArray(sig.parameters)) { body += list('parameters', sig.parameters.map((param: unknown) => ({ ...object(param), type: reference(object(param).data_type) })), ['name', 'type']); }
+                    const retType = typeof sig.return_type === 'string' ? sig.return_type : reference(sig.return_type);
+                    body += `<section><h2>Signature</h2>${properties([['Return type', retType], ['Calling convention', sig.calling_convention], ['Variadic', sig.has_var_args === true ? 'Yes' : 'No']])}</section>`;
+                    if (Array.isArray(sig.parameters)) { body += list('parameters', sig.parameters.map((param: unknown) => ({ ...object(param), type: memberType(param) })), ['name', 'type']); }
                 }
                 body += `<details class="type-raw"><summary>Raw definition</summary><pre>${escape(document.getText())}</pre></details>`;
             } else if (errors.length || !model || typeof model !== 'object' || Array.isArray(model)) {

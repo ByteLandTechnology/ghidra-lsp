@@ -17,6 +17,14 @@ export const plainAddress = (address: string): string => {
     return match ? match[1].toUpperCase() : address.trim();
 };
 
+/** Return true when formatted listing line `lineText` starts with the hex offset of `address`. */
+export const sameListingRow = (lineText: string, address: string): boolean => {
+    const match = /^\s*([0-9a-fA-F]+)\b/.exec(lineText);
+    if (!match) { return false; }
+    const normalize = (hex: string): string => hex.toUpperCase().replace(/^0+/, '') || '0';
+    return normalize(plainAddress(address)) === normalize(match[1]);
+};
+
 /** Formatted fields for one instruction or data unit in a plain listing view. */
 export interface ListingUnit {
     address: string;

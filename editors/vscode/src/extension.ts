@@ -127,7 +127,7 @@ export async function activate(extension: vscode.ExtensionContext): Promise<void
     let listingViews: ListingViews | undefined;
     const workbench = new Workbench(call, context, editor => listingViews?.addressAt(editor) || memoryAddressAt(editor));
     const typeFiles = new DataTypeFiles(call, context, extension.workspaceState);
-    const editing = new EditingUI(call, context, typeFiles);
+    const editing = new EditingUI(call, context, typeFiles, () => listingViews);
     const typeEditorView = new DataTypeEditorView(call);
     extension.subscriptions.push(context, tracker, stringFiles, stringsView, sessionsView, sessionsTree, browser, workbench, editing, typeFiles, typeEditorView);
     const memory = new GhidraMemory(call);
@@ -215,6 +215,12 @@ export async function activate(extension: vscode.ExtensionContext): Promise<void
         updateStatus();
     }), vscode.window.onDidChangeActiveTextEditor(editor => {
         if (editor && ['ghidra', listingScheme, memoryScheme, typeScheme, 'ghidra-type-current', stringScheme, referenceScheme].includes(editor.document.uri.scheme)) { void context.activate(editor.document.uri.authority).catch(log); }
+        updateStatus();
+    }), vscode.window.tabGroups.onDidChangeTabs(() => {
+        const tab = vscode.window.tabGroups.activeTabGroup.activeTab;
+        if (tab?.input instanceof vscode.TabInputCustom && [listingScheme, typeScheme].includes(tab.input.uri.scheme)) {
+            void context.activate(tab.input.uri.authority).catch(log);
+        }
         updateStatus();
     }));
     /** The address a listing should open at, and the function it belongs to. */

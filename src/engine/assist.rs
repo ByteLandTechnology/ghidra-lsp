@@ -12,11 +12,9 @@ use tower_lsp_server::ls_types::{
   Range, SignatureHelp, SignatureInformation, Uri,
 };
 
-use super::{Engine, find_function_symbol, format_type_markdown};
+use super::{Engine, find_function_symbol};
 use crate::backend::list_all;
-use crate::document::{
-  Document, Symbol, canonical_virtual_uri, data_type_name, offset, virtual_uri,
-};
+use crate::document::{Symbol, canonical_virtual_uri, data_type_name, offset, type_uri};
 
 /// Built-in decompiler type names offered alongside program and local symbols.
 const COMMON_TYPES: &[&str] = &[
@@ -413,7 +411,7 @@ impl Engine {
     ))
   }
 
-  /// Opens a virtual Markdown document describing the resolved data type at `pos`.
+  /// Resolves the canonical `ghidra-type://` location for the data type at `pos`.
   pub(crate) async fn goto_type_definition(
     &mut self,
     uri: &Uri,
@@ -434,28 +432,7 @@ impl Engine {
       .get("path")
       .and_then(Value::as_str)
       .context("Type lacks full path")?;
-    let name = type_data
-      .get("name")
-      .and_then(Value::as_str)
-      .unwrap_or("type");
-    let key = format!("{path}.md");
-    let type_uri = virtual_uri(&md5, "type", &key)?;
-    let md = format_type_markdown(&type_data);
-    self.install(Document {
-      uri: type_uri.clone(),
-      md5,
-      entry: None,
-      base: md.clone(),
-      current: md.clone(),
-      saved: md,
-      version: None,
-      spans: vec![],
-      warning: None,
-    })?;
-    let range = Range::new(
-      Position::new(0, 0),
-      Position::new(0, (2 + name.encode_utf16().count()) as u32),
-    );
-    Ok(Some(Location::new(type_uri, range)))
+    let target_uri = type_uri(&md5, path)?;
+    Ok(Some(Location::new(target_uri, Range::default())))
   }
 }

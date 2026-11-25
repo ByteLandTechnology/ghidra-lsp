@@ -395,7 +395,29 @@ impl Engine {
       }
       resolve_locals(&mut spans, &local_symbols);
       for span in &mut spans {
-        if span.symbol.is_none() && matches!(span.token.kind.as_str(), "variable" | "parameter") {
+        if span.symbol.is_none()
+          && span.token.kind == "variable"
+          && !locals.contains(&span.token.text)
+          && let Some(auto_addr) = crate::document::extract_auto_global_address(&span.token.text)
+        {
+          let addr = span
+            .token
+            .address
+            .as_deref()
+            .filter(|a| crate::document::is_memory_symbol_address(a))
+            .map(str::to_owned)
+            .unwrap_or(auto_addr);
+          span.symbol = Some(Symbol {
+            demangled_name: None,
+            id: format!("Label:{md5}:{addr}"),
+            name: span.token.text.clone(),
+            address: addr,
+            namespace: String::new(),
+            kind: "Label".into(),
+          });
+        } else if span.symbol.is_none()
+          && matches!(span.token.kind.as_str(), "variable" | "parameter")
+        {
           let entry_str = doc.entry.as_deref().unwrap_or(entry);
           let kind = if span.token.kind == "parameter" {
             "Parameter"
@@ -581,20 +603,15 @@ impl Engine {
       };
       return Ok(format_type_markdown(&type_data));
     }
+    if kind == "symbol" {
+      return self.format_symbol_snapshot(md5, id).await;
+    }
     let symbol: Symbol = serde_json::from_value(
       self
         .backend
         .call("symbol", "get", Some(md5), json!({"selector": {"id": id}}))
         .await?,
     )?;
-    if kind == "symbol" {
-      return Ok(format!(
-        "// {}\n// Address: {}\n// Kind: {}\n",
-        symbol.display_name(),
-        symbol.address,
-        symbol.kind
-      ));
-    }
     let refs = list_all(
       self.backend.as_ref(),
       "reference",

@@ -5,7 +5,11 @@
   "required": ["path", "kind"],
   "properties": {
     "path": { "type": "string", "description": "The existing Ghidra type path. Read-only; use Create Data Type to create a different type." },
-    "kind": { "type": "string", "description": "The existing type kind. Read-only." }
+    "kind": { "type": "string", "description": "The existing type kind. Read-only." },
+    "readonly": { "type": "boolean", "description": "True when this data type snapshot is read-only and cannot be saved through the bridge." },
+    "size": { "type": "integer", "minimum": 0, "description": "Byte size reported by Ghidra for read-only data types." },
+    "base_type": { "type": "string", "minLength": 1, "description": "Underlying target or base data type for read-only typedef, pointer, or array types." },
+    "description": { "type": "string", "description": "Optional Ghidra description attached to the data type." }
   },
   "definitions": {
     "id": { "type": "string", "description": "Existing member identity. Keep it when renaming; omit it for a new member. Ghidra updates IDs after saving." },
@@ -21,89 +25,155 @@
         "type": { "$ref": "#/definitions/type" },
         "length": { "type": "integer", "minimum": 1, "maximum": 2147483647, "description": "Optional byte length. Omit for the natural type size. Arrays use the count in their type; changing type uses its natural size unless this length also changes." }
       }
+    },
+    "readonlyField": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "type"],
+      "properties": {
+        "id": { "$ref": "#/definitions/id" },
+        "offset": { "type": "integer", "minimum": 0 },
+        "name": { "type": "string" },
+        "type": { "$ref": "#/definitions/type" },
+        "length": { "type": "integer", "minimum": 0 },
+        "comment": { "type": "string" }
+      }
+    },
+    "signature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["return_type", "calling_convention", "has_var_args", "has_no_return", "parameters"],
+      "properties": {
+        "return_type": { "$ref": "#/definitions/type" },
+        "calling_convention": { "type": "string", "minLength": 1, "default": "default" },
+        "has_var_args": { "type": "boolean" },
+        "has_no_return": { "type": "boolean" },
+        "parameters": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "type"],
+            "properties": {
+              "name": { "type": "string" },
+              "type": { "$ref": "#/definitions/type" }
+            }
+          }
+        }
+      }
     }
   },
-  "allOf": [
-    {
-      "if": { "properties": { "kind": { "const": "struct" } } },
-      "then": {
-        "required": ["fields"],
-        "properties": {
-          "fields": {
-            "type": "array",
-            "items": {
-              "allOf": [
-                { "$ref": "#/definitions/field" },
-                { "required": ["offset"] }
-              ]
-            }
+  "if": {
+    "properties": { "readonly": { "const": true } },
+    "required": ["readonly"]
+  },
+  "then": {
+    "additionalProperties": false,
+    "properties": {
+      "path": { "type": "string" },
+      "kind": { "type": "string" },
+      "readonly": { "const": true },
+      "size": { "type": "integer", "minimum": 0 },
+      "base_type": { "$ref": "#/definitions/type" },
+      "description": { "type": "string" },
+      "fields": {
+        "type": "array",
+        "items": { "$ref": "#/definitions/readonlyField" }
+      },
+      "values": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "value"],
+          "properties": {
+            "id": { "$ref": "#/definitions/id" },
+            "name": { "type": "string" },
+            "value": { "type": ["integer", "string"] },
+            "comment": { "type": "string" }
           }
         }
-      }
-    },
-    {
-      "if": { "properties": { "kind": { "const": "union" } } },
-      "then": {
-        "required": ["fields"],
-        "properties": {
-          "fields": {
-            "type": "array",
-            "items": {
-              "allOf": [
-                { "$ref": "#/definitions/field" },
-                {
-                  "properties": { "name": { "minLength": 1 } },
-                  "not": { "required": ["offset"] }
-                }
-              ]
-            }
-          }
-        }
-      }
-    },
-    {
-      "if": { "properties": { "kind": { "const": "enum" } } },
-      "then": {
-        "required": ["values"],
-        "properties": {
-          "values": {
-            "type": "array",
-            "items": {
-              "type": "object", "additionalProperties": false, "required": ["name", "value"],
-              "properties": {
-                "id": { "$ref": "#/definitions/id" },
-                "name": { "type": "string", "minLength": 1 },
-                "value": { "type": "integer", "minimum": -9007199254740991, "maximum": 9007199254740991, "description": "A lossless JSON integer. Larger 64-bit enum values must be edited in Ghidra." }
-              }
-            }
-          }
-        }
-      }
-    },
-    {
-      "if": { "properties": { "kind": { "const": "function" } } },
-      "then": {
-        "required": ["signature"],
-        "properties": {
-          "signature": {
-            "type": "object", "additionalProperties": false,
-            "required": ["return_type", "calling_convention", "has_var_args", "has_no_return", "parameters"],
-            "properties": {
-              "return_type": { "$ref": "#/definitions/type" },
-              "calling_convention": { "type": "string", "minLength": 1, "default": "default" },
-              "has_var_args": { "type": "boolean" },
-              "has_no_return": { "type": "boolean" },
-              "parameters": {
-                "type": "array",
-                "items": {
-                  "type": "object", "additionalProperties": false, "required": ["name", "type"],
-                  "properties": { "name": { "type": "string" }, "type": { "$ref": "#/definitions/type" } }
-                }
-              }
-            }
-          }
-        }
-      }
+      },
+      "signature": { "$ref": "#/definitions/signature" }
     }
-  ]
+  },
+  "else": {
+    "additionalProperties": false,
+    "properties": {
+      "path": { "type": "string" },
+      "kind": { "type": "string", "enum": ["struct", "union", "enum", "function"] },
+      "fields": { "type": "array" },
+      "values": { "type": "array" },
+      "signature": { "$ref": "#/definitions/signature" }
+    },
+    "allOf": [
+      {
+        "if": { "properties": { "kind": { "const": "struct" } } },
+        "then": {
+          "required": ["fields"],
+          "properties": {
+            "fields": {
+              "type": "array",
+              "items": {
+                "allOf": [
+                  { "$ref": "#/definitions/field" },
+                  { "required": ["offset"] }
+                ]
+              }
+            }
+          }
+        }
+      },
+      {
+        "if": { "properties": { "kind": { "const": "union" } } },
+        "then": {
+          "required": ["fields"],
+          "properties": {
+            "fields": {
+              "type": "array",
+              "items": {
+                "allOf": [
+                  { "$ref": "#/definitions/field" },
+                  {
+                    "properties": { "name": { "minLength": 1 } },
+                    "not": { "required": ["offset"] }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      {
+        "if": { "properties": { "kind": { "const": "enum" } } },
+        "then": {
+          "required": ["values"],
+          "properties": {
+            "values": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["name", "value"],
+                "properties": {
+                  "id": { "$ref": "#/definitions/id" },
+                  "name": { "type": "string", "minLength": 1 },
+                  "value": { "type": "integer", "minimum": -9007199254740991, "maximum": 9007199254740991, "description": "A lossless JSON integer. Larger 64-bit enum values must be edited in Ghidra." }
+                }
+              }
+            }
+          }
+        }
+      },
+      {
+        "if": { "properties": { "kind": { "const": "function" } } },
+        "then": {
+          "required": ["signature"],
+          "properties": {
+            "signature": { "$ref": "#/definitions/signature" }
+          }
+        }
+      }
+    ]
+  }
 }

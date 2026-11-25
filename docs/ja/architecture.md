@@ -25,9 +25,9 @@
 | スキーム | 主な URI 形式 | 用途と編集可否 |
 | --- | --- | --- |
 | `ghidra://` | `ghidra://<md5>/function/<entry>`、`ghidra://<md5>/symbol/<id>`、`ghidra://<md5>/references/<address>`、`ghidra://<md5>/type/<path>` | 関数擬似コード（読み取り専用。`<F2>` リネームプレビュー＋オリジン保存のみ可）および各種解析スナップショット（読み取り専用） |
-| `ghidra-listing://` | VS Code: `ghidra-listing://<md5>/listing/<addr>.ghidra-listing`、Neovim: `ghidra-listing://<md5>/<addr>` | ページングされたプログラムアセンブリリスティング。VS Code では同じリソースを Listing / Bytes / Control Flow カスタムエディタ間で切り替え可能 |
+| `ghidra-listing://` | `ghidra-listing://<md5>/listing/<encoded-addr>.ghidra-listing` | ページングされたプログラムアセンブリリスティング。VS Code では同じリソースを Listing / Bytes / Control Flow カスタムエディタ間で切り替え可能 |
 | `ghidra-memory://` | VS Code: `ghidra-memory://<md5>/memory/<addr>.ghidra-bytes`、Neovim: `ghidra-memory://<md5>/<addr>` | 境界付き 16 進バイトダンプ＋ライブ Data Inspector（整数、浮動小数点、ポインタ、文字列デコード） |
-| `ghidra-type://` | VS Code: `ghidra-type://<md5><path>.ghidra-type?v=3`、Neovim: `ghidra-type://<md5><path>.ghidra-type` | 編集可能な `.ghidra-type` JSONC 仮想ファイル（`struct` / `union` / `enum` / `function`）。組み込み型や `typedef` 等は読み取り専用 |
+| `ghidra-type://` | `ghidra-type://<md5><encoded-path>.ghidra-type` | 編集可能な `.ghidra-type` JSONC 仮想ファイル（`struct` / `union` / `enum` / `function`）。組み込み型や `typedef` 等は読み取り専用 |
 | `ghidra-string://` | VS Code: `ghidra-string://<md5>/string/<addr>?{"address":"..."}`、Neovim: `ghidra-string://<md5>/string/<addr>` | 定義済み文字列のプレーンテキスト表示。選択・コピー・相互参照検索に対応 |
 | `ghidra-reference://` | VS Code: `ghidra-reference://<md5>/<id>/<label>?{"source":"..."}` | VS Code の Peek References 表示で人間が読みやすいラベルを提示し、タブを確定すると元の `ghidra://` または `ghidra-listing://` へリダイレクト |
 

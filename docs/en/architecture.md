@@ -20,9 +20,9 @@
 | Scheme | Role | Representative URI shape | Writable |
 | --- | --- | --- | --- |
 | `ghidra://` | Server-managed decompiled C functions and markdown/text snapshots | `ghidra://<md5>/function/<encoded-entry>`, `/symbol/<id>`, `/references/<id>`, `/type/<path>.md` | Read-only except scoped `<F2>` rename preview |
-| `ghidra-listing://` | Windowed disassembly listing (also hosts Analysis & Control Flow tabs in VS Code) | `ghidra-listing://<md5>/listing/<addr>.ghidra-listing` (VS Code), `ghidra-listing://<md5>/<addr>` (Neovim) | Read-only |
+| `ghidra-listing://` | Windowed disassembly listing (also hosts Analysis & Control Flow tabs in VS Code) | `ghidra-listing://<md5>/listing/<encoded-addr>.ghidra-listing` | Read-only |
 | `ghidra-memory://` | Bounded hexadecimal byte windows with live Data Inspector | `ghidra-memory://<md5>/memory/<addr>.ghidra-bytes` (VS Code), `ghidra-memory://<md5>/<addr>` (Neovim) | Read-only |
-| `ghidra-type://` | Structured JSONC data-type editor documents (`struct`, `union`, `enum`, `function`) | `ghidra-type://<md5><path>.ghidra-type?v=3` | Editable (except read-only kinds) |
+| `ghidra-type://` | Structured JSONC data-type editor documents (`struct`, `union`, `enum`, `function`, and read-only kinds) | `ghidra-type://<md5><encoded-path>.ghidra-type` | Editable (except read-only kinds) |
 | `ghidra-string://` | Decoded defined strings with reference CodeLens and lookup | `ghidra-string://<md5>/string/<addr>?{"address":...}` | Read-only |
 | `ghidra-reference://` | Human-readable cross-reference peek wrappers over `ghidra://` or `ghidra-listing://` | `ghidra-reference://<md5>/<identity>/<label>?{"source":...}` | Read-only |
 

@@ -798,8 +798,6 @@ impl LanguageServer for Server {
     &self,
     params: DocumentLinkParams,
   ) -> jsonrpc::Result<Option<Vec<DocumentLink>>> {
-    let uri = canonical_virtual_uri(&params.text_document.uri);
-    let e = self.engine.lock().await;
-    e.document_links(&uri).map_err(rpc)
+    self.handle_document_link(params).await
   }
 }

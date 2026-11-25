@@ -10,8 +10,9 @@ use tower_lsp_server::ls_types::{Location, Position, Range, Uri};
 use super::{Engine, find_function_symbol};
 use crate::backend::list_all;
 use crate::document::{
-  Document, Symbol, canonical_virtual_uri, extract_label_address, in_address_range, is_label_token,
-  offset, same_address, virtual_uri, word_at,
+  Document, Symbol, canonical_virtual_uri, extract_auto_global_address, extract_label_address,
+  in_address_range, is_label_token, is_memory_symbol_address, listing_uri, offset, same_address,
+  virtual_uri, word_at,
 };
 
 impl Engine {
@@ -60,6 +61,29 @@ impl Engine {
       return Ok((doc.md5.clone(), sym.clone(), doc.range(span)));
     }
     if matches!(span.token.kind.as_str(), "variable" | "parameter") {
+      if span.token.kind == "variable"
+        && let Some(auto_addr) = extract_auto_global_address(&span.token.text)
+      {
+        let addr = span
+          .token
+          .address
+          .as_deref()
+          .filter(|a| is_memory_symbol_address(a))
+          .map(str::to_owned)
+          .unwrap_or(auto_addr);
+        return Ok((
+          doc.md5.clone(),
+          Symbol {
+            demangled_name: None,
+            id: format!("Label:{}:{addr}", doc.md5),
+            name: span.token.text.clone(),
+            address: addr,
+            namespace: String::new(),
+            kind: "Label".into(),
+          },
+          doc.range(span),
+        ));
+      }
       let entry = doc.entry.as_deref().context("Unknown function entry")?;
       let kind = if span.token.kind == "parameter" {
         "Parameter"
@@ -183,24 +207,26 @@ impl Engine {
     if let Some(s) = &span
       && s.token.kind == "function"
     {
+      let callee_sym = if s.token.text.starts_with("FUN_") {
+        None
+      } else {
+        let symbols = self.symbols(&md5).await.unwrap_or_default();
+        symbols.into_iter().find(|sym| {
+          sym.kind.eq_ignore_ascii_case("function")
+            && (sym.name == s.token.text || sym.qualified() == s.token.text)
+        })
+      };
+      if let Some(sym) = &callee_sym
+        && !is_memory_symbol_address(&sym.address)
+      {
+        return Ok(Some(self.symbol_location(&md5, sym).await?));
+      }
       let callee_addr = s
         .symbol
         .as_ref()
         .map(|sym| sym.address.clone())
-        .or_else(|| s.token.text.strip_prefix("FUN_").map(str::to_owned));
-      let callee_addr = match callee_addr {
-        Some(a) => Some(a),
-        None => {
-          let symbols = self.symbols(&md5).await.unwrap_or_default();
-          symbols
-            .into_iter()
-            .find(|sym| {
-              sym.kind.eq_ignore_ascii_case("function")
-                && (sym.name == s.token.text || sym.qualified() == s.token.text)
-            })
-            .map(|sym| sym.address)
-        }
-      };
+        .or_else(|| s.token.text.strip_prefix("FUN_").map(str::to_owned))
+        .or_else(|| callee_sym.map(|sym| sym.address));
 
       if let Some(addr) = callee_addr {
         if entry.as_deref().is_some_and(|e| same_address(e, &addr)) {
@@ -226,9 +252,47 @@ impl Engine {
       }
     }
 
+    let is_span_label = span.as_ref().is_some_and(|s| {
+      s.token.kind == "label" || is_label_token(&s.token.text, s.start, s.end, &self.docs[uri].base)
+    });
+    if let Some(s) = &span
+      && is_span_label
+    {
+      let symbols = self.symbols(&md5).await.unwrap_or_default();
+      if let Some(sym) = symbols
+        .into_iter()
+        .find(|sym| sym.name == s.token.text || sym.qualified() == s.token.text)
+      {
+        return Ok(Some(self.symbol_location(&md5, &sym).await?));
+      }
+      if let Some(addr) = s
+        .token
+        .address
+        .clone()
+        .or_else(|| extract_label_address(&s.token.text))
+        && let Some(loc) = self.resolve_listing_location(&md5, &addr).await?
+      {
+        return Ok(Some(loc));
+      }
+    }
+
     if let Some(s) = &span
       && matches!(s.token.kind.as_str(), "variable" | "parameter")
     {
+      if s.token.kind == "variable"
+        && let Some(auto_addr) = extract_auto_global_address(&s.token.text)
+      {
+        let addr = s
+          .token
+          .address
+          .as_deref()
+          .filter(|a| is_memory_symbol_address(a))
+          .map(str::to_owned)
+          .unwrap_or(auto_addr);
+        if let Some(loc) = self.resolve_listing_location(&md5, &addr).await? {
+          return Ok(Some(loc));
+        }
+      }
       let doc = &self.docs[uri];
       if let Some(decl) = doc.spans.iter().find(|sp| sp.token.text == s.token.text) {
         return Ok(Some(Location::new(uri.clone(), doc.range(decl))));
@@ -247,6 +311,16 @@ impl Engine {
           .find(|sym| sym.name == s.token.text || sym.qualified() == s.token.text)
         {
           return Ok(Some(self.symbol_location(&md5, &sym).await?));
+        }
+        let fallback_addr = s
+          .token
+          .address
+          .clone()
+          .or_else(|| extract_auto_global_address(&s.token.text));
+        if let Some(addr) = fallback_addr
+          && let Some(loc) = self.resolve_listing_location(&md5, &addr).await?
+        {
+          return Ok(Some(loc));
         }
       }
     }
@@ -273,12 +347,60 @@ impl Engine {
         return Ok(Some(self.symbol_location(&md5, &sym).await?));
       }
 
+      if let Some(addr) =
+        extract_label_address(&word).or_else(|| extract_auto_global_address(&word))
+        && let Some(loc) = self.resolve_listing_location(&md5, &addr).await?
+      {
+        return Ok(Some(loc));
+      }
+
       if let Ok(Some(loc)) = self.goto_type_definition(uri, pos).await {
         return Ok(Some(loc));
       }
     }
 
     Ok(None)
+  }
+
+  /// Resolves an in-memory symbol or label address into a canonical `ghidra-listing://` location.
+  async fn resolve_listing_location(&self, md5: &str, raw_addr: &str) -> Result<Option<Location>> {
+    if !is_memory_symbol_address(raw_addr) {
+      return Ok(None);
+    }
+    match self
+      .backend
+      .call(
+        "address",
+        "resolve",
+        Some(md5),
+        json!({"selector": {"address": raw_addr}}),
+      )
+      .await
+    {
+      Ok(resolved) => {
+        if resolved.get("valid").and_then(Value::as_bool) == Some(false)
+          || resolved.get("in_memory").and_then(Value::as_bool) == Some(false)
+        {
+          return Ok(None);
+        }
+        let target = resolved
+          .pointer("/code_unit/address")
+          .and_then(Value::as_str)
+          .filter(|s| !s.is_empty())
+          .or_else(|| {
+            resolved
+              .get("address")
+              .and_then(Value::as_str)
+              .filter(|s| !s.is_empty())
+          })
+          .unwrap_or(raw_addr);
+        Ok(Some(Location::new(
+          listing_uri(md5, target)?,
+          Range::default(),
+        )))
+      }
+      Err(_) => Ok(None),
+    }
   }
 
   /// Opens or synthesizes the canonical [`Location`] for `symbol` in session `md5`.
@@ -297,6 +419,7 @@ impl Engine {
       return Ok(Location::new(uri, doc.range(span)));
     }
     if symbol.kind.eq_ignore_ascii_case("function")
+      && is_memory_symbol_address(&symbol.address)
       && let Ok(uri) = self.open(md5, &symbol.address).await
     {
       let doc = self
@@ -310,6 +433,12 @@ impl Engine {
         .map(|s| doc.range(s))
         .unwrap_or_default();
       return Ok(Location::new(uri, range));
+    }
+    if !symbol.kind.eq_ignore_ascii_case("function")
+      && !symbol.kind.eq_ignore_ascii_case("constant")
+      && let Some(loc) = self.resolve_listing_location(md5, &symbol.address).await?
+    {
+      return Ok(loc);
     }
     let uri = virtual_uri(md5, "symbol", &symbol.id)?;
     if self.docs.get(&uri).is_none_or(Document::clean) {
@@ -328,6 +457,66 @@ impl Engine {
       })?;
     }
     Ok(Location::new(uri, Range::default()))
+  }
+
+  /// Renders a detailed C-comment summary snapshot for a non-memory or external symbol.
+  pub(super) async fn format_symbol_snapshot(&self, md5: &str, id: &str) -> Result<String> {
+    let raw = self
+      .backend
+      .call("symbol", "get", Some(md5), json!({"selector": {"id": id}}))
+      .await?;
+    let symbol: Symbol = serde_json::from_value(raw.clone())?;
+    let display = symbol.display_name();
+    let mut out = format!("// Symbol: {display}\n");
+    if !symbol.name.is_empty() && symbol.name != display {
+      out.push_str(&format!("// Name: {}\n", symbol.name));
+    }
+    if !symbol.namespace.is_empty() && symbol.namespace != "Global" {
+      out.push_str(&format!("// Namespace: {}\n", symbol.namespace));
+    }
+    out.push_str(&format!("// Kind: {}\n", symbol.kind));
+    if let Some(source) = raw
+      .get("source_type")
+      .or_else(|| raw.get("source"))
+      .and_then(Value::as_str)
+      .filter(|s| !s.is_empty())
+    {
+      out.push_str(&format!("// Source: {source}\n"));
+    }
+    if let Some(primary) = raw.get("primary").and_then(Value::as_bool) {
+      out.push_str(&format!("// Primary: {primary}\n"));
+    }
+    out.push_str(&format!("// Address: {}\n", symbol.address));
+
+    if !symbol.address.is_empty()
+      && let Ok(refs) = list_all(
+        self.backend.as_ref(),
+        "reference",
+        md5,
+        json!({"filter": {"direction": "to", "to": symbol.address}, "page": {"limit": 100}}),
+      )
+      .await
+    {
+      if refs.is_empty() {
+        out.push_str("// Incoming references: none\n");
+      } else {
+        out.push_str(&format!("// Incoming references ({}):\n", refs.len()));
+        for reference in refs {
+          if let Some(from) = reference.get("from").and_then(Value::as_str) {
+            let to = reference
+              .get("to")
+              .and_then(Value::as_str)
+              .unwrap_or(&symbol.address);
+            let kind = reference
+              .get("type")
+              .and_then(Value::as_str)
+              .unwrap_or("reference");
+            out.push_str(&format!("//   {from} -> {to} ({kind})\n"));
+          }
+        }
+      }
+    }
+    Ok(out)
   }
 
   /// Collects in-document and cross-function references targeting `symbol`.

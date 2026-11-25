@@ -90,7 +90,7 @@ Every JSONC document requires top-level read-only `path` and `kind` fields plus 
 
 ### Read-only type conditions (`src/types_doc/model.rs`)
 
-Built-in primitives, pointers, arrays, typedefs, enums containing 64-bit values outside `±9007199254740991`, function definitions lacking structured `signature`, layouts with bitfields (`:N` suffix) or zero-length/duplicate-offset fields, and layouts with anonymous members exceeding limits (`> 1` in structs, `> 0` in unions) open read-only with an explanatory comment header.
+Built-in primitives, pointers, arrays, typedefs, enums containing 64-bit values outside `±9007199254740991`, function definitions lacking structured `signature`, layouts with bitfields (`:N` suffix) or zero-length/duplicate-offset fields, and layouts with anonymous members exceeding limits (`> 1` in structs, `> 0` in unions) open read-only. `render_type_jsonc` serializes these types with `"readonly": true`, an explanatory comment header, and normalized member projections (`size`, `base_type`, `description`, `fields`, `values`, or `signature`) that satisfy `editors/vscode/schemas/data-type.schema.json`, while the VS Code Data Type Editor displays the read-only reason inline in its banner.
 
 ### Conflict checks and save readback
 

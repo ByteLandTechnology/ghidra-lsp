@@ -1,7 +1,7 @@
 -- Copyright 2026 ByteLand Technology Limited
 -- SPDX-License-Identifier: MIT
 
--- Virtual ghidra:// and ghidra-type:// buffer management, validation diagnostics, and saves.
+-- Virtual ghidra://, ghidra-type://, and ghidra-listing:// buffer management, diagnostics, and saves.
 local client = require('ghidra-lsp.client')
 local format = require('ghidra-lsp.format')
 
@@ -12,7 +12,7 @@ M.TYPE_DIAG_NS = vim.api.nvim_create_namespace('ghidra_lsp_type')
 --- Normalize a Ghidra data-type path so it begins with a leading slash.
 function M.normalize_type_path(path)
     local p = vim.trim(tostring(path or ''))
-    p = p:gsub('%?.*$', ''):gsub('%.ghidra%-type$', ''):gsub('%.md$', '')
+    p = p:gsub('%?.*$', ''):gsub('%.ghidra%-type$', ''):gsub('%.jsonc$', ''):gsub('%.md$', '')
     if p == '' then return '/' end
     if p:sub(1, 1) ~= '/' then
         p = '/' .. p
@@ -32,12 +32,32 @@ function M.parse_type_uri(uri)
     if type(uri) ~= 'string' then return nil, nil end
     local md5, raw_rest = uri:match('^ghidra%-type://([^/]+)(/.*)$')
     if not md5 or not raw_rest then return nil, nil end
-    local stripped = raw_rest:gsub('%?.*$', ''):gsub('%.ghidra%-type$', '')
+    local stripped = raw_rest:gsub('%?.*$', ''):gsub('%.ghidra%-type$', ''):gsub('%.jsonc$', '')
     local decoded = M.normalize_type_path(format.url_decode(stripped))
     return md5:lower(), decoded
 end
 
---- Normalize ghidra:// and ghidra-type:// URIs to canonical form.
+--- Build a canonical ghidra-listing:// URI from program md5 and target address.
+function M.listing_uri(md5, address)
+    local clean_md5 = tostring(md5 or ''):lower()
+    local encoded = format.url_encode(tostring(address or ''))
+    return 'ghidra-listing://' .. clean_md5 .. '/listing/' .. encoded .. '.ghidra-listing'
+end
+
+--- Extract program md5 and decoded target address from a ghidra-listing:// URI.
+function M.parse_listing_uri(uri)
+    if type(uri) ~= 'string' then return nil, nil end
+    local md5, raw_rest = uri:match('^ghidra%-listing://([^/]+)/(.+)$')
+    if not md5 or not raw_rest then return nil, nil end
+    local clean = raw_rest:gsub('%?.*$', '')
+    local segment = clean:match('^listing/(.+)$') or clean
+    segment = segment:gsub('%.ghidra%-listing$', '')
+    local decoded = vim.trim(format.url_decode(segment))
+    if decoded == '' then return nil, nil end
+    return md5:lower(), decoded
+end
+
+--- Normalize ghidra://, ghidra-type://, and ghidra-listing:// URIs to canonical form.
 function M.canonicalize_uri(uri)
     if type(uri) ~= 'string' then return uri end
     local prefix, md5, kind, segment = uri:match('^(ghidra://)([^/]+)/([^/]+)/(.*)$')
@@ -49,6 +69,10 @@ function M.canonicalize_uri(uri)
     local t_md5, t_path = M.parse_type_uri(uri)
     if t_md5 and t_path then
         return M.type_uri(t_md5, t_path)
+    end
+    local l_md5, l_addr = M.parse_listing_uri(uri)
+    if l_md5 and l_addr then
+        return M.listing_uri(l_md5, l_addr)
     end
     return uri
 end
@@ -718,7 +742,7 @@ function M.setup_autocmds()
 
     vim.api.nvim_create_autocmd({ 'BufNewFile', 'BufReadPre' }, {
         group = group,
-        pattern = 'ghidra-type://*.ghidra-type',
+        pattern = 'ghidra-type://*',
         callback = function(args)
             vim.bo[args.buf].swapfile = false
             vim.bo[args.buf].buftype = 'acwrite'
@@ -728,7 +752,7 @@ function M.setup_autocmds()
 
     vim.api.nvim_create_autocmd('BufReadCmd', {
         group = group,
-        pattern = 'ghidra-type://*.ghidra-type',
+        pattern = 'ghidra-type://*',
         callback = function(args)
             local uri = (args.file and args.file ~= '') and args.file or vim.api.nvim_buf_get_name(args.buf)
             M.load_type_document(args.buf, uri)
@@ -737,7 +761,7 @@ function M.setup_autocmds()
 
     vim.api.nvim_create_autocmd('BufWriteCmd', {
         group = group,
-        pattern = 'ghidra-type://*.ghidra-type',
+        pattern = 'ghidra-type://*',
         callback = function(args)
             local uri = (args.file and args.file ~= '') and args.file or vim.api.nvim_buf_get_name(args.buf)
             M.save_type_document(args.buf, uri)
@@ -746,9 +770,28 @@ function M.setup_autocmds()
 
     vim.api.nvim_create_autocmd({ 'TextChanged', 'InsertLeave' }, {
         group = group,
-        pattern = 'ghidra-type://*.ghidra-type',
+        pattern = 'ghidra-type://*',
         callback = function(args)
             M.validate_type_buffer(args.buf, false)
+        end,
+    })
+
+    vim.api.nvim_create_autocmd({ 'BufNewFile', 'BufReadPre' }, {
+        group = group,
+        pattern = 'ghidra-listing://*',
+        callback = function(args)
+            vim.bo[args.buf].swapfile = false
+            vim.bo[args.buf].buftype = 'nofile'
+            vim.bo[args.buf].filetype = 'ghidra-listing'
+        end,
+    })
+
+    vim.api.nvim_create_autocmd('BufReadCmd', {
+        group = group,
+        pattern = 'ghidra-listing://*',
+        callback = function(args)
+            local uri = (args.file and args.file ~= '') and args.file or vim.api.nvim_buf_get_name(args.buf)
+            require('ghidra-lsp.views.listing').load_listing_buffer(args.buf, uri)
         end,
     })
 

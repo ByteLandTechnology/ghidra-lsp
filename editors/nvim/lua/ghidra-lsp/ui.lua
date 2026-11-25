@@ -200,10 +200,10 @@ function M.short_uri(uri, include_program)
         return 'Overview · ' .. prog
     end
 
-    local l_md5, l_addr = uri:match('^ghidra%-listing://([^/]+)/(.*)$')
-    if l_md5 then
-        local base = 'Listing · ' .. format.display_address(format.url_decode(l_addr))
-        return with_program_suffix(base, l_md5:lower(), include_program, client_mod)
+    local l_md5, l_addr = require('ghidra-lsp.buffer').parse_listing_uri(uri)
+    if l_md5 and l_addr then
+        local base = 'Listing · ' .. format.display_address(l_addr)
+        return with_program_suffix(base, l_md5, include_program, client_mod)
     end
 
     local m_md5, m_addr = uri:match('^ghidra%-memory://([^/]+)/(.*)$')
@@ -240,7 +240,7 @@ function M.short_uri(uri, include_program)
 
     local t_md5, t_raw = uri:match('^ghidra%-type://([^/]+)(/.*)$')
     if t_md5 and t_raw then
-        local clean = format.url_decode(t_raw):gsub('%?.*$', ''):gsub('%.ghidra%-type$', '')
+        local clean = format.url_decode(t_raw):gsub('%?.*$', ''):gsub('%.ghidra%-type$', ''):gsub('%.jsonc$', '')
         local leaf = clean:match('([^/]+)$') or clean
         local cat = clean:match('^(.*)/[^/]+$')
         local base

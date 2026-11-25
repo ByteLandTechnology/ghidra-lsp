@@ -9,13 +9,18 @@ use std::sync::atomic::Ordering;
 use serde_json::json;
 use tower_lsp_server::jsonrpc;
 use tower_lsp_server::ls_types::{
-  DocumentSymbol, DocumentSymbolParams, DocumentSymbolResponse, Location, OneOf, Position, Range,
-  SymbolKind, WorkspaceLocation, WorkspaceSymbol, WorkspaceSymbolParams, WorkspaceSymbolResponse,
+  DocumentLink, DocumentLinkParams, DocumentSymbol, DocumentSymbolParams, DocumentSymbolResponse,
+  Location, OneOf, Position, Range, SymbolKind, WorkspaceLocation, WorkspaceSymbol,
+  WorkspaceSymbolParams, WorkspaceSymbolResponse,
 };
 
 use super::{Server, rpc};
 use crate::backend::list_all;
-use crate::document::{Document, Symbol, canonical_virtual_uri, position, virtual_uri};
+use crate::document::{
+  Symbol, canonical_virtual_uri, is_memory_symbol_address, listing_uri, position, type_uri,
+  virtual_uri,
+};
+use crate::views::get_or_load_meta;
 
 impl Server {
   /// Builds nested outline symbols for the opened decompilation buffer in `params`.
@@ -112,23 +117,21 @@ impl Server {
         && (s.full_name().to_lowercase().contains(&query)
           || s.qualified().to_lowercase().contains(&query))
     }) {
-      let sym_uri = virtual_uri(
-        &md5,
-        if symbol.kind.eq_ignore_ascii_case("function") {
-          "function"
-        } else {
-          "symbol"
-        },
-        if symbol.kind.eq_ignore_ascii_case("function") {
-          &symbol.address
-        } else {
-          &symbol.id
-        },
-      )
-      .map_err(rpc)?;
+      let is_mem_fn =
+        symbol.kind.eq_ignore_ascii_case("function") && is_memory_symbol_address(&symbol.address);
+      let is_mem_sym = !symbol.kind.eq_ignore_ascii_case("function")
+        && !symbol.kind.eq_ignore_ascii_case("constant")
+        && is_memory_symbol_address(&symbol.address);
+      let sym_uri = if is_mem_fn {
+        virtual_uri(&md5, "function", &symbol.address).map_err(rpc)?
+      } else if is_mem_sym {
+        listing_uri(&md5, &symbol.address).map_err(rpc)?
+      } else {
+        virtual_uri(&md5, "symbol", &symbol.id).map_err(rpc)?
+      };
       let location = if self.lazy_symbols.load(Ordering::Relaxed) {
         OneOf::Right(WorkspaceLocation { uri: sym_uri })
-      } else if symbol.kind.eq_ignore_ascii_case("function") {
+      } else if is_mem_fn {
         let open_loc = e.docs.get(&sym_uri).map(|doc| {
           let body_start = doc.body_start();
           let range = doc
@@ -194,7 +197,7 @@ impl Server {
           "typedef" => SymbolKind::INTERFACE,
           _ => SymbolKind::CLASS,
         };
-        let uri = match virtual_uri(&md5, "type", &format!("{path}.md")) {
+        let uri = match type_uri(&md5, path) {
           Ok(u) => u,
           Err(_) => continue,
         };
@@ -230,26 +233,7 @@ impl Server {
       .and_then(serde_json::Value::as_str)
       .ok_or_else(|| rpc("Missing session"))?;
     if let Some(type_path) = data.get("type_path").and_then(serde_json::Value::as_str) {
-      let uri = virtual_uri(md5, "type", &format!("{type_path}.md")).map_err(rpc)?;
-      let mut e = self.engine.lock().await;
-      if e.docs.get(&uri).is_none_or(Document::clean) {
-        let code = e.snapshot_text(md5, "type", type_path).await.map_err(rpc)?;
-        let version = e.docs.get(&uri).and_then(|doc| doc.version);
-        e.install(Document {
-          uri: uri.clone(),
-          md5: md5.into(),
-          entry: None,
-          base: code.clone(),
-          current: code.clone(),
-          saved: code,
-          version,
-          spans: vec![],
-          warning: None,
-        })
-        .map_err(rpc)?;
-      }
-      drop(e);
-      self.changed(md5).await;
+      let uri = type_uri(md5, type_path).map_err(rpc)?;
       params.location = OneOf::Left(Location::new(uri, Range::default()));
       return Ok(params);
     }
@@ -274,6 +258,26 @@ impl Server {
       self.changed(md5).await;
     }
     Ok(params)
+  }
+
+  /// Resolves clickable document links inside `params` using cached session metadata.
+  pub(super) async fn handle_document_link(
+    &self,
+    params: DocumentLinkParams,
+  ) -> jsonrpc::Result<Option<Vec<DocumentLink>>> {
+    let uri = canonical_virtual_uri(&params.text_document.uri);
+    let (md5, backend) = {
+      let e = self.engine.lock().await;
+      let Some(doc) = e.docs.get(&uri) else {
+        return Ok(None);
+      };
+      (doc.md5.clone(), e.backend.clone())
+    };
+    let meta = get_or_load_meta(backend.as_ref(), &self.view_cache, &md5)
+      .await
+      .ok();
+    let e = self.engine.lock().await;
+    e.document_links(&uri, meta.as_ref()).map_err(rpc)
   }
 }
 

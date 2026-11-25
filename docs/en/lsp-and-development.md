@@ -11,14 +11,14 @@ Declared in `Server::initialize` (`src/server/lsp.rs`):
 | `positionEncoding` | `utf-16` | UTF-16 code-unit `Position` and `Range` across all documents |
 | `textDocumentSync` | `openClose: true`, `change: FULL`, `save.includeText: true` | Synchronizes `ghidra://` buffers; enforces clean vs pending-rename state on save |
 | `hoverProvider` | `true` | Shows symbol name, kind, address, full demangled/raw mangled names, C signature/type, storage, comments, or type metadata |
-| `definitionProvider` | `true` | Jumps to function `ghidra://.../function/<entry>`, symbol snapshot, or fallback Listing window |
+| `definitionProvider` | `true` | Jumps to function `ghidra://<md5>/function/<entry>`, memory-backed global/label `ghidra-listing://<md5>/listing/<addr>.ghidra-listing`, or enriched external `ghidra://<md5>/symbol/<id>` snapshot |
 | `declarationProvider` | `true` | Delegates to `goto_definition` |
 | `implementationProvider` | `true` | Delegates to `goto_definition` |
-| `typeDefinitionProvider` | `true` | Resolves symbol data type to `ghidra://<md5>/type/<path>.md` snapshot |
+| `typeDefinitionProvider` | `true` | Resolves symbol data type to canonical `ghidra-type://<md5><path>.ghidra-type` |
 | `referencesProvider` | `true` | Finds incoming references across functions (`ghidra://`) and non-decompiled sites (`/references/<id>`) |
 | `documentHighlightProvider` | `true` | Highlights matching symbol ID or `type` token occurrences in clean buffers |
 | `documentSymbolProvider` | `true` | Returns nested function root and referenced child symbols (`DocumentSymbol`) |
-| `workspaceSymbolProvider` | `resolveProvider: true` | Searches program symbols and data types; supports lazy `symbol/resolve` when client supports `location.range` |
+| `workspaceSymbolProvider` | `resolveProvider: true` | Searches program functions (`ghidra://`), memory globals/labels (`ghidra-listing://`), external symbols (`/symbol/`), and data types (`ghidra-type://`); supports lazy `symbol/resolve` |
 | `renameProvider` | `prepareProvider: true` | Validates target span and identifier, plans scoped `WorkspaceEdit` preview across open buffers |
 | `completionProvider` | `resolveProvider: false` | Offers locals, program symbols, and 32 built-in decompiler types (`COMMON_TYPES`) |
 | `signatureHelpProvider` | Triggers `(`, `,`; retrigger `,` | Displays active function signature and parameter index inside call expressions |
@@ -28,7 +28,7 @@ Declared in `Server::initialize` (`src/server/lsp.rs`):
 | `callHierarchyProvider` | `true` | Prepares `CallHierarchyItem` and resolves incoming callers and outgoing callees |
 | `codeLensProvider` | `resolveProvider: false` | Emits function header lenses for `Listing`, `Call Graph`, `Control Flow`, `Callers`, `Callees`, and `References` |
 | `foldingRangeProvider` | `true` | Computes comment block (`//`, `/* ... */`) and brace `{ ... }` folding ranges |
-| `documentLinkProvider` | `resolveProvider: false` | Links inline `ghidra://` URIs, `ram:<hex>` addresses, and `0x<hex>` literals to `ghidra://` targets |
+| `documentLinkProvider` | `resolveProvider: false` | Links inline `ghidra://` URIs plus session-verified function entries (`ghidra://`) and in-memory addresses (`ghidra-listing://`), omitting scalar constants |
 | `executeCommandProvider` | 45 commands | Exposes session, analysis, window, mutation, and rename commands listed below |
 
 Custom server notification: `ghidra/changed` (`{"md5": "<32-hex>"}`) notifies clients when cached views or backend analysis state change.

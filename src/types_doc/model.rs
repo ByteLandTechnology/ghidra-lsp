@@ -268,6 +268,149 @@ pub(super) fn type_model(data: &Value) -> Value {
   Value::Object(result)
 }
 
+/// Converts raw Ghidra `data_type.get` JSON into a normalized read-only `TypeModel` snapshot.
+fn readonly_type_model(data: &Value) -> Value {
+  let kind = kind_of(data);
+  let path = data
+    .get("path")
+    .and_then(Value::as_str)
+    .unwrap_or("undefined");
+  let mut result = Map::new();
+  result.insert("path".into(), json!(path));
+  result.insert("kind".into(), json!(kind));
+  result.insert("readonly".into(), json!(true));
+
+  if let Some(size) = data
+    .get("size")
+    .filter(|v| !v.is_null())
+    .or_else(|| data.get("length").filter(|v| !v.is_null()))
+  {
+    result.insert("size".into(), size.clone());
+  }
+  if let Some(base) = data.get("base_type").filter(|v| !v.is_null()) {
+    let formatted = format_type_ref(base);
+    if !formatted.is_empty() {
+      result.insert("base_type".into(), json!(formatted));
+    }
+  }
+  if let Some(desc) = data
+    .get("description")
+    .and_then(Value::as_str)
+    .filter(|s| !s.is_empty())
+  {
+    result.insert("description".into(), json!(desc));
+  }
+
+  if kind == "struct" || kind == "union" {
+    let fields: Vec<Value> = non_undefined_fields(data)
+      .into_iter()
+      .enumerate()
+      .map(|(index, field)| {
+        let mut m = Map::new();
+        m.insert("id".into(), json!(index.to_string()));
+        if kind == "struct"
+          && let Some(offset) = field.get("offset").filter(|v| !v.is_null())
+        {
+          m.insert("offset".into(), offset.clone());
+        }
+        m.insert(
+          "name".into(),
+          json!(field.get("name").and_then(Value::as_str).unwrap_or("")),
+        );
+        let dt = field.get("data_type").unwrap_or(&Value::Null);
+        m.insert("type".into(), json!(format_type_ref(dt)));
+        if let Some(len) = field.get("length").filter(|v| !v.is_null()) {
+          let zero_len = len.as_i64() == Some(0) || len.as_u64() == Some(0);
+          if dt.get("kind").and_then(Value::as_str) != Some("array") || zero_len {
+            m.insert("length".into(), len.clone());
+          }
+        }
+        if let Some(comment) = field
+          .get("comment")
+          .and_then(Value::as_str)
+          .filter(|s| !s.is_empty())
+        {
+          m.insert("comment".into(), json!(comment));
+        }
+        Value::Object(m)
+      })
+      .collect();
+    result.insert("fields".into(), Value::Array(fields));
+  } else if kind == "enum" {
+    let values: Vec<Value> = data
+      .get("values")
+      .and_then(Value::as_array)
+      .map(|arr| {
+        arr
+          .iter()
+          .enumerate()
+          .map(|(index, val)| {
+            let mut m = Map::new();
+            m.insert("id".into(), json!(index.to_string()));
+            m.insert(
+              "name".into(),
+              json!(val.get("name").and_then(Value::as_str).unwrap_or("")),
+            );
+            let raw_val = match val.get("value") {
+              Some(v) if safe_i64_from_value(Some(v)).is_some() => v.clone(),
+              Some(Value::Number(num)) => Value::String(num.to_string()),
+              Some(Value::String(s)) => Value::String(s.clone()),
+              _ => json!(0),
+            };
+            m.insert("value".into(), raw_val);
+            if let Some(comment) = val
+              .get("comment")
+              .and_then(Value::as_str)
+              .filter(|s| !s.is_empty())
+            {
+              m.insert("comment".into(), json!(comment));
+            }
+            Value::Object(m)
+          })
+          .collect()
+      })
+      .unwrap_or_default();
+    result.insert("values".into(), Value::Array(values));
+  } else if kind == "function"
+    && let Some(sig) = data
+      .get("signature")
+      .filter(|v| v.as_object().is_some_and(|m| !m.is_empty()))
+  {
+    let params: Vec<Value> = sig
+      .get("parameters")
+      .and_then(Value::as_array)
+      .map(|arr| {
+        arr
+          .iter()
+          .map(|p| {
+            json!({
+              "name": p.get("name").and_then(Value::as_str).unwrap_or(""),
+              "type": format_type_ref(p.get("data_type").unwrap_or(&Value::Null)),
+            })
+          })
+          .collect()
+      })
+      .unwrap_or_default();
+    let cc = sig
+      .get("calling_convention")
+      .and_then(Value::as_str)
+      .filter(|s| !s.is_empty())
+      .unwrap_or("default");
+    result.insert(
+      "signature".into(),
+      json!({
+        "return_type": format_type_ref(sig.get("return_type").unwrap_or(&Value::Null)),
+        "calling_convention": cc,
+        "has_var_args": sig.get("has_var_args").and_then(Value::as_bool) == Some(true),
+        "has_no_return": sig.get("has_no_return").and_then(Value::as_bool) == Some(true),
+        "parameters": params,
+      }),
+    );
+  }
+
+  Value::Object(result)
+}
+
 /// Replaces line breaks in comment banner text with spaces.
 fn sanitize_comment_line(value: &str) -> String {
   value
@@ -290,6 +433,14 @@ fn format_model_in_canonical_order(model: &Value) -> String {
   let kind_val = model.get("kind").and_then(Value::as_str).unwrap_or("");
   let kind = json_str(&model["kind"]);
   let mut out = format!("{{\n  \"path\": {path},\n  \"kind\": {kind}");
+  if let Some(readonly) = model.get("readonly") {
+    out.push_str(&format!(",\n  \"readonly\": {}", json_str(readonly)));
+  }
+  for meta_key in ["size", "base_type", "description"] {
+    if let Some(meta_val) = model.get(meta_key) {
+      out.push_str(&format!(",\n  \"{meta_key}\": {}", json_str(meta_val)));
+    }
+  }
 
   if kind_val == "struct" || kind_val == "union" {
     let fields = model
@@ -305,13 +456,18 @@ fn format_model_in_canonical_order(model: &Value) -> String {
     for (i, field) in fields.iter().enumerate() {
       out.push_str("    {\n");
       let mut entries = vec![("id", json_str(&field["id"]))];
-      if kind_val == "struct" {
-        entries.push(("offset", json_str(&field["offset"])));
+      if kind_val == "struct"
+        && let Some(offset) = field.get("offset")
+      {
+        entries.push(("offset", json_str(offset)));
       }
       entries.push(("name", json_str(&field["name"])));
       entries.push(("type", json_str(&field["type"])));
       if let Some(len) = field.get("length") {
         entries.push(("length", json_str(len)));
+      }
+      if let Some(comment) = field.get("comment") {
+        entries.push(("comment", json_str(comment)));
       }
       for (j, (k, v)) in entries.iter().enumerate() {
         out.push_str(&format!("      \"{k}\": {v}"));
@@ -343,9 +499,21 @@ fn format_model_in_canonical_order(model: &Value) -> String {
     out.push_str(",\n  \"values\": [\n");
     for (i, val) in values.iter().enumerate() {
       out.push_str("    {\n");
-      out.push_str(&format!("      \"id\": {},\n", json_str(&val["id"])));
-      out.push_str(&format!("      \"name\": {},\n", json_str(&val["name"])));
-      out.push_str(&format!("      \"value\": {}\n", json_str(&val["value"])));
+      let mut entries = vec![
+        ("id", json_str(&val["id"])),
+        ("name", json_str(&val["name"])),
+        ("value", json_str(&val["value"])),
+      ];
+      if let Some(comment) = val.get("comment") {
+        entries.push(("comment", json_str(comment)));
+      }
+      for (j, (k, v)) in entries.iter().enumerate() {
+        out.push_str(&format!("      \"{k}\": {v}"));
+        if j + 1 < entries.len() {
+          out.push(',');
+        }
+        out.push('\n');
+      }
       out.push_str("    }");
       if i + 1 < values.len() {
         out.push(',');
@@ -356,8 +524,9 @@ fn format_model_in_canonical_order(model: &Value) -> String {
     return out;
   }
 
-  if kind_val == "function" {
-    let sig = &model["signature"];
+  if kind_val == "function"
+    && let Some(sig) = model.get("signature")
+  {
     out.push_str(",\n  \"signature\": {\n");
     out.push_str(&format!(
       "    \"return_type\": {},\n",
@@ -418,7 +587,8 @@ pub(super) fn render_type_jsonc(data: &Value, program: &str) -> String {
   );
   if let Some(reason) = reason {
     out.push_str(&format!("// Read-only: {reason}\n"));
-    out.push_str(&serde_json::to_string_pretty(data).unwrap_or_else(|_| "{}".to_owned()));
+    let model = readonly_type_model(data);
+    out.push_str(&format_model_in_canonical_order(&model));
   } else {
     out.push_str(
       "// Save to update the Ghidra project. VS Code Auto Save also saves this document.\n",

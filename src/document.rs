@@ -6,7 +6,7 @@
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, bail, ensure};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tower_lsp_server::ls_types::{Position, Range, TextEdit, Uri};
@@ -540,18 +540,62 @@ pub(crate) fn matches_text(actual: &str, expected: &str) -> bool {
   actual_lines == expected_lines
 }
 
+/// Characters left unencoded inside a virtual URI path segment.
+const URI_SEGMENT: &percent_encoding::AsciiSet = &percent_encoding::NON_ALPHANUMERIC
+  .remove(b'-')
+  .remove(b'_')
+  .remove(b'.')
+  .remove(b'~');
+
 /// Builds a percent-encoded `ghidra://` virtual document URI.
 pub(crate) fn virtual_uri(md5: &str, kind: &str, key: &str) -> Result<Uri> {
-  /// Characters left unencoded inside a URI path segment.
-  const COMPONENT: &percent_encoding::AsciiSet = &percent_encoding::NON_ALPHANUMERIC
-    .remove(b'-')
-    .remove(b'_')
-    .remove(b'.')
-    .remove(b'~');
-  let encoded = percent_encoding::utf8_percent_encode(key, COMPONENT);
+  let encoded = percent_encoding::utf8_percent_encode(key, URI_SEGMENT);
   format!("ghidra://{md5}/{kind}/{encoded}")
     .parse()
     .map_err(Into::into)
+}
+
+/// Builds a canonical `ghidra-type://<md5><encoded_path>.ghidra-type` virtual URI.
+pub(crate) fn type_uri(md5: &str, path: &str) -> Result<Uri> {
+  let trimmed = path
+    .trim()
+    .strip_suffix(".ghidra-type")
+    .or_else(|| path.trim().strip_suffix(".jsonc"))
+    .or_else(|| path.trim().strip_suffix(".md"))
+    .unwrap_or_else(|| path.trim());
+  let mut encoded_path = String::new();
+  for segment in trimmed.split('/').filter(|seg| !seg.is_empty()) {
+    encoded_path.push('/');
+    encoded_path.push_str(&percent_encoding::utf8_percent_encode(segment, URI_SEGMENT).to_string());
+  }
+  ensure!(!encoded_path.is_empty(), "Data type path must not be empty");
+  format!("ghidra-type://{md5}{encoded_path}.ghidra-type")
+    .parse()
+    .map_err(Into::into)
+}
+
+/// Builds a canonical `ghidra-listing://<md5>/listing/<encoded_address>.ghidra-listing` URI.
+pub(crate) fn listing_uri(md5: &str, address: &str) -> Result<Uri> {
+  let trimmed = address.trim();
+  ensure!(
+    !trimmed.is_empty(),
+    "Listing target address must not be empty"
+  );
+  let encoded = percent_encoding::utf8_percent_encode(trimmed, URI_SEGMENT);
+  format!("ghidra-listing://{md5}/listing/{encoded}.ghidra-listing")
+    .parse()
+    .map_err(Into::into)
+}
+
+/// Returns true when `raw` denotes an addressable program-memory location rather than a synthetic space.
+pub(crate) fn is_memory_symbol_address(raw: &str) -> bool {
+  let Some(parsed) = crate::address::parse_address(raw, "ram") else {
+    return false;
+  };
+  !matches!(
+    parsed.space.to_ascii_lowercase().as_str(),
+    "external" | "stack" | "register" | "const" | "unique" | "variable" | "hash" | "other"
+  )
 }
 
 /// Re-encodes any `ghidra://` URI into its canonical percent-encoded form.
@@ -653,6 +697,19 @@ pub(crate) fn extract_label_address(text: &str) -> Option<String> {
     let hex = rest.strip_prefix("r0x").unwrap_or(rest);
     if u64::from_str_radix(hex, 16).is_ok() {
       return Some(format!("ram:{hex}"));
+    }
+  }
+  None
+}
+
+/// Extracts a synthetic `ram:<hex>` address from auto-generated Ghidra global data names.
+pub(crate) fn extract_auto_global_address(text: &str) -> Option<String> {
+  for prefix in ["DAT_", "PTR_", "BYTE_", "WORD_", "DWORD_", "QWORD_", "UNK_"] {
+    if let Some(rest) = text.strip_prefix(prefix) {
+      let hex = rest.rsplit('_').next().unwrap_or(rest);
+      if !hex.is_empty() && u64::from_str_radix(hex, 16).is_ok() {
+        return Some(format!("ram:{hex}"));
+      }
     }
   }
   None

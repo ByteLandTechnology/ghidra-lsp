@@ -100,7 +100,7 @@ code --install-extension editors/vscode/ghidra-lsp-<version>.vsix
 
 ![VS Code 注释与重命名预览](../assets/screenshots/vscode-comments-and-rename.svg)
 
-- **图形化与 JSONC 类型编辑器**：打开 `ghidra-type://<md5>/<path>.ghidra-type?v=3` 时，图形化编辑器顶部显示结构化标题栏（类型徽标 `struct` / `union` / `enum` / `function` 与只读标记、规范路径、总字节数、成员数、未保存状态标记及 **`JSONC`** 并排打开按钮），支持当前聚焦行高亮、拖拽或方向键重排、表尾虚线 `+ Add field` / `+ Add value` / `+ Add parameter` 新增槽位；点击 **`JSONC`** 可在旁侧分栏（`ViewColumn.Beside`）打开同一底层文档的 JSONC 文本视图（纯模型字段，不写入 `$schema` 键，模式校验由 `package.json` 的 `jsonValidation` 绑定 `schemas/data-type.schema.json`），按下保存即执行冲突检测与事务提交。
+- **图形化与 JSONC 类型编辑器**：打开数据类型时默认在 **Ghidra Data Type Editor** 图形化编辑器中加载规范 `ghidra-type://<md5><path>.ghidra-type` 虚拟文档，顶部显示结构化标题栏（类型徽标 `struct` / `union` / `enum` / `function` 与只读说明横幅、规范路径、总字节数、成员数、未保存状态标记及 **`JSONC`** 并排打开按钮），支持当前聚焦行高亮、拖拽或方向键重排、表尾虚线 `+ Add field` / `+ Add value` / `+ Add parameter` 新增槽位；点击 **`JSONC`** 可在旁侧分栏（`ViewColumn.Beside`）打开同一底层文档的 JSONC 文本视图（纯模型字段，不写入 `$schema` 键，模式校验由 `package.json` 的 `jsonValidation` 绑定 `schemas/data-type.schema.json`），按下保存即执行冲突检测与事务提交。
 
 ![VS Code 数据类型编辑器与 JSONC](../assets/screenshots/vscode-type-editor-and-jsonc.svg)
 
