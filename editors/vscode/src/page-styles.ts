@@ -66,6 +66,7 @@ label{font-size:12px;color:var(--vscode-foreground)}
 label>input:not([type=checkbox]),label>select,label>textarea,.form-field>input:not([type=checkbox]),.form-field>select,.form-field>textarea{display:block;width:100%;margin-top:5px}
 input[type=checkbox]{width:auto;margin:0;accent-color:var(--vscode-checkbox-selectBackground,var(--vscode-focusBorder));flex-shrink:0}
 .checkbox,.form-field-check>.checkbox{display:flex;align-items:center;gap:8px;min-height:28px}
+.field-hint{display:block;margin-top:2px;font-size:11px;font-weight:400;line-height:1.45;color:var(--ghidra-muted);overflow-wrap:anywhere}
 .field-error{display:block;margin-top:4px;font-size:11px;line-height:1.35;color:var(--vscode-errorForeground);overflow-wrap:anywhere}
 .field-error[hidden],.field-error:empty{display:none}
 .check-group{display:flex;flex-wrap:wrap;gap:8px 20px;margin:16px 0 0;padding:0;border:0;min-width:0}

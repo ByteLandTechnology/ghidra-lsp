@@ -25,7 +25,7 @@ export const sameTypeData = (a: unknown, b: unknown): boolean => {
     return a === b;
 };
 /** Normalize backend type kind strings to `struct`, `union`, `enum`, or `function`. */
-const kindOf = (data: Data): string => ({ structure: 'struct', function_definition: 'function' }[String(data.kind)] || String(data.kind));
+export const kindOf = (data: Data): string => ({ structure: 'struct', function_definition: 'function' }[String(data.kind ?? '')] || String(data.kind ?? ''));
 /** Return the human-readable reason why `data` is read-only, or undefined when editable. */
 export function readonlyTypeReason(data: Data): string | undefined {
     const kind = kindOf(data);

@@ -8,7 +8,7 @@ import { callIcon } from './call-graph-icons';
 import { Data, escape, FieldError, FieldPath, formControl, object, page, properties, reference, rows } from './web';
 import { formatFriendlyError } from './error';
 import { Call } from './memory';
-import { parseType, reorderTypeMembers, typeModel, typeMutations } from './type-model';
+import { kindOf, parseType, reorderTypeMembers, typeModel, typeMutations } from './type-model';
 
 /** Custom editor viewType identifier for the graphical data type editor. */
 export const typeEditorView = 'ghidra.dataTypeEditor';
@@ -48,8 +48,8 @@ interface TypeHeaderSummary {
 /** Build structured header metadata from a parsed data type model. */
 function typeHeaderSummary(model: unknown, fallbackPath: string, readonly: boolean, fallbackBytes?: number): TypeHeaderSummary {
     const m = object(model);
-    const rawKind = typeof m.kind === 'string' && m.kind ? m.kind : 'type';
-    const kind = ({ structure: 'struct', function_definition: 'function' }[rawKind] || rawKind).toLowerCase();
+    const rawKind = typeof m.kind === 'string' && m.kind ? kindOf(m) : 'type';
+    const kind = rawKind.toLowerCase();
     const path = typeof m.path === 'string' && m.path ? m.path : fallbackPath;
     const explicitSize = typeof m.length === 'number' && m.length >= 0 ? m.length
         : typeof m.size === 'number' && m.size >= 0 ? m.size : undefined;
@@ -126,18 +126,18 @@ export class DataTypeEditorView implements vscode.CustomTextEditorProvider, vsco
             const renderGeneration = ++generation; panelVersion = document.version; pendingSaveError = undefined;
             const errors: ParseError[] = [];
             const model = parse(document.getText(), errors, { allowTrailingComma: true, disallowComments: false });
-            const normalizedKind = ({ structure: 'struct', function_definition: 'function' }[String(object(model).kind)] || String(object(model).kind)).toLowerCase();
+            const modelKind = model && typeof model === 'object' && !Array.isArray(model) ? kindOf(object(model)).toLowerCase() : '';
             const fieldRequired = (path: FieldPath): boolean => {
                 const leaf = String(path[path.length - 1]);
                 if (path[0] === 'signature' && path.length === 2) { return leaf === 'return_type' || leaf === 'calling_convention'; }
                 if (path[0] === 'signature' && path[1] === 'parameters') { return leaf === 'type'; }
                 if (path[0] === 'values') { return leaf === 'name' || leaf === 'value'; }
-                if (path[0] === 'fields') { return leaf === 'type' || (normalizedKind === 'struct' ? leaf === 'offset' : leaf === 'name'); }
+                if (path[0] === 'fields') { return leaf === 'type' || (modelKind === 'struct' ? leaf === 'offset' : leaf === 'name'); }
                 return false;
             };
-            const input = (path: FieldPath, value: unknown, label: string, inline = false, newKey = '', isNewRow = false): string => {
+            const input = (path: FieldPath, value: unknown, label: string, inline = false, newKey = '', isNewRow = false, describedBy = ''): string => {
                 if (typeof value === 'boolean') {
-                    return formControl({ path, label, value, kind: 'checkbox', disabled: readonly, checkboxClass: 'type-flag' });
+                    return formControl({ path, label, describedBy: describedBy || undefined, value, kind: 'checkbox', disabled: readonly, checkboxClass: 'type-flag' });
                 }
                 const leaf = String(path[path.length - 1]);
                 const optionalLength = leaf === 'length';
@@ -146,14 +146,15 @@ export class DataTypeEditorView implements vscode.CustomTextEditorProvider, vsco
                 return formControl({
                     path,
                     label,
+                    describedBy: describedBy || undefined,
                     value: value ?? '',
                     kind: isTypeRef ? 'type' : 'text',
                     inline,
                     required: mandatory && !isNewRow,
                     requiredWhenActive: mandatory && isNewRow,
                     readonly,
-                    placeholder: newKey ? `+ Add ${newKey === 'fields' ? 'field' : newKey === 'values' ? 'value' : 'parameter'}` : optionalLength ? 'Auto' : undefined,
-                    title: !newKey && optionalLength ? 'Leave empty to use the natural size' : undefined,
+                    placeholder: newKey ? `+ Add ${newKey === 'fields' ? 'field' : newKey === 'values' ? 'value' : 'parameter'}` : optionalLength && !readonly ? 'Auto' : undefined,
+                    title: !newKey && optionalLength && !readonly ? 'Leave empty to use the natural size' : undefined,
                     data: {
                         number: String(typeof value === 'number' || ['offset', 'length', 'value'].includes(leaf)),
                         'new-key': newKey || undefined,
@@ -162,7 +163,7 @@ export class DataTypeEditorView implements vscode.CustomTextEditorProvider, vsco
             };
             const list = (key: string, rows: unknown[], fields: string[]): string => {
                 const singular = key === 'fields' ? 'field' : key === 'values' ? 'value' : 'parameter';
-                const columns = fields.filter(field => field !== 'offset' || ['struct', 'structure'].includes(String((model as Record<string, unknown>).kind)));
+                const columns = fields.filter(field => field !== 'offset' || modelKind === 'struct');
                 const base: FieldPath = key === 'parameters' ? ['signature', key] : [key];
                 const canMove = !readonly && (key === 'fields' || key === 'parameters');
                 const entry = (item: unknown, index: number, isNew = false): string => {
@@ -173,14 +174,14 @@ export class DataTypeEditorView implements vscode.CustomTextEditorProvider, vsco
                     return `<tr data-index="${index}"${isNew ? ' data-new="true"' : ''}>${move}${cells}${remove}</tr>`;
                 };
                 const indexed = rows.map((item, index) => ({ item, index }));
-                if (key === 'fields' && String((model as Record<string, unknown>).kind) === 'struct') { indexed.sort((a, b) => Number(object(a.item).offset) - Number(object(b.item).offset)); }
+                if (key === 'fields' && modelKind === 'struct') { indexed.sort((a, b) => Number(object(a.item).offset) - Number(object(b.item).offset)); }
                 const contents = indexed.map(({ item, index }) => entry(item, index)).join('');
                 const nextOffset = rows.reduce<number>((end, item) => Math.max(end, Number(object(item).offset || 0) + Number(object(item).length || 1)), 0);
                 const newItem = key === 'values' ? { name: '', value: 0 } : key === 'parameters' ? { name: '', type: 'int' } : { offset: nextOffset, name: '', type: 'undefined1' };
                 const blank = readonly ? '' : entry(newItem, rows.length, true);
                 const heading = key === 'parameters' ? '<h2>Parameters</h2>' : '';
                 const headers = columns.map(field => `<th scope="col" data-field="${escape(field)}" aria-sort="none"><button type="button" class="type-sort" data-sort="${escape(field)}" aria-label="Sort by ${escape(field)}">${escape(field[0].toUpperCase() + field.slice(1))}<span aria-hidden="true"></span></button></th>`).join('');
-                return `<section class="type-list">${heading}<div class="type-table-wrap"><table class="type-table" data-type-list="${escape(key)}" data-kind="${escape(String((model as Record<string, unknown>).kind))}" data-readonly="${readonly}"><thead><tr>${canMove ? '<th class="type-handle-col" scope="col"><span class="type-sr-only">Move</span></th>' : ''}${headers}${readonly ? '' : '<th class="type-action-col" scope="col"><span class="type-sr-only">Actions</span></th>'}</tr></thead><tbody>${contents}${blank}</tbody></table></div></section>`;
+                return `<section class="type-list">${heading}<div class="type-table-wrap"><table class="type-table" data-type-list="${escape(key)}" data-kind="${escape(modelKind)}" data-readonly="${readonly}"><thead><tr>${canMove ? '<th class="type-handle-col" scope="col"><span class="type-sr-only">Move</span></th>' : ''}${headers}${readonly ? '' : '<th class="type-action-col" scope="col"><span class="type-sr-only">Actions</span></th>'}</tr></thead><tbody>${contents}${blank}</tbody></table></div></section>`;
             };
             let body = '', pageError = '';
             if (readonly && !errors.length && model && typeof model === 'object' && !Array.isArray(model)) {
@@ -421,11 +422,12 @@ export class DataTypeEditorView implements vscode.CustomTextEditorProvider, vsco
                     if (!Array.isArray(items)) { return; }
                     if (message.action === 'remove' && (!Number.isInteger(request.index) || request.index < 0 || request.index >= items.length)) { return; }
                     let next: string, offset: number | string | undefined, focus: EditorFocus | undefined;
+                    const normalizedKind = kindOf(object(model));
                     if (message.action === 'move') {
                         if (!['fields', 'parameters'].includes(request.key)) { return; }
                         if (!Number.isInteger(request.from) || !Number.isInteger(request.to) || request.from < 0 || request.to < 0 || request.from >= items.length || request.to >= items.length || typeof request.before !== 'boolean') { return; }
                         const order = items.map((_, index) => index);
-                        if (request.key === 'fields' && model.kind === 'struct') { order.sort((a, b) => Number(items[a].offset) - Number(items[b].offset)); }
+                        if (request.key === 'fields' && normalizedKind === 'struct') { order.sort((a, b) => Number(items[a].offset) - Number(items[b].offset)); }
                         const source = order.indexOf(request.from), target = order.indexOf(request.to);
                         let destination = target + (request.before ? 0 : 1);
                         if (source < destination) { destination--; }
@@ -437,7 +439,7 @@ export class DataTypeEditorView implements vscode.CustomTextEditorProvider, vsco
                         next = moved.text; focus = { move: { key: request.key, index: moved.index } };
                     } else {
                         if (message.action === 'add' && (request.index !== items.length || typeof request.name !== 'string')) { render(); throw new Error('The member list changed. Try adding it again.'); }
-                        if (message.action === 'add' && request.key === 'fields' && model.kind === 'struct') {
+                        if (message.action === 'add' && request.key === 'fields' && normalizedKind === 'struct') {
                             const raw = await this.call<Data>('ghidra.type', { md5: document.uri.authority, path: typePath(document.uri) }).catch(() => undefined);
                             if (request.generation !== generation || panelVersion !== document.version) { return; }
                             const original = raw ? typeModel(raw).fields || [] : [], source = rows(raw?.fields).filter(field => field.is_undefined !== true);
@@ -453,7 +455,7 @@ export class DataTypeEditorView implements vscode.CustomTextEditorProvider, vsco
                             }, 0);
                             offset = unknownLength ? '' : end;
                         }
-                        const item = request.key === 'values' ? { name: request.name, value: 0 } : request.key === 'parameters' ? { name: request.name, type: 'int' } : { ...(model.kind === 'struct' ? { offset } : {}), name: request.name, type: 'undefined1' };
+                        const item = request.key === 'values' ? { name: request.name, value: 0 } : request.key === 'parameters' ? { name: request.name, type: 'int' } : { ...(normalizedKind === 'struct' ? { offset } : {}), name: request.name, type: 'undefined1' };
                         const edits = modify(text, [...path, message.action === 'remove' ? request.index : -1], message.action === 'remove' ? undefined : item, { isArrayInsertion: message.action === 'add', formattingOptions: { insertSpaces: true, tabSize: 2, eol: '\n' } });
                         next = applyEdits(text, edits);
                         if (message.action === 'remove') { focus = { path: [...path, Math.max(0, Math.min(request.index, items.length - 2)), 'name'] }; }

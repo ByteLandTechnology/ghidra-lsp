@@ -12,7 +12,30 @@ import { commentKinds, CommentKind, InlineComments } from './inline-comments';
 import { callIcon } from './call-graph-icons';
 
 /** Input control descriptor inside a graphical edit form. */
-interface Field { key: string; label: string; value?: unknown; kind?: 'text' | 'number' | 'textarea' | 'checkbox' | 'type'; required?: boolean; min?: number; readonly?: boolean; autofocus?: boolean; }
+interface Field {
+    /** Form value key submitted for this control. */
+    key: string;
+    /** Visible label text rendered for this control. */
+    label: string;
+    /** Optional helper text linked to the control via `aria-describedby`. */
+    description?: string;
+    /** Initial scalar or boolean value rendered in the control. */
+    value?: unknown;
+    /** Control input presentation kind. */
+    kind?: 'text' | 'number' | 'textarea' | 'checkbox' | 'type';
+    /** Whether the control must have a non-empty value on submit. */
+    required?: boolean;
+    /** Minimum valid integer value used when deciding advanced-section placement. */
+    min?: number;
+    /** Render the text control as read-only. */
+    readonly?: boolean;
+    /** Request initial focus when the form opens. */
+    autofocus?: boolean;
+    /** Keep the control outside `<details class="advanced-fields">` even when empty. */
+    alwaysVisible?: boolean;
+    /** Visible line count for `textarea` controls. */
+    rows?: number;
+}
 /** Column descriptor for an editable table grid inside a form. */
 interface Column { key: string; label: string; kind?: 'number' | 'type'; required?: boolean; }
 /** Editable table specification inside a graphical edit form. */
@@ -20,7 +43,18 @@ interface Grid { key: string; label: string; columns: Column[]; values: Data[]; 
 /** Form values and table rows posted back from the edit webview. */
 interface Submission { values: Data; tables: Record<string, Data[]>; }
 /** Post-save update payload returned by a form `save` callback. */
-interface SaveOutcome { close?: boolean; title?: string; tables?: Record<string, Data[]>; }
+interface SaveOutcome {
+    /** Close the form panel immediately after saving. */
+    close?: boolean;
+    /** Updated panel and `<h1>` title after saving. */
+    title?: string;
+    /** Refreshed table rows keyed by table name. */
+    tables?: Record<string, Data[]>;
+    /** Refreshed scalar field values keyed by field name. */
+    savedValues?: Data;
+    /** Custom status announcement shown after saving. */
+    message?: string;
+}
 /** Single backend mutation operation sent to `ghidra.mutate`. */
 interface Mutation { method: string; arguments: Data; }
 /** Read and trim a string field value from form data. */
@@ -37,8 +71,10 @@ function input(field: Field): string {
         path: [field.key],
         name: field.key,
         label: field.label,
+        description: field.description,
         value: field.value,
         kind: field.kind,
+        rows: field.rows,
         required: field.required,
         readonly: field.readonly,
         autofocus: field.autofocus,
@@ -144,11 +180,17 @@ window.addEventListener('message', event => {
             ghidraA11y.syncTable(table);
         }
     }
+    if (message.savedValues?.savedValues) {
+        for (const [key, nextVal] of Object.entries(message.savedValues.savedValues)) {
+            const field = editForm.querySelector('[name="' + key + '"]');
+            if (field && field.type !== 'checkbox') { field.value = String(nextVal ?? ''); }
+        }
+    }
     ghidraA11y.announce('error', '');
     ghidraA11y.announce('status', message.message || 'Saved to the Ghidra project.');
     if (!editForm.contains(document.activeElement)) { submitButton.focus({ preventScroll: true }); }
 });
-const initialFocus = document.querySelector('[autofocus]') || document.querySelector('#edit-form input:not([readonly])') || submitButton;
+const initialFocus = document.querySelector('[autofocus]') || document.querySelector('#edit-form input:not([readonly]), #edit-form textarea:not([readonly])') || submitButton;
 if (initialFocus) {
     initialFocus.focus();
     window.addEventListener('focus', () => { if (document.activeElement === document.body) { initialFocus.focus(); } }, { once: true });
@@ -212,7 +254,7 @@ export class EditingUI implements vscode.Disposable {
         const panel = vscode.window.createWebviewPanel('ghidra.edit', title, vscode.ViewColumn.Active, { enableScripts: true, localResourceRoots: [], retainContextWhenHidden: true });
         this.panels.set(panel, md5); panel.onDidDispose(() => this.panels.delete(panel));
         panel.onDidChangeViewState(event => { if (event.webviewPanel.active) { void this.context.activate(md5).catch(error => vscode.window.showErrorMessage(formatFriendlyError(error))); } });
-        const advanced = fields.filter(field => (field.kind === 'checkbox' && field.key !== 'confirmed' && field.value !== true) || (field.kind === 'textarea' && !field.value) || (field.key === 'category' && (!field.value || field.value === '/')) || (field.key === 'size' && field.value === 0 && (field.min ?? 0) <= 0) || (field.key === 'convention' && ['default', '__cdecl'].includes(String(field.value ?? '').trim().toLowerCase())));
+        const advanced = fields.filter(field => !field.alwaysVisible && ((field.kind === 'checkbox' && field.key !== 'confirmed' && field.value !== true) || (field.kind === 'textarea' && !field.value) || (field.key === 'category' && (!field.value || field.value === '/')) || (field.key === 'size' && field.value === 0 && (field.min ?? 0) <= 0) || (field.key === 'convention' && ['default', '__cdecl'].includes(String(field.value ?? '').trim().toLowerCase()))));
         const visibleFields = fields.filter(field => !advanced.includes(field));
         const controls = visibleFields.filter(field => field.kind !== 'checkbox' && field.kind !== 'textarea');
         const flags = visibleFields.filter(field => field.kind === 'checkbox');
@@ -232,10 +274,10 @@ export class EditingUI implements vscode.Disposable {
                 const savedValues = await save({ values: object(data.values), tables: Object.fromEntries(Object.entries(object(data.tables)).map(([key, values]) => [key, rows(values)])) });
                 if (savedValues?.close) { panel.dispose(); return; }
                 if (savedValues?.title) { panel.title = savedValues.title; }
-                await panel.webview.postMessage({ action: 'result', savedValues, message: 'Saved to the Ghidra project.' });
+                await panel.webview.postMessage({ action: 'result', savedValues, message: savedValues?.message || 'Saved to the Ghidra project.' });
             } catch (error) {
                 const rawMessage = String(error);
-                const uncertain = /may have reached|Modification reached|persistence failed|saving.*failed|saved.*failed|regeneration failed|editor rejected|outcome.*unknown|not persisted/i.test(rawMessage);
+                const uncertain = /may have reached|timed out.*write|Modification reached|persistence failed|saving.*failed|saved.*failed|regeneration failed|editor rejected|outcome.*unknown|not persisted/i.test(rawMessage);
                 let errorPath = error instanceof FieldError ? error.path : [];
                 if (!errorPath.length) {
                     if (/calling[_ ]convention/i.test(rawMessage) && fields.some(field => field.key === 'convention')) { errorPath = ['convention']; }

@@ -71,10 +71,16 @@ export interface FormControlOptions {
     path: FieldPath;
     /** Visible or accessible label that gives the control purpose. */
     label: string;
+    /** Optional helper text rendered below the label and linked via `aria-describedby`. */
+    description?: string;
+    /** Additional space-separated element IDs referenced in `aria-describedby`. */
+    describedBy?: string;
     /** Initial scalar or boolean value rendered in the control. */
     value?: unknown;
     /** Control input presentation kind. */
     kind?: 'text' | 'number' | 'textarea' | 'checkbox' | 'type';
+    /** Optional visible line count for `textarea` controls. */
+    rows?: number;
     /** Optional HTML `name` attribute for form submission data. */
     name?: string;
     /** Optional `data-column` attribute for editable table cells. */
@@ -103,7 +109,9 @@ export interface FormControlOptions {
 /** Render a labeled HTML form control paired with a field error description element. */
 export function formControl(options: FormControlOptions): string {
     const id = options.id || fieldControlId(options.path);
+    const hintId = options.description ? `${id}-hint` : '';
     const errorId = `${id}-error`;
+    const describedBy = [hintId, options.describedBy].filter(Boolean).join(' ');
     const isRequired = Boolean(options.required && !options.readonly && !options.disabled);
     const extraData = Object.entries(options.data || {})
         .filter(([, entryValue]) => entryValue !== undefined)
@@ -113,6 +121,7 @@ export function formControl(options: FormControlOptions): string {
         + (options.name ? ` name="${escape(options.name)}"` : '')
         + (options.column ? ` data-column="${escape(options.column)}"` : '')
         + (options.inline ? ` aria-label="${escape(options.label)}"` : '')
+        + (describedBy ? ` aria-describedby="${escape(describedBy)}"` : '')
         + (isRequired ? ' required aria-required="true"' : '')
         + (options.requiredWhenActive ? ' data-required-when-active="true"' : '')
         + (options.readonly ? ' readonly' : '')
@@ -121,18 +130,20 @@ export function formControl(options: FormControlOptions): string {
         + (options.placeholder !== undefined ? ` placeholder="${escape(options.placeholder)}"` : '')
         + (options.title !== undefined ? ` title="${escape(options.title)}"` : '')
         + extraData;
+    const hintSpan = options.description ? `<span id="${escape(hintId)}" class="field-hint">${escape(options.description)}</span>` : '';
     const errorSpan = `<span id="${escape(errorId)}" class="field-error" hidden></span>`;
     if (options.kind === 'checkbox') {
         const cls = options.checkboxClass || 'checkbox';
         const control = `<input ${common} type="checkbox"${isRequired ? ' aria-invalid="false"' : ''}${options.value === true ? ' checked' : ''}>`;
         return options.inline ? `${control}${errorSpan}`
-            : `<div class="form-field form-field-check"><label class="${escape(cls)}" for="${escape(id)}">${control}${escape(options.label)}</label>${errorSpan}</div>`;
+            : `<div class="form-field form-field-check"><label class="${escape(cls)}" for="${escape(id)}">${control}${escape(options.label)}</label>${hintSpan}${errorSpan}</div>`;
     }
+    const rowsAttr = options.kind === 'textarea' && options.rows ? ` rows="${escape(options.rows)}"` : '';
     const control = options.kind === 'textarea'
-        ? `<textarea ${common}>${escape(options.value)}</textarea>`
+        ? `<textarea ${common}${rowsAttr}>${escape(options.value)}</textarea>`
         : `<input ${common} type="${options.kind === 'number' ? 'number' : 'text'}" value="${escape(options.value)}"${options.kind === 'type' ? ' list="type-options"' : ''}>`;
     if (options.inline) { return `${control}${errorSpan}`; }
-    return `<div class="form-field${options.kind === 'textarea' ? ' full' : ''}"><label for="${escape(id)}">${escape(options.label)}</label>${control}${errorSpan}</div>`;
+    return `<div class="form-field${options.kind === 'textarea' ? ' full' : ''}"><label for="${escape(id)}">${escape(options.label)}</label>${hintSpan}${control}${errorSpan}</div>`;
 }
 /** Render a titled HTML section block. */
 export const section = (title: string, body: string): string => `<section><h2>${escape(title)}</h2>${body}</section>`;
@@ -247,18 +258,38 @@ export function page(title: string, eyebrow: string, subtitle: unknown, body: st
           else if(el.dataset.wasAriaDisabled!==undefined){if(el.dataset.wasAriaDisabled)el.setAttribute('aria-disabled',el.dataset.wasAriaDisabled);else el.removeAttribute('aria-disabled');el.removeAttribute('aria-busy');delete el.dataset.wasAriaDisabled}
         }
       };
+      const syncControl=(el,id,label)=>{
+        const prevErrId=el.dataset.errorId,nextErrId=id+'-error';
+        const errEl=prevErrId?el.closest('tr,form,main')?.querySelector('#'+CSS.escape(prevErrId)):el.nextElementSibling;
+        el.id=id;el.dataset.errorId=nextErrId;
+        if(label)el.setAttribute('aria-label',label);
+        if(errEl?.classList.contains('field-error'))errEl.id=nextErrId;
+        if(prevErrId&&el.hasAttribute('aria-describedby')){el.setAttribute('aria-describedby',el.getAttribute('aria-describedby').split(/\\s+/).map(item=>item===prevErrId?nextErrId:item).join(' '))}
+      };
       const syncTable=table=>{
         if(!table?.tBodies?.[0])return;
+        const typeKey=table.dataset.typeList;
+        if(typeKey){
+          const singular=typeKey==='fields'?'field':typeKey==='values'?'value':'parameter';
+          [...table.tBodies[0].rows].forEach((row,position)=>{
+            const number=position+1;
+            for(const el of row.querySelectorAll('[data-path]')){
+              const field=el.closest('td')?.dataset.field||JSON.parse(el.dataset.path).slice(-1)[0];
+              syncControl(el,'type-'+typeKey+'-'+number+'-'+field,el.dataset.newKey?'Add '+singular:singular+' '+number+' '+field);
+            }
+            const moveBtn=row.querySelector('[data-move]'),removeBtn=row.querySelector('[data-action="remove"]');
+            if(moveBtn){moveBtn.id='type-'+typeKey+'-'+number+'-move';moveBtn.setAttribute('aria-label','Move '+singular+' '+number)}
+            if(removeBtn){removeBtn.id='type-'+typeKey+'-'+number+'-remove';removeBtn.setAttribute('aria-label','Remove '+singular+' '+number)}
+          });
+          return;
+        }
         const key=table.dataset.table,singular=table.dataset.singular||'row',prefix=singular[0].toUpperCase()+singular.slice(1);
         [...table.tBodies[0].rows].forEach((row,rowIndex)=>{
           const number=rowIndex+1;
           for(const el of row.querySelectorAll('[data-column]')){
-            const path=[key,rowIndex,el.dataset.column],id=table.dataset.singular?'grid-'+key+'-'+number+'-'+el.dataset.column:fieldId(path),prevErrId=el.dataset.errorId,nextErrId=id+'-error';
-            const errEl=prevErrId?row.querySelector('#'+CSS.escape(prevErrId)):el.nextElementSibling;
-            el.id=id;el.dataset.path=JSON.stringify(path);el.dataset.errorId=nextErrId;
-            if(el.dataset.label||table.dataset.singular)el.setAttribute('aria-label',prefix+' '+number+' '+(el.dataset.label||el.dataset.column).toLowerCase());
-            if(errEl?.classList.contains('field-error'))errEl.id=nextErrId;
-            if(prevErrId&&el.hasAttribute('aria-describedby')){el.setAttribute('aria-describedby',el.getAttribute('aria-describedby').split(/\\s+/).map(item=>item===prevErrId?nextErrId:item).join(' '))}
+            const path=[key,rowIndex,el.dataset.column],id=table.dataset.singular?'grid-'+key+'-'+number+'-'+el.dataset.column:fieldId(path);
+            el.dataset.path=JSON.stringify(path);
+            syncControl(el,id,(el.dataset.label||table.dataset.singular)?prefix+' '+number+' '+(el.dataset.label||el.dataset.column).toLowerCase():'');
           }
           const button=row.querySelector('[data-remove-row]');
           if(button){button.id='grid-'+key+'-'+number+'-remove';button.setAttribute('aria-label','Remove '+singular+' '+number)}
