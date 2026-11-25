@@ -306,6 +306,26 @@ export const viewStyles = `
 @keyframes inspector-busy-in{to{opacity:1}}
 @keyframes inspector-busy{from{transform:translateX(-100%)}to{transform:translateX(340%)}}
 @media(prefers-reduced-motion:reduce){.inspector-page.is-busy::before{width:100%;opacity:.6;animation:none}}
+@media(hover:hover){.inspector-page[data-view-kind="type-editor"] .type-row-action button,.inspector-page[data-view-kind="type-editor"] .type-row-handle .type-move{opacity:0}.inspector-page[data-view-kind="type-editor"] .type-table tr:hover :is(.type-row-handle,.type-row-handle .type-move,.type-row-action,.type-row-action button),.inspector-page[data-view-kind="type-editor"] .type-table tr:focus-within :is(.type-row-handle,.type-row-handle .type-move,.type-row-action,.type-row-action button){opacity:1}}
+.browser-page tbody tr.selected{outline:2px solid var(--ghidra-active-border);outline-offset:-2px}
+.browser-page tbody tr.selected:focus{outline:2px solid var(--ghidra-active-selection-fg);outline-offset:-2px}
+body.inspector-page[data-view-kind="type-editor"]:is(.vscode-high-contrast,.vscode-high-contrast-light) :is(.type-table input,.type-table tr[data-new] td[data-field="name"] input),body.edit-page:is(.vscode-high-contrast,.vscode-high-contrast-light) .editable input{border:1px solid var(--ghidra-hv-border);background:var(--vscode-input-background)}
+body.inspector-page[data-view-kind="type-editor"]:is(.vscode-high-contrast,.vscode-high-contrast-light) :is(.type-row-handle,.type-row-handle .type-move,.type-row-action,.type-row-action button),body.edit-page:is(.vscode-high-contrast,.vscode-high-contrast-light) .row-remove{opacity:1;transition:none}
+body.inspector-page:is(.vscode-high-contrast,.vscode-high-contrast-light) :is(.icon-button,.inspector-menu>summary,.page-options>summary),body.inspector-page[data-view-kind="type-editor"]:is(.vscode-high-contrast,.vscode-high-contrast-light) :is(.type-icon,.type-actions [data-open-jsonc]),body.browser-page:is(.vscode-high-contrast,.vscode-high-contrast-light) :is(.icon-button:not([aria-pressed="true"]):not([aria-expanded="true"]),.more-actions>summary,.page-options>summary),body.edit-page:is(.vscode-high-contrast,.vscode-high-contrast-light) .row-remove{border:1px solid var(--ghidra-hv-border);color:var(--vscode-foreground)}
+body.browser-page:is(.vscode-high-contrast,.vscode-high-contrast-light) tbody tr.selected,body.browser-page:is(.vscode-high-contrast,.vscode-high-contrast-light) tbody tr.selected:focus{background:var(--vscode-editor-background);color:var(--vscode-foreground);outline:2px solid var(--ghidra-active-border);outline-offset:-2px}
+@media(prefers-contrast:more){
+  .inspector-page[data-view-kind="type-editor"] .type-table input,.inspector-page[data-view-kind="type-editor"] .type-table tr[data-new] td[data-field="name"] input,.edit-page .editable input{border:1px solid var(--ghidra-hv-border);background:var(--vscode-input-background)}
+  .inspector-page[data-view-kind="type-editor"] :is(.type-row-handle,.type-row-handle .type-move,.type-row-action,.type-row-action button),.edit-page .row-remove{opacity:1;transition:none}
+  .inspector-page .icon-button,.browser-page .icon-button:not([aria-pressed="true"]):not([aria-expanded="true"]),.inspector-page[data-view-kind="type-editor"] .type-icon,.edit-page .row-remove,.inspector-menu>summary,.browser-page .more-actions>summary,.page-options>summary,.inspector-page[data-view-kind="type-editor"] .type-actions [data-open-jsonc]{border:1px solid var(--ghidra-hv-border);color:var(--vscode-foreground)}
+}
+@media(forced-colors:active){
+  .inspector-page[data-view-kind="type-editor"] .type-table input,.inspector-page[data-view-kind="type-editor"] .type-table tr[data-new] td[data-field="name"] input,.edit-page .editable input{background:Field;color:FieldText;border:1px solid var(--ghidra-hv-border)}
+  .inspector-page[data-view-kind="type-editor"] :is(.type-row-handle,.type-row-handle .type-move,.type-row-action,.type-row-action button),.edit-page .row-remove{opacity:1;transition:none}
+  .inspector-page .icon-button,.browser-page .icon-button:not([aria-pressed="true"]):not([aria-expanded="true"]),.inspector-page[data-view-kind="type-editor"] .type-icon,.edit-page .row-remove,.inspector-menu>summary,.browser-page .more-actions>summary,.page-options>summary,.inspector-page[data-view-kind="type-editor"] .type-actions [data-open-jsonc]{background:ButtonFace;color:ButtonText;border:1px solid var(--ghidra-hv-border)}
+  .browser-page tbody tr.selected,.browser-page tbody tr.selected:focus,.inspector-page[data-view-kind="type-editor"] .type-table tbody tr:focus-within:not([data-new]){background:var(--ghidra-selection-bg);color:var(--ghidra-selection-fg);box-shadow:none;outline:2px solid var(--ghidra-active-border);outline-offset:-2px}
+  .browser-page tr:focus-visible,.browser-page :is(button,summary,input):focus-visible,.inspector-page :is(button,summary,input):focus-visible,.edit-page :is(button,summary,input,select,textarea):focus-visible{outline:2px solid var(--ghidra-focus);outline-offset:-2px}
+  .browser-page .selection-tools,.inspector-menu-content,.page-options-content,.browser-page #selection-more{background:var(--ghidra-selection-bg);color:var(--ghidra-selection-fg);border:1px solid var(--ghidra-hv-border)}
+}
 `;
 
 /** Format the search toggle tooltip for the active shortcut mode. */
