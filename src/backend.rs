@@ -272,6 +272,19 @@ pub(crate) fn normalize(value: Value) -> Result<Value> {
   Ok(value)
 }
 
+/// Returns true if `error` shows that the server rejected an unsupported parameter or schema.
+pub(crate) fn unsupported_schema(error: &anyhow::Error) -> bool {
+  if unsupported_operation(error) {
+    return true;
+  }
+  let text = format!("{error:#}").to_ascii_lowercase();
+  text.contains("does not accept parameter")
+    || text.contains("is not allowed")
+    || text.contains("unknown_field")
+    || text.contains("unknown field")
+    || text.contains("batch structure validation failed")
+}
+
 /// Fetches all pages from a list operation on `domain` for `md5` and rejects incomplete scans.
 pub(crate) async fn list_all(
   backend: &McpBackend,

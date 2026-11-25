@@ -14,7 +14,7 @@ use super::cfg::{
 };
 use super::{BatchRequest, batch_query};
 use crate::address::{paginate_operation, parse_address, same_address};
-use crate::backend::McpBackend;
+use crate::backend::{McpBackend, unsupported_schema};
 
 /// Function metadata resolved before building a fallback control-flow graph.
 pub(super) struct FallbackCfgRequest<'a> {
@@ -205,30 +205,12 @@ fn partition_blocks(
   }
 }
 
-/// Builds a control-flow graph from `listing` `instruction.list` and `reference` `list` batches.
-pub(super) async fn fallback_control_flow_graph(
+/// Queries outgoing branch references per instruction with `batch.execute`.
+async fn batch_branch_refs(
   backend: &McpBackend,
-  req: FallbackCfgRequest<'_>,
-) -> Result<Value> {
-  let raw_instructions = paginate_operation(
-    backend,
-    "listing",
-    "instruction.list",
-    req.md5,
-    json!({ "scan": { "range": { "start": req.start, "end": req.end }, "timeout_ms": 60000 } }),
-  )
-  .await?;
-  let instructions = filter_body_instructions(backend, &req, raw_instructions).await?;
-  if instructions.is_empty() {
-    return Ok(empty_control_flow(
-      req.md5,
-      req.entry,
-      req.name,
-      "No instructions in this body.",
-      "Ghidra reported no instruction flow.",
-    ));
-  }
-
+  md5: &str,
+  instructions: &[Value],
+) -> Result<HashMap<String, Value>> {
   let branch_requests: Vec<BatchRequest> = instructions
     .iter()
     .enumerate()
@@ -250,7 +232,123 @@ pub(super) async fn fallback_control_flow_graph(
       all: true,
     })
     .collect();
-  let branch_refs = batch_query(backend, req.md5, &branch_requests).await?;
+  batch_query(backend, md5, &branch_requests).await
+}
+
+/// Groups function-scoped reference items under `ref:{index}` keys for `partition_blocks`.
+fn group_scoped_branch_refs(
+  instructions: &[Value],
+  raw_refs: Vec<Value>,
+) -> HashMap<String, Value> {
+  let mut exact_index = HashMap::with_capacity(instructions.len());
+  let mut canon_index = HashMap::with_capacity(instructions.len());
+  for (index, instr) in instructions.iter().enumerate() {
+    let addr = instr.get("address").and_then(Value::as_str).unwrap_or("");
+    exact_index.entry(addr.to_owned()).or_insert(index);
+    if let Some(parsed) = parse_address(addr, "ram") {
+      canon_index.entry(parsed.canonical).or_insert(index);
+    }
+  }
+  let mut grouped: HashMap<usize, Vec<Value>> = HashMap::new();
+  for ref_item in raw_refs {
+    let from = ref_item.get("from").and_then(Value::as_str).unwrap_or("");
+    if !from.is_empty()
+      && let Some(index) = lookup_address_index(&exact_index, &canon_index, from)
+    {
+      grouped.entry(index).or_default().push(ref_item);
+    }
+  }
+  grouped
+    .into_iter()
+    .map(|(index, items)| (format!("ref:{index}"), json!({ "items": items })))
+    .collect()
+}
+
+/// Builds a control-flow graph from `listing` `instruction.list` and `reference` `list` queries.
+pub(super) async fn fallback_control_flow_graph(
+  backend: &McpBackend,
+  req: FallbackCfgRequest<'_>,
+) -> Result<Value> {
+  let scoped_instructions = paginate_operation(
+    backend,
+    "listing",
+    "instruction.list",
+    req.md5,
+    json!({
+      "filter": { "selector": { "kind": "function", "entry": req.entry } },
+      "page": { "limit": 1000 },
+      "scan": { "timeout_ms": 60000 }
+    }),
+  )
+  .await;
+
+  let (instructions, branch_refs) = match scoped_instructions {
+    Ok(instructions) => {
+      if instructions.is_empty() {
+        return Ok(empty_control_flow(
+          req.md5,
+          req.entry,
+          req.name,
+          "No instructions in this body.",
+          "Ghidra reported no instruction flow.",
+        ));
+      }
+      let has_branches = instructions.iter().any(|instr| {
+        let flow = instr.get("flow_type").and_then(Value::as_str).unwrap_or("");
+        flow.contains("JUMP") || flow.contains("BRANCH")
+      });
+      let branch_refs = if has_branches {
+        match paginate_operation(
+          backend,
+          "reference",
+          "list",
+          req.md5,
+          json!({
+            "filter": {
+              "direction": "from",
+              "selector": { "kind": "function", "entry": req.entry }
+            },
+            "page": { "limit": 1000 },
+            "scan": { "timeout_ms": 60000 }
+          }),
+        )
+        .await
+        {
+          Ok(raw_refs) => group_scoped_branch_refs(&instructions, raw_refs),
+          Err(error) if unsupported_schema(&error) => {
+            batch_branch_refs(backend, req.md5, &instructions).await?
+          }
+          Err(error) => return Err(error),
+        }
+      } else {
+        HashMap::new()
+      };
+      (instructions, branch_refs)
+    }
+    Err(error) if unsupported_schema(&error) => {
+      let raw_instructions = paginate_operation(
+        backend,
+        "listing",
+        "instruction.list",
+        req.md5,
+        json!({ "scan": { "range": { "start": req.start, "end": req.end }, "timeout_ms": 60000 } }),
+      )
+      .await?;
+      let instructions = filter_body_instructions(backend, &req, raw_instructions).await?;
+      if instructions.is_empty() {
+        return Ok(empty_control_flow(
+          req.md5,
+          req.entry,
+          req.name,
+          "No instructions in this body.",
+          "Ghidra reported no instruction flow.",
+        ));
+      }
+      let branch_refs = batch_branch_refs(backend, req.md5, &instructions).await?;
+      (instructions, branch_refs)
+    }
+    Err(error) => return Err(error),
+  };
 
   let partitioned = partition_blocks(&instructions, req.entry, &branch_refs);
   let mut blocks_in = Vec::with_capacity(partitioned.starts.len());

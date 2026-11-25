@@ -121,7 +121,7 @@ async fn execute_single_request(
   }
 }
 
-/// Executes many read requests via `batch.execute` with direct fallback for failures or partial pages.
+/// Executes many read requests with `batch.execute`, using direct calls for failures or partial pages.
 pub(super) async fn batch_query(
   backend: &McpBackend,
   md5: &str,

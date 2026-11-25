@@ -1,8 +1,7 @@
 // Copyright 2026 ByteLand Technology Limited
 // SPDX-License-Identifier: MIT
 
-//! Basic-block control-flow graph construction through `listing` `basic_block.list`, with an
-//! `instruction.list` fallback.
+//! Basic-block control-flow graph construction from listing instructions.
 
 use std::collections::{HashMap, HashSet};
 
@@ -11,16 +10,11 @@ use serde_json::{Value, json};
 
 use super::cfg_fallback::{FallbackCfgRequest, fallback_control_flow_graph};
 use super::{format_function_label, resolve_entry};
-use crate::address::{display_address, paginate_operation, parse_address, same_address};
-use crate::backend::{McpBackend, unsupported_operation};
+use crate::address::{display_address, parse_address, same_address};
+use crate::backend::McpBackend;
 use crate::views::decode_bytes_vec;
 
-/// Maximum outgoing edges requested per `listing` `basic_block.list` page.
-const BASIC_BLOCK_MAX_EDGES: usize = 2_000;
-/// Scan timeout in milliseconds kept below the 30-second MCP session lock limit.
-const BASIC_BLOCK_TIMEOUT_MS: u64 = 25_000;
-
-/// Normalized basic-block record shared by native and fallback CFG builders.
+/// Normalized basic-block record shared by control-flow graph builders.
 pub(super) struct CfgBlockInput<'a> {
   /// Block start address string.
   pub(super) start: &'a str,
@@ -56,13 +50,6 @@ fn instruction_byte_length(instr: &Value) -> usize {
 pub(super) fn is_conditional_label(label: &str) -> bool {
   let upper = label.to_ascii_uppercase();
   upper.contains("CONDITIONAL") && !upper.contains("UNCONDITIONAL")
-}
-
-/// Returns true when a backend edge type denotes a fall-through transition.
-fn is_fall_through_type(edge_type: &str) -> bool {
-  edge_type.eq_ignore_ascii_case("FALL_THROUGH")
-    || edge_type.eq_ignore_ascii_case("Fall through")
-    || edge_type.eq_ignore_ascii_case("fall-through")
 }
 
 /// Builds an empty CFG JSON response when a function has no body or instructions.
@@ -353,6 +340,18 @@ pub(super) fn finish_control_flow(
   })
 }
 
+/// Maximum outgoing edges requested per `listing` `basic_block.list` page.
+const BASIC_BLOCK_MAX_EDGES: usize = 2_000;
+/// Scan timeout in milliseconds kept below the 30-second MCP session lock limit.
+const BASIC_BLOCK_TIMEOUT_MS: u64 = 25_000;
+
+/// Returns true when a backend edge type denotes a fall-through transition.
+fn is_fall_through_type(edge_type: &str) -> bool {
+  edge_type.eq_ignore_ascii_case("FALL_THROUGH")
+    || edge_type.eq_ignore_ascii_case("Fall through")
+    || edge_type.eq_ignore_ascii_case("fall-through")
+}
+
 /// Converts raw `basic_block.list` JSON items into normalized [`CfgBlockInput`] values.
 fn normalize_native_blocks<'a>(raw_blocks: &'a [Value], entry: &str) -> Vec<CfgBlockInput<'a>> {
   let mut blocks_in = Vec::with_capacity(raw_blocks.len());
@@ -469,7 +468,7 @@ pub(crate) async fn control_flow_graph(
     ));
   };
 
-  let fetched_blocks = match paginate_operation(
+  let fetched_blocks = match crate::address::paginate_operation(
     backend,
     "listing",
     "basic_block.list",
@@ -486,7 +485,7 @@ pub(crate) async fn control_flow_graph(
   .await
   {
     Ok(blocks) => blocks,
-    Err(error) if unsupported_operation(&error) => {
+    Err(error) if crate::backend::unsupported_operation(&error) => {
       return fallback_control_flow_graph(
         backend,
         FallbackCfgRequest {
