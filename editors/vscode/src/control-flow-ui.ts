@@ -18,9 +18,9 @@ export const controlFlowUiStyles = `
 .cfg-page{--cfg-ground:var(--vscode-editor-background);--cfg-surface:var(--vscode-sideBar-background,var(--vscode-editor-background));--cfg-ink:var(--vscode-foreground);--cfg-muted:var(--ghidra-muted);--cfg-rule:var(--vscode-panel-border);--cfg-focus:var(--ghidra-focus)}
 .flow-page .call-icon{font:16px call-icons;display:inline-block;line-height:1;vertical-align:middle}
 .cfg-topbar{min-height:48px;border-bottom:1px solid var(--cfg-rule);background:var(--cfg-ground)}
-.cfg-heading{display:flex;align-items:center;gap:10px;flex:1 1 140px;min-width:min(140px,100%)}.cfg-identity{display:flex;flex-direction:column;gap:1px;min-width:0;max-width:100%}
+.cfg-heading{display:flex;align-items:center;gap:10px;flex:1 1 140px;min-width:min(140px,100%)}.cfg-identity{display:flex;flex-direction:column;gap:1px;min-width:0}
 .cfg-page .cfg-heading h1{font-size:13px;line-height:1.25;font-weight:600;color:var(--cfg-ink);overflow-wrap:anywhere}
-.cfg-function-name{font-size:11px;line-height:1.25;font-weight:400;color:var(--cfg-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;max-width:100%}
+.cfg-function-name{font-size:11px;line-height:1.25;font-weight:400;color:var(--cfg-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .cfg-page .cfg-icon-button{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;width:32px;height:32px;min-width:24px;min-height:24px;padding:6px;border:0;border-radius:6px;background:transparent;color:var(--vscode-foreground);cursor:pointer}
 .cfg-page button:hover{background:var(--vscode-toolbar-hoverBackground,var(--vscode-list-hoverBackground))}
 .cfg-page .cfg-topbar [aria-pressed="true"],.cfg-page .cfg-topbar [aria-expanded="true"]{background:var(--ghidra-pressed-bg);color:var(--ghidra-accent);box-shadow:inset 0 0 0 1px var(--ghidra-focus)}
@@ -28,7 +28,7 @@ export const controlFlowUiStyles = `
 .cfg-page .flow-canvas:focus-visible{outline:2px solid var(--cfg-focus);outline-offset:-2px}
 .cfg-page .flow-canvas{position:relative;border:0;border-radius:0;background:var(--vscode-editor-background)}
 .cfg-page [hidden]{display:none!important}
-.cfg-page .cfg-zoom{position:absolute;bottom:14px;right:14px;z-index:3;display:flex;gap:0;border:1px solid var(--vscode-panel-border);border-radius:8px;background:var(--vscode-editor-background);box-shadow:0 2px 8px var(--vscode-widget-shadow)}
+.cfg-page .cfg-zoom{position:absolute;bottom:14px;right:14px;z-index:2;display:flex;gap:0;border:1px solid var(--vscode-panel-border);border-radius:8px;background:var(--vscode-editor-background);box-shadow:0 2px 8px var(--vscode-widget-shadow)}
 .cfg-page .cfg-zoom button{min-height:28px;height:auto;min-width:30px;padding:4px 8px;border:0;border-radius:0;background:transparent;color:var(--vscode-foreground)}
 .cfg-page .cfg-zoom #graph-zoom{min-width:50px;font-size:12px;font-variant-numeric:tabular-nums;border-inline:1px solid var(--vscode-panel-border)}
 .cfg-page .cfg-zoom button:first-child{border-radius:7px 0 0 7px}.cfg-page .cfg-zoom button:last-child{border-radius:0 7px 7px 0}
@@ -42,11 +42,17 @@ export const controlFlowUiStyles = `
 .cfg-page .cfg-edge.is-hovered .edge{stroke-width:2.5}
 .cfg-page .cfg-edge.is-active .edge,.cfg-page .cfg-edge:focus-visible .edge{stroke-width:3}
 .cfg-page .flow-canvas.is-tracing .cfg-edge:not(.is-hovered):not(.is-active){opacity:.25}
+.cfg-page .graph-node.edge-endpoint .block-body{stroke:var(--vscode-focusBorder);stroke-width:2}
+.cfg-page .flow-canvas .block-body{stroke-width:1;vector-effect:non-scaling-stroke}
+.cfg-page .flow-canvas .block-header{fill:color-mix(in srgb,var(--cfg-ink) 7%,var(--cfg-ground))}
+.cfg-page .flow-canvas .tok-mnemonic{font-weight:500}
+.cfg-page .flow-canvas .node-title{font-weight:500}
+.cfg-page .flow-canvas .graph-node.selected .block-header{fill:color-mix(in srgb,var(--vscode-focusBorder) 10%,var(--vscode-editor-background))}
 .cfg-overview{position:absolute;right:14px;bottom:52px;z-index:2;width:min(160px,calc(100% - 20px));max-height:calc(100% - 58px);padding:0;margin:0;border:1px solid var(--vscode-editorWidget-border,var(--vscode-panel-border));border-radius:8px;background:var(--vscode-editor-background);box-shadow:0 2px 8px var(--vscode-widget-shadow);overflow:hidden}
 .cfg-page .cfg-overview summary{touch-action:none;user-select:none;cursor:grab;display:flex;align-items:center;gap:6px;min-height:28px;margin:0;padding:4px 8px;font-size:11px;font-weight:500;list-style:none}
-.cfg-overview summary>span:not(.cfg-overview-close){min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cfg-overview summary::-webkit-details-marker{display:none}
-.cfg-overview summary .call-icon{font-size:13px}.cfg-page .cfg-overview-close{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;margin-left:auto;width:26px;height:26px;min-width:24px;min-height:24px;padding:4px;border:0;border-radius:4px;background:transparent;color:var(--vscode-foreground);cursor:pointer}
+.cfg-overview summary>span:not(.call-icon){flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cfg-overview summary .call-icon{font-size:13px;flex-shrink:0}.cfg-page .cfg-overview-close{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;margin-left:auto;width:24px;height:24px;min-width:24px;min-height:24px;padding:4px;border:0;border-radius:4px;background:transparent;color:var(--vscode-foreground);cursor:pointer}
 .cfg-overview summary:active{cursor:grabbing}
 .cfg-page .cfg-overview svg{display:block;width:100%;height:110px;border-top:1px solid var(--cfg-rule);background:var(--cfg-surface);cursor:crosshair}
 .cfg-overview path{fill:none;stroke:var(--vscode-descriptionForeground);stroke-width:2}
@@ -58,9 +64,45 @@ export const controlFlowUiStyles = `
 .cfg-page button,.cfg-page summary{transition:background-color 120ms ease,color 120ms ease}
 @media(prefers-reduced-motion:reduce){.cfg-page *{animation:none!important;transition:none!important}}
 .vscode-high-contrast .cfg-edge,.vscode-high-contrast-light .cfg-edge{opacity:1!important}
-@media(forced-colors:active){.cfg-page .cfg-edge{color:CanvasText}.cfg-page .cfg-zoom,.cfg-overview{border-color:CanvasText}.cfg-overview path{stroke:CanvasText}.cfg-overview rect{fill:CanvasText}.cfg-overview .cfg-map-selected{fill:Highlight}.cfg-overview #cfg-overview-window{stroke:Highlight;fill:Highlight;fill-opacity:.16}}
-@media(max-width:640px){.cfg-topbar{min-height:0}.cfg-heading{gap:6px}.cfg-page .cfg-heading h1{font-size:12px}.cfg-function-name{font-size:11px}.cfg-page .cfg-icon-button{width:28px;height:28px;padding:4px}.cfg-page .cfg-search input{min-height:28px}.cfg-page .cfg-zoom{right:8px;bottom:8px}.cfg-page .cfg-zoom button{min-width:28px;min-height:28px;padding:3px 6px}.cfg-overview{width:min(130px,calc(100% - 16px));right:8px;bottom:42px}.cfg-page .cfg-overview svg{height:68px}}
-@media(max-height:420px){.cfg-topbar{min-height:0}.cfg-page .cfg-icon-button{width:26px;height:26px;padding:4px}.cfg-page .cfg-search input{min-height:24px;padding:2px 6px}.cfg-page .cfg-zoom{right:8px;bottom:6px}.cfg-page .cfg-zoom button{min-height:26px;height:auto;min-width:26px;padding:2px 6px}.cfg-page .cfg-zoom #graph-zoom{min-width:46px}.cfg-overview{width:min(118px,calc(100% - 16px));max-height:calc(100% - 40px);right:8px;bottom:36px}.cfg-overview[open]{display:flex;flex-direction:column}.cfg-page .cfg-overview summary{gap:4px;padding:2px 6px;min-height:24px;flex-shrink:0}.cfg-page .cfg-overview-close{width:24px;height:24px}.cfg-page .cfg-overview svg{height:32px;min-height:24px;flex:1 1 auto}}
+.cfg-page .cfg-icon-button{display:inline-flex}
+.cfg-page .cfg-topbar [aria-pressed="true"],.cfg-page .cfg-topbar [aria-expanded="true"]{width:auto;min-width:32px;gap:3px;padding-inline:6px;border:2px solid var(--ghidra-active-border)}
+.cfg-page .cfg-node.edge-endpoint:not(.selected):not(:focus-visible){border-color:var(--ghidra-focus);outline:1px solid var(--ghidra-focus);outline-offset:0}
+body.cfg-page:is(.vscode-high-contrast,.vscode-high-contrast-light) :is(.cfg-icon-button:not([aria-pressed="true"]):not([aria-expanded="true"]),.cfg-overview-close){border:1px solid var(--ghidra-hv-border)}
+body.cfg-page:is(.vscode-high-contrast,.vscode-high-contrast-light) .cfg-topbar :is([aria-pressed="true"],[aria-expanded="true"]){background:var(--vscode-editor-background);color:var(--vscode-foreground);border:2px solid var(--ghidra-active-border)}
+@media(prefers-contrast:more){.cfg-page .cfg-icon-button:not([aria-pressed="true"]):not([aria-expanded="true"]),.cfg-page .cfg-overview-close{border:1px solid var(--ghidra-hv-border)}}
+@media(forced-colors:active){
+  .cfg-topbar,.cfg-overview,.cfg-page .cfg-zoom{background:var(--ghidra-selection-bg);color:var(--ghidra-selection-fg);border-color:var(--ghidra-hv-border)}
+  .cfg-page .cfg-icon-button:not([aria-pressed="true"]):not([aria-expanded="true"]),.cfg-page .cfg-zoom button,.cfg-page .cfg-overview-close{background:ButtonFace;color:ButtonText;border:1px solid var(--ghidra-hv-border)}
+  .cfg-page .cfg-topbar [aria-pressed="true"],.cfg-page .cfg-topbar [aria-expanded="true"]{background:var(--ghidra-pressed-bg);color:var(--ghidra-selection-fg);border:2px solid var(--ghidra-active-border)}
+  .cfg-page .cfg-edge{opacity:1!important}
+  .cfg-page .flow-canvas svg .block-header,.cfg-page .flow-canvas svg .graph-node.selected .block-header{fill:var(--ghidra-selection-bg);stroke:var(--ghidra-hv-border);stroke-width:1}
+}
+@media(max-width:640px){
+  .cfg-topbar{min-height:40px}
+  .cfg-heading{gap:6px}
+  .cfg-page .cfg-heading h1{font-size:12px}
+  .cfg-function-name{font-size:11px}
+  .cfg-page .cfg-icon-button{width:28px;height:28px;padding:4px}
+  .cfg-page .cfg-topbar :is([aria-pressed="true"],[aria-expanded="true"]){width:auto;min-width:28px;padding-inline:5px}
+  .cfg-page .cfg-search input{min-height:28px}
+  .cfg-page .cfg-zoom{right:8px;bottom:8px}
+  .cfg-page .cfg-zoom button{min-width:28px;min-height:28px;padding:3px 6px}
+  .cfg-overview{width:min(130px,calc(100% - 16px));right:8px;bottom:42px}
+  .cfg-page .cfg-overview svg{height:76px}
+}
+@media(max-height:420px){
+  .cfg-topbar{min-height:32px}
+  .cfg-page .cfg-icon-button{width:24px;height:24px;min-width:24px;min-height:24px;padding:2px}
+  .cfg-page .cfg-topbar :is([aria-pressed="true"],[aria-expanded="true"]){width:auto;min-width:24px;padding-inline:4px}
+  .cfg-page .cfg-search input{min-height:24px;padding:2px 6px}
+  .cfg-page .cfg-zoom{right:6px;bottom:6px}
+  .cfg-page .cfg-zoom button{min-width:24px;min-height:24px;padding:2px 5px}
+  .cfg-page .cfg-zoom #graph-zoom{min-width:42px;font-size:11px}
+  .cfg-overview{right:6px;bottom:34px;max-height:calc(100% - 40px)}
+  .cfg-overview[open]{display:flex;flex-direction:column}
+  .cfg-page .cfg-overview summary{min-height:24px;padding:2px 6px;flex-shrink:0}
+  .cfg-page .cfg-overview svg{flex:1 1 auto;min-height:24px;height:52px}
+}
 `;
 
 /** Client-side script for block search, edge tracing, and keyboard shortcuts in CFG views. */
@@ -95,11 +137,11 @@ export const controlFlowUiScript = String.raw`
       const endDrag=event=>{if(overviewDrag&&event.pointerId===overviewDrag.id){overviewDrag=undefined;persist()}};handle.addEventListener('pointerup',endDrag);handle.addEventListener('pointercancel',endDrag);handle.addEventListener('lostpointercapture',endDrag);
       handle.addEventListener('click',event=>event.preventDefault());handle.addEventListener('keydown',event=>{const delta={ArrowLeft:[-16,0],ArrowRight:[16,0],ArrowUp:[0,-16],ArrowDown:[0,16]}[event.key];if(delta){event.preventDefault();event.stopPropagation();const box=overview.getBoundingClientRect(),bounds=canvas.getBoundingClientRect();setPosition(box.left-bounds.left+delta[0],box.top-bounds.top+delta[1]);persist()}});
       new ResizeObserver(()=>{if(overview.open&&cfgOverviewPosition){setPosition(cfgOverviewPosition.x,cfgOverviewPosition.y);persist()}}).observe(canvas);
-      const placeOverview=()=>{const bounds=canvas.getBoundingClientRect(),w=overview.offsetWidth,h=overview.offsetHeight,pad=Math.min(16,Math.max(6,Math.floor(canvas.clientHeight*.08))),zoomBox=document.querySelector('.cfg-zoom')?.getBoundingClientRect(),zoomClear=zoomBox?Math.max(38,Math.ceil(bounds.bottom-zoomBox.top+6)):52;const candidates=[[pad,pad],[Math.max(pad,canvas.clientWidth-w-pad),pad],[pad,Math.max(pad,canvas.clientHeight-h-zoomClear)],[Math.max(pad,canvas.clientWidth-w-pad),Math.max(pad,canvas.clientHeight-h-zoomClear)]];const blocks=nodes.map(node=>node.getBoundingClientRect());const boxArea=([x,y],rect)=>Math.max(0,Math.min(bounds.left+x+w,rect.right)-Math.max(bounds.left+x,rect.left))*Math.max(0,Math.min(bounds.top+y+h,rect.bottom)-Math.max(bounds.top+y,rect.top));const overlap=pos=>blocks.reduce((sum,block)=>sum+boxArea(pos,block),0)+(zoomBox?boxArea(pos,zoomBox)*16:0);candidates.sort((a,b)=>overlap(a)-overlap(b));setPosition(...candidates[0])};
-      const autoOverview=()=>{if(canvas.clientWidth<380||canvas.clientHeight<220){return}const view=graphViewport.snapshot(),width=Number(svg.dataset.width)*view.scale,height=Number(svg.dataset.height)*view.scale;const clipped=view.x < -1||view.y < -1||view.x+width>canvas.clientWidth+1||view.y+height>canvas.clientHeight+1;if(clipped&&!overview.open&&!cfgOverviewDismissed){overview.open=true;syncOverview();if(cfgOverviewPosition){setPosition(cfgOverviewPosition.x,cfgOverviewPosition.y)}else{placeOverview()}persist()}};
+      const placeOverview=()=>{const bounds=canvas.getBoundingClientRect(),w=overview.offsetWidth,h=overview.offsetHeight,pad=Math.min(16,Math.max(6,Math.floor(canvas.clientHeight*.06))),zoomEl=document.querySelector('.cfg-zoom'),bottomClear=zoomEl?Math.max(pad,canvas.clientHeight-(zoomEl.getBoundingClientRect().top-bounds.top)+6):58;const candidates=[[pad,pad],[Math.max(pad,canvas.clientWidth-w-pad),pad],[pad,Math.max(pad,canvas.clientHeight-h-bottomClear)],[Math.max(pad,canvas.clientWidth-w-pad),Math.max(pad,canvas.clientHeight-h-bottomClear)]];const blocks=[...nodes.map(node=>(node.classList.contains('cfg-node')?node:node.querySelector('.block-body')||node).getBoundingClientRect()),...(zoomEl?[zoomEl.getBoundingClientRect()]:[])];const overlap=([x,y])=>blocks.reduce((sum,block)=>sum+Math.max(0,Math.min(bounds.left+x+w,block.right)-Math.max(bounds.left+x,block.left))*Math.max(0,Math.min(bounds.top+y+h,block.bottom)-Math.max(bounds.top+y,block.top)),0);candidates.sort((a,b)=>overlap(a)-overlap(b));setPosition(...candidates[0])};
+      const autoOverview=()=>{const view=graphViewport.snapshot(),width=Number(svg.dataset.width)*view.scale,height=Number(svg.dataset.height)*view.scale;const clipped=view.x < -1||view.y < -1||view.x+width>canvas.clientWidth+1||view.y+height>canvas.clientHeight+1;if(clipped&&!overview.open&&!cfgOverviewDismissed){overview.open=true;syncOverview();if(cfgOverviewPosition){setPosition(cfgOverviewPosition.x,cfgOverviewPosition.y)}else{placeOverview()}persist()}};
       canvas.addEventListener('graph-viewport',autoOverview);
       const updateMap=()=>{const view=graphViewport.snapshot(),box=map.viewBox.baseVal,left=Math.max(0,Math.min(box.width,-view.x/view.scale)),top=Math.max(0,Math.min(box.height,-view.y/view.scale)),right=Math.max(left,Math.min(box.width,(canvas.clientWidth-view.x)/view.scale)),bottom=Math.max(top,Math.min(box.height,(canvas.clientHeight-view.y)/view.scale));const w=Math.min(box.width,Math.max(4,right-left)),h=Math.min(box.height,Math.max(4,bottom-top)),wx=Math.max(0,Math.min(box.width-w,left)),wy=Math.max(0,Math.min(box.height-h,top));windowRect.setAttribute('x',wx);windowRect.setAttribute('y',wy);windowRect.setAttribute('width',w);windowRect.setAttribute('height',h);const ids=new Set(nodes.filter(node=>node.classList.contains('selected')).map(node=>node.dataset.node));for(const rect of map.querySelectorAll('[data-map-node]')){rect.classList.toggle('cfg-map-selected',ids.has(rect.dataset.mapNode))}};
-      canvas.addEventListener('graph-viewport',updateMap);new MutationObserver(updateMap).observe(canvas.querySelector('.graph-card-world')||canvas,{subtree:true,attributes:true,attributeFilter:['class']});
+      canvas.addEventListener('graph-viewport',updateMap);new MutationObserver(updateMap).observe(canvas.querySelector('.graph-card-world')||canvas.querySelector('.graph-world'),{subtree:true,attributes:true,attributeFilter:['class']});
       let pointer;const move=event=>{const matrix=map.getScreenCTM();if(!matrix){return}const p=map.createSVGPoint();p.x=event.clientX;p.y=event.clientY;const target=p.matrixTransform(matrix.inverse());graphViewport.center(target.x,target.y)};
       map.addEventListener('pointerdown',event=>{if(event.button!==0){return}event.preventDefault();event.stopPropagation();pointer=event.pointerId;map.setPointerCapture(pointer);map.focus({preventScroll:true});move(event)});map.addEventListener('pointermove',event=>{if(pointer===event.pointerId){move(event)}});for(const event of ['pointerup','pointercancel','lostpointercapture']){map.addEventListener(event,()=>{pointer=undefined})}
       map.addEventListener('keydown',event=>{const delta={ArrowLeft:[-50,0],ArrowRight:[50,0],ArrowUp:[0,-50],ArrowDown:[0,50]}[event.key];if(delta){event.preventDefault();event.stopPropagation();const view=graphViewport.snapshot();graphViewport.center((canvas.clientWidth/2-view.x+delta[0])/view.scale,(canvas.clientHeight/2-view.y+delta[1])/view.scale)}});

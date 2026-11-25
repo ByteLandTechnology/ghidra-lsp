@@ -49,29 +49,16 @@ export const callGraphStyles = `
 .call-page .call-search:not([hidden]){animation:call-reveal 140ms cubic-bezier(.2,.8,.2,1)}
 .call-page .call-canvas{position:relative;min-height:0;border:0;border-radius:0;background:var(--vscode-editor-background)}
 .call-canvas svg{overflow:visible}
-.call-canvas .call-node{display:flex;flex-direction:column;align-items:stretch;width:max-content;min-width:210px;max-width:340px;border:1px solid var(--vscode-contrastBorder,var(--vscode-editorWidget-border,var(--vscode-panel-border)));border-radius:8px;background:var(--vscode-editor-background);color:var(--vscode-foreground);box-shadow:none}
-.call-canvas .call-node.is-root{min-width:240px;background:var(--ghidra-active-selection-bg);color:var(--ghidra-active-selection-fg);border-color:var(--ghidra-focus);outline:1px solid var(--ghidra-focus);outline-offset:0}
-.call-canvas .call-node:hover:not(.is-root){background:var(--vscode-list-hoverBackground);border-color:var(--ghidra-focus)}
-.call-canvas .call-node.selected:not(.is-root){background:var(--ghidra-selection-bg);color:var(--ghidra-selection-fg)}
-.call-canvas .call-node.selected,.call-canvas .call-node:focus-visible,.call-canvas .call-node.search-match,.call-canvas .call-node.edge-endpoint{border-color:var(--ghidra-focus);outline:2px solid var(--ghidra-focus);outline-offset:0;box-shadow:none}
-.call-node-port{display:flex;justify-content:center;align-items:center;padding:1px 8px}
-.call-node-main{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px;padding:8px 8px 8px 12px;min-width:0}
-.call-node-copy{display:flex;flex-direction:column;gap:2px;min-width:0}
-.call-canvas .call-node .node-title{font:500 14px/1.35 var(--vscode-font-family);color:inherit;min-width:0;white-space:normal;overflow-wrap:anywhere}
-.call-canvas .call-node.is-root .node-title{font-size:15px;font-weight:600}
-.call-canvas .call-node .call-root-address{font:500 11.5px/1.35 var(--vscode-editor-font-family,monospace);font-variant-numeric:tabular-nums;color:inherit;opacity:.85;overflow-wrap:anywhere}
-.call-node-actions{display:flex;align-items:center;justify-content:center;flex-shrink:0}
 .call-node-controls{overflow:visible}
-.call-node .call-node-controls{opacity:.82;pointer-events:auto;transition:opacity 140ms ease}
-.call-node:hover .call-node-controls,.call-node:focus-within .call-node-controls,.call-node.selected .call-node-controls,.call-node.is-root .call-node-controls{opacity:1}
+.call-node .call-node-controls{opacity:0;pointer-events:none;transition:opacity 140ms ease}
+.call-node:hover .call-node-controls,.call-node:focus-within .call-node-controls{opacity:1;pointer-events:auto}
+.node-control-content{display:flex;align-items:center;justify-content:center;width:100%;height:100%;font:12px var(--vscode-font-family);color:var(--vscode-foreground);cursor:default}
 .call-node-controls .call-icon{font-size:16px;flex-shrink:0}
-.call-page .node-decompile{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;min-width:28px;min-height:28px;padding:3px;background:transparent;border:0;border-radius:4px;color:var(--ghidra-muted)}
+.call-page .node-decompile{display:flex;align-items:center;justify-content:center;width:28px;height:28px;min-height:0;padding:3px;background:transparent;border:0;border-radius:3px;color:var(--ghidra-muted)}
 .call-node:hover .node-decompile,.call-node:focus-within .node-decompile{color:var(--vscode-foreground)}
 .call-node .node-decompile:hover{background:var(--vscode-list-hoverBackground)}
 .call-node.is-root .node-decompile{color:var(--ghidra-active-selection-fg)}
-.call-page .node-branch{display:inline-flex;align-items:center;justify-content:center;width:52px;height:26px;min-width:52px;min-height:26px;padding:0;border:0;border-radius:6px;background:transparent;color:var(--ghidra-muted);box-shadow:none;cursor:pointer;box-sizing:border-box;transition:color 150ms ease,transform 100ms ease-out}
-.call-page .node-branch[data-direction="callers"]{align-items:flex-end}
-.call-page .node-branch[data-direction="callees"]{align-items:flex-start}
+.call-page .node-branch{display:inline-flex;align-items:center;justify-content:center;width:52px;height:12px;min-height:0;padding:0;border:0;border-radius:6px;background:transparent;color:var(--ghidra-muted);box-shadow:none;cursor:pointer;box-sizing:border-box;transition:color 150ms ease,transform 100ms ease-out}
 .call-page .node-branch[aria-expanded="true"]{color:var(--ghidra-accent)}
 .call-node.is-root .node-branch,.call-node.is-root .node-branch[aria-expanded="true"]{color:color-mix(in srgb,var(--ghidra-active-selection-fg) 84%,transparent)}
 .call-page .node-branch svg.branch-bar{width:48px;height:12px;flex:none;overflow:visible}
@@ -90,13 +77,24 @@ export const callGraphStyles = `
 .call-edge{cursor:pointer;outline:none}
 .call-edge-hit{fill:none;stroke:transparent;stroke-width:14;vector-effect:non-scaling-stroke;pointer-events:stroke}
 .call-canvas .call-edge .edge{pointer-events:none}
+.call-canvas .call-node.edge-endpoint .call-node-body{stroke:var(--ghidra-focus);stroke-width:2}
 .call-page .call-canvas:focus-visible{outline:2px solid var(--ghidra-focus);outline-offset:-3px}
-.call-page .call-zoom{position:absolute;z-index:3;bottom:14px;right:14px;display:flex;gap:0;border:1px solid var(--vscode-panel-border);border-radius:8px;background:var(--vscode-editor-background);box-shadow:0 2px 8px var(--vscode-widget-shadow);overflow:visible}
+.call-page .call-zoom{position:absolute;z-index:2;bottom:14px;right:14px;display:flex;gap:0;border:1px solid var(--vscode-panel-border);border-radius:8px;background:var(--vscode-editor-background);box-shadow:0 2px 8px var(--vscode-widget-shadow);overflow:visible}
 .call-page .call-zoom button{min-height:28px;height:auto;background:transparent;border:0;border-radius:0;min-width:30px;padding:4px 8px}
 .call-page .call-zoom #graph-zoom{font-size:12px;border-inline:1px solid var(--vscode-panel-border);font-variant-numeric:tabular-nums;min-width:50px}
 .call-page .call-zoom button:first-child{border-radius:7px 0 0 7px}
 .call-page .call-zoom button:last-child{border-radius:0 7px 7px 0}
 .call-page [hidden]{display:none!important}
+.call-canvas .call-node-body{fill:var(--vscode-editor-background);stroke:var(--vscode-editorWidget-border,var(--vscode-panel-border));stroke-width:1;vector-effect:non-scaling-stroke;transition:stroke-width 120ms ease}
+.call-canvas .is-root .call-node-body{fill:var(--ghidra-active-selection-bg);stroke:var(--ghidra-focus);stroke-width:2}
+.call-canvas .call-node.selected .call-node-body,.call-canvas .call-node:focus-visible .call-node-body{stroke:var(--ghidra-focus);stroke-width:2}
+.call-canvas .call-node .node-title{font:500 14px var(--vscode-font-family);fill:var(--vscode-foreground)}
+.call-canvas .is-root .node-title{font-size:15px;font-weight:600}
+.call-canvas .is-root .call-root-address{font:500 11.5px var(--vscode-editor-font-family,monospace);font-variant-numeric:tabular-nums;opacity:.92}
+.call-canvas .call-node:hover:not(.is-root) .call-node-body{fill:var(--vscode-list-hoverBackground);stroke:var(--ghidra-focus)}
+.call-canvas .call-node.selected:not(.is-root) .call-node-body{fill:var(--ghidra-selection-bg)}
+.call-canvas .call-node.selected:not(.is-root) text{fill:var(--ghidra-selection-fg)}
+.call-canvas .is-root text{fill:var(--ghidra-active-selection-fg)!important}
 .call-canvas .call-edge{color:var(--vscode-charts-blue,#64a8eb);opacity:.65;transition:opacity 120ms ease}
 .call-canvas .call-edge .edge{stroke-width:1.25;vector-effect:non-scaling-stroke}
 .call-canvas .call-edge.is-hovered{color:var(--ghidra-focus);opacity:1}
@@ -108,11 +106,11 @@ export const callGraphStyles = `
 .call-canvas .call-edge.is-active .edge,.call-canvas .call-edge:focus-visible .edge{stroke-width:3}
 .call-canvas .call-edge.is-hovered .edge{stroke-width:2.5}
 #call-arrow path{fill:var(--vscode-descriptionForeground);fill:context-stroke}
-.call-overview{margin:0;padding:0;position:absolute;z-index:2;right:14px;bottom:52px;width:min(176px,calc(100% - 20px));max-height:calc(100% - 58px);background:var(--vscode-editor-background);border:1px solid var(--vscode-editorWidget-border,var(--vscode-panel-border));border-radius:8px;box-shadow:0 2px 8px var(--vscode-widget-shadow);overflow:hidden;opacity:.95;cursor:default}
+.call-overview{margin:0;padding:0;position:absolute;right:14px;bottom:52px;width:min(176px,calc(100% - 20px));max-height:calc(100% - 58px);background:var(--vscode-editor-background);border:1px solid var(--vscode-editorWidget-border,var(--vscode-panel-border));border-radius:8px;box-shadow:0 2px 8px var(--vscode-widget-shadow);overflow:hidden;opacity:.95;cursor:default}
 .call-overview summary{display:flex;align-items:center;gap:6px;min-height:28px;margin:0!important;padding:4px 8px;font-size:11px;font-weight:500;cursor:pointer;user-select:none;list-style:none}
-.call-overview summary>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .call-overview summary::-webkit-details-marker{display:none}
-.call-overview summary .call-icon{font-size:13px}
+.call-overview summary>span:not(.call-icon){flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.call-overview summary .call-icon{font-size:13px;flex-shrink:0}
 .call-overview summary .call-icon:last-child{margin-left:auto}
 .call-canvas .call-overview svg{display:block;width:100%;height:110px;border-top:1px solid var(--vscode-panel-border);cursor:crosshair;background:var(--vscode-sideBar-background)}
 .call-overview path{fill:none;stroke:var(--vscode-descriptionForeground);stroke-width:2}
@@ -127,40 +125,103 @@ export const callGraphStyles = `
 @keyframes call-reveal{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:translateY(0)}}
 @media(prefers-reduced-motion:reduce){.call-page *{animation:none!important;transition:none!important}}
 .vscode-high-contrast .call-canvas .call-edge,.vscode-high-contrast-light .call-canvas .call-edge{opacity:1!important}
+
+@media(hover:none) and (pointer:coarse){.call-node.is-root .call-node-controls,.call-node.selected .call-node-controls{opacity:1;pointer-events:auto}}
+.call-page .call-icon-button,.call-page #call-menu>summary{display:inline-flex;align-items:center;justify-content:center}
+.call-page .call-topbar .call-icon-button[aria-expanded="true"],.call-page .call-icon-row [aria-pressed="true"]{width:auto;min-width:32px;gap:3px;padding-inline:6px;border:2px solid var(--ghidra-active-border)}
+.call-node.is-root .node-decompile{color:var(--vscode-foreground)}
+.call-page svg .node-branch{height:14px}
+.call-canvas div.call-node .node-branch{width:52px;height:26px;min-width:52px;min-height:26px}
+.call-node.is-root .node-branch{color:color-mix(in srgb,var(--vscode-foreground) 78%,var(--vscode-editor-background))}
+.call-node.is-root .node-branch[aria-expanded="true"]{color:var(--ghidra-focus)}
+.call-node.is-root .node-branch:is(:hover,:focus-visible){color:var(--vscode-foreground)}
+.call-page .node-branch:focus-visible,.call-node.is-root :is(.node-branch,.node-decompile):focus-visible{outline:2px solid var(--ghidra-focus);outline-offset:0}
+.call-canvas div.call-node{display:flex;flex-direction:column;align-items:stretch;width:max-content;min-width:210px;max-width:340px;border:1px solid var(--vscode-contrastBorder,var(--vscode-editorWidget-border,var(--vscode-panel-border)));border-radius:8px;background:var(--vscode-editor-background);color:var(--vscode-foreground);box-shadow:none}
+.call-canvas div.call-node.is-root{min-width:240px;background:var(--vscode-editor-background);color:var(--vscode-foreground);border:2px solid var(--ghidra-active-border);outline:2px solid color-mix(in srgb,var(--ghidra-active-border) 62%,var(--vscode-foreground));outline-offset:2px}
+.call-canvas div.call-node.is-root:is(.selected,:focus-visible,.search-match,.edge-endpoint){border-color:var(--ghidra-active-border);outline:2px solid var(--ghidra-focus);outline-offset:2px}
+.call-canvas div.call-node:not(.is-root):hover{background:var(--vscode-list-hoverBackground);border-color:var(--ghidra-focus)}
+.call-canvas div.call-node.selected:not(.is-root){background:var(--ghidra-selection-bg);color:var(--ghidra-selection-fg)}
+.call-canvas div.call-node:not(.is-root):is(.selected,:focus-visible,.search-match,.edge-endpoint){border-color:var(--ghidra-active-border);outline:2px solid var(--ghidra-active-border);outline-offset:0}
+.call-node-port{display:flex;justify-content:center;align-items:center;padding:1px 8px}
+.call-node-main{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px;padding:8px 8px 8px 12px;min-width:0}
+.call-node-copy{display:flex;flex-direction:column;gap:2px;min-width:0}
+.call-node-actions{display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.call-canvas div.call-node .node-title{color:inherit;min-width:0;white-space:normal;overflow-wrap:anywhere}
+.call-canvas div.call-node.is-root .call-root-address{color:var(--vscode-foreground);opacity:1;overflow-wrap:anywhere}
+.call-canvas .is-root .call-node-body{fill:var(--vscode-editor-background);stroke:var(--ghidra-active-border);stroke-width:3}
+.call-canvas .call-root-ring{fill:none;stroke:color-mix(in srgb,var(--ghidra-active-border) 62%,var(--vscode-foreground));stroke-width:1;vector-effect:non-scaling-stroke;pointer-events:none}
+.call-canvas .call-root-badge-slot{overflow:visible;pointer-events:none}
+.call-canvas .call-root-badge{display:inline-flex;align-items:center;align-self:flex-start;padding:1px 7px;border:1.5px solid var(--ghidra-active-border);border-radius:999px;background:var(--vscode-editor-background);color:var(--vscode-foreground);font:700 9.5px/1.2 var(--vscode-font-family);letter-spacing:.06em;pointer-events:none}
+.call-canvas .call-node-copy .call-root-badge{margin-bottom:2px}
+.call-canvas .call-node.selected:not(.is-root) .call-node-body,.call-canvas .call-node:focus-visible:not(.is-root) .call-node-body{stroke:var(--ghidra-active-border);stroke-width:2.5}
+.call-canvas .is-root .call-root-address{fill:var(--vscode-foreground);opacity:1}
+.call-canvas .is-root text{fill:var(--vscode-foreground)!important}
+body.call-page:is(.vscode-high-contrast,.vscode-high-contrast-light) .call-node .call-node-controls{opacity:1;pointer-events:auto;transition:none}
+body.call-page:is(.vscode-high-contrast,.vscode-high-contrast-light) :is(.node-decompile,.node-branch,.call-topbar .call-icon-button:not([aria-expanded="true"]),#call-menu>summary,#call-function-picker,.call-icon-row button:not([aria-pressed="true"]),.selection-buttons button){background:var(--vscode-button-secondaryBackground,var(--vscode-editor-background));color:var(--vscode-foreground);border:1px solid var(--ghidra-hv-border)}
+body.call-page.vscode-high-contrast .call-canvas .call-edge{color:var(--vscode-charts-blue,#75beff);opacity:1!important}
+body.call-page.vscode-high-contrast-light .call-canvas .call-edge{color:#0f4a85;opacity:1!important}
+body.call-page:is(.vscode-high-contrast,.vscode-high-contrast-light) .call-canvas div.call-node:not(.is-root){background:var(--vscode-editor-background);color:var(--vscode-foreground);border:1.5px solid var(--ghidra-hv-border)}
+body.call-page:is(.vscode-high-contrast,.vscode-high-contrast-light) .call-canvas div.call-node:not(.is-root):is(.selected,:focus-visible,.search-match,.edge-endpoint){background:var(--vscode-editor-background);color:var(--vscode-foreground);border-color:var(--ghidra-active-border);outline:2px solid var(--ghidra-active-border);outline-offset:0}
+body.call-page:is(.vscode-high-contrast,.vscode-high-contrast-light) .call-canvas div.call-node.is-root{background:var(--vscode-editor-background);color:var(--vscode-foreground);border:2px solid var(--ghidra-active-border);outline:2px solid var(--ghidra-hv-border);outline-offset:2px}
+body.call-page:is(.vscode-high-contrast,.vscode-high-contrast-light) .call-canvas div.call-node.is-root:is(.selected,:focus-visible,.search-match,.edge-endpoint){outline-color:var(--ghidra-focus)}
+body.call-page:is(.vscode-high-contrast,.vscode-high-contrast-light) .call-canvas .call-node:not(.is-root) .call-node-body{stroke:var(--ghidra-hv-border);stroke-width:1.5}
+body.call-page:is(.vscode-high-contrast,.vscode-high-contrast-light) .call-canvas .call-node.selected:not(.is-root) .call-node-body{fill:var(--vscode-editor-background);stroke:var(--ghidra-active-border);stroke-width:2.5}
+body.call-page:is(.vscode-high-contrast,.vscode-high-contrast-light) .call-canvas .call-node.selected:not(.is-root) text{fill:var(--vscode-foreground)}
+body.call-page:is(.vscode-high-contrast,.vscode-high-contrast-light) :is(.call-topbar .call-icon-button[aria-expanded="true"],.call-topbar [aria-expanded="true"],.call-icon-row [aria-pressed="true"]){background:var(--vscode-editor-background);color:var(--vscode-foreground);border:2px solid var(--ghidra-active-border)}
+@media(prefers-contrast:more){
+  .call-node .call-node-controls{opacity:1;pointer-events:auto;transition:none}
+  .call-canvas div.call-node:not(.is-root){border:1.5px solid var(--ghidra-hv-border)}
+  .call-page .node-decompile,.call-page .node-branch,.call-page .call-topbar .call-icon-button:not([aria-expanded="true"]),.call-page #call-menu>summary,.call-page #call-function-picker,.call-page .call-icon-row button:not([aria-pressed="true"]),.call-page .selection-buttons button{background:var(--vscode-button-secondaryBackground,var(--vscode-editor-background));color:var(--vscode-foreground);border:1px solid var(--ghidra-hv-border)}
+}
 @media(forced-colors:active){
-.call-canvas .call-node{border-color:CanvasText;forced-color-adjust:none;background:Canvas;color:CanvasText}
-.call-canvas .call-node.is-root{border-color:Highlight;outline:2px solid Highlight}
-.call-canvas .call-node.selected,.call-canvas .call-node:focus-visible,.call-canvas .call-node.search-match,.call-canvas .call-node.edge-endpoint{border-color:Highlight;outline:2px solid Highlight}
-.call-canvas .call-edge{color:CanvasText;opacity:1!important}
-.call-page .call-menu-content,.call-page .call-zoom,.call-overview,.call-page .call-details{border-color:CanvasText}
-.call-overview path{stroke:CanvasText}.call-overview rect{fill:CanvasText}.call-overview .overview-root{fill:Highlight}.call-overview #call-overview-window{stroke:Highlight;fill:Highlight;fill-opacity:.16}
-.call-page .node-branch,.call-page .node-decompile,.call-node.is-root :is(.node-branch,.node-decompile){color:ButtonText;border:1px solid ButtonText}
-.call-node.is-root :is(.node-branch,.node-decompile):focus-visible{outline-color:Highlight}
+  .call-page .call-canvas{background:var(--ghidra-selection-bg)}
+  .call-node .call-node-controls{opacity:1;pointer-events:auto;transition:none}
+  .call-canvas div.call-node{background:var(--ghidra-selection-bg);color:var(--ghidra-selection-fg);border:1.5px solid var(--ghidra-hv-border);forced-color-adjust:none}
+  .call-canvas div.call-node.is-root{background:var(--ghidra-active-selection-bg);color:var(--ghidra-active-selection-fg);border:2px solid var(--ghidra-active-border);outline:2px solid var(--ghidra-hv-border);outline-offset:2px}
+  .call-canvas div.call-node.is-root:is(.selected,:focus-visible,.search-match,.edge-endpoint){outline-color:var(--ghidra-focus)}
+  .call-canvas div.call-node:not(.is-root):is(.selected,:focus-visible,.search-match,.edge-endpoint){background:var(--ghidra-selection-bg);color:var(--ghidra-selection-fg);border-color:var(--ghidra-active-border);outline:2px solid var(--ghidra-active-border);outline-offset:0}
+  .call-canvas div.call-node :is(.node-title,.call-root-address){color:var(--ghidra-selection-fg);opacity:1}
+  .call-canvas .call-root-badge{background:var(--ghidra-selection-bg);color:var(--ghidra-selection-fg);border:1.5px solid var(--ghidra-active-border)}
+  .call-canvas .call-node-body{fill:var(--ghidra-selection-bg);stroke:var(--ghidra-hv-border);stroke-width:1.5}
+  .call-canvas .is-root .call-node-body{fill:var(--ghidra-active-selection-bg);stroke:var(--ghidra-active-border);stroke-width:3}
+  .call-canvas .call-root-ring{stroke:var(--ghidra-hv-border)}
+  .call-canvas .call-node text,.call-canvas .call-node.selected:not(.is-root) text,.call-canvas .is-root text,.call-canvas .is-root .call-root-address{fill:var(--ghidra-selection-fg)!important;opacity:1}
+  .call-canvas .call-node.selected:not(.is-root) .call-node-body,.call-canvas .call-node:focus-visible:not(.is-root) .call-node-body,.call-canvas .call-node.edge-endpoint .call-node-body{fill:var(--ghidra-selection-bg);stroke:var(--ghidra-active-border);stroke-width:2.5}
+  .call-canvas .call-edge{color:var(--ghidra-selection-fg);opacity:1!important}
+  .call-canvas .call-edge.is-active,.call-canvas .call-edge.is-hovered,.call-canvas .call-edge:focus-visible{color:var(--ghidra-active-border);opacity:1!important}
+  #call-arrow path{fill:var(--ghidra-selection-fg);fill:context-stroke}
+  .call-page .node-decompile,.call-page .node-branch,.call-node.selected:not(.is-root) .node-branch,.call-node.is-root .node-branch,.call-node.is-root .node-decompile,.call-page .call-topbar .call-icon-button:not([aria-expanded="true"]),.call-page #call-menu>summary,.call-page #call-function-picker,.call-page .call-icon-row button:not([aria-pressed="true"]),.call-page .selection-buttons button,.call-page .call-zoom button{background:ButtonFace;color:ButtonText;border:1px solid var(--ghidra-hv-border)}
+  .call-page .node-branch:hover,.call-page .node-branch:focus-visible,.call-node.is-root :is(.node-branch,.node-decompile):focus-visible{background:ButtonFace;color:ButtonText;outline:2px solid var(--ghidra-focus);outline-offset:1px}
+  .call-page .call-topbar .call-icon-button[aria-expanded="true"],.call-page .call-topbar [aria-expanded="true"],.call-page .call-icon-row [aria-pressed="true"]{background:var(--ghidra-pressed-bg);color:var(--ghidra-selection-fg);border:2px solid var(--ghidra-active-border)}
+  .call-page .call-menu-content,.call-page .call-zoom,.call-overview,.call-page .call-details{background:var(--ghidra-selection-bg);color:var(--ghidra-selection-fg);border-color:var(--ghidra-hv-border)}
 }
 @media(max-width:640px){
-.call-page .call-topbar{min-height:0}
-.call-page .call-topbar h1{font-size:13px}
-.call-page .call-icon-button,.call-page #call-menu>summary{width:28px;height:28px;padding:4px}
-.call-page .call-search input{min-height:28px}
-.call-page .call-overview{width:min(120px,calc(100% - 16px));right:8px;bottom:42px}
-.call-page .call-overview svg{height:68px}
-.call-page .call-zoom{bottom:8px;right:8px}
-.call-page .call-zoom button{min-width:28px;min-height:28px;padding:3px 6px}
+  .call-page .call-topbar{min-height:40px}
+  .call-page .call-topbar h1{font-size:13px}
+  .call-page .call-icon-button,.call-page #call-menu>summary{width:28px;height:28px;padding:4px}
+  .call-page .call-topbar .call-icon-button[aria-expanded="true"]{width:auto;min-width:28px;padding-inline:5px}
+  .call-page .call-search input{min-height:28px}
+  .call-page .call-overview{width:min(120px,calc(100% - 16px));right:8px;bottom:42px}
+  .call-page .call-overview svg{height:68px}
+  .call-page .call-zoom{bottom:8px;right:8px}
+  .call-page .call-zoom button{min-width:28px;min-height:28px;padding:3px 6px}
 }
 @media(max-height:420px){
-.call-page .call-topbar{min-height:0}
-.call-page .call-icon-button,.call-page #call-menu>summary{width:26px;height:26px;padding:4px}
-.call-page .call-topbar #call-function-picker{min-height:24px;padding:2px 5px;font-size:12px}
-.call-page .call-search input{min-height:24px;padding:2px 6px}
-.call-page .call-zoom{bottom:6px;right:8px}
-.call-page .call-zoom button{min-height:26px;height:auto;min-width:26px;padding:2px 6px}
-.call-page .call-zoom #graph-zoom{min-width:46px}
-.call-page .call-overview{width:min(118px,calc(100% - 16px));max-height:calc(100% - 40px);right:8px;bottom:36px}
-.call-page .call-overview[open]{display:flex;flex-direction:column}
-.call-page .call-overview summary{gap:4px;padding:2px 6px;min-height:24px;flex-shrink:0}
-.call-page .call-overview svg{height:32px;min-height:24px;flex:1 1 auto}
+  .call-page .call-topbar{min-height:32px}
+  .call-page .call-topbar #call-function-picker{min-height:24px;padding:2px 5px}
+  .call-page .call-icon-button,.call-page #call-menu>summary{width:24px;height:24px;min-width:24px;min-height:24px;padding:2px}
+  .call-page .call-topbar .call-icon-button[aria-expanded="true"]{width:auto;min-width:24px;padding-inline:4px}
+  .call-page .call-topbar button{min-height:24px}
+  .call-page .call-search input{min-height:24px;padding:2px 6px}
+  .call-page .call-zoom{bottom:6px;right:6px}
+  .call-page .call-zoom button{min-width:24px;min-height:24px;padding:2px 5px}
+  .call-page .call-zoom #graph-zoom{min-width:42px;font-size:11px}
+  .call-page .call-overview{right:6px;bottom:34px;max-height:calc(100% - 40px)}
+  .call-page .call-overview[open]{display:flex;flex-direction:column}
+  .call-overview summary{min-height:24px;padding:2px 6px;flex-shrink:0}
+  .call-page .call-overview svg{flex:1 1 auto;min-height:24px;height:52px}
+  .call-page .call-details{bottom:34px;left:8px;right:8px;padding:6px 10px}
 }
-@media(hover:none) and (pointer:coarse){.call-node.is-root .call-node-controls,.call-node.selected .call-node-controls{opacity:1;pointer-events:auto}}
 `;
 
 /** Runs after the common selection handlers; all browsing controls use the panel's owning program. */
@@ -170,7 +231,7 @@ export const callGraphScript = String.raw`
       const root=canvas.querySelector('.is-root');
       for(const button of canvas.querySelectorAll('.node-decompile')){button.addEventListener('click',event=>{event.stopPropagation();const node=button.closest('.call-node');send('decompile',{entry:node.dataset.entry,address:node.dataset.entry,kind:'function',label:node.dataset.label})});button.addEventListener('dblclick',event=>event.stopPropagation());button.addEventListener('keydown',event=>event.stopPropagation())}
 
-      const centerCurrent=()=>{if(root){graphViewport.center(Number(root.dataset.x)+Number(root.dataset.width)/2,Number(root.dataset.y)+Number(root.dataset.height)/2)}};
+      const centerCurrent=()=>graphViewport.center(Number(root.dataset.x)+Number(root.dataset.width)/2,Number(root.dataset.y)+Number(root.dataset.height)/2);
       document.getElementById('call-center').addEventListener('click',centerCurrent);
       for(const button of canvas.querySelectorAll('.node-branch')){button.addEventListener('click',event=>{event.stopPropagation();const node=button.closest('.call-node'),view=graphViewport.snapshot();branchAnchor={entry:node.dataset.entry,x:(Number(node.dataset.x)+Number(node.dataset.width)/2)*view.scale+view.x,y:(Number(node.dataset.y)+Number(node.dataset.height)/2)*view.scale+view.y,focusId:button.id};button.disabled=true;persist();send('callGraphToggle',{entry:node.dataset.entry,address:node.dataset.entry,direction:button.dataset.direction,graphRoot:state.entry})});button.addEventListener('dblclick',event=>event.stopPropagation());button.addEventListener('keydown',event=>event.stopPropagation())}
       const details=document.querySelector('.call-details');details.open=samePage&&previous.callDetails===true;details.hidden=!details.open;details.addEventListener('toggle',()=>{details.hidden=!details.open;persist()});

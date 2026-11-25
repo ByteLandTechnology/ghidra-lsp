@@ -4,13 +4,12 @@
 //! Canonical address parsing, structured type references, and defined string queries.
 
 use std::cmp::Ordering;
-use std::collections::HashSet;
 
-use anyhow::{Context, Result, bail, ensure};
+use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::backend::McpBackend;
+use crate::backend::{McpBackend, list_operation};
 
 /// Canonical parsed address components with explicit address space and 64-bit offset.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -434,48 +433,6 @@ pub(crate) fn format_type_ref(value: &Value) -> String {
   }
 }
 
-/// Paginates an MCP list operation (`domain`, `operation`) and enforces scan completion.
-pub(crate) async fn paginate_operation(
-  backend: &McpBackend,
-  domain: &str,
-  operation: &str,
-  md5: &str,
-  mut params: Value,
-) -> Result<Vec<Value>> {
-  let mut items = Vec::new();
-  let mut seen = HashSet::new();
-  loop {
-    let page = backend
-      .call(domain, operation, Some(md5), params.clone())
-      .await?;
-    items.extend(
-      page
-        .get("items")
-        .and_then(Value::as_array)
-        .context("list response lacks items")?
-        .iter()
-        .cloned(),
-    );
-    if let Some(cursor) = page
-      .get("next_cursor")
-      .and_then(Value::as_str)
-      .filter(|s| !s.is_empty())
-    {
-      ensure!(
-        seen.insert(cursor.to_owned()),
-        "backend repeated a pagination cursor"
-      );
-      params["page"] = json!({ "cursor": cursor, "limit": 1000 });
-    } else {
-      ensure!(
-        page.pointer("/scan/complete").and_then(Value::as_bool) != Some(false),
-        "backend scan is incomplete; refresh after analysis finishes"
-      );
-      return Ok(items);
-    }
-  }
-}
-
 /// Returns true when lowercase `lower` contains `utf` followed by an optional separator and digit.
 fn has_utf_digit(lower: &str) -> bool {
   let bytes = lower.as_bytes();
@@ -527,7 +484,7 @@ pub(crate) async fn defined_strings(backend: &McpBackend, md5: &str) -> Result<V
     "page": { "limit": 1000 },
     "scan": { "timeout_ms": 60000 }
   });
-  let units = paginate_operation(backend, "listing", "data_unit.list", md5, params).await?;
+  let units = list_operation(backend, "listing", "data_unit.list", md5, params).await?;
   let scanned = units.len();
   let mut items = Vec::new();
   for unit in &units {
