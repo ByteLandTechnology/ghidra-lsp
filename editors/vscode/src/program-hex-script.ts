@@ -169,7 +169,7 @@ const applyInspector = (startAddr, metaText, rows) => {
   const label = mode === 'be' ? 'Big Endian' : 'Little Endian';
   const head = document.createElement('div'); head.className = 'hex-inspector-head';
   const heading = document.createElement('h2'); heading.textContent = 'Data inspector';
-  const pill = document.createElement('button'); pill.type = 'button'; pill.className = 'hex-endian-pill';
+  const pill = document.createElement('button'); pill.type = 'button'; pill.id = 'hex-endian-toggle'; pill.className = 'hex-endian-pill';
   pill.setAttribute('data-toggle-endian', ''); pill.dataset.endian = mode;
   pill.setAttribute('aria-pressed', String(mode === 'be'));
   pill.setAttribute('aria-label', label + ', toggle byte order');
@@ -215,6 +215,7 @@ const persist = () => {
     inspectorEndian: toInspectorEndian(state.endian),
     bytesPerRow: state.bytesPerRow,
     scrollTop: hexWrap.scrollTop,
+    focusId: document.activeElement?.id || '',
   });
 };
 ${webviewShortcutScript}
@@ -639,7 +640,8 @@ window.addEventListener('message', event => {
     const nextAddr = msg.address || selected;
     const nextLen = msg.length || 1;
     anchorAddress = nextAddr;
-    cursorAddress = nextAddr;
+    const hp = nextLen > 1 ? parseAddr(nextAddr) : null;
+    cursorAddress = hp ? resolveCanonicalAddr(hp.rawSpace, hp.offset + BigInt(nextLen - 1), hp.width) : nextAddr;
     highlightRange(nextAddr, nextLen, false, true, Boolean(msg.fromGoto));
     if (msg.fromGoto) addressInput?.focus({ preventScroll: true });
   } else if (msg.action === 'syncState') {
@@ -677,13 +679,25 @@ window.addEventListener('message', event => {
     if (blockSelect && msg.currentBlockStart) blockSelect.value = msg.currentBlockStart;
     if (msg.sectionLabel) hexMain.setAttribute('aria-label', msg.sectionLabel);
     applyFilter();
-    const nextSel = msg.selectedAddress || selected;
+    const keepBlockSel = Boolean(msg.preserveScroll && selectedKind === 'block' && memoryMap?.querySelector('tr.selected'));
+    const nextSel = keepBlockSel ? selected : (msg.selectedAddress || selected);
     const nextLen = msg.length || 1;
-    if (nextLen <= 1 || !sameAddr(nextSel, selected)) {
-      anchorAddress = nextSel;
-      cursorAddress = nextSel;
+    if (keepBlockSel) {
+      for (const el of hexBody.querySelectorAll('.hb.is-selected,.ha.is-selected,tr.selected')) el.classList.remove('is-selected', 'selected');
+      for (const el of rawByteCells()) el.setAttribute('aria-selected', 'false');
+      syncRovingTabindex('');
+      updateSelectionTools();
+    } else {
+      if (!sameAddr(nextSel, selected) || nextLen !== selectionLength || selectedKind !== 'bytes') {
+        anchorAddress = nextSel;
+        const sp = nextLen > 1 ? parseAddr(nextSel) : null;
+        cursorAddress = sp ? resolveCanonicalAddr(sp.rawSpace, sp.offset + BigInt(nextLen - 1), sp.width) : nextSel;
+      } else if (nextLen <= 1) {
+        anchorAddress = nextSel;
+        cursorAddress = nextSel;
+      }
+      highlightRange(nextSel, nextLen, false, !msg.preserveScroll, Boolean(msg.fromGoto));
     }
-    highlightRange(nextSel, nextLen, false, !msg.preserveScroll, Boolean(msg.fromGoto));
     if (msg.preserveScroll) hexWrap.scrollTop = prevScrollTop;
 
     const focusEmptyFallback = () => {
@@ -732,6 +746,9 @@ window.addEventListener('message', event => {
 applyFilter();
 highlightRange(selected, selectionLength, false, !samePage);
 requestAnimationFrame(() => {
+  if (samePage && previous.focusId && (!document.activeElement || document.activeElement === document.body)) {
+    document.getElementById(previous.focusId)?.focus({ preventScroll: true });
+  }
   persist();
   document.body.dataset.viewReady = 'true';
 });`;

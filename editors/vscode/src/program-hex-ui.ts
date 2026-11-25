@@ -139,7 +139,7 @@ export function renderDataInspectorHtml(
         selectionLength > 1 ? `${selectionLength} bytes selected` : '',
     ].filter(Boolean).join(' · ');
     const endianLabel = endian === 'be' ? 'Big Endian' : 'Little Endian';
-    const headHtml = `<div class="hex-inspector-head"><h2>Data inspector</h2><button type="button" class="hex-endian-pill" data-toggle-endian data-endian="${endian}" aria-pressed="${endian === 'be'}" aria-label="${endianLabel}, toggle byte order" title="Switch byte order">${endianLabel}</button></div>`;
+    const headHtml = `<div class="hex-inspector-head"><h2>Data inspector</h2><button type="button" id="hex-endian-toggle" class="hex-endian-pill" data-toggle-endian data-endian="${endian}" aria-pressed="${endian === 'be'}" aria-label="${endianLabel}, toggle byte order" title="Switch byte order">${endianLabel}</button></div>`;
 
     if (!entries.length) {
         return `${headHtml}<p class="hex-inspector-meta" title="${escape(address)}">${escape(meta || 'Select a byte to inspect decoded values.')}</p>`;
@@ -209,10 +209,10 @@ ${programViewStyles}
     <button type="button" id="sync-toggle" class="icon-button" data-action="toggleSync" aria-pressed="${payload.syncEnabled}" aria-label="Sync cursor with other Ghidra views" title="Sync cursor with other Ghidra views">${callIcon('link')}</button>
     <button type="button" id="open-listing-beside" class="icon-button" data-action="openListingBeside" aria-label="Open Program Listing beside" title="Open Program Listing beside">${callIcon('listing')}</button>
     <details id="page-options" class="page-options">
-      <summary aria-label="View options" title="View options">${callIcon('more')}</summary>
+      <summary id="page-options-button" aria-label="View options" title="View options">${callIcon('more')}</summary>
       <div class="page-options-content">
         <div class="page-options-actions" role="group" aria-label="Page actions">
-          <button type="button" id="page-refresh" class="icon-button" data-action="refresh" aria-label="Refresh" title="Refresh">${callIcon('refresh')}</button>
+          <button type="button" id="page-options-refresh" class="icon-button" data-action="refresh" aria-label="Refresh" title="Refresh">${callIcon('refresh')}</button>
         </div>
         ${blockOptions ? `<label class="pv-option-row">Memory block<select id="block-select" aria-label="Memory block">${blockOptions}</select></label>` : ''}
         <label class="pv-option-row">Byte order<select id="hex-endian" aria-label="Byte order"><option value="little"${payload.endian === 'little' ? ' selected' : ''}>Little-endian</option><option value="big"${payload.endian === 'big' ? ' selected' : ''}>Big-endian</option></select></label>

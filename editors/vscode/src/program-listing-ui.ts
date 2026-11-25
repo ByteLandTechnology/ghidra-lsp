@@ -167,10 +167,10 @@ ${programViewStyles}
     <button type="button" id="sync-toggle" class="icon-button" data-action="toggleSync" aria-pressed="${payload.syncEnabled}" aria-label="Sync cursor with other Ghidra views" title="Sync cursor with other Ghidra views">${callIcon('link')}</button>
     <button type="button" id="open-hex-beside" class="icon-button" data-action="openHexBeside" aria-label="Open Hex view beside" title="Open Hex view beside">${callIcon('memory')}</button>
     <details id="page-options" class="page-options">
-      <summary aria-label="View options" title="View options">${callIcon('more')}</summary>
+      <summary id="page-options-button" aria-label="View options" title="View options">${callIcon('more')}</summary>
       <div class="page-options-content">
         <div class="page-options-actions" role="group" aria-label="Page actions">
-          <button type="button" id="page-refresh" class="icon-button" data-action="refresh" aria-label="Refresh" title="Refresh">${callIcon('refresh')}</button>
+          <button type="button" id="page-options-refresh" class="icon-button" data-action="refresh" aria-label="Refresh" title="Refresh">${callIcon('refresh')}</button>
         </div>
         ${blockOptions ? `<label class="pv-option-row">Memory block<select id="block-select" aria-label="Memory block">${blockOptions}</select></label>` : ''}
         <label><input id="listing-bytes" type="checkbox" checked>Show bytes</label>
@@ -262,6 +262,7 @@ const persist = () => {
     showXrefs: optXrefs.checked,
     collapseRuns: optCollapse.checked,
     scrollTop: wrap.scrollTop,
+    focusId: document.activeElement?.id || '',
   });
 };
 ${webviewShortcutScript}
@@ -613,6 +614,9 @@ bindTableInteractions();
 requestAnimationFrame(() => {
   const initialRow = findUnitRow(selected);
   if (initialRow && !samePage) initialRow.scrollIntoView({ block: 'center' });
+  if (samePage && previous.focusId && (!document.activeElement || document.activeElement === document.body)) {
+    document.getElementById(previous.focusId)?.focus({ preventScroll: true });
+  }
   updateSelectionTools();
   persist();
   document.body.dataset.viewReady = 'true';

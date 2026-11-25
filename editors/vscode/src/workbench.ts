@@ -343,7 +343,7 @@ export class Workbench implements vscode.Disposable {
     /** Build the serializable state snapshot stored inside webview HTML for VS Code reload. */
     private snapshot(state: PanelState): Data {
         return { kind: state.kind, md5: state.md5, address: state.kind === 'listing' ? state.displayAddress || state.address : state.address, entry: state.entry, cursor: state.cursor, previous: state.previous, singleKeyShortcuts: singleKeyShortcutsEnabled(),
-            ...(state.kind === 'listing' || state.kind === 'memory' ? { selected: state.selected, syncEnabled: state.syncEnabled, bytesPerRow: state.pvBytesPerRow, endian: state.pvEndian } : {}),
+            ...(state.kind === 'listing' || state.kind === 'memory' ? { selected: state.selected, selectionLength: state.pvSelectionLength, syncEnabled: state.syncEnabled, bytesPerRow: state.pvBytesPerRow, endian: state.pvEndian } : {}),
             ...(state.kind === 'callGraph' ? { selected: state.entry, selectedEntry: state.entry, callExpansion: state.callExpansion || { callers: [state.entry!], callees: [state.entry!] }, callHistory: state.callHistory || [], callView: state.callView || 'graph', callColumnDirection: state.callColumnDirection || 'callees', callColumnPath: state.callColumnPath || [] } : {}) };
     }
     /** Rehydrate a persisted workbench webview panel after a VS Code window reload. */
@@ -355,6 +355,7 @@ export class Workbench implements vscode.Disposable {
         const state: PanelState = { kind, md5, address: stringOf(saved.address) || undefined, entry: stringOf(saved.entry) || undefined, previous: [], generation: 0, panel };
         if (kind === 'listing' || kind === 'memory') {
             state.selected = stringOf(saved.selected) || state.address;
+            if (Number(saved.selectionLength) > 1) { state.pvSelectionLength = Math.min(64, Math.floor(Number(saved.selectionLength))); }
             if (typeof saved.syncEnabled === 'boolean') { state.syncEnabled = saved.syncEnabled; }
             if (Number(saved.bytesPerRow) === 8 || Number(saved.bytesPerRow) === 16) { state.pvBytesPerRow = Number(saved.bytesPerRow) as 8 | 16; }
             if (saved.endian === 'big' || saved.endian === 'little') { state.pvEndian = saved.endian as ProgramEndian; }

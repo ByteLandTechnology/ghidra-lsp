@@ -314,10 +314,11 @@ export function fitGraphTitle(singleKeyShortcuts: boolean): string {
 
 /** Shared client script for shortcut guards, modifier keys, live updates, and tooltips. */
 export const webviewShortcutScript = String.raw`
-const shortcutGuardSelector='input,select,textarea,[contenteditable]:not([contenteditable="false" i]),button,summary,[role="button"]';
+const shortcutGuardSelector='input,select,textarea,[contenteditable]:not([contenteditable="false" i]),button,summary,[role="button"],[popover]';
 const isShortcutBlockedElement=node=>{const el=node instanceof Element?node:node?.parentElement;return Boolean(el)&&(Boolean(el.isContentEditable)||Boolean(el.closest(shortcutGuardSelector)))};
 const canUseSingleKeyShortcut=(event,directTarget)=>{
   if(state.singleKeyShortcuts===false||event.ctrlKey||event.metaKey||event.altKey||event.isComposing){return false}
+  if(document.querySelector('[popover]:popover-open')){return false}
   if(directTarget&&(event.target!==directTarget||(directTarget.contains(document.activeElement)&&document.activeElement!==directTarget))){return false}
   return !isShortcutBlockedElement(event.target)&&!isShortcutBlockedElement(document.activeElement);
 };
