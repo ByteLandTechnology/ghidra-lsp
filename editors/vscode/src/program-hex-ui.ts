@@ -14,6 +14,7 @@ import { pageStyles } from './page-styles';
 import { addrSpan, programViewStyles } from './program-views-styles';
 import { viewStyles, webviewShortcutScript } from './view-ui';
 import { escape } from './web';
+import { controlId, renderLiveRegions, webviewFocusScript } from './webview-focus';
 
 /** Short byte-order identifier used by the Data Inspector pill toggle. */
 export type InspectorEndian = 'le' | 'be';
@@ -41,6 +42,8 @@ export interface HexViewPayload {
     singleKeyShortcuts?: boolean;
     bytesPerRow: 8 | 16;
     initialInspector: DataInspectorEntry[];
+    error?: string;
+    busy?: boolean;
 }
 
 /** Render the column header cells for an 8-byte or 16-byte hex layout. */
@@ -119,7 +122,7 @@ export function renderHexRowsHtml(chunk: HexChunk, selectedAddress: string, sele
                 ? `?? uninitialized at ${cell.address}${symbolSuffix}`
                 : `${byteStr} at ${cell.address}${symbolSuffix}`;
             const title = `${cell.address}${cell.symbol ? ` · ${cell.symbol}` : ''}${cell.value === null ? ' (uninitialized)' : ''}`;
-            return `<td class="hb${gapClass}${nullClass}${isSel ? ' is-selected' : ''}" data-address="${escape(cell.address)}" data-byte="${cell.value === null ? '' : cell.value}" title="${escape(title)}" aria-label="${escape(ariaLabel)}" aria-selected="${isSel ? 'true' : 'false'}" tabindex="${isFocusStop ? '0' : '-1'}">${byteStr}</td>`;
+            return `<td id="${controlId('hex-byte', cell.address)}" class="hb${gapClass}${nullClass}${isSel ? ' is-selected' : ''}" data-address="${escape(cell.address)}" data-byte="${cell.value === null ? '' : cell.value}" title="${escape(title)}" aria-label="${escape(ariaLabel)}" aria-selected="${isSel ? 'true' : 'false'}" tabindex="${isFocusStop ? '0' : '-1'}">${byteStr}</td>`;
         }).join('');
 
         const asciiHtml = row.cells.map(cell => {
@@ -153,14 +156,14 @@ export function renderDataInspectorHtml(
         selectionLength > 1 ? `${selectionLength} bytes selected` : '',
     ].filter(Boolean).join(' · ');
     const endianLabel = endian === 'be' ? 'Big Endian' : 'Little Endian';
-    const headHtml = `<div class="hex-inspector-head"><h2>Data inspector</h2><button type="button" class="hex-endian-pill" data-toggle-endian data-endian="${endian}" aria-pressed="${endian === 'be'}" aria-label="${endianLabel}, toggle byte order" title="Switch byte order">${endianLabel}</button></div>`;
+    const headHtml = `<div class="hex-inspector-head"><h2>Data inspector</h2><button type="button" id="hex-endian-toggle" class="hex-endian-pill" data-toggle-endian data-endian="${endian}" aria-pressed="${endian === 'be'}" aria-label="${endianLabel}, toggle byte order" title="Switch byte order">${endianLabel}</button></div>`;
 
     if (!entries.length) {
         return `${headHtml}<p class="hex-inspector-meta" title="${escape(address)}">${escape(meta || 'Select a byte to inspect decoded values.')}</p>`;
     }
     const rowsHtml = entries.map(entry => {
         const val = entry.jumpAddress
-            ? `<button type="button" class="hex-ptr-btn" data-jump="${escape(entry.jumpAddress)}" title="Jump to ${escape(entry.jumpAddress)}">${escape(entry.value)} →</button>`
+            ? `<button type="button" id="${controlId('hex-ptr', entry.label)}" class="hex-ptr-btn" data-jump="${escape(entry.jumpAddress)}" title="Jump to ${escape(entry.jumpAddress)}">${escape(entry.value)} →</button>`
             : `<span${entry.rawTitle ? ` title="${escape(entry.rawTitle)}"` : ''}>${escape(entry.value)}</span>`;
         return `<div><dt>${escape(entry.label)}</dt><dd>${val}</dd></div>`;
     }).join('');
@@ -172,9 +175,9 @@ function renderMemoryMapHtml(blocks: MemoryBlockInfo[]): string {
     const rowsHtml = blocks.map(block => {
         const perms = permissionsLabel(block);
         const initText = block.initialized ? 'Yes' : 'No';
-        return `<tr data-address="${escape(block.start)}" data-kind="block" data-label="${escape(block.name)}" tabindex="0"><td>${escape(block.name)}</td><td class="addr">${addrSpan(block.start)}</td><td class="addr">${addrSpan(block.end)}</td><td>${escape(block.length.toString(10))}</td><td>${escape(perms)}</td><td>${escape(initText)}</td></tr>`;
+        return `<tr id="${controlId('hex-block', block.name, block.start)}" data-address="${escape(block.start)}" data-kind="block" data-label="${escape(block.name)}" tabindex="0"><td>${escape(block.name)}</td><td class="addr">${addrSpan(block.start)}</td><td class="addr">${addrSpan(block.end)}</td><td>${escape(block.length.toString(10))}</td><td>${escape(perms)}</td><td>${escape(initText)}</td></tr>`;
     }).join('');
-    return `<details class="memory-map"><summary>Memory map (${blocks.length} blocks)</summary><div class="table-wrap"><table><thead><tr><th scope="col">Block</th><th scope="col">Start</th><th scope="col">End</th><th scope="col">Length</th><th scope="col">Permissions</th><th scope="col">Initialized</th></tr></thead><tbody>${rowsHtml}</tbody></table></div></details>`;
+    return `<details id="memory-map" class="memory-map"><summary id="memory-map-summary">Memory map (${blocks.length} blocks)</summary><div class="table-wrap"><table><thead><tr><th scope="col">Block</th><th scope="col">Start</th><th scope="col">End</th><th scope="col">Length</th><th scope="col">Permissions</th><th scope="col">Initialized</th></tr></thead><tbody>${rowsHtml}</tbody></table></div></details>`;
 }
 
 /** Render the complete HTML webview document for the Memory and Bytes panel. */
@@ -209,24 +212,24 @@ ${pageStyles}
 ${iconFontStyles}
 ${viewStyles}
 ${programViewStyles}
-</style></head><body class="browser-page program-view" data-view-kind="memory"><main>
-<h1 class="page-context">${escape(payload.title)}</h1>
+</style></head><body class="browser-page program-view${payload.busy ? ' is-busy' : ''}" data-view-kind="memory"${payload.busy ? ' aria-busy="true"' : ''}><main>
+<h1 class="page-context" tabindex="-1">${escape(payload.title)}</h1>
 <div class="toolbar pv-toolbar" role="group" aria-label="Hex navigation">
   <div class="pv-nav" role="group" aria-label="History and window">
-    <button type="button" class="icon-button" data-action="navBack" aria-label="Back" title="Back (Alt+Left)"${payload.canBack ? '' : ' disabled'}>${callIcon('back')}</button>
-    <button type="button" class="icon-button" data-action="navForward" aria-label="Forward" title="Forward (Alt+Right)"${payload.canForward ? '' : ' disabled'}>${callIcon('forward')}</button>
+    <button type="button" id="nav-back" class="icon-button" data-action="navBack" aria-label="Back" title="Back (Alt+Left)"${payload.canBack ? '' : ' disabled'}>${callIcon('back')}</button>
+    <button type="button" id="nav-forward" class="icon-button" data-action="navForward" aria-label="Forward" title="Forward (Alt+Right)"${payload.canForward ? '' : ' disabled'}>${callIcon('forward')}</button>
     <span class="pv-step" id="pv-step"${payload.hasMoreBefore || payload.hasMoreAfter ? '' : ' hidden'}><span class="pv-divider" aria-hidden="true"></span><button type="button" id="pager-before" class="icon-button" data-action="loadBefore" aria-label="Previous window" title="Previous window"${payload.hasMoreBefore ? '' : ' disabled'}>${callIcon('up')}</button><button type="button" id="pager-after" class="icon-button" data-action="loadAfter" aria-label="Next window" title="Next window"${payload.hasMoreAfter ? '' : ' disabled'}>${callIcon('down')}</button></span>
   </div>
-  <form id="goto"><input id="address" aria-label="Address" value="${escape(displayAddress(payload.cursorAddress))}" placeholder="Address or +offset…"><button type="submit" aria-label="Go to address" title="Go to address">${callIcon('right')}</button></form>
+  <form id="goto"><input id="address" aria-label="Address" value="${escape(displayAddress(payload.cursorAddress))}" placeholder="Address or +offset…"><button id="goto-submit" type="submit" aria-label="Go to address" title="Go to address">${callIcon('right')}</button></form>
   <div class="browser-search">${callIcon('search')}<input class="search" id="search" aria-label="Filter displayed rows" placeholder="Filter hex, ASCII, or block…"></div>
   <div class="pv-tools" role="group" aria-label="Hex tools">
     <button type="button" id="sync-toggle" class="icon-button" data-action="toggleSync" aria-pressed="${payload.syncEnabled}" aria-label="Sync cursor with other Ghidra views" title="Sync cursor with other Ghidra views">${callIcon('link')}</button>
-    <button type="button" class="icon-button" data-action="openListingBeside" aria-label="Open Program Listing beside" title="Open Program Listing beside">${callIcon('listing')}</button>
+    <button type="button" id="open-listing-beside" class="icon-button" data-action="openListingBeside" aria-label="Open Program Listing beside" title="Open Program Listing beside">${callIcon('listing')}</button>
     <details id="page-options" class="page-options">
-      <summary aria-label="View options" title="View options">${callIcon('more')}</summary>
+      <summary id="page-options-summary" aria-label="View options" title="View options">${callIcon('more')}</summary>
       <div class="page-options-content">
         <div class="page-options-actions" role="group" aria-label="Page actions">
-          <button type="button" class="icon-button" data-action="refresh" aria-label="Refresh" title="Refresh">${callIcon('refresh')}</button>
+          <button type="button" id="page-refresh" class="icon-button" data-action="refresh" aria-label="Refresh" title="Refresh">${callIcon('refresh')}</button>
         </div>
         ${blockOptions ? `<label class="pv-option-row">Memory block<select id="block-select" aria-label="Memory block">${blockOptions}</select></label>` : ''}
         <label class="pv-option-row">Byte order<select id="hex-endian" aria-label="Byte order"><option value="little"${payload.endian === 'little' ? ' selected' : ''}>Little-endian</option><option value="big"${payload.endian === 'big' ? ' selected' : ''}>Big-endian</option></select></label>
@@ -237,6 +240,7 @@ ${programViewStyles}
     </details>
   </div>
 </div>
+${renderLiveRegions({ error: payload.error, busy: payload.busy, includeGotoError: true })}
 <p id="filter-status" role="status" aria-live="polite" hidden></p>
 <div class="hex-workspace">
   <section class="hex-main" aria-label="Memory bytes at ${escape(payload.cursorAddress)}">
@@ -259,13 +263,16 @@ ${renderMemoryMapHtml(payload.blocks)}
 </main>
 <script nonce="${nonce}">
 const vscode = acquireVsCodeApi();
+${webviewFocusScript}
+assignControlIds();
 const state = ${stateJson};
 const previous = vscode.getState() || {};
 const samePage = previous.md5 === state.md5 && previous.kind === 'memory';
+const sameChunk = samePage && previous.address === state.address;
 
-let selected = state.selected || '';
-let selectionLength = state.selectionLength || 1;
-let selectedKind = 'bytes';
+let selected = (sameChunk && previous.selected) || state.selected || '';
+let selectionLength = (sameChunk && previous.selectionLength) || state.selectionLength || 1;
+let selectedKind = (sameChunk && previous.selectedKind) || 'bytes';
 let anchorAddress = selected;
 let primaryAction = 'listing';
 
@@ -393,7 +400,7 @@ const applyInspector = (startAddr, metaText, rows) => {
   const label = mode === 'be' ? 'Big Endian' : 'Little Endian';
   const head = document.createElement('div'); head.className = 'hex-inspector-head';
   const heading = document.createElement('h2'); heading.textContent = 'Data inspector';
-  const pill = document.createElement('button'); pill.type = 'button'; pill.className = 'hex-endian-pill';
+  const pill = document.createElement('button'); pill.type = 'button'; pill.id = 'hex-endian-toggle'; pill.className = 'hex-endian-pill';
   pill.setAttribute('data-toggle-endian', ''); pill.dataset.endian = mode;
   pill.setAttribute('aria-pressed', String(mode === 'be'));
   pill.setAttribute('aria-label', label + ', toggle byte order');
@@ -406,7 +413,7 @@ const applyInspector = (startAddr, metaText, rows) => {
     const dt = document.createElement('dt'); dt.textContent = r.label;
     const dd = document.createElement('dd');
     if (r.jumpAddress) {
-      const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'hex-ptr-btn'; btn.dataset.jump = r.jumpAddress; btn.title = 'Jump to ' + r.jumpAddress; btn.textContent = r.value + ' →';
+      const btn = document.createElement('button'); btn.type = 'button'; btn.id = 'hex-ptr-' + encodeURIComponent(r.label).replace(/'/g, '%27').replace(/-/g, '%2D'); btn.className = 'hex-ptr-btn'; btn.dataset.jump = r.jumpAddress; btn.title = 'Jump to ' + r.jumpAddress; btn.textContent = r.value + ' →';
       dd.append(btn);
     } else {
       const sp = document.createElement('span'); if (r.rawTitle || r.title) sp.title = r.rawTitle || r.title; sp.textContent = r.value;
@@ -422,19 +429,36 @@ const renderInspector = (startAddr, len) => {
   applyInspector(startAddr, data.meta, data.rows);
 };
 
+let persistFrame = 0;
 const persist = () => {
+  if (persistFrame) { cancelAnimationFrame(persistFrame); persistFrame = 0; }
+  const focus = currentFocusDescriptor();
   vscode.setState({
     ...state,
     selected,
+    selectedKind,
     selectionLength,
     filter: search.value,
+    addressDraft: addressInput.value,
+    gotoError: document.getElementById('goto-error')?.textContent || '',
     mapOpen: memoryMap?.open === true,
     showInspector: showInspectorChk.checked,
     endian: state.endian,
     inspectorEndian: toInspectorEndian(state.endian),
     bytesPerRow: state.bytesPerRow,
     scrollTop: hexWrap.scrollTop,
+    scrollLeft: hexWrap.scrollLeft,
+    mapScrollTop: memoryMap?.querySelector('.table-wrap')?.scrollTop || 0,
+    scrollX: window.scrollX,
+    scrollY: window.scrollY,
+    focusId: focus?.id,
+    focus,
+    focusIntent: getFocusIntent(),
   });
+};
+window.__ghidraPersistState = persist;
+const schedulePersist = () => {
+  if (!persistFrame) persistFrame = requestAnimationFrame(() => { persistFrame = 0; persist(); });
 };
 ${webviewShortcutScript}
 
@@ -489,13 +513,9 @@ const highlightRange = (startAddr, len = 1, notify = true, scroll = true) => {
   if (!start) return;
   const clampedLen = Math.max(1, len);
   const endOffset = start.offset + BigInt(clampedLen) - 1n;
-  for (const el of document.querySelectorAll('.hb.is-selected,.ha.is-selected,tr.selected')) {
-    el.classList.remove('is-selected', 'selected');
-  }
+  for (const el of document.querySelectorAll('.hb.is-selected,.ha.is-selected,tr.selected')) el.classList.remove('is-selected', 'selected');
   const byteCells = allByteCells();
-  for (const el of byteCells) {
-    el.setAttribute('aria-selected', 'false');
-  }
+  for (const el of byteCells) el.setAttribute('aria-selected', 'false');
   let firstMatchedRow = null;
   for (const el of byteCells) {
     const p = parseAddr(el.dataset.address);
@@ -503,31 +523,21 @@ const highlightRange = (startAddr, len = 1, notify = true, scroll = true) => {
       el.classList.add('is-selected');
       el.setAttribute('aria-selected', 'true');
       const tr = el.closest('tr');
-      if (tr) {
-        tr.classList.add('selected');
-        tr.dataset.selLen = String(clampedLen);
-        firstMatchedRow ||= tr;
-      }
+      if (tr) { tr.classList.add('selected'); tr.dataset.selLen = String(clampedLen); firstMatchedRow ||= tr; }
     }
   }
   for (const el of allAsciiCells()) {
     const p = parseAddr(el.dataset.address);
-    if (p && p.space === start.space && p.offset >= start.offset && p.offset <= endOffset) {
-      el.classList.add('is-selected');
-    }
+    if (p && p.space === start.space && p.offset >= start.offset && p.offset <= endOffset) el.classList.add('is-selected');
   }
-  selected = startAddr;
-  selectionLength = clampedLen;
-  selectedKind = 'bytes';
+  selected = startAddr; selectionLength = clampedLen; selectedKind = 'bytes';
   syncRovingTabindex(startAddr);
   if (addressInput) addressInput.value = shortAddr(startAddr);
   if (firstMatchedRow && scroll) firstMatchedRow.scrollIntoView({ block: 'nearest' });
   renderInspector(startAddr, selectionLength);
   updateSelectionTools();
   persist();
-  if (notify) {
-    vscode.postMessage({ action: 'selectByte', address: startAddr, length: selectionLength });
-  }
+  if (notify) vscode.postMessage({ action: 'selectByte', address: startAddr, length: selectionLength });
 };
 
 const applyFilter = () => {
@@ -602,15 +612,9 @@ hexBody.addEventListener('click', event => {
 
 hexBody.addEventListener('dblclick', event => {
   const cell = event.target.closest('.hb[data-address]');
-  if (cell?.dataset.address) {
-    vscode.postMessage({ action: 'listing', address: cell.dataset.address, kind: 'bytes' });
-    return;
-  }
-  const rowHeader = event.target.closest('th.addr');
-  const row = rowHeader?.closest('tr.hex-row');
-  if (row?.dataset.address) {
-    vscode.postMessage({ action: 'listing', address: row.dataset.address, kind: 'bytes' });
-  }
+  if (cell?.dataset.address) { vscode.postMessage({ action: 'listing', address: cell.dataset.address, kind: 'bytes' }); return; }
+  const row = event.target.closest('th.addr')?.closest('tr.hex-row');
+  if (row?.dataset.address) vscode.postMessage({ action: 'listing', address: row.dataset.address, kind: 'bytes' });
 });
 
 hexBody.addEventListener('keydown', event => {
@@ -620,11 +624,9 @@ hexBody.addEventListener('keydown', event => {
   const curIdx = cell ? cells.indexOf(cell) : cells.findIndex(c => sameAddr(c.dataset.address, selected));
   const activeCell = curIdx >= 0 ? cells[curIdx] : cells[0];
   let nextCell = null;
-  if (event.key === 'ArrowRight') {
-    nextCell = cells[Math.min(cells.length - 1, curIdx < 0 ? 0 : curIdx + 1)];
-  } else if (event.key === 'ArrowLeft') {
-    nextCell = cells[Math.max(0, curIdx < 0 ? 0 : curIdx - 1)];
-  } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+  if (event.key === 'ArrowRight') nextCell = cells[Math.min(cells.length - 1, curIdx < 0 ? 0 : curIdx + 1)];
+  else if (event.key === 'ArrowLeft') nextCell = cells[Math.max(0, curIdx < 0 ? 0 : curIdx - 1)];
+  else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
     const visibleRows = [...hexBody.querySelectorAll('tr.hex-row:not([hidden])')];
     const curRow = activeCell.closest('tr');
     const rowIdx = curRow ? visibleRows.indexOf(curRow) : -1;
@@ -632,16 +634,11 @@ hexBody.addEventListener('keydown', event => {
     if (nextRowIdx >= 0 && nextRowIdx < visibleRows.length) {
       const colIndex = activeCell.cellIndex;
       const rowByteCells = [...visibleRows[nextRowIdx].querySelectorAll('.hb[data-address]')];
-      nextCell = rowByteCells.find(c => c.cellIndex === colIndex)
-        || (event.key === 'ArrowDown' ? rowByteCells[0] : rowByteCells[rowByteCells.length - 1]);
-    } else {
-      nextCell = event.key === 'ArrowDown' ? cells[cells.length - 1] : cells[0];
-    }
-  } else if (event.key === 'Home') {
-    nextCell = cells[0];
-  } else if (event.key === 'End') {
-    nextCell = cells[cells.length - 1];
-  } else if (event.key === 'Enter' && selected) {
+      nextCell = rowByteCells.find(c => c.cellIndex === colIndex) || (event.key === 'ArrowDown' ? rowByteCells[0] : rowByteCells[rowByteCells.length - 1]);
+    } else nextCell = event.key === 'ArrowDown' ? cells[cells.length - 1] : cells[0];
+  } else if (event.key === 'Home') nextCell = cells[0];
+  else if (event.key === 'End') nextCell = cells[cells.length - 1];
+  else if (event.key === 'Enter' && selected) {
     event.preventDefault();
     vscode.postMessage({ action: 'listing', address: selected, kind: 'bytes' });
     return;
@@ -649,9 +646,7 @@ hexBody.addEventListener('keydown', event => {
   if (nextCell) {
     event.preventDefault();
     const targetAddr = nextCell.dataset.address;
-    anchorAddress = targetAddr;
-    highlightRange(targetAddr, 1, true, true);
-    nextCell.focus({ preventScroll: true });
+    anchorAddress = targetAddr; highlightRange(targetAddr, 1, true, true); nextCell.focus({ preventScroll: true });
   }
 });
 
@@ -694,6 +689,10 @@ document.addEventListener('click', event => {
   const btn = event.target.closest('button[data-action]');
   if (btn && !btn.disabled) {
     const act = btn.dataset.action;
+    if (['navBack', 'navForward', 'refresh', 'loadBefore', 'loadAfter'].includes(act)) {
+      setFocusIntent({ kind: 'control', id: btn.id });
+    }
+    persist();
     if (['navBack', 'navForward', 'refresh', 'loadBefore', 'loadAfter', 'toggleSync', 'openListingBeside'].includes(act)) {
       vscode.postMessage({ action: act });
     } else if (act === 'copyAddress' && selected) {
@@ -711,13 +710,22 @@ document.addEventListener('click', event => {
 
 document.getElementById('goto').addEventListener('submit', event => {
   event.preventDefault();
-  const val = addressInput.value.trim();
-  if (val) vscode.postMessage({ action: 'goto', address: val });
+  setFocusIntent({ kind: 'goto' });
+  persist();
+  vscode.postMessage({ action: 'goto', address: addressInput.value.trim() });
 });
 blockSelect?.addEventListener('change', () => {
-  if (blockSelect.value) { pageOptions.open = false; vscode.postMessage({ action: 'goto', address: blockSelect.value, pushHistory: true }); }
+  if (blockSelect.value) { pageOptions.open = false; persist(); vscode.postMessage({ action: 'goto', address: blockSelect.value, pushHistory: true }); }
+});
+addressInput.addEventListener('input', () => {
+  if (addressInput.getAttribute('aria-invalid') === 'true') setGotoErrorState('', false);
+  persist();
 });
 search.addEventListener('input', () => { applyFilter(); persist(); });
+hexWrap.addEventListener('scroll', schedulePersist, { passive: true });
+memoryMap?.querySelector('.table-wrap')?.addEventListener('scroll', schedulePersist, { passive: true });
+window.addEventListener('scroll', schedulePersist, { passive: true });
+document.addEventListener('focusin', persist);
 document.getElementById('clear-filter').addEventListener('click', () => { search.value = ''; applyFilter(); persist(); search.focus(); });
 endianSelect?.addEventListener('change', () => {
   state.endian = endianSelect.value === 'big' ? 'big' : 'little';
@@ -755,7 +763,10 @@ document.addEventListener('keydown', event => {
 window.addEventListener('message', event => {
   const msg = event.data || {};
   if (msg.action === 'highlight') {
+    setBusyState(false); setErrorState(''); setGotoErrorState('', false);
+    const intent = getFocusIntent(); clearFocusIntent();
     highlightRange(msg.address, msg.length || 1, false, true);
+    if (intent?.kind === 'goto') { addressInput.focus({ preventScroll: true }); persist(); }
   } else if (msg.action === 'syncState') {
     state.syncEnabled = !!msg.syncEnabled;
     syncToggle.setAttribute('aria-pressed', String(state.syncEnabled));
@@ -768,15 +779,22 @@ window.addEventListener('message', event => {
       applyInspector(addr, metaText, msg.entries);
     }
   } else if (msg.action === 'chunkData') {
+    setBusyState(false); setErrorState(''); setGotoErrorState('', false);
+    const intent = getFocusIntent(); clearFocusIntent();
     const prevActive = document.activeElement;
     const focusWasInGrid = !!prevActive && hexBody.contains(prevActive);
+    const navBack = document.getElementById('nav-back');
+    const navForward = document.getElementById('nav-forward');
+    const navButtons = [navBack, navForward, pagerBefore, pagerAfter].filter(Boolean);
+    const focusedNavBtn = navButtons.find(btn => btn === prevActive);
     const hadFocusedElement = !!prevActive && prevActive !== document.body && prevActive !== document.documentElement;
     const nextSelected = msg.selectedAddress || selected;
     state.address = msg.chunkStart;
     hexBody.innerHTML = msg.rowsHtml;
+    assignControlIds(hexBody);
     if (msg.colsHtml) document.getElementById('hex-cols-head').innerHTML = msg.colsHtml;
-    if (typeof msg.canBack === 'boolean') document.querySelector('[data-action="navBack"]').disabled = !msg.canBack;
-    if (typeof msg.canForward === 'boolean') document.querySelector('[data-action="navForward"]').disabled = !msg.canForward;
+    if (typeof msg.canBack === 'boolean' && navBack) navBack.disabled = !msg.canBack;
+    if (typeof msg.canForward === 'boolean' && navForward) navForward.disabled = !msg.canForward;
     if (pvStep) pvStep.hidden = !msg.hasMoreBefore && !msg.hasMoreAfter;
     pagerBefore.disabled = !msg.hasMoreBefore;
     pagerAfter.disabled = !msg.hasMoreAfter;
@@ -785,17 +803,37 @@ window.addEventListener('message', event => {
     if (msg.sectionLabel) hexMain.setAttribute('aria-label', msg.sectionLabel);
     applyFilter();
     highlightRange(nextSelected, msg.length || 1, false, true);
-    if (focusWasInGrid || (hadFocusedElement && (!document.activeElement || document.activeElement === document.body))) {
+    if (intent?.kind === 'goto') {
+      addressInput.focus({ preventScroll: true });
+    } else if (focusedNavBtn && (focusedNavBtn.disabled || focusedNavBtn.closest('[hidden]'))) {
+      const sibling = navButtons.find(btn => btn && !btn.disabled && !btn.closest('[hidden]'));
+      (sibling || syncRovingTabindex(nextSelected))?.focus({ preventScroll: true });
+    } else if (focusWasInGrid || (hadFocusedElement && (!document.activeElement || document.activeElement === document.body))) {
       syncRovingTabindex(nextSelected)?.focus({ preventScroll: true });
     }
+    persist();
   }
 });
 
 applyFilter();
-highlightRange(selected, selectionLength, false, !samePage);
+if (sameChunk && selectedKind === 'block' && memoryMap?.open) {
+  const mapRow = [...memoryMap.querySelectorAll('tbody tr')].find(r => sameAddr(r.dataset.address, selected));
+  if (mapRow) { mapRow.classList.add('selected'); syncRovingTabindex(''); updateSelectionTools(); }
+  else { highlightRange(selected, selectionLength, false, false); }
+} else {
+  highlightRange(selected, selectionLength, false, !sameChunk);
+}
+if (sameChunk && previous.focusIntent?.kind !== 'goto' && typeof previous.addressDraft === 'string') addressInput.value = previous.addressDraft;
+if (samePage && previous.gotoError) setGotoErrorState(previous.gotoError, false);
 requestAnimationFrame(() => {
-  persist();
-  document.body.dataset.viewReady = 'true';
+  if (sameChunk) {
+    hexWrap.scrollTop = previous.scrollTop || 0; hexWrap.scrollLeft = previous.scrollLeft || 0;
+    const mapWrap = memoryMap?.querySelector('.table-wrap');
+    if (mapWrap) mapWrap.scrollTop = previous.mapScrollTop || 0;
+    window.scrollTo(previous.scrollX || 0, previous.scrollY || 0);
+  }
+  restoreWebviewFocus({ samePage: sameChunk, previous, prepareFocus: el => { if (el.classList?.contains('hb') && el.dataset.address) syncRovingTabindex(el.dataset.address); } });
+  clearFocusIntent(); persist(); document.body.dataset.viewReady = 'true';
 });
 </script></body></html>`;
 }

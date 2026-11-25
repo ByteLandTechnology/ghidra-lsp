@@ -432,8 +432,8 @@ export async function activate(extension: vscode.ExtensionContext): Promise<void
             await typeFiles.refresh(md5);
             await renames.refresh(md5);
             await browser.refresh(md5);
-            await workbench.refresh(md5);
-            await graphView.refresh(md5);
+            await workbench.refresh(md5, true);
+            await graphView.refresh(md5, true);
         });
     });
     register('discardRename', async resource => {
@@ -490,7 +490,7 @@ export async function activate(extension: vscode.ExtensionContext): Promise<void
         const md5 = context.require(resource);
         await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: `Demangle C++ symbols · ${context.name(md5)}` }, async () => {
             const response = await call<{ result: { renamed: number; failed: number; failures: string[] } }>('ghidra.mutate', { md5, domain: 'symbol', operation: 'demangle', params: {} });
-            await browser.refresh(md5); await workbench.refresh(md5); sessionsView.refresh();
+            await browser.refresh(md5); await workbench.refresh(md5, true); sessionsView.refresh();
             const result = response.result;
             if (result.failed) {
                 void vscode.window.showWarningMessage(`Demangled ${result.renamed} symbols; ${result.failed} could not be demangled. ${result.failures.join('; ')}`);

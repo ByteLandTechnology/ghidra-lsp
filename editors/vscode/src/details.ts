@@ -9,6 +9,7 @@ import { callIcon } from './call-graph-icons';
 import { symbolName, symbolTooltip, fullSymbolName, displayTemplates } from './names';
 import { formatFriendlyError } from './error';
 import { highlightName } from './syntax';
+import { postBusy, reportWebviewError } from './webview-focus';
 
 /** Inspector webview category identifier. */
 type PanelKind = 'program' | 'type' | 'symbol' | 'function';
@@ -201,7 +202,7 @@ export class Details implements vscode.Disposable {
             const message = object(raw);
             this.origin = item;
             try { await this.action(item, String(message.action), typeof message.value === 'string' ? message.value : undefined); }
-            catch (error) { if (!panel.visible) { void vscode.window.showErrorMessage(formatFriendlyError(error)); } else { await panel.webview.postMessage({ action: 'error', error: formatFriendlyError(error) }); } }
+            catch (error) { await reportWebviewError(panel, formatFriendlyError(error), msg => void vscode.window.showErrorMessage(msg)); }
             finally { if (this.origin === item) { this.origin = undefined; } }
         });
         return item;
@@ -236,7 +237,7 @@ export class Details implements vscode.Disposable {
     /** Keep the current content visible while the next object loads, then swap it in. */
     private async navigate(item: Panel, state: PanelState): Promise<void> {
         item.state = state;
-        void item.panel.webview.postMessage({ action: 'busy' });
+        postBusy(item.panel);
         try { await this.render(item); } catch (error) { this.failure(item, error); }
     }
     /** Move backward or forward one step in the inspector panel's history stack. */
@@ -263,7 +264,7 @@ export class Details implements vscode.Disposable {
         const state = item.state, program = this.context.name(state.md5);
         const missing = state.kind !== 'program' && notFound.test(String(error));
         // A failed refresh of the object already on screen keeps its content and reports above it.
-        if (!missing && item.shown && sameTarget(item.shown, state)) { void item.panel.webview.postMessage({ action: 'error', error: formatFriendlyError(error) }); return; }
+        if (!missing && item.shown && sameTarget(item.shown, state)) { void reportWebviewError(item.panel, formatFriendlyError(error), msg => void vscode.window.showErrorMessage(msg)); return; }
         // The heading names the object that failed, never the one navigated away from.
         item.shown = undefined;
         item.title = pendingTitle(state); item.panel.title = this.context.titled(item.title, state.md5);

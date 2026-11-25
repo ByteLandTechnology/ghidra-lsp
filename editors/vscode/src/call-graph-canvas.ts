@@ -142,7 +142,7 @@ export const callGraphScript = String.raw`
 
       const centerCurrent=()=>graphViewport.center(Number(root.dataset.x)+Number(root.dataset.width)/2,Number(root.dataset.y)+Number(root.dataset.height)/2);
       document.getElementById('call-center').addEventListener('click',centerCurrent);
-      for(const button of canvas.querySelectorAll('.node-branch')){button.addEventListener('click',event=>{event.stopPropagation();const node=button.closest('.call-node'),view=graphViewport.snapshot();branchAnchor={entry:node.dataset.entry,x:(Number(node.dataset.x)+Number(node.dataset.width)/2)*view.scale+view.x,y:(Number(node.dataset.y)+Number(node.dataset.height)/2)*view.scale+view.y,focusId:button.id};button.disabled=true;persist();send('callGraphToggle',{entry:node.dataset.entry,address:node.dataset.entry,direction:button.dataset.direction,graphRoot:state.entry})});button.addEventListener('dblclick',event=>event.stopPropagation());button.addEventListener('keydown',event=>event.stopPropagation())}
+      for(const button of canvas.querySelectorAll('.node-branch')){button.addEventListener('click',event=>{event.stopPropagation();const node=button.closest('.call-node'),view=graphViewport.snapshot();branchAnchor={entry:node.dataset.entry,x:(Number(node.dataset.x)+Number(node.dataset.width)/2)*view.scale+view.x,y:(Number(node.dataset.y)+Number(node.dataset.height)/2)*view.scale+view.y,focusId:button.id};setFocusIntent({kind:'control',id:button.id,entry:node.dataset.entry,direction:button.dataset.direction});persist();button.disabled=true;send('callGraphToggle',{entry:node.dataset.entry,address:node.dataset.entry,direction:button.dataset.direction,graphRoot:state.entry})});button.addEventListener('dblclick',event=>event.stopPropagation());button.addEventListener('keydown',event=>event.stopPropagation())}
       const details=document.querySelector('.call-details');details.open=samePage&&previous.callDetails===true;details.hidden=!details.open;details.addEventListener('toggle',()=>{details.hidden=!details.open;persist()});
       const overview=canvas.querySelector('.call-overview'),map=overview.querySelector('svg'),windowRect=map.querySelector('#call-overview-window');
       overview.open=previous.callOverview===true;overview.hidden=!overview.open;overview.addEventListener('toggle',()=>{overview.hidden=!overview.open;if(graphViewport.snapshot().fitted){graphViewport.fit()}persist()});
@@ -173,11 +173,11 @@ export const callGraphScript = String.raw`
       const bindPanel=(id,panel)=>{const button=document.getElementById(id);const sync=()=>button.setAttribute('aria-pressed',String(panel.open));sync();panel.addEventListener('toggle',sync);button.addEventListener('click',()=>{panel.hidden=false;panel.open=!panel.open;menu.open=false;(menu.contains(button)?summary:button).focus()})};
       bindPanel('call-menu-overview',overview);bindPanel('call-details-toggle',details);
       const searchToggle=document.getElementById('call-search-toggle'),searchHost=search.closest('.call-search');
-      const openSearch=()=>{searchHost.hidden=false;searchToggle.setAttribute('aria-expanded','true');search.focus();search.select()};
-      const closeSearch=()=>{searchHost.hidden=true;searchToggle.setAttribute('aria-expanded','false');searchToggle.focus()};
-      searchToggle.addEventListener('click',()=>{searchHost.hidden=!searchHost.hidden;searchToggle.setAttribute('aria-expanded',String(!searchHost.hidden));if(!searchHost.hidden){search.focus()}else{searchToggle.focus()}});
+      const openSearch=()=>{searchHost.hidden=false;searchToggle.setAttribute('aria-expanded','true');search.focus();search.select();persist()};
+      const closeSearch=()=>{searchHost.hidden=true;searchToggle.setAttribute('aria-expanded','false');searchToggle.focus();persist()};
+      searchToggle.addEventListener('click',()=>{searchHost.hidden=!searchHost.hidden;searchToggle.setAttribute('aria-expanded',String(!searchHost.hidden));if(!searchHost.hidden){search.focus()}else{searchToggle.focus()}persist()});
       search.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();search.value='';search.dispatchEvent(new Event('input'));closeSearch()}});
-      if(search.value){searchHost.hidden=false;searchToggle.setAttribute('aria-expanded','true')}
+      if(search.value||(samePage&&previous.searchOpen)){searchHost.hidden=false;searchToggle.setAttribute('aria-expanded','true')}
       document.addEventListener('click',event=>{if(menu.open&&(!menu.contains(event.target)||event.target.closest('button[data-action]'))){menu.open=false}});
       document.addEventListener('keydown',event=>{if(event.key==='Escape'&&menu.open){event.preventDefault();menu.open=false;summary.focus()}else if(isModShortcut(event,'f')||(event.key==='/'&&canUseSingleKeyShortcut(event))){event.preventDefault();menu.open=false;openSearch()}});
       document.getElementById('call-center').addEventListener('click',()=>{menu.open=false});

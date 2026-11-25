@@ -42,7 +42,9 @@ import {
     renderListingRowsHtml,
     renderProgramListingPage,
 } from './program-listing-ui';
+import { formatFriendlyError } from './error';
 import { Data, object, rows, stringOf } from './web';
+import { postBusy, postGotoError } from './webview-focus';
 
 /** Host callbacks required by {@link ProgramViewsController} to integrate with the workbench. */
 export interface ProgramViewHost {
@@ -204,7 +206,7 @@ export class ProgramViewsController {
             ...(currentAddress ? { currentAddress } : {}),
         });
         const address = stringOf(res.address);
-        if (!address) {
+        if (!address || res.valid === false || res.in_memory === false) {
             throw new Error(`Address or symbol "${input}" not found in program memory`);
         }
         return address;
@@ -572,6 +574,7 @@ export class ProgramViewsController {
             return true;
         }
         if (action === 'refresh') {
+            postBusy(state.panel);
             this.invalidate(state.md5);
             if (state.kind === 'listing') {
                 await this.renderListing(state, 'full');
@@ -583,6 +586,7 @@ export class ProgramViewsController {
         if (action === 'navBack') {
             const prev = state.pvHistory?.pop();
             if (!prev) { return true; }
+            postBusy(state.panel);
             const cur = state.selected || state.address;
             if (cur) { state.pvFuture = [...(state.pvFuture || []), { address: cur }].slice(-50); }
             state.address = prev.address;
@@ -598,6 +602,7 @@ export class ProgramViewsController {
         if (action === 'navForward') {
             const next = state.pvFuture?.pop();
             if (!next) { return true; }
+            postBusy(state.panel);
             const cur = state.selected || state.address;
             if (cur) { state.pvHistory = [...(state.pvHistory || []), { address: cur }].slice(-50); }
             state.address = next.address;
@@ -612,11 +617,13 @@ export class ProgramViewsController {
         }
         if (action === 'loadBefore') {
             if (state.kind === 'listing') {
+                postBusy(state.panel);
                 await this.renderListing(state, 'partial', 'before');
             } else if (state.pvChunk) {
                 const meta = await this.getMetadata(state.md5);
                 const prevStart = stepChunkAddress(meta.blocks, state.pvChunk.start, HEX_CHUNK_BYTES, -1);
                 if (prevStart) {
+                    postBusy(state.panel);
                     state.address = prevStart;
                     state.selected = prevStart;
                     await this.renderHex(state, 'partial');
@@ -626,11 +633,13 @@ export class ProgramViewsController {
         }
         if (action === 'loadAfter') {
             if (state.kind === 'listing') {
+                postBusy(state.panel);
                 await this.renderListing(state, 'partial', 'after');
             } else if (state.pvChunk) {
                 const meta = await this.getMetadata(state.md5);
                 const nextStart = stepChunkAddress(meta.blocks, state.pvChunk.start, HEX_CHUNK_BYTES, 1);
                 if (nextStart) {
+                    postBusy(state.panel);
                     state.address = nextStart;
                     state.selected = nextStart;
                     await this.renderHex(state, 'partial');
@@ -638,9 +647,18 @@ export class ProgramViewsController {
             }
             return true;
         }
-        if (action === 'goto' && address) {
-            const push = message.pushHistory !== false;
-            await this.navigateTo(state, address, push);
+        if (action === 'goto') {
+            const target = address.trim();
+            if (!target) {
+                postGotoError(state.panel, 'Enter an address or symbol.');
+                return true;
+            }
+            postBusy(state.panel);
+            try {
+                await this.navigateTo(state, target, message.pushHistory !== false);
+            } catch (error) {
+                postGotoError(state.panel, formatFriendlyError(error));
+            }
             return true;
         }
         if (action === 'setHexOptions' && state.kind === 'memory') {
@@ -650,6 +668,7 @@ export class ProgramViewsController {
                 endianChanged = true;
             }
             if ((Number(message.bytesPerRow) === 8 || Number(message.bytesPerRow) === 16) && Number(message.bytesPerRow) !== state.pvBytesPerRow) {
+                postBusy(state.panel);
                 state.pvBytesPerRow = Number(message.bytesPerRow) as 8 | 16;
                 await this.renderHex(state, 'partial');
             } else if (endianChanged) {

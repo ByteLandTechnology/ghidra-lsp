@@ -12,6 +12,7 @@ import { CallDirection, CallExpansion, CallGraph, CallRecord, callGraph } from '
 import { callIcon } from './call-graph-icons';
 import { CallColumns, callColumns, collectColumns, columnPathLimit } from './call-columns';
 import { formatFriendlyError } from './error';
+import { postBusy, postGotoError, reportWebviewError } from './webview-focus';
 import { cursorLocation } from './location';
 import { ProgramPanelState, ProgramViewsController, singleKeyShortcutsEnabled } from './program-views-controller';
 import { ProgramEndian } from './hex-model';
@@ -287,14 +288,30 @@ export class Workbench implements vscode.Disposable {
         this.attach(kind === 'callGraph' ? `${key}:${++this.callGraphSerial}` : key, state);
         await this.context.activate(md5);
         try { await this.render(state); }
-        catch (error) { panel.webview.html = page({ title: names[kind], subtitle: this.context.name(md5), body: `<p class="error">${escapeHtml(String(error))}</p>`, state: this.snapshot(state) }); throw error; }
+        catch (error) { panel.webview.html = this.errorPage(state, error); throw error; }
+    }
+    /** Render an accessible fallback page that exposes `error` in the live alert banner. */
+    private errorPage(state: PanelState, error: unknown): string {
+        return page({
+            title: names[state.kind], subtitle: this.context.name(state.md5), body: '', error: formatFriendlyError(error),
+            viewKind: state.kind, graph: ['callGraph', 'controlFlow'].includes(state.kind),
+            controlFlow: state.kind === 'controlFlow', callGraph: state.kind === 'callGraph',
+            callView: state.callView || 'graph', callName: state.entry ? displayAddress(state.entry) : undefined,
+            callBack: Boolean(state.callHistory?.length),
+            address: ['listing', 'memory', 'references'].includes(state.kind) ? state.address || '' : undefined,
+            state: this.snapshot(state),
+        });
     }
     /** Register lifecycle, focus, and message listeners for a workbench panel. */
     private attach(key: string, state: PanelState): void {
         this.panels.set(key, state);
         state.panel.onDidDispose(() => { state.generation++; if (this.panels.get(key) === state) { this.panels.delete(key); } });
         state.panel.onDidChangeViewState(event => { if (event.webviewPanel.active) { void this.context.activate(state.md5).catch(error => void vscode.window.showErrorMessage(formatFriendlyError(error))); } });
-        state.panel.webview.onDidReceiveMessage((message: unknown) => { void this.message(state, object(message)).catch(error => { void vscode.window.showErrorMessage(formatFriendlyError(error)); }); });
+        state.panel.webview.onDidReceiveMessage((message: unknown) => {
+            void this.message(state, object(message)).catch(error => {
+                void reportWebviewError(state.panel, formatFriendlyError(error), msg => void vscode.window.showErrorMessage(msg));
+            });
+        });
     }
     /** Build the serializable state snapshot stored inside webview HTML for VS Code reload. */
     private snapshot(state: PanelState): Data {
@@ -331,16 +348,17 @@ export class Workbench implements vscode.Disposable {
             if (panel.active) { await this.context.activate(md5); }
             await this.render(state);
         } catch (error) {
-            panel.webview.html = page({ title: names[kind], subtitle: this.context.name(md5), body: `<p class="error">${escapeHtml(String(error))}</p>`, state: this.snapshot(state) });
+            panel.webview.html = this.errorPage(state, error);
         }
     }
     /** Refresh open workbench panels globally or for program `md5`. */
-    async refresh(md5?: string): Promise<void> {
+    async refresh(md5?: string, userInitiated = false): Promise<void> {
         if (md5) { this.programViews.invalidate(md5); }
-        for (const state of this.panels.values()) { if (!md5 || state.md5 === md5) { await this.refreshPanel(state); } }
+        for (const state of this.panels.values()) { if (!md5 || state.md5 === md5) { await this.refreshPanel(state, userInitiated); } }
     }
     /** Clear cached view state and re-render a single workbench panel. */
-    private async refreshPanel(state: PanelState): Promise<void> {
+    private async refreshPanel(state: PanelState, userInitiated = false): Promise<void> {
+        if (userInitiated) { postBusy(state.panel); }
         if (state.kind === 'callGraph') {
             state.callRecords = new Map();
             state.callNodeNames = new Map();
@@ -353,7 +371,11 @@ export class Workbench implements vscode.Disposable {
         if (state.kind === 'memory') {
             this.programViews.invalidate(state.md5);
         }
-        await this.render(state, true);
+        try {
+            await this.render(state, true);
+        } catch (error) {
+            await reportWebviewError(state.panel, formatFriendlyError(error), msg => void vscode.window.showErrorMessage(msg));
+        }
     }
     /** Query backend data and render HTML into the workbench panel `owner`. */
     private async render(owner: PanelState, forceRefresh = false): Promise<void> {
@@ -393,7 +415,7 @@ export class Workbench implements vscode.Disposable {
                     const target = stringOf(direction === 'to' ? ref.from : ref.to);
                     const navigable = parseAddress(target) !== undefined;
                     return { cells: [stringOf(ref.from), stringOf(ref.to), stringOf(ref.type), stringOf(ref.operand_index), stringOf(ref.source_type), navigable ? direction === 'to' ? 'Open source' : 'Open destination' : 'Non-memory reference'], ...(navigable ? { address: target } : {}), kind: direction === 'to' ? 'reference-source' : 'reference-destination' };
-                }))}</section>`;
+                }), `ref-${direction}-row`)}</section>`;
             }
             address = state.address;
             scope = '';
@@ -424,7 +446,7 @@ export class Workbench implements vscode.Disposable {
                 if (generation !== owner.generation) { return; }
                 owner.callColumnPath = state.callColumnPath = model.path; owner.callColumnModel = model;
                 body = callColumns(model);
-                callTools = `<div class="call-controls call-icon-row" role="group" aria-label="Column view options"><button id="call-column-home" aria-label="Return to current function" title="Return to current function">${callIcon('back')}</button><button data-action="refresh" aria-label="Refresh calls" title="Refresh calls">${callIcon('refresh')}</button></div>`;
+                callTools = `<div class="call-controls call-icon-row" role="group" aria-label="Column view options"><button id="call-column-home" aria-label="Return to current function" title="Return to current function">${callIcon('back')}</button><button id="call-column-refresh" data-action="refresh" aria-label="Refresh calls" title="Refresh calls">${callIcon('refresh')}</button></div>`;
                 callName = rootTitle;
             } else {
                 const res = await this.call<CallGraph & {
@@ -477,8 +499,8 @@ export class Workbench implements vscode.Disposable {
                     cells: [names.get(edge.from)!.name, names.get(edge.to)!.name, site || 'Not reported'],
                     entry: names.get(edge.to)!.entry, address: site || names.get(edge.to)!.entry, label: names.get(edge.to)!.name, kind: 'function',
                 })));
-                body = await callGraph(model) + `<details class="call-details" hidden><summary>Call relationships and sites (${model.edges.length})</summary>${table(['Caller', 'Callee', 'Call site'], rows)}</details>`;
-                callTools = `<div class="call-controls call-icon-row" role="group" aria-label="Call graph exploration"><button id="call-center" aria-label="Center current function" title="Center current function">${callIcon('center')}</button><button id="call-focus" data-action="focusCallGraph" aria-label="Focus selected function" title="Focus selected function">${callIcon('focus')}</button><span class="call-divider" aria-hidden="true"></span><button id="call-menu-overview" aria-pressed="true" aria-label="Overview" title="Overview">${callIcon('overview')}</button><button id="call-details-toggle" aria-pressed="false" aria-label="Call sites" title="Call sites">${callIcon('details')}</button><span class="call-divider" aria-hidden="true"></span><button data-action="refresh" aria-label="Refresh graph" title="Refresh graph">${callIcon('refresh')}</button></div>`;
+                body = await callGraph(model) + `<details id="call-details" class="call-details" hidden><summary id="call-details-summary">Call relationships and sites (${model.edges.length})</summary>${table(['Caller', 'Callee', 'Call site'], rows, 'call-site-row')}</details>`;
+                callTools = `<div class="call-controls call-icon-row" role="group" aria-label="Call graph exploration"><button id="call-center" aria-label="Center current function" title="Center current function">${callIcon('center')}</button><button id="call-focus" data-action="focusCallGraph" aria-label="Focus selected function" title="Focus selected function">${callIcon('focus')}</button><span class="call-divider" aria-hidden="true"></span><button id="call-menu-overview" aria-pressed="true" aria-label="Overview" title="Overview">${callIcon('overview')}</button><button id="call-details-toggle" aria-pressed="false" aria-label="Call sites" title="Call sites">${callIcon('details')}</button><span class="call-divider" aria-hidden="true"></span><button id="call-refresh" data-action="refresh" aria-label="Refresh graph" title="Refresh graph">${callIcon('refresh')}</button></div>`;
                 scope = `${model.limited ? 'Graph limit reached; fold branches for a smaller neighborhood. ' : ''}${model.warnings.length ? `${model.warnings.length} functions could not be expanded; refresh to retry.` : ''}`;
                 callName = res.rootName || names.get(model.root)?.name || displayAddress(state.entry || '');
                 nodeNames.set(state.entry!.toLowerCase(), callName);
@@ -538,7 +560,7 @@ export class Workbench implements vscode.Disposable {
         if (state.kind === 'callGraph' && action === 'callGraphView') {
             if (message.view !== 'graph' && message.view !== 'columns') { return; }
             if ((state.callView || 'graph') === message.view) { return; }
-            state.callView = message.view; await this.render(state); return;
+            state.callView = message.view; postBusy(state.panel); await this.render(state); return;
         }
         if (state.kind === 'callGraph' && state.callView === 'columns' && ['callColumnSelect', 'callColumnTrail', 'callColumnDirection'].includes(action)) {
             if (message.graphRoot !== state.entry) { return; }
@@ -561,7 +583,7 @@ export class Workbench implements vscode.Disposable {
                     state.callColumnPath = row.cycleAt !== undefined ? path.slice(0, row.cycleAt) : [...path.slice(0, index), row.entry];
                 }
             }
-            await this.render(state); return;
+            postBusy(state.panel); await this.render(state); return;
         }
         if (state.kind === 'callGraph' && action === 'callGraphToggle') {
             const direction = stringOf(message.direction);
@@ -570,7 +592,7 @@ export class Workbench implements vscode.Disposable {
             const side = direction as 'callers' | 'callees';
             const values = state.callExpansion[side];
             state.callExpansion[side] = values.some(value => sameAddress(value, entry)) ? values.filter(value => !sameAddress(value, entry)) : [...values, entry];
-            await this.render(state); return;
+            postBusy(state.panel); await this.render(state); return;
         }
         if (state.kind === 'callGraph' && ['focusCallGraph', 'callGraphBack'].includes(action)) {
             const oldRoot = state.entry!;
@@ -586,24 +608,35 @@ export class Workbench implements vscode.Disposable {
             }
             state.callColumnPath = state.callColumnPaths.get(JSON.stringify([state.entry, state.callColumnDirection || 'callees'])) || [];
             state.callExpansion = state.callRoots.get(state.entry!) || { callers: [state.entry!], callees: [state.entry!] };
-            await this.render(state); return;
+            postBusy(state.panel); await this.render(state); return;
         }
-        if (action === 'refresh') { await this.refreshPanel(state); return; }
+        if (action === 'refresh') { await this.refreshPanel(state, true); return; }
         if (action === 'next' && state.next) {
             if (state.kind === 'memory') { state.previous.push(state.address); state.address = state.next; }
             else { state.previous.push(state.displayAddress || state.address); state.cursor = state.next; }
-            await this.render(state); return;
+            postBusy(state.panel); await this.render(state); return;
         }
         if (action === 'previous' && state.previous.length) {
             if (state.kind === 'memory') { state.address = state.previous.pop(); }
             else { state.address = state.previous.pop(); state.cursor = undefined; }
-            await this.render(state); return;
+            postBusy(state.panel); await this.render(state); return;
         }
         if (action === 'goto') {
-            if (!address.trim()) { return; }
-            const resolved = await this.query(state.md5, 'address', 'resolve', { selector: { address: address.trim() } });
-            if (resolved.valid === false || state.kind !== 'references' && resolved.in_memory === false) { throw new Error(`Address ${address} is not in program memory`); }
-            state.address = stringOf(resolved.address) || address.trim(); state.cursor = undefined; state.previous = []; await this.render(state); return;
+            const target = address.trim();
+            if (!target) { postGotoError(state.panel, 'Enter an address.'); return; }
+            postBusy(state.panel);
+            try {
+                const resolved = await this.query(state.md5, 'address', 'resolve', { selector: { address: target } });
+                if (resolved.valid === false || (state.kind !== 'references' && resolved.in_memory === false)) {
+                    throw new Error(`Address ${target} is not in program memory.`);
+                }
+                state.address = stringOf(resolved.address) || target;
+                state.cursor = undefined; state.previous = [];
+                await this.render(state);
+            } catch (error) {
+                postGotoError(state.panel, formatFriendlyError(error));
+            }
+            return;
         }
         if (action === 'select' && address) {
             // Selecting bytes or data remains in this graphical view. Instruction/CFG selections

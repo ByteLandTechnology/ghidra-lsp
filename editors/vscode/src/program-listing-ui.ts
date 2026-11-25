@@ -15,6 +15,7 @@ import { addrSpan, programViewStyles } from './program-views-styles';
 import { highlightAsm, highlightName } from './syntax';
 import { viewStyles, webviewShortcutScript } from './view-ui';
 import { escape } from './web';
+import { controlId, renderLiveRegions, webviewFocusScript } from './webview-focus';
 
 /** Full view-model payload used to render the graphical Program Listing HTML page. */
 export interface ListingViewPayload {
@@ -33,10 +34,12 @@ export interface ListingViewPayload {
     syncEnabled: boolean;
     singleKeyShortcuts?: boolean;
     totalUnitsLabel: string;
+    error?: string;
+    busy?: boolean;
 }
 
 /** Turn inline hex address literals inside highlighted operands into jump buttons. */
-function linkifyInlineTargets(opHtml: string, targets: ListingTarget[]): string {
+function linkifyInlineTargets(opHtml: string, targets: ListingTarget[], unitAddress: string): string {
     const inlineTargets = targets.filter(t => t.inlineOnly);
     if (!inlineTargets.length) {
         return opHtml;
@@ -48,13 +51,15 @@ function linkifyInlineTargets(opHtml: string, targets: ListingTarget[]): string 
             byHex.set(parsed.offset.toString(16).toLowerCase(), target);
         }
     }
+    let inlineIndex = 0;
     return opHtml.replace(/<span class="tok-number">((?:0x)?[0-9a-f]+)<\/span>/gi, (full, rawLiteral: string) => {
         const normalized = rawLiteral.toLowerCase().replace(/^0x/, '').replace(/^0+/, '') || '0';
         const match = byHex.get(normalized);
         if (!match) {
             return full;
         }
-        return `<button type="button" class="target-link target-inline" data-jump="${escape(match.to)}" title="${escape(`Jump to ${match.to}${match.kind ? ` (${match.kind})` : ''}`)}">${escape(rawLiteral)}</button>`;
+        inlineIndex += 1;
+        return `<button type="button" id="${controlId('listing-inline', unitAddress, match.to, inlineIndex)}" class="target-link target-inline" data-jump="${escape(match.to)}" title="${escape(`Jump to ${match.to}${match.kind ? ` (${match.kind})` : ''}`)}">${escape(rawLiteral)}</button>`;
     });
 }
 
@@ -80,8 +85,8 @@ export function renderListingRowsHtml(items: ListingRenderItem[], selectedAddres
         if (unit.labels.length || unit.xrefs.length) {
             const labelsHtml = unit.labels.map(l => `<span class="listing-label-name" title="${escape(l.fullTooltip)}">${highlightName(l.name)}:</span>`).join(' ');
             const xrefsHtml = unit.xrefs.length
-                ? `<span class="listing-xrefs">XREF[${unit.xrefTotal}]: ${unit.xrefs.map(x => x.navigable
-                    ? `<button type="button" class="xref-link" data-jump="${escape(x.from)}" title="${escape(`${x.type} from ${x.from}`)}">${escape(x.label)}${escape(x.suffix)}</button>`
+                ? `<span class="listing-xrefs">XREF[${unit.xrefTotal}]: ${unit.xrefs.map((x, idx) => x.navigable
+                    ? `<button type="button" id="${controlId('listing-xref', unit.address, x.from, idx)}" class="xref-link" data-jump="${escape(x.from)}" title="${escape(`${x.type} from ${x.from}`)}">${escape(x.label)}${escape(x.suffix)}</button>`
                     : `<span class="xref-static" title="${escape(`${x.type} from ${x.from}`)}">${escape(x.label)}${escape(x.suffix)}</span>`).join(' ')}${unit.xrefTotal > unit.xrefs.length ? ` <span>+${unit.xrefTotal - unit.xrefs.length}</span>` : ''}</span>`
                 : '';
             parts.push(`<tr class="listing-aux-row listing-label-row"${hiddenRun ? ' hidden' : ''}><td class="addr"></td><td colspan="4"><div class="listing-label-main">${labelsHtml}${xrefsHtml}</div></td></tr>`);
@@ -96,13 +101,13 @@ export function renderListingRowsHtml(items: ListingRenderItem[], selectedAddres
             : unit.typePath
                 ? `<span title="${escape(unit.typePath)}">${escape(unit.operandsText)}</span>`
                 : escape(unit.operandsText);
-        const opHtml = unit.kind === 'instruction' ? linkifyInlineTargets(rawOpHtml, unit.targets) : rawOpHtml;
+        const opHtml = unit.kind === 'instruction' ? linkifyInlineTargets(rawOpHtml, unit.targets, unit.address) : rawOpHtml;
         const visibleTargets = unit.targets.filter(t => !t.inlineOnly);
         const chipsHtml = visibleTargets.length
-            ? `<span class="target-chips">${visibleTargets.map(t => `<button type="button" class="target-link" data-jump="${escape(t.to)}" title="${escape(`Jump to ${t.to}${t.kind ? ` (${t.kind})` : ''}`)}">→ ${escape(t.label)}</button>`).join('')}</span>`
+            ? `<span class="target-chips">${visibleTargets.map((t, idx) => `<button type="button" id="${controlId('listing-target', unit.address, t.to, idx)}" class="target-link" data-jump="${escape(t.to)}" title="${escape(`Jump to ${t.to}${t.kind ? ` (${t.kind})` : ''}`)}">→ ${escape(t.label)}</button>`).join('')}</span>`
             : '';
         const eolHtml = unit.eolComment ? `; ${escape(unit.eolComment)}` : '';
-        parts.push(`<tr class="listing-unit-row${isSel ? ' selected' : ''}" tabindex="0" data-address="${escape(unit.address)}" data-byte-length="${unit.byteLength}" data-kind="${escape(unit.kind)}"${unit.entry ? ` data-entry="${escape(unit.entry)}"` : ''}${unit.functionName ? ` data-fn-name="${escape(unit.functionName)}"` : ''}${unit.targets[0]?.to ? ` data-jump-primary="${escape(unit.targets[0].to)}"` : ''}${hiddenRun ? ' data-run-member="true" hidden' : ''}><td class="addr">${addrSpan(unit.address)}</td><td class="col-bytes" title="${escape(unit.bytesText)}">${escape(unit.bytesShort)}</td><td class="col-mnemonic"><span class="tok-mnemonic">${escape(unit.mnemonic)}</span></td><td class="col-operands">${opHtml}${chipsHtml}</td><td class="col-comment">${eolHtml}</td></tr>`);
+        parts.push(`<tr id="${controlId('listing-row', unit.address)}" class="listing-unit-row${isSel ? ' selected' : ''}" tabindex="0" data-address="${escape(unit.address)}" data-byte-length="${unit.byteLength}" data-kind="${escape(unit.kind)}"${unit.entry ? ` data-entry="${escape(unit.entry)}"` : ''}${unit.functionName ? ` data-fn-name="${escape(unit.functionName)}"` : ''}${unit.targets[0]?.to ? ` data-jump-primary="${escape(unit.targets[0].to)}"` : ''}${hiddenRun ? ' data-run-member="true" hidden' : ''}><td class="addr">${addrSpan(unit.address)}</td><td class="col-bytes" title="${escape(unit.bytesText)}">${escape(unit.bytesShort)}</td><td class="col-mnemonic"><span class="tok-mnemonic">${escape(unit.mnemonic)}</span></td><td class="col-operands">${opHtml}${chipsHtml}</td><td class="col-comment">${eolHtml}</td></tr>`);
 
         if (unit.postComment) {
             parts.push(`<tr class="listing-aux-row listing-post-row"${hiddenRun ? ' hidden' : ''}><td class="addr"></td><td colspan="4">; post: ${escape(unit.postComment)}</td></tr>`);
@@ -117,7 +122,7 @@ export function renderListingRowsHtml(items: ListingRenderItem[], selectedAddres
                 const b = run.blockHeader;
                 out.push(`<tr class="listing-aux-row listing-block-row"><td colspan="5"><span class="listing-block-name">${escape(b.name)}</span><span>${addrSpan(b.start)}–${addrSpan(b.end)} · ${escape(b.permissions)}${b.initialized ? '' : ' · uninitialized'}${b.kind ? ` · ${escape(b.kind)}` : ''}${b.comment ? ` · ${escape(b.comment)}` : ''}</span></td></tr>`);
             }
-            out.push(`<tr class="listing-undef-run" data-run-start="${escape(run.startAddress)}"><td class="addr">${addrSpan(run.startAddress)}</td><td class="col-bytes"></td><td class="col-mnemonic">${run.uninitialized ? '??' : 'db'}</td><td class="col-operands"><button type="button" class="expand-run-btn" aria-expanded="false" data-expand-run="${escape(run.startAddress)}">${run.byteLength} ${run.uninitialized ? 'uninitialized' : 'undefined'} bytes (${escape(displayAddress(run.startAddress))}..${escape(displayAddress(run.endAddress))})</button></td><td class="col-comment"></td></tr>`);
+            out.push(`<tr class="listing-undef-run" data-run-start="${escape(run.startAddress)}"><td class="addr">${addrSpan(run.startAddress)}</td><td class="col-bytes"></td><td class="col-mnemonic">${run.uninitialized ? '??' : 'db'}</td><td class="col-operands"><button type="button" id="${controlId('listing-expand', run.startAddress)}" class="expand-run-btn" aria-expanded="false" data-expand-run="${escape(run.startAddress)}">${run.byteLength} ${run.uninitialized ? 'uninitialized' : 'undefined'} bytes (${escape(displayAddress(run.startAddress))}..${escape(displayAddress(run.endAddress))})</button></td><td class="col-comment"></td></tr>`);
             for (const member of run.units) {
                 out.push(renderUnit(member, true));
             }
@@ -151,24 +156,24 @@ ${pageStyles}
 ${iconFontStyles}
 ${viewStyles}
 ${programViewStyles}
-</style></head><body class="browser-page program-view hide-vars" data-view-kind="listing"><main>
-<h1 class="page-context">${escape(payload.title)}</h1>
+</style></head><body class="browser-page program-view hide-vars${payload.busy ? ' is-busy' : ''}" data-view-kind="listing"${payload.busy ? ' aria-busy="true"' : ''}><main>
+<h1 class="page-context" tabindex="-1">${escape(payload.title)}</h1>
 <div class="toolbar pv-toolbar" role="group" aria-label="Listing navigation">
   <div class="pv-nav" role="group" aria-label="History and window">
-    <button type="button" class="icon-button" data-action="navBack" aria-label="Back" title="Back (Alt+Left)"${payload.canBack ? '' : ' disabled'}>${callIcon('back')}</button>
-    <button type="button" class="icon-button" data-action="navForward" aria-label="Forward" title="Forward (Alt+Right)"${payload.canForward ? '' : ' disabled'}>${callIcon('forward')}</button>
+    <button type="button" id="nav-back" class="icon-button" data-action="navBack" aria-label="Back" title="Back (Alt+Left)"${payload.canBack ? '' : ' disabled'}>${callIcon('back')}</button>
+    <button type="button" id="nav-forward" class="icon-button" data-action="navForward" aria-label="Forward" title="Forward (Alt+Right)"${payload.canForward ? '' : ' disabled'}>${callIcon('forward')}</button>
     <span class="pv-step" id="pv-step"${payload.hasMoreBefore || payload.hasMoreAfter ? '' : ' hidden'}><span class="pv-divider" aria-hidden="true"></span><button type="button" id="pager-before" class="icon-button" data-action="loadBefore" aria-label="Previous window" title="Previous window"${payload.hasMoreBefore ? '' : ' disabled'}>${callIcon('up')}</button><button type="button" id="pager-after" class="icon-button" data-action="loadAfter" aria-label="Next window" title="Next window"${payload.hasMoreAfter ? '' : ' disabled'}>${callIcon('down')}</button></span>
   </div>
-  <form id="goto"><input id="address" aria-label="Address or symbol" value="${escape(displayAddress(payload.cursorAddress))}" placeholder="Address or symbol…"><button type="submit" aria-label="Go to address" title="Go to address">${callIcon('right')}</button></form>
+  <form id="goto"><input id="address" aria-label="Address or symbol" value="${escape(displayAddress(payload.cursorAddress))}" placeholder="Address or symbol…"><button id="goto-submit" type="submit" aria-label="Go to address" title="Go to address">${callIcon('right')}</button></form>
   <div class="browser-search">${callIcon('search')}<input class="search" id="search" aria-label="Filter displayed rows" placeholder="Filter instructions, labels, comments…"></div>
   <div class="pv-tools" role="group" aria-label="Listing tools">
     <button type="button" id="sync-toggle" class="icon-button" data-action="toggleSync" aria-pressed="${payload.syncEnabled}" aria-label="Sync cursor with other Ghidra views" title="Sync cursor with other Ghidra views">${callIcon('link')}</button>
-    <button type="button" class="icon-button" data-action="openHexBeside" aria-label="Open Hex view beside" title="Open Hex view beside">${callIcon('memory')}</button>
+    <button type="button" id="open-hex-beside" class="icon-button" data-action="openHexBeside" aria-label="Open Hex view beside" title="Open Hex view beside">${callIcon('memory')}</button>
     <details id="page-options" class="page-options">
-      <summary aria-label="View options" title="View options">${callIcon('more')}</summary>
+      <summary id="page-options-summary" aria-label="View options" title="View options">${callIcon('more')}</summary>
       <div class="page-options-content">
         <div class="page-options-actions" role="group" aria-label="Page actions">
-          <button type="button" class="icon-button" data-action="refresh" aria-label="Refresh" title="Refresh">${callIcon('refresh')}</button>
+          <button type="button" id="page-refresh" class="icon-button" data-action="refresh" aria-label="Refresh" title="Refresh">${callIcon('refresh')}</button>
         </div>
         ${blockOptions ? `<label class="pv-option-row">Memory block<select id="block-select" aria-label="Memory block">${blockOptions}</select></label>` : ''}
         <label><input id="listing-bytes" type="checkbox" checked>Show bytes</label>
@@ -181,6 +186,7 @@ ${programViewStyles}
     </details>
   </div>
 </div>
+${renderLiveRegions({ error: payload.error, busy: payload.busy, includeGotoError: true })}
 <p id="filter-status" role="status" aria-live="polite" hidden></p>
 <div class="table-wrap" id="listing-wrap">
   <table class="listing-table">
@@ -197,10 +203,13 @@ ${programViewStyles}
 </main>
 <script nonce="${nonce}">
 const vscode = acquireVsCodeApi();
+${webviewFocusScript}
+assignControlIds();
 const state = ${stateJson};
 const previous = vscode.getState() || {};
 const samePage = previous.md5 === state.md5 && previous.kind === 'listing';
-let selected = state.selected || '';
+const sameWindow = samePage && previous.windowStart === state.windowStart;
+let selected = (sameWindow && previous.selected) || state.selected || '';
 let selectedEntry = '';
 let selectedKind = '';
 let selectedLength = 1;
@@ -233,6 +242,10 @@ if (samePage) {
   if (typeof previous.showVars === 'boolean') optVars.checked = previous.showVars;
   if (typeof previous.showXrefs === 'boolean') optXrefs.checked = previous.showXrefs;
   if (typeof previous.collapseRuns === 'boolean') optCollapse.checked = previous.collapseRuns;
+  if (sameWindow && previous.focusIntent?.kind !== 'goto' && typeof previous.addressDraft === 'string') {
+    addressInput.value = previous.addressDraft;
+  }
+  if (previous.gotoError) setGotoErrorState(previous.gotoError, false);
 }
 
 const applyViewClasses = () => {
@@ -248,18 +261,33 @@ const applyViewClasses = () => {
   for (const member of tbody.querySelectorAll('tr[data-run-member="true"]')) { member.hidden = collapse; }
 };
 
+let persistFrame = 0;
 const persist = () => {
+  if (persistFrame) { cancelAnimationFrame(persistFrame); persistFrame = 0; }
+  const focus = currentFocusDescriptor();
   vscode.setState({
     ...state,
     selected,
     filter: search.value,
+    addressDraft: addressInput.value,
+    gotoError: document.getElementById('goto-error')?.textContent || '',
     showBytes: optBytes.checked,
     showHeaders: optHeaders.checked,
     showVars: optVars.checked,
     showXrefs: optXrefs.checked,
     collapseRuns: optCollapse.checked,
     scrollTop: wrap.scrollTop,
+    scrollLeft: wrap.scrollLeft,
+    scrollX: window.scrollX,
+    scrollY: window.scrollY,
+    focusId: focus?.id,
+    focus,
+    focusIntent: getFocusIntent(),
   });
+};
+window.__ghidraPersistState = persist;
+const schedulePersist = () => {
+  if (!persistFrame) persistFrame = requestAnimationFrame(() => { persistFrame = 0; persist(); });
 };
 ${webviewShortcutScript}
 
@@ -363,6 +391,7 @@ const applyFilter = () => {
 };
 
 const bindTableInteractions = () => {
+  for (const row of tbody.querySelectorAll('tr.selected')) row.classList.remove('selected');
   for (const row of unitRows()) {
     if (selected && row.dataset.address?.toLowerCase() === selected.toLowerCase()) {
       row.classList.add('selected');
@@ -456,6 +485,10 @@ document.addEventListener('click', event => {
   const btn = event.target.closest('button[data-action]');
   if (btn && !btn.disabled) {
     const act = btn.dataset.action;
+    if (['navBack', 'navForward', 'refresh', 'loadBefore', 'loadAfter'].includes(act)) {
+      setFocusIntent({ kind: 'control', id: btn.id });
+    }
+    persist();
     if (['navBack', 'navForward', 'refresh', 'loadBefore', 'loadAfter', 'toggleSync', 'openHexBeside'].includes(act)) {
       vscode.postMessage({ action: act });
     } else if (act === 'copyAddress' && selected) {
@@ -473,13 +506,21 @@ document.addEventListener('click', event => {
 
 document.getElementById('goto').addEventListener('submit', event => {
   event.preventDefault();
-  const val = addressInput.value.trim();
-  if (val) vscode.postMessage({ action: 'goto', address: val });
+  setFocusIntent({ kind: 'goto' });
+  persist();
+  vscode.postMessage({ action: 'goto', address: addressInput.value.trim() });
 });
 blockSelect?.addEventListener('change', () => {
-  if (blockSelect.value) { pageOptions.open = false; vscode.postMessage({ action: 'goto', address: blockSelect.value, pushHistory: true }); }
+  if (blockSelect.value) { pageOptions.open = false; persist(); vscode.postMessage({ action: 'goto', address: blockSelect.value, pushHistory: true }); }
+});
+addressInput.addEventListener('input', () => {
+  if (addressInput.getAttribute('aria-invalid') === 'true') setGotoErrorState('', false);
+  persist();
 });
 search.addEventListener('input', () => { applyFilter(); persist(); });
+wrap.addEventListener('scroll', schedulePersist, { passive: true });
+window.addEventListener('scroll', schedulePersist, { passive: true });
+document.addEventListener('focusin', persist);
 document.getElementById('clear-filter').addEventListener('click', () => { search.value = ''; applyFilter(); persist(); search.focus(); });
 for (const chk of [optBytes, optHeaders, optVars, optXrefs, optCollapse]) {
   chk.addEventListener('change', () => { applyViewClasses(); applyFilter(); persist(); });
@@ -510,17 +551,23 @@ window.addEventListener('message', event => {
     state.syncEnabled = !!msg.syncEnabled;
     syncToggle.setAttribute('aria-pressed', String(state.syncEnabled));
   } else if (msg.action === 'windowData') {
+    setBusyState(false);
+    setErrorState('');
+    setGotoErrorState('', false);
+    const intent = getFocusIntent();
+    clearFocusIntent();
     const activeEl = document.activeElement;
     const focusInTbody = !!activeEl && tbody.contains(activeEl);
-    const navBack = document.querySelector('[data-action="navBack"]');
-    const navForward = document.querySelector('[data-action="navForward"]');
+    const navBack = document.getElementById('nav-back');
+    const navForward = document.getElementById('nav-forward');
     const navButtons = [navBack, navForward, pagerBefore, pagerAfter].filter(Boolean);
     const focusedNavBtn = navButtons.find(btn => btn === activeEl);
     const anchorAddr = msg.anchorAddress;
     const prevTop = anchorAddr ? findUnitRow(anchorAddr)?.getBoundingClientRect().top : undefined;
     tbody.innerHTML = msg.rowsHtml;
+    assignControlIds(tbody);
     selected = msg.selectedAddress || selected;
-    if (addressInput && activeEl !== addressInput) {
+    if (addressInput && (intent?.kind === 'goto' || activeEl !== addressInput)) {
       addressInput.value = /^ram:[0-9a-f]+$/i.test(selected) ? selected.slice(4) : selected;
     }
     state.windowStart = msg.windowStart;
@@ -542,7 +589,9 @@ window.addEventListener('message', event => {
     } else {
       wrap.scrollTop = 0;
     }
-    if (focusInTbody) {
+    if (intent?.kind === 'goto') {
+      addressInput.focus({ preventScroll: true });
+    } else if (focusInTbody) {
       focusListingFallback();
     } else if (focusedNavBtn && (focusedNavBtn.disabled || focusedNavBtn.closest('[hidden]'))) {
       const siblingOrder = focusedNavBtn === pagerBefore
@@ -562,9 +611,25 @@ window.addEventListener('message', event => {
 
 bindTableInteractions();
 requestAnimationFrame(() => {
-  const initialRow = findUnitRow(selected);
-  if (initialRow && !samePage) initialRow.scrollIntoView({ block: 'center' });
+  if (sameWindow) {
+    wrap.scrollTop = previous.scrollTop || 0;
+    wrap.scrollLeft = previous.scrollLeft || 0;
+    window.scrollTo(previous.scrollX || 0, previous.scrollY || 0);
+  } else {
+    const initialRow = findUnitRow(selected);
+    if (initialRow) initialRow.scrollIntoView({ block: 'center' });
+  }
   updateSelectionTools();
+  restoreWebviewFocus({
+    samePage: sameWindow,
+    previous,
+    fallback: () => {
+      const selRow = findUnitRow(selected);
+      if (selRow && !selRow.hidden) return selRow;
+      return unitRows().find(r => !r.hidden) || search;
+    },
+  });
+  clearFocusIntent();
   persist();
   document.body.dataset.viewReady = 'true';
 });

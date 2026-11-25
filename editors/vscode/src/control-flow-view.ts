@@ -3,10 +3,12 @@
 
 import * as vscode from 'vscode';
 import { ProgramContext } from './context';
+import { formatFriendlyError } from './error';
 import { ListingFiles, listingScheme } from './listing';
 import { singleKeyShortcutsEnabled } from './program-views-controller';
 import { Workbench, ControlFlowData } from './workbench';
-import { escapeHtml, page } from './workbench-page';
+import { page } from './workbench-page';
+import { postBusy, reportWebviewError } from './webview-focus';
 import { AddressRange, addressRange, intersects } from './view-ranges';
 
 /** Custom editor viewType identifier for Control Flow Graph panels. */
@@ -92,12 +94,19 @@ export class ControlFlowView implements vscode.CustomTextEditorProvider, vscode.
                 this.closed.fire({ uri: state.uri, viewColumn, highlight: { addresses: state.addresses, selected: state.selected } });
             });
             panel.webview.onDidReceiveMessage(message => {
-                void this.message(state, panel, message).catch(error => void vscode.window.showErrorMessage(String(error)));
+                void this.message(state, panel, message).catch(error => {
+                    void reportWebviewError(panel, formatFriendlyError(error), msg => void vscode.window.showErrorMessage(msg));
+                });
             });
             this.render(state, panel);
             this.opened.fire({ uri: state.uri, entry: state.entry });
         } catch (error) {
-            panel.webview.html = page({ title: 'Control Flow', subtitle: this.context.name(document.uri.authority), body: `<p class="error">${escapeHtml(String(error))}</p>`, singleKeyShortcuts: singleKeyShortcutsEnabled() });
+            panel.webview.html = page({
+                title: 'Control Flow', subtitle: this.context.name(document.uri.authority), body: '',
+                error: formatFriendlyError(error), graph: true, controlFlow: true, viewKind: 'controlFlow',
+                singleKeyShortcuts: singleKeyShortcutsEnabled(),
+                state: { kind: 'controlFlow', md5: document.uri.authority, analysisUri: document.uri.toString() },
+            });
         }
     }
     /** Render the CFG HTML document into `panel`. */
@@ -106,7 +115,7 @@ export class ControlFlowView implements vscode.CustomTextEditorProvider, vscode.
         panel.title = this.title(state);
         const singleKeyShortcuts = singleKeyShortcutsEnabled();
         panel.webview.html = page({ title: 'Control Flow', subtitle: `${state.data.name} · ${this.context.name(state.uri.authority)}`,
-            body: state.data.body, scope: state.data.scope, graph: true, controlFlow: true, singleKeyShortcuts,
+            body: state.data.body, scope: state.data.scope, graph: true, controlFlow: true, viewKind: 'controlFlow', singleKeyShortcuts,
             state: { kind: 'controlFlow', md5: state.uri.authority, entry: state.entry, analysisUri: state.uri.toString(), singleKeyShortcuts } });
     }
     /** Handle selection, refresh, and decompile messages posted by the CFG webview. */
@@ -114,7 +123,7 @@ export class ControlFlowView implements vscode.CustomTextEditorProvider, vscode.
         if (this.context.isClosing(state.uri.authority)) { return; }
         if (message.action === 'ready') { await this.highlight(state.uri, state.addresses, state.selected); return; }
         if (!panel.active) { return; }
-        if (message.action === 'refresh') { await this.refresh(state.uri.authority); return; }
+        if (message.action === 'refresh') { await this.refresh(state.uri.authority, true); return; }
         if (message.action !== 'select' && message.action !== 'decompile') { return; }
         const block = state.data.blocks.find(block => block.address === message.address);
         if (!block) { return; }
@@ -182,12 +191,19 @@ export class ControlFlowView implements vscode.CustomTextEditorProvider, vscode.
         return vscode.window.showTextDocument(document, { viewColumn, preview: false });
     }
     /** Reload open Control Flow Graph panels for program `md5`. */
-    async refresh(md5: string): Promise<void> {
+    async refresh(md5: string, userInitiated = false): Promise<void> {
         if (this.context.isClosing(md5)) { return; }
         for (const state of this.states.values()) {
             if (state.uri.authority !== md5) { continue; }
             if (!state.panels.size) { this.states.delete(state.uri.toString()); continue; }
-            state.data = await this.workbench.controlFlow(md5, state.entry);
+            if (userInitiated) { for (const panel of state.panels) { postBusy(panel); } }
+            try {
+                state.data = await this.workbench.controlFlow(md5, state.entry);
+            } catch (error) {
+                const msg = formatFriendlyError(error);
+                await Promise.all([...state.panels].map(panel => reportWebviewError(panel, msg, text => void vscode.window.showErrorMessage(text))));
+                continue;
+            }
             for (const panel of state.panels) { this.render(state, panel); }
         }
     }

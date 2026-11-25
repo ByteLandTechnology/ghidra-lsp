@@ -7,6 +7,7 @@ import { iconFontStyles } from './icon-font';
 import { viewStyles } from './view-ui';
 import { callIcon, callIcons } from './call-graph-icons';
 import { displayAddress } from './names';
+import { escapeHtml, renderLiveRegions, webviewFocusScript } from './webview-focus';
 /** Generic JSON object map used for RPC payloads and webview state. */
 export type Data = Record<string, unknown>;
 /** Coerce an unknown value to a plain record object. */
@@ -14,7 +15,7 @@ export const object = (value: unknown): Data => value && typeof value === 'objec
 /** Coerce an unknown array value to an array of record objects. */
 export const rows = (value: unknown): Data[] => Array.isArray(value) ? value.map(object) : [];
 /** Escape HTML special characters for safe webview interpolation. */
-export const escape = (value: unknown): string => String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]!));
+export const escape = escapeHtml;
 /** Convert a string or number to text, or return an em dash when absent. */
 export const text = (value: unknown): string => typeof value === 'string' || typeof value === 'number' ? String(value) : '—';
 /** Convert a string or number to text, or return an empty string when absent. */
@@ -94,23 +95,24 @@ export function page(title: string, eyebrow: string, subtitle: unknown, body: st
     ${pageStyles}
     ${iconFontStyles}
     ${viewStyles}
-    </style></head><body class="${form ? 'edit-page' : 'inspector-page'}${extras.busy ? ' is-busy' : ''}" data-view-kind="${escape(kind)}"${extras.busy ? ' aria-busy="true"' : ''}><main><header><div class="inspector-title"><div><div class="eyebrow">${escape(eyebrow)}</div><h1 tabindex="-1"${extras.titleHint ? ` title="${escape(extras.titleHint)}"` : ''}>${extras.titleHtml ?? breakable(title)}</h1>${subtitle ? `<p class="subtitle" title="${escape(subtitle)}">${subtitleMarkup}</p>` : ''}</div></div>${extras.nav || actions ? `<div class="inspector-tools">${extras.nav ? `<nav class="inspector-nav" aria-label="Inspector history">${extras.nav}</nav>` : ''}${actions ? `<div class="inspector-actions" role="group" aria-label="${escape(eyebrow)} actions">${actions}</div>` : ''}</div>` : ''}</header><p id="error" class="error" role="alert">${escape(extras.error ?? '')}</p><p id="busy-status" class="sr-status" role="status">${extras.busy ? 'Loading' : ''}</p>${body}</main><script nonce="${nonce}">
+    </style></head><body class="${form ? 'edit-page' : 'inspector-page'}${extras.busy ? ' is-busy' : ''}" data-view-kind="${escape(kind)}"${extras.busy ? ' aria-busy="true"' : ''}><main><header><div class="inspector-title"><div><div class="eyebrow">${escape(eyebrow)}</div><h1 tabindex="-1"${extras.titleHint ? ` title="${escape(extras.titleHint)}"` : ''}>${extras.titleHtml ?? breakable(title)}</h1>${subtitle ? `<p class="subtitle" title="${escape(subtitle)}">${subtitleMarkup}</p>` : ''}</div></div>${extras.nav || actions ? `<div class="inspector-tools">${extras.nav ? `<nav class="inspector-nav" aria-label="Inspector history">${extras.nav}</nav>` : ''}${actions ? `<div class="inspector-actions" role="group" aria-label="${escape(eyebrow)} actions">${actions}</div>` : ''}</div>` : ''}</header>${renderLiveRegions({ error: extras.error, busy: extras.busy })}${body}</main><script nonce="${nonce}">
     const vscode=acquireVsCodeApi();
+    ${webviewFocusScript}
     const inspectorState=${stateJson},inspectorPrevious=vscode.getState()||{};
     const inspectorSame=!!inspectorState.kind&&['kind','md5','path','entry','id'].every(key=>inspectorState[key]===inspectorPrevious[key]);
     const inspectorNavigated=!!inspectorState.kind&&!!inspectorPrevious.kind&&!inspectorSame&&!document.body.classList.contains('is-busy');
-    {const used={};for(const control of document.querySelectorAll('button,summary,input,select,textarea')){if(control.id){continue}const base=('f-'+(control.dataset.action||control.tagName.toLowerCase())+'-'+(control.dataset.value||control.getAttribute('aria-label')||control.textContent.trim()||'')).slice(0,64).replace(/[^\\w-]/g,'_');used[base]=(used[base]||0)+1;control.id=used[base]>1?base+'-'+used[base]:base}}
+    assignControlIds();
     const inspectorDetails=[...document.querySelectorAll('details:not([data-action-menu])')];
     let inspectorPersistFrame=0;
-    const persistInspectorUi=()=>{if(inspectorPersistFrame){cancelAnimationFrame(inspectorPersistFrame);inspectorPersistFrame=0}vscode.setState({...inspectorState,ui:{scrollX:window.scrollX,scrollY:window.scrollY,focusId:document.activeElement?.id,details:inspectorDetails.map(details=>details.open)}})};
+    const persistInspectorUi=()=>{if(inspectorPersistFrame){cancelAnimationFrame(inspectorPersistFrame);inspectorPersistFrame=0}const focus=currentFocusDescriptor();vscode.setState({...inspectorState,ui:{scrollX:window.scrollX,scrollY:window.scrollY,focusId:focus?.id,focus,details:inspectorDetails.map(details=>details.open)}})};
+    window.__ghidraPersistState=persistInspectorUi;
     const scheduleInspectorPersist=()=>{if(!inspectorPersistFrame){inspectorPersistFrame=requestAnimationFrame(()=>{inspectorPersistFrame=0;persistInspectorUi()})}};
     if(inspectorSame){inspectorDetails.forEach((details,index)=>{if(typeof inspectorPrevious.ui?.details?.[index]==='boolean'){details.open=inspectorPrevious.ui.details[index]}})}
     for(const details of inspectorDetails){details.addEventListener('toggle',persistInspectorUi)}
     document.addEventListener('click',event=>{const button=event.target.closest('[data-action]');if(button&&!button.disabled){const menu=button.closest('[data-action-menu]');if(menu){menu.open=false}persistInspectorUi();vscode.postMessage({action:button.dataset.action,value:button.dataset.value})}for(const menu of document.querySelectorAll('[data-action-menu][open]')){if(!menu.contains(event.target)){menu.open=false}}});
     for(const menu of document.querySelectorAll('[data-action-menu]')){menu.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();menu.open=false;menu.querySelector('summary').focus();return}if(!['ArrowDown','ArrowUp','ArrowLeft','ArrowRight','Home','End'].includes(event.key)){return}event.preventDefault();menu.open=true;const items=[...menu.querySelectorAll('button:not(:disabled)')],index=items.indexOf(document.activeElement),forward=event.key==='ArrowDown'||event.key==='ArrowRight',next=event.key==='Home'?0:event.key==='End'?items.length-1:forward?(index+1)%items.length:(index<=0?items.length-1:index-1);items[next]?.focus()});menu.addEventListener('focusout',()=>requestAnimationFrame(()=>{if(!menu.contains(document.activeElement)){menu.open=false}}))}
     window.addEventListener('scroll',scheduleInspectorPersist,{passive:true});document.addEventListener('focusin',persistInspectorUi);
-    window.addEventListener('message',event=>{const status=document.getElementById('busy-status');if(event.data?.action==='busy'){document.body.classList.add('is-busy');document.body.setAttribute('aria-busy','true');status.textContent='Loading'}else if(event.data?.action==='error'){document.body.classList.remove('is-busy');document.body.removeAttribute('aria-busy');status.textContent='';document.getElementById('error').textContent=event.data.error||''}});
     document.addEventListener('keydown',event=>{if(!event.altKey||event.ctrlKey||event.metaKey||!['ArrowLeft','ArrowRight'].includes(event.key)){return}const target=document.querySelector(event.key==='ArrowLeft'?'[data-action="back"]':'[data-action="forward"]');if(target){event.preventDefault();target.click()}});
-    requestAnimationFrame(()=>{if(inspectorSame){window.scrollTo(inspectorPrevious.ui?.scrollX||0,inspectorPrevious.ui?.scrollY||0);if(inspectorPrevious.ui?.focusId){document.getElementById(inspectorPrevious.ui.focusId)?.focus({preventScroll:true})}}else if(inspectorNavigated&&inspectorPrevious.ui?.focusId){document.querySelector('h1')?.focus({preventScroll:true})}if(!document.body.classList.contains('is-busy')){persistInspectorUi()}document.body.dataset.viewReady='true'});
+    requestAnimationFrame(()=>{if(inspectorSame){window.scrollTo(inspectorPrevious.ui?.scrollX||0,inspectorPrevious.ui?.scrollY||0);restoreWebviewFocus({samePage:true,previous:inspectorPrevious.ui||{}})}else if(inspectorNavigated&&(inspectorPrevious.ui?.focus||inspectorPrevious.ui?.focusId)){document.querySelector('h1')?.focus({preventScroll:true})}if(!document.body.classList.contains('is-busy')){persistInspectorUi()}document.body.dataset.viewReady='true'});
     ${script}</script></body></html>`;
 }
