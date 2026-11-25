@@ -253,9 +253,9 @@ export class EditingUI implements vscode.Disposable {
         if (picked === 'c_header') {
             await this.form(md5, 'Import C header', this.context.name(md5), [
                 { key: 'category', label: 'Category path', value: '/' },
-                { key: 'source', label: 'C declarations', kind: 'textarea', placeholder: 'struct Packet {\n    const char *payload;\n    uint32_t length;\n};', autofocus: true },
+                { key: 'declarations', label: 'C declarations', kind: 'textarea', placeholder: 'struct Packet {\n    const char *payload;\n    uint32_t length;\n};', autofocus: true },
             ], [], async ({ values }) => {
-                await this.mutations(md5, [{ method: 'data_type.parse_c', arguments: { source: required(values, 'source', 'C declarations'), category_path: value(values, 'category') || '/' } }]);
+                await this.mutations(md5, [{ method: 'data_type.parse_c', arguments: { declarations: required(values, 'declarations', 'C declarations'), category_path: value(values, 'category') || '/' } }]);
             }, 'Enter self-contained C structs, unions, enums, typedefs, and function prototypes without #include directives.');
             return;
         }

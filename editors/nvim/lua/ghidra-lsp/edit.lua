@@ -386,7 +386,7 @@ function M.parse_c(arg)
             domain = 'data_type',
             operation = 'parse_c',
             params = {
-                source = c_source,
+                declarations = c_source,
                 category_path = category_path,
             },
         }, 30000)

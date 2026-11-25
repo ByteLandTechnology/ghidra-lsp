@@ -3,9 +3,6 @@
 
 [advisories]
 yanked = "deny"
-ignore = [
-  { id = "RUSTSEC-2026-0543", reason = "rmcp 3.9 depends on chrono 0.4 directly with no replacement release yet" },
-]
 
 [licenses]
 allow = [

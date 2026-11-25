@@ -60,7 +60,7 @@ impl BackendCapabilities {
       c_type_strings: true,
       atomic_function_parameters: true,
       function_signature: true,
-      parse_c_field: Some("source"),
+      parse_c_field: Some("declarations"),
     }
   }
 }
@@ -233,12 +233,12 @@ impl McpBackend {
             .find(|op| op.get("name").and_then(Value::as_str) == Some("parse_c"))
         })
         .map(|op| {
-          if op.pointer("/inputSchema/properties/source").is_some() {
-            "source"
-          } else if op.pointer("/inputSchema/properties/declarations").is_some() {
+          if op.pointer("/inputSchema/properties/declarations").is_some() {
             "declarations"
-          } else {
+          } else if op.pointer("/inputSchema/properties/source").is_some() {
             "source"
+          } else {
+            "declarations"
           }
         });
       BackendCapabilities {
