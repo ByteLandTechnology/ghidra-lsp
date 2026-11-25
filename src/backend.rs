@@ -176,6 +176,9 @@ fn is_read_only_operation(domain: &str, operation: &str) -> bool {
   if domain == "batch" {
     return false;
   }
+  if domain == "search" {
+    return matches!(operation, "strings" | "bytes");
+  }
   let verb = operation.rsplit('.').next().unwrap_or(operation);
   matches!(
     verb,

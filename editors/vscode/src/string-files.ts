@@ -89,14 +89,24 @@ export class StringFiles implements vscode.TextDocumentContentProvider, vscode.C
         }
     }
 
-    /** Load decoded string text from `global_variable.get` for a `ghidra-string://` document. */
+    /** Load decoded string text from `ghidra_search` (`strings`), falling back to `global_variable.get`. */
     async provideTextDocumentContent(uri: vscode.Uri): Promise<string> {
         if (this.context.isClosing(uri.authority)) { throw vscode.FileSystemError.FileNotFound(uri); }
         const address = stringAddress(uri);
         this.entries.set(uri.toString(), this.entries.get(uri.toString()) || { address });
+        const indexed = await this.call<{ items?: Data[] }>('ghidra.query', {
+            md5: uri.authority,
+            domain: 'search',
+            operation: 'strings',
+            params: { scan: { range: { start: address, end: address } }, page: { limit: 8 } },
+        }).catch(() => ({ items: undefined }));
+        const exact = (indexed.items || []).find(
+            item => typeof item.value === 'string' && String(item.address || '').toLowerCase() === address.toLowerCase(),
+        ) || (indexed.items || []).find(item => typeof item.value === 'string');
+        if (exact && typeof exact.value === 'string') { return exact.value; }
         const data = await this.call<Data>('ghidra.query', { md5: uri.authority, domain: 'global_variable', operation: 'get', params: { selector: { address } } });
         const value = data.value ?? data.representation;
-        if (typeof value !== 'string') { throw new Error(`No defined string at ${address}`); }
+        if (typeof value !== 'string') { throw new Error(`No string at ${address}`); }
         return value;
     }
 

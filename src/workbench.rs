@@ -142,6 +142,8 @@ const READ: &[(&str, &str)] = &[
   ("program", "get"),
   ("program_language", "get"),
   ("reference", "list"),
+  ("search", "bytes"),
+  ("search", "strings"),
   ("session", "get"),
   ("session", "list"),
   ("symbol", "get"),
@@ -337,6 +339,7 @@ pub(crate) fn coverage(domain: &str, params: &Value, count: usize, complete: boo
         | "data_unit"
         | "instruction"
         | "comment"
+        | "search"
     );
   let scope = if address_scan {
     if scoped {
@@ -358,8 +361,9 @@ pub(crate) fn coverage(domain: &str, params: &Value, count: usize, complete: boo
       "Address-scanned symbols. Use import.list, export.list, or entry_point.list for imports, exports, and entry points."
     }
     "data_unit" => {
-      "Defined data units, including Ghidra-defined strings. This does not scan undefined bytes for candidate strings."
+      "Defined data units, including Ghidra-defined strings. Use search.strings for cached defined and undefined strings."
     }
+    "search" => "Cached program strings and wildcard byte matches from ghidra_search.",
     _ => "Resources returned by the real Ghidra bridge under the supplied filters and range.",
   };
   json!({"scope": scope, "count": count, "complete": complete, "note": note})
@@ -418,20 +422,25 @@ pub(crate) async fn query(backend: &McpBackend, md5: Option<&str>, arg: &Value) 
   let (domain, operation, params) = operation(arg)?;
   let (resource, verb) = resource_operation(domain, operation);
   allow_read(domain, operation, &params)?;
+  let paginatable = verb == "list" || (resource == "search" && matches!(verb, "strings" | "bytes"));
   let all = arg.get("all").and_then(Value::as_bool).unwrap_or(false);
   ensure!(
-    !all || verb == "list",
-    "all is only valid for list operations"
+    !all || paginatable,
+    "all is only valid for list and search operations"
   );
   let (domain, operation) = mcp_operation(domain, operation);
   if all && session_required(domain, &operation) {
     let mut page_params = params.clone();
     let mut items = Vec::new();
     let mut seen = HashSet::new();
+    let mut index_complete = true;
     loop {
       let page = backend
         .call(domain, &operation, md5, page_params.clone())
         .await?;
+      if page.get("index_complete").and_then(Value::as_bool) == Some(false) {
+        index_complete = false;
+      }
       items.extend(
         page
           .get("items")
@@ -454,17 +463,20 @@ pub(crate) async fn query(backend: &McpBackend, md5: Option<&str>, arg: &Value) 
         break;
       }
     }
-    let coverage = coverage(resource, &params, items.len(), true);
-    return Ok(json!({"items": items, "coverage": coverage}));
+    let coverage = coverage(resource, &params, items.len(), index_complete);
+    let mut out = json!({"items": items, "coverage": coverage});
+    if resource == "search" && verb == "strings" {
+      out["index_complete"] = json!(index_complete);
+    }
+    return Ok(out);
   }
   let mut value = backend
     .call(domain, &operation, md5, params.clone())
     .await?;
-  if verb == "list"
-    && let Some(items) = value.get("items").and_then(Value::as_array)
-  {
+  if paginatable && let Some(items) = value.get("items").and_then(Value::as_array) {
     let complete = value.get("next_cursor").is_none_or(Value::is_null)
-      && value.pointer("/scan/complete").and_then(Value::as_bool) != Some(false);
+      && value.pointer("/scan/complete").and_then(Value::as_bool) != Some(false)
+      && value.get("index_complete").and_then(Value::as_bool) != Some(false);
     value["coverage"] = coverage(resource, &params, items.len(), complete);
   }
   Ok(value)

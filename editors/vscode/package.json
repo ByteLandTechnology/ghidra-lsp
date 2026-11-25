@@ -412,6 +412,16 @@
         "icon": "$(layout)"
       },
       {
+        "command": "ghidraLsp.filterStrings",
+        "title": "Ghidra: Filter Strings",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "ghidraLsp.clearStringsFilter",
+        "title": "Ghidra: Clear String Filter",
+        "icon": "$(clear-all)"
+      },
+      {
         "command": "ghidraLsp.refreshStrings",
         "title": "Ghidra: Refresh Strings",
         "icon": "$(refresh)"
@@ -753,6 +763,16 @@
           "group": "navigation@3"
         },
         {
+          "command": "ghidraLsp.filterStrings",
+          "when": "view == ghidra.strings && ghidra.stringsHasProgram",
+          "group": "navigation@0"
+        },
+        {
+          "command": "ghidraLsp.clearStringsFilter",
+          "when": "view == ghidra.strings && ghidra.stringsFiltered",
+          "group": "navigation@0b"
+        },
+        {
           "command": "ghidraLsp.refreshStrings",
           "when": "view == ghidra.strings",
           "group": "navigation@1"
@@ -991,8 +1011,7 @@
         },
         {
           "id": "ghidra.strings",
-          "name": "Strings",
-          "visibility": "collapsed"
+          "name": "Strings"
         },
         {
           "id": "ghidra.types",

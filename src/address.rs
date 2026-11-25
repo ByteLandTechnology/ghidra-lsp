@@ -476,42 +476,7 @@ pub(crate) async fn paginate_operation(
   }
 }
 
-/// Returns true when lowercase `lower` contains `utf` followed by an optional separator and digit.
-fn has_utf_digit(lower: &str) -> bool {
-  let bytes = lower.as_bytes();
-  let mut i = 0;
-  while i + 3 < bytes.len() {
-    if &bytes[i..i + 3] == b"utf" {
-      let next = bytes[i + 3];
-      if next.is_ascii_digit() {
-        return true;
-      }
-      if matches!(next, b'-' | b'_' | b' ') && i + 4 < bytes.len() && bytes[i + 4].is_ascii_digit()
-      {
-        return true;
-      }
-    }
-    i += 1;
-  }
-  false
-}
-
-/// Returns true when a Ghidra data-type name denotes string data.
-fn is_string_type_name(type_name: &str) -> bool {
-  let lower = type_name.to_ascii_lowercase();
-  lower.contains("string") || lower.contains("unicode") || has_utf_digit(&lower)
-}
-
-/// Returns true when a data-unit representation renders as a string literal.
-fn is_string_representation(representation: &str) -> bool {
-  representation.starts_with('"')
-    || representation.starts_with("u8\"")
-    || representation.starts_with("u\"")
-    || representation.starts_with("U\"")
-    || representation.starts_with("L\"")
-}
-
-/// Extracts scalar JSON content as a string, returning an empty string for null or composite types.
+/// Extracts scalar JSON content as a string, or returns an empty string for null values.
 fn json_string_or_empty(value: Option<&Value>) -> String {
   match value {
     Some(Value::String(s)) => s.clone(),
@@ -521,53 +486,216 @@ fn json_string_or_empty(value: Option<&Value>) -> String {
   }
 }
 
-/// Paginates `listing.data_unit.list` for session `md5` and extracts defined string items.
-pub(crate) async fn defined_strings(backend: &McpBackend, md5: &str) -> Result<Value> {
-  let params = json!({
-    "page": { "limit": 1000 },
+/// Builds `search.strings` filter JSON from an optional `ghidra.strings` command payload.
+fn build_string_filter(arg: &Value) -> Value {
+  let mut filter = serde_json::Map::new();
+  let query = arg
+    .get("query")
+    .and_then(Value::as_str)
+    .filter(|s| !s.is_empty());
+  match arg.get("regex") {
+    Some(Value::Bool(true)) => {
+      if let Some(pattern) = query.filter(|s| !s.trim().is_empty()) {
+        filter.insert("regex".to_owned(), json!(pattern));
+      }
+    }
+    Some(Value::String(pattern)) if !pattern.trim().is_empty() => {
+      if let Some(text) = query {
+        filter.insert("query".to_owned(), json!(text));
+      }
+      filter.insert("regex".to_owned(), json!(pattern));
+    }
+    _ => {
+      if let Some(text) = query {
+        filter.insert("query".to_owned(), json!(text));
+      }
+    }
+  }
+  if let Some(case_sensitive) = arg
+    .get("caseSensitive")
+    .or_else(|| arg.get("case_sensitive"))
+    .and_then(Value::as_bool)
+  {
+    filter.insert("case_sensitive".to_owned(), json!(case_sensitive));
+  }
+  if let Some(encoding) = arg
+    .get("encoding")
+    .and_then(Value::as_str)
+    .filter(|s| matches!(*s, "all" | "ascii" | "utf16" | "utf16le" | "utf16be"))
+  {
+    filter.insert("encoding".to_owned(), json!(encoding));
+  }
+  if let Some(defined) = arg.get("defined").and_then(Value::as_bool) {
+    filter.insert("defined".to_owned(), json!(defined));
+  }
+  if let Some(min_len) = arg
+    .get("minLength")
+    .or_else(|| arg.get("min_length"))
+    .and_then(Value::as_u64)
+  {
+    filter.insert("min_length".to_owned(), json!(min_len.clamp(1, 4096)));
+  }
+  Value::Object(filter)
+}
+
+/// Normalizes one `search.strings` result item into the `ghidra.strings` editor schema.
+fn normalize_string_item(item: &Value) -> Option<Value> {
+  let address = item
+    .get("address")
+    .and_then(Value::as_str)
+    .filter(|s| !s.is_empty())?;
+  let value = json_string_or_empty(item.get("value").filter(|v| !v.is_null()));
+  let byte_length = item.get("byte_length").and_then(Value::as_u64);
+  let char_length = item.get("length").and_then(Value::as_u64);
+  let length = json_string_or_empty(
+    item
+      .get("byte_length")
+      .filter(|v| !v.is_null())
+      .or_else(|| item.get("length").filter(|v| !v.is_null())),
+  );
+  let encoding = item
+    .get("encoding")
+    .and_then(Value::as_str)
+    .unwrap_or("ascii");
+  let defined = item
+    .get("defined")
+    .and_then(Value::as_bool)
+    .unwrap_or(false);
+  let data_type = item.get("data_type").and_then(|dt| {
+    dt.as_str()
+      .or_else(|| dt.get("name").and_then(Value::as_str))
+      .or_else(|| dt.get("path").and_then(Value::as_str))
+      .filter(|s| !s.is_empty())
+  });
+  let symbol = item
+    .get("symbol")
+    .and_then(Value::as_str)
+    .filter(|s| !s.is_empty());
+  let type_label = match data_type {
+    Some(dt) => dt.to_owned(),
+    None if defined => format!("{encoding} (defined)"),
+    None => format!("{encoding} (undefined)"),
+  };
+  Some(json!({
+    "address": address,
+    "displayAddress": display_address(address),
+    "value": value,
+    "length": length,
+    "byteLength": byte_length,
+    "charLength": char_length,
+    "type": type_label,
+    "encoding": encoding,
+    "defined": defined,
+    "dataType": data_type,
+    "symbol": symbol,
+  }))
+}
+
+/// Queries `search.strings` for session `md5` with optional interactive filter parameters.
+pub(crate) async fn search_strings(backend: &McpBackend, md5: &str, arg: &Value) -> Result<Value> {
+  let page_limit = arg
+    .get("limit")
+    .and_then(Value::as_u64)
+    .unwrap_or(1000)
+    .clamp(1, 1000);
+  let max_items = arg
+    .get("maxItems")
+    .and_then(Value::as_u64)
+    .unwrap_or(5000)
+    .clamp(1, 100_000) as usize;
+  let initial_cursor = arg
+    .get("cursor")
+    .and_then(Value::as_str)
+    .filter(|s| !s.is_empty());
+  let single_page =
+    initial_cursor.is_some() || arg.get("all").and_then(Value::as_bool) == Some(false);
+  let filter = build_string_filter(arg);
+  let mut params = json!({
+    "page": { "limit": page_limit },
     "scan": { "timeout_ms": 60000 }
   });
-  let units = paginate_operation(backend, "listing", "data_unit.list", md5, params).await?;
-  let scanned = units.len();
-  let mut items = Vec::new();
-  for unit in &units {
-    let Some(address) = unit
-      .get("address")
-      .and_then(Value::as_str)
-      .filter(|s| !s.is_empty())
-    else {
-      continue;
-    };
-    let type_name = unit
-      .pointer("/data_type/name")
-      .and_then(Value::as_str)
-      .unwrap_or("");
-    let representation = unit
-      .get("representation")
-      .and_then(Value::as_str)
-      .unwrap_or("");
-    if !is_string_type_name(type_name) && !is_string_representation(representation) {
-      continue;
-    }
-    let value = json_string_or_empty(
-      unit
-        .get("value")
-        .filter(|v| !v.is_null())
-        .or_else(|| unit.get("representation").filter(|v| !v.is_null())),
-    );
-    let length = json_string_or_empty(unit.get("length").filter(|v| !v.is_null()));
-    items.push(json!({
-      "address": address,
-      "displayAddress": display_address(address),
-      "value": value,
-      "length": length,
-      "type": type_name,
-    }));
+  if let Some(cursor) = initial_cursor {
+    params["page"]["cursor"] = json!(cursor);
+  }
+  if filter.as_object().is_some_and(|m| !m.is_empty()) {
+    params["filter"] = filter;
+  }
+  if let Some(address) = arg
+    .get("address")
+    .and_then(Value::as_str)
+    .filter(|s| !s.is_empty())
+  {
+    params["scan"]["range"] = json!({ "start": address, "end": address });
+  } else if let Some(range) = arg.get("range").filter(|v| v.is_object()) {
+    params["scan"]["range"] = range.clone();
   }
 
+  let mut items = Vec::new();
+  let mut seen = HashSet::new();
+  let mut total_indexed = 0_u64;
+  let mut index_complete = true;
+  let mut truncated = false;
+  let mut next_cursor: Option<String>;
+
+  loop {
+    let page = backend
+      .call("search", "strings", Some(md5), params.clone())
+      .await?;
+    if let Some(total) = page.get("total_indexed").and_then(Value::as_u64) {
+      total_indexed = total;
+    }
+    if page.get("index_complete").and_then(Value::as_bool) == Some(false) {
+      index_complete = false;
+    }
+    if page.get("truncated").and_then(Value::as_bool) == Some(true) {
+      truncated = true;
+    }
+    let raw_items = page
+      .get("items")
+      .and_then(Value::as_array)
+      .context("search.strings response lacks items")?;
+    for raw in raw_items {
+      if let Some(normalized) = normalize_string_item(raw) {
+        items.push(normalized);
+        if !single_page && items.len() >= max_items {
+          break;
+        }
+      }
+    }
+    next_cursor = page
+      .get("next_cursor")
+      .and_then(Value::as_str)
+      .filter(|s| !s.is_empty())
+      .map(str::to_owned);
+    if single_page || items.len() >= max_items {
+      if items.len() >= max_items && next_cursor.is_some() {
+        truncated = true;
+      }
+      break;
+    }
+    if let Some(ref cursor) = next_cursor {
+      ensure!(
+        seen.insert(cursor.clone()),
+        "backend repeated a pagination cursor"
+      );
+      params["page"] = json!({ "cursor": cursor, "limit": page_limit });
+    } else {
+      break;
+    }
+  }
+
+  let scanned = if total_indexed > 0 {
+    total_indexed as usize
+  } else {
+    items.len()
+  };
   Ok(json!({
     "md5": md5,
     "scanned": scanned,
+    "totalIndexed": total_indexed,
+    "indexComplete": index_complete,
+    "truncated": truncated,
+    "nextCursor": next_cursor,
     "items": items,
   }))
 }

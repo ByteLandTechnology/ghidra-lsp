@@ -50,7 +50,7 @@ end, { desc = 'Browse Ghidra data types' })
 
 vim.api.nvim_create_user_command('GhidraStrings', function()
     ghidra.strings()
-end, { desc = 'Browse defined strings in active Ghidra session' })
+end, { desc = 'Browse cached strings in active Ghidra session' })
 
 vim.api.nvim_create_user_command('GhidraGoto', function(opts)
     ghidra.goto_address(opts.args ~= '' and opts.args or nil)

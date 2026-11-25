@@ -1,7 +1,7 @@
 // Copyright 2026 ByteLand Technology Limited
 // SPDX-License-Identifier: MIT
 
-import { definedStrings } from './strings';
+import { searchStrings } from './strings';
 import { symbolName, displayAddress } from './names';
 import * as vscode from 'vscode';
 import { Call } from './memory';
@@ -29,6 +29,7 @@ interface PanelState extends ProgramPanelState {
     callExpansion?: CallExpansion; callRecords?: Map<string, CallRecord[]>;
     callNodeNames?: Map<string, string>;
     callRoots?: Map<string, CallExpansion>; callHistory?: string[];
+    stringFilter?: string; stringRegex?: boolean; stringCaseSensitive?: boolean;
     callView?: 'graph' | 'columns'; callColumnDirection?: CallDirection; callColumnPath?: string[];
     callColumnPaths?: Map<string, string[]>; callColumnModel?: CallColumns;
     generation: number; panel: vscode.WebviewPanel;
@@ -40,7 +41,7 @@ interface BinaryInterface { imports?: Data[]; exports?: Data[]; format?: string;
 /** Reveal payload returned by `ghidra.reveal`. */
 interface Reveal { uri: string; exact?: boolean; range?: { start: { line: number; character: number }; end: { line: number; character: number } } }
 /** Human-readable titles for each {@link WorkbenchKind}. */
-const names: Record<WorkbenchKind, string> = { listing: 'Listing', memory: 'Memory & bytes', strings: 'Defined strings', imports: 'Imports', exports: 'Exports', callGraph: 'Call graph', controlFlow: 'Control flow', callers: 'Callers', callees: 'Callees', references: 'Binary address references' };
+const names: Record<WorkbenchKind, string> = { listing: 'Listing', memory: 'Memory & bytes', strings: 'Strings', imports: 'Imports', exports: 'Exports', callGraph: 'Call graph', controlFlow: 'Control flow', callers: 'Callers', callees: 'Callees', references: 'Binary address references' };
 
 /** Graphical browsing of real program data, always scoped to its owning session. */
 export class Workbench implements vscode.Disposable {
@@ -374,11 +375,15 @@ export class Workbench implements vscode.Disposable {
         let body = '', scope = '', scopeSummary: string | undefined, next = false, address: string | undefined;
         let callTools: string | undefined, callName: string | undefined;
         if (state.kind === 'strings') {
-            const { items: strings, scanned } = await definedStrings(this.call, state.md5);
-            body = table(['Address', 'Length', 'Data type', 'String'], strings.map(unit => ({ cells: [unit.address, unit.length, unit.type, unit.value], address: unit.address, kind: 'data', detail: unit.type })));
-            scopeSummary = `${strings.length} strings`;
-            scope = `${strings.length} strings recognized by Ghidra among ${scanned} defined data units in the default address space. Raw bytes are not scanned for strings.`;
-            if (!strings.length) { body += '<p class="empty">Ghidra has not defined any strings in this program.</p>'; }
+            const { items: strings, totalIndexed, indexComplete } = await searchStrings(this.call, state.md5, {
+                query: state.stringFilter,
+                regex: state.stringRegex,
+                caseSensitive: state.stringCaseSensitive,
+            });
+            body = table(['Address', 'Length', 'Type / Encoding', 'String'], strings.map(unit => ({ cells: [unit.address, unit.length, unit.type, unit.value], address: unit.address, kind: 'data', detail: unit.type })));
+            scopeSummary = `${strings.length} strings${indexComplete ? '' : ' · indexing'}`;
+            scope = `${strings.length} strings returned from ${totalIndexed} cached ASCII and UTF-16 strings (${indexComplete ? 'index complete' : 'analysis running; partial index'}).`;
+            if (!strings.length) { body += '<p class="empty">No matching strings in this program.</p>'; }
         } else if (state.kind === 'imports' || state.kind === 'exports') {
             const result = await this.call<BinaryInterface>('ghidra.binaryInterface', { md5: state.md5 });
             const symbols = items(result[state.kind]);
@@ -587,6 +592,13 @@ export class Workbench implements vscode.Disposable {
             state.callColumnPath = state.callColumnPaths.get(JSON.stringify([state.entry, state.callColumnDirection || 'callees'])) || [];
             state.callExpansion = state.callRoots.get(state.entry!) || { callers: [state.entry!], callees: [state.entry!] };
             await this.render(state); return;
+        }
+        if (state.kind === 'strings' && action === 'searchStrings') {
+            state.stringFilter = stringOf(message.query).trim() || undefined;
+            state.stringRegex = Boolean(message.regex);
+            state.stringCaseSensitive = Boolean(message.caseSensitive);
+            await this.render(state);
+            return;
         }
         if (action === 'refresh') { await this.refreshPanel(state); return; }
         if (action === 'next' && state.next) {

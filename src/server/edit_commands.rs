@@ -21,7 +21,7 @@ impl Server {
     match command {
       "ghidra.strings" => {
         let md5 = self.scoped_md5(&arg).await?;
-        crate::address::defined_strings(backend, &md5).await
+        crate::address::search_strings(backend, &md5, &arg).await
       }
       "ghidra.typeDocument" => {
         let md5 = self.scoped_md5(&arg).await?;
