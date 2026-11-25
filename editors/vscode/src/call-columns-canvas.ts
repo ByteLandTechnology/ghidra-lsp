@@ -5,32 +5,33 @@
 export const callColumnsStyles = `
 /* Hallmark · app · call columns · VS Code theme · direct function navigation */
 /* Critique: keep the path readable and reveal row actions in context. */
-.call-page .call-view-switch{display:inline-flex;align-items:center;flex-shrink:0;gap:2px;padding:2px;border:1px solid var(--vscode-panel-border);border-radius:8px;background:var(--vscode-sideBar-background,var(--vscode-editor-background))}
-.call-page .call-view-switch button{display:inline-flex;align-items:center;justify-content:center;gap:6px;width:auto;height:26px;min-height:0;padding:0 10px;border:0;border-radius:6px;background:transparent;color:var(--ghidra-muted);font-size:12px;font-weight:500;line-height:1;white-space:nowrap}
+.call-page .call-view-switch{display:inline-flex;align-items:center;flex-wrap:wrap;gap:2px;padding:2px;border:1px solid var(--vscode-panel-border);border-radius:8px;background:var(--vscode-sideBar-background,var(--vscode-editor-background));max-width:100%}
+.call-page .call-view-switch button{display:inline-flex;align-items:center;justify-content:center;gap:6px;width:auto;min-width:26px;min-height:26px;height:auto;padding:4px 10px;border:0;border-radius:6px;background:transparent;color:var(--ghidra-muted);font-size:12px;font-weight:500;line-height:1.2;white-space:nowrap}
 .call-page .call-view-switch button:hover:not([aria-pressed="true"]){background:var(--vscode-list-hoverBackground);color:var(--vscode-foreground)}
 .call-page .call-view-switch [aria-pressed="true"]{background:var(--vscode-button-background,var(--ghidra-active-selection-bg));color:var(--vscode-button-foreground,var(--ghidra-active-selection-fg));box-shadow:inset 0 0 0 1px var(--vscode-contrastBorder,transparent);font-weight:600}
-.call-page .call-view-switch .call-icon{font-size:14px}
-.call-columns{display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden}
-.call-column-navigation{display:flex;align-items:center;gap:16px;min-height:46px;padding:8px 20px;border-bottom:1px solid var(--vscode-panel-border)}
-.call-direction{display:inline-flex;gap:2px;flex-shrink:0;background:var(--vscode-sideBar-background,var(--vscode-editor-background));padding:2px;border:1px solid var(--vscode-panel-border);border-radius:8px}
-.call-page .call-direction button{display:inline-flex;align-items:center;justify-content:center;gap:5px;border:0;min-height:26px;height:26px;padding:0 9px;border-radius:6px;background:transparent;color:var(--ghidra-muted);font-size:12px;font-weight:500;white-space:nowrap}
-.call-page .call-direction button .call-icon{font-size:14px}
+.call-page .call-view-switch .call-icon{font-size:14px;flex-shrink:0}
+.call-columns{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr) auto;min-height:0;overflow:hidden}
+.call-column-navigation{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:6px 14px;min-height:42px;padding:6px 14px;border-bottom:1px solid var(--vscode-panel-border);background:var(--vscode-editor-background)}
+.call-direction{display:inline-flex;flex-wrap:wrap;gap:2px;justify-self:start;max-width:100%;background:var(--vscode-sideBar-background,var(--vscode-editor-background));padding:2px;border:1px solid var(--vscode-panel-border);border-radius:8px}
+.call-page .call-direction button{display:inline-flex;align-items:center;justify-content:center;gap:5px;border:0;min-width:26px;min-height:26px;height:auto;padding:4px 9px;border-radius:6px;background:transparent;color:var(--ghidra-muted);font-size:12px;font-weight:500;line-height:1.2;white-space:nowrap}
+.call-page .call-direction button .call-icon{font-size:14px;flex-shrink:0}
 .call-page .call-direction [aria-pressed="true"]{background:var(--ghidra-selection-bg);color:var(--ghidra-selection-fg);box-shadow:inset 0 0 0 1px var(--ghidra-focus);font-weight:600}
-.call-column-trail{display:flex;align-items:center;gap:4px;min-width:0;overflow:auto;white-space:nowrap;scrollbar-width:thin}
-.call-column-trail .call-icon{font-size:12px;color:var(--ghidra-muted)}
-.call-page .call-column-trail button{border:0;background:transparent;padding:2px 4px;min-height:24px;color:var(--ghidra-muted);font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis;flex-shrink:0}
-.call-page .call-column-trail [aria-current]{color:var(--vscode-foreground)}
-.call-column-strip{display:flex;flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin}
+.call-column-trail{display:flex;align-items:center;flex-wrap:wrap;gap:2px 4px;min-width:0;max-height:60px;overflow-y:auto;scrollbar-width:thin}
+.call-column-trail .call-icon{font-size:12px;color:var(--ghidra-muted);flex-shrink:0}
+.call-page .call-column-trail button{display:inline-flex;align-items:center;justify-content:center;border:0;border-radius:4px;background:transparent;padding:2px 6px;min-width:26px;min-height:26px;height:auto;color:var(--ghidra-muted);font-size:11px;line-height:1.25;max-width:min(200px,100%)}
+.call-page .call-column-trail .call-trail-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.call-page .call-column-trail [aria-current]{color:var(--vscode-foreground);font-weight:600}
+.call-column-strip{display:flex;min-width:0;min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin}
 .call-page .call-column{display:flex;flex-direction:column;flex:0 0 280px;width:280px;min-width:0;min-height:0;margin:0;padding:0;border:0;border-right:1px solid var(--vscode-panel-border)}
-.call-page .call-column-heading{display:grid;grid-template-columns:minmax(0,1fr) 28px;align-items:center;gap:2px 8px;flex-shrink:0;padding:16px 16px 12px;margin:0;border-bottom:1px solid var(--vscode-panel-border)}
+.call-page .call-column-heading{display:grid;grid-template-columns:minmax(0,1fr) 28px;align-items:center;gap:2px 8px;flex-shrink:0;padding:12px 14px 10px;margin:0;border-bottom:1px solid var(--vscode-panel-border)}
 .call-page .call-column-heading h2{font-size:12px;font-weight:600;line-height:1.5;margin:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .call-column-heading>span{font-size:11px;color:var(--ghidra-muted)}
-.call-page .call-column-code,.call-page .call-column-source-code{display:flex;align-items:center;justify-content:center;width:28px;height:28px;min-height:0;padding:4px;border:0;border-radius:3px;background:transparent;color:var(--ghidra-muted)}
+.call-page .call-column-code,.call-page .call-column-source-code{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;min-width:28px;min-height:28px;padding:4px;border:0;border-radius:4px;background:transparent;color:var(--ghidra-muted)}
 .call-column-source-code{grid-column:2;grid-row:1/3}
 .call-column-list{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:8px;scrollbar-width:thin}
 .call-column-row{display:flex;align-items:center;gap:2px;position:relative;border-radius:3px;color:var(--vscode-foreground)}
-.call-page .call-column-pick{display:flex;align-items:center;gap:6px;flex:1;min-width:0;min-height:36px;border:0;border-radius:3px;padding:7px 4px 7px 8px;text-align:left;background:transparent;color:inherit}
-.call-column-pick>.call-icon:first-child{color:var(--ghidra-muted);font-size:14px}
+.call-page .call-column-pick{display:flex;align-items:center;gap:6px;flex:1;min-width:0;min-height:34px;height:auto;border:0;border-radius:3px;padding:6px 4px 6px 8px;text-align:left;background:transparent;color:inherit}
+.call-column-pick>.call-icon:first-child{color:var(--ghidra-muted);font-size:14px;flex-shrink:0}
 .call-column-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}
 .call-column-addr{flex:0 1 auto;min-width:0;max-width:96px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:11px var(--vscode-editor-font-family,monospace);font-variant-numeric:tabular-nums;color:var(--ghidra-muted)}
 .call-column-chevron{flex-shrink:0;font-size:12px;color:var(--ghidra-muted)}
@@ -48,12 +49,19 @@ export const callColumnsStyles = `
 .call-column-limit{flex-shrink:0;margin:0;padding:8px 12px;font-size:11px;color:var(--ghidra-muted);border-top:1px solid var(--vscode-panel-border)}
 .call-column-row[aria-busy="true"] .call-column-chevron{opacity:.4}
 .sr-only{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
-@media(max-width:640px){.call-column-navigation{padding:8px 10px;gap:10px}.call-page .call-column{flex-basis:min(280px,calc(100% - 24px));width:min(280px,calc(100% - 24px))}.call-page .call-view-switch button,.call-page .call-direction button{padding:0 7px;gap:4px;font-size:11px}}
+@media(forced-colors:active){.call-page .call-view-switch,.call-direction,.call-column-navigation,.call-page .call-column{border-color:CanvasText}}
+@media(max-width:640px){
+.call-column-navigation{grid-template-columns:minmax(0,1fr);padding:4px 8px;gap:4px}
+.call-page .call-column{flex-basis:min(280px,calc(100% - 16px));width:min(280px,calc(100% - 16px))}
+.call-page .call-view-switch button,.call-page .call-direction button{padding:3px 7px;gap:4px;font-size:11px;min-height:24px;min-width:24px}
+.call-page .call-column-trail button{min-height:24px;min-width:24px;padding:2px 5px}
+.call-page .call-column-heading{padding:8px 10px}
+}
 `;
 
 /** Both presentations share the toolbar and the owning program, without sharing layout state. */
 export const callViewScript = String.raw`
-    {let switchingView=false;for(const button of document.querySelectorAll('[data-call-view]')){button.addEventListener('click',()=>{if(switchingView||button.getAttribute('aria-pressed')==='true'){return}switchingView=true;for(const peer of document.querySelectorAll('[data-call-view]')){peer.setAttribute('aria-pressed',String(peer===button))}state.callView=button.dataset.callView==='columns'?'columns':'graph';persist();send('callGraphView',{view:state.callView})})}}
+    for(const button of document.querySelectorAll('[data-call-view]')){button.addEventListener('click',()=>{if(button.getAttribute('aria-pressed')==='true'){return}for(const peer of document.querySelectorAll('[data-call-view]')){peer.setAttribute('aria-pressed',String(peer===button))}state.callView=button.dataset.callView==='columns'?'columns':'graph';persist();button.disabled=true;send('callGraphView',{view:state.callView})})}
 `;
 
 /** Client-side script for call-column selection, keyboard navigation, and scrolling. */
@@ -67,31 +75,26 @@ export const callColumnsScript = String.raw`
       const snapshot=()=>{captureUi();persist()};
       const scheduleSnapshot=()=>{captureUi();schedulePersist()};
       strip.addEventListener('scroll',scheduleSnapshot,{passive:true});for(const column of columns){column.querySelector('.call-column-list').addEventListener('scroll',scheduleSnapshot,{passive:true})}
-      strip.addEventListener('focusin',event=>{if(event.target!==strip){event.target.scrollIntoView?.({block:'nearest',inline:'nearest'})}});
-      const focusInColumn=col=>col?.querySelector('.call-column-row:not([hidden]) .call-column-pick[aria-pressed="true"]:not(:disabled)')||col?.querySelector('.call-column-row:not([hidden]) .call-column-pick:not(:disabled)')||col?.querySelector('[id^="call-column-retry-"]')||col?.querySelector('.call-column-source-code');
       const request=(action,extra,focusColumn)=>{columnUi.pendingFocus=focusColumn;persist();browser.setAttribute('aria-busy','true');send(action,{graphRoot:state.entry,direction,...extra})};
-      const pick=(button,keyboard=false)=>{const index=Number(button.dataset.columnIndex),cycle=button.dataset.cycleAt;if(button.getAttribute('aria-pressed')==='true'){if(keyboard){const next=focusInColumn(columns[index+1]);next?.focus();next?.scrollIntoView?.({block:'nearest',inline:'nearest'})}return}button.closest('.call-column-row').setAttribute('aria-busy','true');request('callColumnSelect',{entry:button.dataset.entry,index},keyboard?cycle!==undefined?Number(cycle):index+1:undefined)};
-      for(const column of columns){
-        const index=Number(column.dataset.column);
-        column.addEventListener('keydown',event=>{if(event.key==='ArrowLeft'&&!event.altKey&&!event.ctrlKey&&!event.metaKey){event.preventDefault();if(index>0){const parent=focusInColumn(columns[index-1]);parent?.focus();parent?.scrollIntoView?.({block:'nearest',inline:'nearest'})}}});
-        column.querySelector('[id^="call-column-retry-"]')?.addEventListener('click',()=>{columnUi.pendingFocus=index;snapshot()});
-      }
+      const pick=(button,keyboard=false)=>{const index=Number(button.dataset.columnIndex),cycle=button.dataset.cycleAt;if(button.getAttribute('aria-pressed')==='true'){if(keyboard){columns[index+1]?.querySelector('.call-column-pick:not(:disabled)')?.focus()}return}button.closest('.call-column-row').setAttribute('aria-busy','true');request('callColumnSelect',{entry:button.dataset.entry,index},keyboard?cycle!==undefined?Number(cycle):index+1:undefined)};
       for(const button of browser.querySelectorAll('.call-column-pick')){
         button.addEventListener('click',()=>{if(!button.disabled){pick(button)}});
-        button.addEventListener('keydown',event=>{const rows=[...button.closest('.call-column-list').querySelectorAll('.call-column-row:not([hidden]) .call-column-pick:not(:disabled)')],at=rows.indexOf(button);if(['ArrowDown','ArrowUp','Home','End'].includes(event.key)){event.preventDefault();const next=event.key==='Home'?0:event.key==='End'?rows.length-1:Math.max(0,Math.min(rows.length-1,at+(event.key==='ArrowDown'?1:-1)));rows[next]?.focus();rows[next]?.scrollIntoView?.({block:'nearest',inline:'nearest'})}else if(event.key==='ArrowRight'||event.key==='Enter'){event.preventDefault();pick(button,true)}})
+        button.addEventListener('keydown',event=>{const index=Number(button.dataset.columnIndex),rows=[...button.closest('.call-column-list').querySelectorAll('.call-column-row:not([hidden]) .call-column-pick:not(:disabled)')],at=rows.indexOf(button);if(['ArrowDown','ArrowUp','Home','End'].includes(event.key)){event.preventDefault();const next=event.key==='Home'?0:event.key==='End'?rows.length-1:Math.max(0,Math.min(rows.length-1,at+(event.key==='ArrowDown'?1:-1)));rows[next]?.focus()}else if(event.key==='ArrowRight'||event.key==='Enter'){event.preventDefault();pick(button,true)}else if(event.key==='ArrowLeft'){event.preventDefault();columns[index-1]?.querySelector('.call-column-pick[aria-pressed="true"]')?.focus()}})
       }
       for(const button of browser.querySelectorAll('.call-column-code,.call-column-source-code')){button.addEventListener('click',event=>{event.stopPropagation();const fn=button.classList.contains('call-column-source-code')?button:button.closest('.call-column-row');send('decompile',{entry:fn.dataset.entry,address:fn.dataset.entry,kind:'function',label:fn.dataset.label})})}
-      for(const button of browser.querySelectorAll('[data-column-direction]')){button.addEventListener('click',()=>{if(browser.getAttribute('aria-busy')==='true'||button.dataset.columnDirection===direction){return}request('callColumnDirection',{direction:button.dataset.columnDirection})})}
-      for(const button of browser.querySelectorAll('[data-column-trail]')){button.addEventListener('click',()=>{const idx=Number(button.dataset.columnTrail);request('callColumnTrail',{index:idx},idx)})}
-      document.getElementById('call-column-home').addEventListener('click',()=>request('callColumnTrail',{index:0},0));
+      for(const button of browser.querySelectorAll('[data-column-direction]')){button.addEventListener('click',()=>{if(button.dataset.columnDirection===direction){return}button.disabled=true;request('callColumnDirection',{direction:button.dataset.columnDirection})})}
+      for(const button of browser.querySelectorAll('[data-column-trail]')){button.addEventListener('click',()=>request('callColumnTrail',{index:Number(button.dataset.columnTrail)}))}
+      document.getElementById('call-column-home').addEventListener('click',()=>request('callColumnTrail',{index:0}));
       const searchToggle=document.getElementById('call-search-toggle'),searchHost=search.closest('.call-search');
       const openSearch=()=>{searchHost.hidden=false;searchToggle.setAttribute('aria-expanded','true');search.focus();search.select()};
-      const closeSearch=()=>{searchToggle.focus({preventScroll:true});searchHost.hidden=true;searchToggle.setAttribute('aria-expanded','false')};
+      const closeSearch=()=>{searchHost.hidden=true;searchToggle.setAttribute('aria-expanded','false');searchToggle.focus()};
       searchToggle.addEventListener('click',()=>searchHost.hidden?openSearch():closeSearch());
-      searchHost.addEventListener('focusout',event=>{if(!search.value&&event.relatedTarget&&event.relatedTarget!==searchToggle&&!searchHost.contains(event.relatedTarget)){searchHost.hidden=true;searchToggle.setAttribute('aria-expanded','false')}});
       const filterColumns=()=>{const query=search.value.trim().toLowerCase();let found=0,total=0;for(const column of columns){let count=0;for(const row of column.querySelectorAll('.call-column-row')){total++;row.hidden=!!query&&!((row.dataset.label+' '+row.dataset.entry).toLowerCase().includes(query));if(!row.hidden){count++;found++}}column.querySelector('.call-column-no-matches').hidden=!query||count>0||!column.querySelector('.call-column-row')}const status=document.getElementById('filter-status');status.hidden=!query;status.textContent=found+' of '+total+' displayed functions match.'};
       search.addEventListener('input',()=>{filterColumns();persist()});search.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();search.value='';filterColumns();closeSearch()}else if(event.key==='Enter'){event.preventDefault();browser.querySelector('.call-column-row:not([hidden]) .call-column-pick:not(:disabled)')?.focus()}});if(search.value){openSearch()}filterColumns();
-      document.addEventListener('keydown',event=>{if(isModShortcut(event,'f')||(event.key==='/'&&canUseSingleKeyShortcut(event))){event.preventDefault();const menu=document.getElementById('call-menu');if(menu){menu.open=false}openSearch()}});
-      requestAnimationFrame(()=>{strip.scrollLeft=saved?.left||0;for(const column of columns){column.querySelector('.call-column-list').scrollTop=saved?.lists?.[column.dataset.source]||0}if(saved?.path!==path||saved?.direction!==direction){columns[columns.length-1]?.scrollIntoView({block:'nearest',inline:'nearest'})}if(saved?.pendingFocus!==undefined){const idx=Math.min(saved.pendingFocus,columns.length-1),column=columns[idx],retry=previous.focusId==='call-column-retry-'+idx?document.getElementById(previous.focusId):null;const target=retry||focusInColumn(column);target?.focus({preventScroll:true});target?.scrollIntoView?.({block:'nearest',inline:'nearest'})}snapshot()});
+      const menu=document.getElementById('call-menu'),summary=menu.querySelector('summary');
+      menu.addEventListener('keydown',event=>{if(!['ArrowDown','ArrowUp','ArrowLeft','ArrowRight','Home','End'].includes(event.key)){return}event.preventDefault();menu.open=true;const items=[...menu.querySelectorAll('button')],at=items.indexOf(document.activeElement),next=event.key==='Home'?0:event.key==='End'?items.length-1:(event.key==='ArrowDown'||event.key==='ArrowRight')?(at+1)%items.length:(at<=0?items.length-1:at-1);items[next]?.focus()});
+      document.addEventListener('click',event=>{if(menu.open&&(!menu.contains(event.target)||event.target.closest('button'))){menu.open=false}});
+      document.addEventListener('keydown',event=>{if(event.key==='Escape'&&menu.open){event.preventDefault();menu.open=false;summary.focus()}else if(isModShortcut(event,'f')||(event.key==='/'&&canUseSingleKeyShortcut(event))){event.preventDefault();menu.open=false;openSearch()}});
+      requestAnimationFrame(()=>{strip.scrollLeft=saved?.left||0;for(const column of columns){column.querySelector('.call-column-list').scrollTop=saved?.lists?.[column.dataset.source]||0}if(saved?.path!==path||saved?.direction!==direction){columns[columns.length-1]?.scrollIntoView({block:'nearest',inline:'nearest'})}if(saved?.pendingFocus!==undefined){setTimeout(()=>{const column=columns[Math.min(saved.pendingFocus,columns.length-1)];const button=column?.querySelector('.call-column-row:not([hidden]) .call-column-pick:not(:disabled)');if(button){button.focus()}else{column?.querySelector('.call-column-source-code')?.focus()}snapshot()},0)}snapshot()});
     })();
 `;

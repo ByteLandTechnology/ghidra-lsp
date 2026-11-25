@@ -187,12 +187,16 @@ export const viewStyles = `
 .browser-page .more-actions[open]>summary{margin:0}
 .browser-page #selection-more{position:absolute;z-index:5;right:0;bottom:calc(100% + 6px);width:240px;max-width:calc(100vw - 32px);display:flex;flex-direction:column;gap:2px;padding:6px;border:1px solid var(--vscode-menu-border,var(--vscode-panel-border));background:var(--vscode-menu-background,var(--vscode-editor-background));box-shadow:0 4px 12px var(--vscode-widget-shadow)}
 .browser-page #selection-more button{width:100%;justify-content:flex-start;border:0;background:transparent}
-.browser-page .table-wrap{max-height:max(120px,min(620px,calc(100vh - 200px)));border:0;border-radius:0;scrollbar-width:thin}
+.browser-page .table-wrap{scroll-padding:36px 4px 4px;max-height:max(120px,min(620px,calc(100vh - 200px)));border:0;border-radius:0;scrollbar-width:thin}
 .browser-page table{font-size:12px}
 .browser-page.has-selection .table-wrap{padding-bottom:56px;scroll-padding-bottom:56px}
 .browser-page th{position:sticky;top:0;z-index:1;background:var(--vscode-editor-background);font-size:11px;padding:8px 10px}
 .browser-page td{padding:8px 10px;line-height:1.55;font-size:12px}
 .browser-page td.addr{font-family:var(--vscode-editor-font-family,monospace);font-size:11px;font-variant-numeric:tabular-nums;white-space:nowrap;overflow-wrap:normal}
+.browser-page tbody tr.selected{background:var(--ghidra-selection-bg);color:var(--ghidra-selection-fg)}
+.browser-page tbody tr.selected:focus{background:var(--ghidra-active-selection-bg);color:var(--ghidra-active-selection-fg)}
+.browser-page tr:focus-visible{outline:2px solid var(--ghidra-focus);outline-offset:-2px}
+.browser-page tbody tr.selected:focus-visible{outline-color:var(--ghidra-active-selection-fg)}
 .browser-page .table-empty{margin:0;padding:12px 0;color:var(--ghidra-muted);font-size:12px}
 .browser-page .no-results{display:flex;align-items:center;gap:12px;margin:12px 0;padding:8px 0;color:var(--ghidra-muted);font-size:12px}
 .browser-page .no-results[hidden]{display:none}
@@ -346,7 +350,9 @@ syncShortcutHints();
 export const browserViewScript = String.raw`
     (()=>{
       if(!document.body.classList.contains('browser-page')){return}
-      for(const table of document.querySelectorAll('.table-wrap')){if(!table.querySelector('tbody tr')){table.hidden=true;const next=table.nextElementSibling;const counted=/\(0\)\s*$/.test(table.closest('section')?.querySelector('h2')?.textContent||'');if(!counted&&!next?.classList.contains('empty')){const empty=document.createElement('p');empty.className='table-empty';empty.hidden=!!search.value;empty.setAttribute('role','status');empty.textContent='No entries.';table.after(empty)}}}
+      for(const table of document.querySelectorAll('.table-wrap')){table.addEventListener('scroll',schedulePersist,{passive:true});if(!table.querySelector('tbody tr')){table.hidden=true;const next=table.nextElementSibling;const counted=/\(0\)\s*$/.test(table.closest('section')?.querySelector('h2')?.textContent||'');if(!counted&&!next?.classList.contains('empty')){const empty=document.createElement('p');empty.className='table-empty';empty.hidden=!!search.value;empty.setAttribute('role','status');empty.textContent='No entries.';table.after(empty)}}}
       document.getElementById('clear-filter').addEventListener('click',()=>{search.value='';filter();persist();search.focus()});
+      for(const row of selectable){row.addEventListener('keydown',event=>{if(!['ArrowDown','ArrowUp','Home','End'].includes(event.key)){return}const rows=[...row.closest('tbody').querySelectorAll('tr[data-address]:not([hidden]),tr[data-entry]:not([hidden])')],index=rows.indexOf(row),next=event.key==='Home'?0:event.key==='End'?rows.length-1:Math.max(0,Math.min(rows.length-1,index+(event.key==='ArrowDown'?1:-1)));event.preventDefault();rows[next]?.focus();rows[next]?.scrollIntoView({block:'nearest'})})}
+      more?.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();more.open=false;moreSummary.focus();return}if(!['ArrowDown','ArrowUp','ArrowLeft','ArrowRight','Home','End'].includes(event.key)){return}event.preventDefault();more.open=true;const buttons=[...more.querySelectorAll('button:not(:disabled)')],index=buttons.indexOf(document.activeElement),next=event.key==='Home'?0:event.key==='End'?buttons.length-1:(event.key==='ArrowDown'||event.key==='ArrowRight')?(index+1)%buttons.length:(index<=0?buttons.length-1:index-1);buttons[next]?.focus()});
     })();
 `;
