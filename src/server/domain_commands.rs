@@ -28,6 +28,9 @@ impl Server {
       }
       "ghidra.pollOpenBinary" => self.handle_poll_open_binary(&arg, backend).await,
       "ghidra.openBinary" => self.handle_open_binary(&arg, backend).await,
+      "ghidra.undo" | "ghidra.redo" => self.handle_undo_redo(command, &arg, backend).await,
+      "ghidra.saveProgram" => self.handle_save_program(&arg, backend).await,
+      "ghidra.resetSession" => self.handle_reset_session(&arg, backend).await,
       "ghidra.closeSession" => self.handle_close_session(&arg, backend).await,
       "ghidra.reanalyze" => self.handle_reanalyze(&arg, backend).await,
       "ghidra.cancelJob" => bail!(
@@ -345,7 +348,7 @@ impl Server {
     Ok(json!({"md5": md5, "job": started.get("job").unwrap_or(&started), "waited": wait}))
   }
 
-  /// Executes a policy-checked MCP write operation followed by project persistence and refresh.
+  /// Executes a policy-checked MCP write operation and refreshes open session views.
   async fn handle_mutate(&self, arg: &Value, backend: &McpBackend) -> Result<Value> {
     let md5 = self.scoped_md5(arg).await?;
     let (domain, operation, parameters) = workbench::operation(arg)?;
@@ -358,11 +361,116 @@ impl Server {
       .await
       .context("Modification may have reached Ghidra; refresh and inspect the actual program state before retrying")?;
     workbench::check_write_result(domain, operation, &result)?;
-    let saved_result = ((domain, operation) == ("program", "save")).then_some(&result);
-    self
-      .commit_and_refresh(e, backend, &md5, saved_result)
+    let persisted = (domain, operation) == ("program", "save");
+    if persisted {
+      self
+        .commit_and_refresh(e, backend, &md5, Some(&result))
+        .await?;
+    } else {
+      self.refresh_after_mutation(e, &md5).await?;
+    }
+    Ok(json!({"md5": md5, "persisted": persisted, "result": result}))
+  }
+
+  /// Reverts or reapplies one committed transaction and refreshes open session views.
+  async fn handle_undo_redo(
+    &self,
+    command: &str,
+    arg: &Value,
+    backend: &McpBackend,
+  ) -> Result<Value> {
+    let md5 = self.scoped_md5(arg).await?;
+    let operation = if command == "ghidra.undo" {
+      "undo"
+    } else {
+      "redo"
+    };
+    let e = self.engine.lock().await;
+    Self::ensure_program_clean(&e, &md5)?;
+    let mut result = backend
+      .call("program", operation, Some(&md5), json!({}))
       .await?;
-    Ok(json!({"md5": md5, "persisted": true, "result": result}))
+    self.refresh_after_mutation(e, &md5).await?;
+    if let Some(obj) = result.as_object_mut() {
+      obj.insert("md5".into(), json!(md5));
+    }
+    Ok(result)
+  }
+
+  /// Saves committed program changes in session `md5` to the Ghidra project.
+  async fn handle_save_program(&self, arg: &Value, backend: &McpBackend) -> Result<Value> {
+    let md5 = self.scoped_md5(arg).await?;
+    let e = self.engine.lock().await;
+    Self::ensure_program_clean(&e, &md5)?;
+    drop(e);
+    workbench::persist(backend, &md5).await?;
+    self.changed(&md5).await;
+    Ok(json!({"md5": md5, "persisted": true}))
+  }
+
+  /// Resets the Ghidra project for `md5` to its cached binary and optionally reopens it.
+  async fn handle_reset_session(&self, arg: &Value, backend: &McpBackend) -> Result<Value> {
+    let md5 = self.scoped_md5(arg).await?;
+    {
+      let e = self.engine.lock().await;
+      Self::ensure_program_clean(&e, &md5)?;
+    }
+    let reopen = arg.get("reopen").and_then(Value::as_bool).unwrap_or(true);
+    let analyze = match arg.get("analyze").and_then(Value::as_bool) {
+      Some(flag) => flag,
+      None if reopen => self
+        .program_analysis(&md5)
+        .await
+        .map(|state| state.analyzed)
+        .unwrap_or(false),
+      None => false,
+    };
+    let mut e = self.engine.lock().await;
+    Self::ensure_program_clean(&e, &md5)?;
+    let previous_active = e.active.clone();
+    let was_active = previous_active.as_deref() == Some(md5.as_str());
+    let reset_result = backend
+      .call("session", "reset", Some(&md5), json!({}))
+      .await?;
+    for progress in self
+      .open_jobs
+      .lock()
+      .await
+      .values_mut()
+      .filter(|p| p.md5 == md5 && p.phase != "ready")
+    {
+      progress.error = Some("The session was reset while its operation was pending".into());
+    }
+    self.view_cache.invalidate(&md5).await;
+    if !reopen {
+      e.forget_session(&md5);
+      drop(e);
+      self.changed(&md5).await;
+      return Ok(json!({
+        "md5": md5,
+        "reset": true,
+        "reopened": false,
+        "result": reset_result,
+      }));
+    }
+    e.clear_session_caches(&md5);
+    drop(e);
+    let opened = self
+      .handle_open_binary(&json!({"md5": md5, "analyze": analyze}), backend)
+      .await?;
+    let mut e = self.engine.lock().await;
+    if !was_active && previous_active.is_some() {
+      e.active = previous_active;
+    }
+    self.refresh_after_mutation(e, &md5).await?;
+    Ok(json!({
+      "md5": md5,
+      "reset": true,
+      "reopened": true,
+      "analyzed": opened.get("analyzed").and_then(Value::as_bool).unwrap_or(false),
+      "analysisRunning": opened.get("analysisRunning").and_then(Value::as_bool).unwrap_or(false),
+      "result": reset_result,
+    }))
   }
 
   /// Reports pending rename metadata and affected documents for the scoped session.

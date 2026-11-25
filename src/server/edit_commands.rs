@@ -67,7 +67,7 @@ impl Server {
     }
   }
 
-  /// Applies and persists one comment edit with optimistic conflict verification.
+  /// Applies one comment edit in memory with optimistic conflict verification.
   async fn handle_save_comment(&self, arg: &Value, backend: &McpBackend) -> Result<Value> {
     let md5 = self.scoped_md5(arg).await?;
     let address = arg
@@ -102,7 +102,7 @@ impl Server {
       }));
     }
     let result = crate::mutations::execute_comment_mutation(backend, &md5, &prepared).await?;
-    self.commit_and_refresh(e, backend, &md5, None).await?;
+    self.refresh_after_mutation(e, &md5).await?;
     Ok(json!({
       "md5": md5,
       "address": prepared.address,
@@ -110,12 +110,12 @@ impl Server {
       "kind": prepared.kind,
       "text": prepared.saved_text,
       "mutated": true,
-      "persisted": true,
+      "persisted": false,
       "result": result,
     }))
   }
 
-  /// Applies and persists function prototype or variable mutations in one atomic batch.
+  /// Applies function prototype or variable mutations in one atomic batch.
   async fn handle_save_function_edit(
     &self,
     command: &str,
@@ -141,11 +141,11 @@ impl Server {
       crate::mutations::prepare_variables_ops(backend, &md5, entry, original, payload).await?
     };
     let result = crate::mutations::execute_ops(backend, &md5, &ops).await?;
-    self.commit_and_refresh(e, backend, &md5, None).await?;
+    self.refresh_after_mutation(e, &md5).await?;
     Ok(json!({
       "md5": md5,
       "entry": entry,
-      "persisted": true,
+      "persisted": false,
       "result": result,
     }))
   }
@@ -184,11 +184,7 @@ impl Server {
       .map_err(crate::types_doc::wrap_post_send_error)?;
     workbench::check_write_result(domain, operation, &result)
       .map_err(crate::types_doc::wrap_post_send_error)?;
-    if let Err(error) = workbench::persist(backend, &md5).await {
-      drop(e);
-      self.changed(&md5).await;
-      return Err(crate::types_doc::wrap_post_send_error(error));
-    }
+    e.clear_session_caches(&md5);
     let changes = e
       .refresh_session(&md5, None)
       .await

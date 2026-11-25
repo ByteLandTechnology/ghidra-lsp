@@ -1,6 +1,6 @@
 # LSP Protocol and Development Guide
 
-This reference documents every Language Server Protocol (LSP) capability exposed by `ghidra-lsp`, the complete catalog of 45 `workspace/executeCommand` methods, repository module layout, and `AGENTS.md` compliance rules.
+This reference documents every Language Server Protocol (LSP) capability exposed by `ghidra-lsp`, the complete catalog of 49 `workspace/executeCommand` methods, repository module layout, and `AGENTS.md` compliance rules.
 
 ## LSP capability matrix
 
@@ -29,13 +29,13 @@ Declared in `Server::initialize` (`src/server/lsp.rs`):
 | `codeLensProvider` | `resolveProvider: false` | Emits function header lenses for `Listing`, `Call Graph`, `Control Flow`, `Callers`, `Callees`, and `References` |
 | `foldingRangeProvider` | `true` | Computes comment block (`//`, `/* ... */`) and brace `{ ... }` folding ranges |
 | `documentLinkProvider` | `resolveProvider: false` | Links inline `ghidra://` URIs, `ram:<hex>` addresses, and `0x<hex>` literals to `ghidra://` targets |
-| `executeCommandProvider` | 45 commands | Exposes session, analysis, window, mutation, and rename commands listed below |
+| `executeCommandProvider` | 49 commands | Exposes session, analysis, window, mutation, and rename commands listed below |
 
 Custom server notification: `ghidra/changed` (`{"md5": "<32-hex>"}`) notifies clients when cached views or backend analysis state change.
 
 ## `workspace/executeCommand` catalog
 
-All 45 commands declared in `COMMANDS` (`src/server/mod.rs`) and dispatched across `commands.rs`, `domain_commands.rs`, `edit_commands.rs`, and `view_commands.rs`:
+All 49 commands declared in `COMMANDS` (`src/server/mod.rs`) and dispatched across `commands.rs`, `domain_commands.rs`, `edit_commands.rs`, and `view_commands.rs`:
 
 ### Sessions, binaries, and analysis
 
@@ -48,6 +48,10 @@ All 45 commands declared in `COMMANDS` (`src/server/mod.rs`) and dispatched acro
 | `ghidra.pollOpenBinary` | `{"token"}` | Advance/poll pending open or analysis job and return progress snapshot |
 | `ghidra.beginReanalyze` | `{"md5?", "analyzers?"}` | Start async program reanalysis and return polling `token` |
 | `ghidra.reanalyze` | `{"md5?", "analyzers?", "wait?"}` | Start analysis, optionally wait (`default: true`), persist, and refresh open buffers |
+| `ghidra.undo` | `{"md5?"}` | Undo the latest committed Ghidra transaction and refresh open buffers (rejects pending renames or dirty buffers) |
+| `ghidra.redo` | `{"md5?"}` | Redo the latest undone Ghidra transaction and refresh open buffers (rejects pending renames or dirty buffers) |
+| `ghidra.saveProgram` | `{"md5?"}` | Explicitly save committed Ghidra program changes to disk (`program.save`) |
+| `ghidra.resetSession` | `{"md5?", "reopen?", "analyze?"}` | Reset the Ghidra project to its cached binary without saving, optionally reopen and analyze, and refresh open views |
 | `ghidra.closeSession` | `{"md5?", "force?"}` | Close a clean program session (rejects pending renames or dirty buffers) and clear caches |
 | `ghidra.cancelJob` | `{}` | Returns explicit guidance because installed `ghidra-mcp` exposes `job.get` / `job.wait` without `job.cancel` |
 
@@ -92,15 +96,15 @@ All 45 commands declared in `COMMANDS` (`src/server/mod.rs`) and dispatched acro
 | `ghidra.renameState` | `{"md5?"}` | Report pending rename `origin`, `oldName`, `newName`, `documents`, `applied`, `originApplied`, `patched` |
 | `ghidra.discardRename` | `{"md5?"}` | Discard pending rename preview and revert clean buffers |
 | `ghidra.commentsAt` | `{"md5?", "address"}` | Read all five comment kinds (`plate`, `pre`, `eol`, `post`, `repeatable`) at `address` |
-| `ghidra.saveComment` | `{"md5?", "address", "kind" \| "commentType", "text", "expected?"}` | Upsert or delete one comment with optimistic conflict verification and project save |
+| `ghidra.saveComment` | `{"md5?", "address", "kind" \| "commentType", "text", "expected?"}` | Upsert or delete one comment with optimistic conflict verification and refresh open views |
 | `ghidra.functionPrototype` | `{"md5?", "entry"}` | Read function signature, attributes, parameters, locals, and `original` snapshot |
 | `ghidra.saveFunctionPrototype` | `{"md5?", "entry", "original", "payload?" \| fields...}` | Validate and apply function signature and parameter edits in one `all_or_none` batch |
 | `ghidra.saveVariables` | `{"md5?", "entry", "original", "payload?" \| fields...}` | Validate and apply parameter/local variable name and type edits in one `all_or_none` batch |
 | `ghidra.typeDocument` | `{"md5?", "path"}` | Render `.ghidra-type` JSONC document, read-only state, `original` snapshot, and `model` |
 | `ghidra.validateTypeDocument` | `{"text", "original"}` | Validate edited JSONC draft and return UTF-16 `range` diagnostics |
-| `ghidra.saveTypeDocument` | `{"md5?", "path", "text", "original"}` | Check conflicts, write `data_type` mutation, persist project, refresh functions, and read back normalized JSONC |
-| `ghidra.query` | `{"md5?", "domain", "operation", "params?"}` | Policy-checked read-only MCP query (`READ` allowlist in `src/workbench.rs`) |
-| `ghidra.mutate` | `{"md5?", "domain", "operation", "params?"}` | Policy-checked MCP write (`WRITE` allowlist or `batch.execute` with `all_or_none`), persist, and refresh |
+| `ghidra.saveTypeDocument` | `{"md5?", "path", "text", "original"}` | Check conflicts, write `data_type` mutation, refresh functions, and read back normalized JSONC |
+| `ghidra.query` | `{"md5?", "domain", "operation", "params?"}` | Policy-checked read-only MCP query (`READ` allowlist in `src/workbench.rs`, including `program.history`) |
+| `ghidra.mutate` | `{"md5?", "domain", "operation", "params?"}` | Policy-checked MCP write (`WRITE` allowlist or `batch.execute` with `all_or_none`) and session refresh |
 
 ## Repository layout and module architecture
 
@@ -121,7 +125,7 @@ ghidra-lsp/
 │   ├── engine/                 # Decompilation, navigation, completion, hierarchy, rename lifecycle
 │   ├── graph/                  # Basic-block CFG and bounded call-graph builders
 │   ├── mutations/              # Comment, function prototype, and variable batch planners
-│   ├── server/                 # LSP trait implementation and 45 custom command handlers
+│   ├── server/                 # LSP trait implementation and 49 custom command handlers
 │   ├── types_doc/              # JSONC lexer/parser, validation, conflict check, type mutations
 │   └── views/                  # Cached metadata, listing window, memory chunk, byte inspector
 ├── xtask/                      # Workspace verification CLI (fmt, headers, lines, forbidden, ci)

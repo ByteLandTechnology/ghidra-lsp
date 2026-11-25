@@ -19,10 +19,8 @@ use crate::document::{
 };
 
 impl Engine {
-  /// Drops every view, rename plan, and semantic cache belonging to closed session `md5`.
-  pub(crate) fn forget_session(&mut self, md5: &str) {
-    self.docs.retain(|_, d| d.md5 != md5);
-    self.pending.remove(md5);
+  /// Clears cached symbols, functions, and local variable details for session `md5`.
+  pub(crate) fn clear_session_caches(&mut self, md5: &str) {
     self.symbols.remove(md5);
     self.functions.retain(|(session, _), _| session != md5);
     let local_prefix = format!("Local:{md5}:");
@@ -30,6 +28,13 @@ impl Engine {
     self
       .local_details
       .retain(|id, _| !id.starts_with(&local_prefix) && !id.starts_with(&parameter_prefix));
+  }
+
+  /// Drops every view, rename plan, and semantic cache belonging to closed session `md5`.
+  pub(crate) fn forget_session(&mut self, md5: &str) {
+    self.docs.retain(|_, d| d.md5 != md5);
+    self.pending.remove(md5);
+    self.clear_session_caches(md5);
     self.refresh_allowed.retain(|uri, _| {
       url::Url::parse(uri.as_str())
         .ok()
@@ -331,19 +336,8 @@ impl Engine {
       bail!("Symbol name changed externally; commit stopped");
     }
 
-    let saved = self
-      .backend
-      .call("program", "save", Some(&md5), json!({}))
-      .await
-      .context(
-        "Symbol renamed but not persisted; save the origin document again to retry persistence",
-      )?;
-    ensure!(
-      saved.get("saved").and_then(Value::as_bool) == Some(true),
-      "Symbol renamed but backend did not confirm persistence; save again"
-    );
-    self.symbols.remove(&md5);
-    // Keep the pending plan until persistence succeeds; after save, never reapply the patch.
+    self.clear_session_caches(&md5);
+    // Remove the pending plan after the rename reaches Ghidra so later saves do not repeat it.
     self.pending.remove(&md5);
     if let Some(doc) = self.docs.get_mut(uri) {
       doc.saved = doc.current.clone();
@@ -353,9 +347,10 @@ impl Engine {
         self.refresh_allowed.insert(u.clone(), expected.clone());
       }
     }
-    self.refresh_session(&md5, Some(&pending)).await.context(
-      "Rename persisted, but regeneration failed. Use Ghidra: Refresh Documents to recover",
-    )
+    self
+      .refresh_session(&md5, Some(&pending))
+      .await
+      .context("Rename applied, but regeneration failed. Use Ghidra: Refresh Documents to recover")
   }
 
   /// Resolves the backend domain, selector payload, and live name for a pending rename target.

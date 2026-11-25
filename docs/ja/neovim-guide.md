@@ -47,9 +47,9 @@
 
 ![Neovim Ghidra LSP ワークベンチ](../assets/screenshots/neovim-workbench.svg)
 
-## 全 25 個の `:Ghidra*` ユーザーコマンド
+## 全 29 個の `:Ghidra*` ユーザーコマンド
 
-`editors/nvim/plugin/ghidra-lsp.lua` に登録されている全 25 個のコマンドは次のとおりです。
+`editors/nvim/plugin/ghidra-lsp.lua` に登録されている全 29 個のコマンドは次のとおりです。
 
 | コマンド | 引数 | 動作 |
 | --- | --- | --- |
@@ -57,6 +57,8 @@
 | `:GhidraOpenBinary` | `[path]` | バイナリファイルを開きます（解析済みなら無言で復元、未解析なら解析実行を確認） |
 | `:GhidraSelectSession` | `[md5]` | 開いているまたは保存済みの Ghidra セッションを選択・アクティブ化します |
 | `:GhidraCloseSession` | `[md5]` | 指定または現在の Ghidra セッションを閉じます（未保存編集や保留中リネームがある場合は拒否） |
+| `:GhidraSaveProgram` | `[md5]` | 指定または現在のセッションのコミット済みメモリ変更を Ghidra プロジェクトへ明示保存します |
+| `:GhidraResetSession` | `[md5]` | 確認後、保存せずにセッションをリセットして Ghidra プロジェクトデータを削除し、元のバイナリから開き直します |
 | `:GhidraReanalyze` | なし | アクティブな Ghidra プログラムの再解析を実行します |
 | `:GhidraOpenFunction` | `[entry\|name]` | エントリアドレスまたは関数名（`<Tab>` 補完付き）で関数を開きます |
 | `:GhidraFunctions` | なし | 検索可能なフローティングピッカーで関数一覧を参照して開きます |
@@ -73,6 +75,8 @@
 | `:GhidraControlFlow` | なし | 現在の関数の基本ブロック制御フローグラフ（`ghidra-cfg://`）を開きます |
 | `:GhidraCallGraph` | `[entry\|address]` | 指定または現在関数の境界付きコールグラフ（`ghidra-callgraph://`）を開きます |
 | `:GhidraEditType` | `[path]` | 指定データ型の編集可能 `.ghidra-type` JSONC バッファ（`ghidra-type://`）を開きます |
+| `:GhidraUndo` | `[md5]` | 指定または現在のセッションで直近の Ghidra トランザクションを取り消して開いているビューを更新します |
+| `:GhidraRedo` | `[md5]` | 指定または現在のセッションで直近に取り消した Ghidra トランザクションをやり直して開いているビューを更新します |
 | `:GhidraRefresh` | なし | 現在の Ghidra 仮想バッファ（C 擬似コード、型、Listing、Hex、グラフ）を再取得・更新します |
 | `:GhidraDiscardRename` | なし | 保留中のスコープ付きシンボルリネームプレビューを破棄します |
 | `:GhidraOrigin` | なし | 保留中リネームを開始したオリジンバッファへジャンプします |

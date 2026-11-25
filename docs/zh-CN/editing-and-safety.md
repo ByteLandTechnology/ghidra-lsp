@@ -15,9 +15,10 @@
    - 用户按下 `<F2>`（或运行重命名命令）触发 `textDocument/prepareRename` 与 `textDocument/rename`。
    - `Engine::rename`（`src/engine/rename.rs`）验证新名称为有效 ASCII C 标识符（`[A-Za-z_][A-Za-z0-9_]*`）、与原名不同且不与同函数内其他参数/局部变量冲突。
    - 若为函数局部符号（`Local` / `Parameter`），替换范围仅限于当前函数文档；若为全局符号/函数，则跨同一 `md5` 会话下所有已打开的干净虚拟文档规划 `WorkspaceEdit`，并将期望文本记录在 `Pending { origin, symbol, new_name, expected, patched: false }` 中。此时**不发送任何 MCP 写请求**。
-3. **Origin Save 提交与生命周期管理**：
-   - 当且仅当用户保存发起重命名的原始（Origin）文档（VS Code 按 `Ctrl+S`/`Cmd+S`，Neovim 在源缓冲区执行 `:w`）时，`Engine::save` 才核对所有受影响文档均无杂项改动。
-   - 关闭标签页或编辑器窗口**不会**触发保存；在预览完成前尝试开始重新分析、关闭会话或执行其他变更会被 `ensure_program_clean` 拒绝；可随时执行 `ghidra.discardRename` / `:GhidraDiscardRename` 放弃预览并回滚。
+3. **Origin Save 提交、内存撤销/重做与持久化控制**：
+   - 当且仅当用户保存发起重命名的原始（Origin）文档（VS Code 按 `Ctrl+S`/`Cmd+S`，Neovim 在源缓冲区执行 `:w`）时，`Engine::save` 才核对所有受影响文档均无杂项改动，并将变更作为命名事务提交到活跃 Ghidra 会话内存中（此时暂不调用 `program.save`，以便随时通过 `ghidra.undo` / `ghidra.redo` 撤销或重做）。
+   - 显式执行 `ghidra.saveProgram`（VS Code **Save Program** / Neovim `:GhidraSaveProgram`）或正常关闭会话（`ghidra.closeSession`）时会将内存变更持久化到磁盘并清空事务历史；执行 `ghidra.resetSession`（**Reset Session** / `:GhidraResetSession`）可在不保存的情况下停止当前 Ghidra 进程、删除已保存项目并从原始二进制重新导入。
+   - 关闭标签页或编辑器窗口**不会**触发保存；在预览完成前或存在未保存编辑缓冲区时尝试执行撤销、重做、重置会话、重新分析、关闭会话或执行其他变更会被守卫拒绝；可随时执行 `ghidra.discardRename` / `:GhidraDiscardRename` 放弃预览并回滚。
 
 ---
 
@@ -27,7 +28,7 @@
 
 1. **写前标记 `patched` 标志**：`Engine::save` 在调用后端 `patch` 前即置位 `pending.patched = true`。若遇普通验证错误则清零允许修正；若捕获超时错误（消息包含 `timed out`），则保留 `patched = true`。
 2. **传输层读写区分（`src/backend.rs`）**：`McpBackend::call` 将只读查询与写操作（及 `batch`）显式区分；写操作一旦超时，立即销毁旧子进程会话并返回明确提示：`"MCP <domain>.<operation> timed out; a write may have completed. Refresh before retrying."`。
-3. **重读后端状态后再重试**：在重新触发保存前，`resolve_rename_target` 会重新查询符号/函数真实名称；若发现后端已变为 `new_name`，则跳过重复 `patch` 并直接执行 `program.save` 持久化与文档刷新。同理，所有注释、原型与类型编辑器在收到不确定保存错误（`POST_SEND_WARNING` / `uncertain`）后会锁定提交按钮，要求先刷新或对比再继续。
+3. **重读后端状态后再重试**：在重新触发保存前，`resolve_rename_target` 会重新查询符号/函数真实名称；若发现后端已变为 `new_name`，则跳过重复 `patch` 并直接完成状态清理与文档刷新。同理，所有注释、原型与类型编辑器在收到不确定保存错误（`POST_SEND_WARNING` / `uncertain`）后会锁定提交按钮，要求先刷新或对比再继续。
 
 ---
 
@@ -49,7 +50,7 @@
 
 - 提交载荷必须附带打开表单时捕获的 `original` 函数快照；提交前服务端先拉取最新 `function.get` 比对，若分析已在外部变化则拦截（`CONFLICT_FORM`）。
 - 所有底层修改操作编译为单一 `batch.execute` 请求，强制设置 `"transaction_mode": "all_or_none"`；`workbench::check_write_result` 检查每项结果，若任一项出错则整批回滚（`Ghidra rejected the atomic batch; no changes were saved`）。
-- 直接调用 `ghidra.mutate` 工作台命令同样必须通过 `WRITE` 白名单校验，批量写入限制 `1` 至 `1000` 项，且禁止在批处理项内夹带 `program.save`；每次写操作完成后统一由 `Server::commit_and_refresh` 调用 `program.save` 并验证返回 `"saved": true`。
+- 直接调用 `ghidra.mutate` 工作台命令同样必须通过 `WRITE` 白名单校验，批量写入限制 `1` 至 `1000` 项，且禁止在批处理项内夹带 `program.save`；常规写操作完成后调用 `Server::refresh_after_mutation` 刷新缓存与打开视图（保留内存撤销栈），仅在显式调用 `ghidra.saveProgram` 或 `ghidra.mutate` 执行 `program.save` 时将项目落盘并验证返回 `"saved": true`。
 
 ---
 
@@ -75,6 +76,6 @@
 ### 只读保护与并发冲突处理
 
 - **自动降级只读的类型**：内置基元类型、`typedef`、零长度或重叠结构体字段、位域（名称带 `:位宽` 后缀）、包含多个匿名字段的结构体或任意匿名成员的联合体、缺少结构化签名的函数定义以及值超出 53 位无损 JSON 安全整数范围的 64 位枚举，均以只读模式打开并附带明确原因注释。
-- **保存流水线与草稿保护**：保存前 `fetch_and_check_type_conflict` 使用 `same_type_data` 比对当前 Ghidra 后端快照与本地 `original` 快照。若外部已更改，编辑器保留用户当前草稿不丢弃，并引导通过 **Compare Data Type with Ghidra** 与 **Reload Data Type from Ghidra** 审阅差异后再提交。写成功并持久化后，服务端重新读取规范化后的类型结构（含 Ghidra 自动调整后的对齐偏移量与新分配的成员 `id`）回写至编辑缓冲区。
+- **保存流水线与草稿保护**：保存前 `fetch_and_check_type_conflict` 使用 `same_type_data` 比对当前 Ghidra 后端快照与本地 `original` 快照。若外部已更改，编辑器保留用户当前草稿不丢弃，并引导通过 **Compare Data Type with Ghidra** 与 **Reload Data Type from Ghidra** 审阅差异后再提交。写入 Ghidra 内存事务成功后，服务端重新读取规范化后的类型结构（含 Ghidra 自动调整后的对齐偏移量与新分配的成员 `id`）回写至编辑缓冲区，并可通过 `ghidra.undo` / `ghidra.redo` 撤销或重做，直至显式保存程序或正常关闭会话。
 
 下一章：[LSP 能力参考与开发规范](lsp-and-development.md)。

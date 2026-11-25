@@ -27,6 +27,7 @@ import { AnalysisMode, ControlFlowView } from './control-flow-view';
 import { singleKeyShortcutsEnabled } from './program-views-controller';
 import { DataTypeFiles, typeScheme } from './type-files';
 import { installManagedBinaries, resolveOrInstallBinaries, ResolvedBinaries } from './installer';
+import { registerSessionHistoryCommands } from './session-actions';
 
 /** Active LSP language client instance for `ghidra-lsp`. */
 let client: LanguageClient | undefined;
@@ -486,6 +487,11 @@ export async function activate(extension: vscode.ExtensionContext): Promise<void
         const md5 = context.require(resource);
         await runAnalysis(md5, context.name(md5), true);
     });
+    registerSessionHistoryCommands(register, {
+        call, context, renames, typeFiles, memory, labels, references, stringFiles,
+        listingFiles, byteFiles, browser, workbench, graphView, editing, sessionsView,
+        programVersions, settleRequests, updateStatus,
+    });
     register('demangle', async resource => {
         const md5 = context.require(resource);
         await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: `Demangle C++ symbols · ${context.name(md5)}` }, async () => {
@@ -669,6 +675,7 @@ export async function activate(extension: vscode.ExtensionContext): Promise<void
                 const skipBrowser = (refreshedSeq.get(md5) ?? -1) >= seq;
                 void Promise.all([
                     ...(skipBrowser ? [] : [browser.refresh(md5)]),
+                    typeFiles.refresh(md5),
                     workbench.refresh(md5),
                     graphView.refresh(md5),
                     renames.refresh(md5),

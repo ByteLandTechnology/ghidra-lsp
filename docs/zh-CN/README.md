@@ -14,7 +14,7 @@
 
 - **纯内存虚拟文档**：所有反编译伪代码（`ghidra://`）、汇编清单（`ghidra-listing://`）、十六进制内存窗口（`ghidra-memory://`）、JSONC 数据类型（`ghidra-type://`）、已定义字符串（`ghidra-string://`）与交叉引用预览（`ghidra-reference://`）均严格保存在内存中，绝不向磁盘写入任何 `.c` 或 `.h` 文件。
 - **单次反编译预算**：每次打开函数仅通过单次 `decompilation.get`（`format: "document"`、`include_comments: true`）同时获取 GUI 文本行、Token 对齐、光标地址映射与全部 5 类注释（`PLATE`、`PRE`、`EOL`、`POST`、`REPEATABLE`）。
-- **受控持久化与安全重命名**：反编译 C 缓冲区默认只读；通过 `<F2>` 发起作用域重命名预览，仅在保存原始源视图（Origin Save）时原子写入 Ghidra 并持久保存项目；写操作超时后会在重试前重新核验后端真实状态。
+- **受控持久化与事务撤销/重做**：反编译 C 缓冲区默认只读；通过 `<F2>` 发起作用域重命名预览，在保存原始源视图（Origin Save）时原子写入 Ghidra 命名事务并保持内存可撤销/重做（`ghidra.undo` / `ghidra.redo`），在显式执行保存程序（`ghidra.saveProgram`）或正常关闭会话时持久保存项目；写操作超时后会在重试前重新核验后端真实状态。
 - **JSONC 与图形化双模式类型编辑器**：`ghidra-type://` 虚拟文档与 VS Code 图形化 **Ghidra Data Type Editor** 共享同一草稿，提供模式校验、冲突检测与安全整数边界保护。
 - **双端深度集成**：提供官方 [VS Code 扩展](../../editors/vscode/README.md) 与原生 [Neovim 插件](../../editors/nvim/README.md)，支持双向光标同步、控制流图（CFG）、支持横向 5 类注释徽章页签的行内注释、悬停内沿抓取条交互式调用图（Call Graph）与米勒分栏（Call Columns）导航。
 
@@ -100,9 +100,9 @@ ghidra-lsp --mcp-command ghidra-mcp --request-timeout-ms 35000
 | [快速上手](getting-started.md) | 环境要求、编译构建、CLI 参数、编辑器冒烟测试与排障 |
 | [系统架构](architecture.md) | 进程模型、6 种虚拟 URI、规范标识、UTF-16 对齐与单次反编译管线 |
 | [VS Code 指南](vscode-guide.md) | 侧边栏视图、自定义编辑器、图形化面板、配置项与全部命令 |
-| [Neovim 指南](neovim-guide.md) | 插件安装、`:checkhealth`、25 条 `:Ghidra*` 命令（含 `:GhidraInstall`）、快捷键与虚拟缓冲区 |
-| [编辑与安全模型](editing-and-safety.md) | 只读伪代码保障、`<F2>` 作用域预览与 Origin Save、写超时后状态重读、`all_or_none` 批量事务、`.ghidra-type` JSONC 模式 |
-| [LSP 与开发指南](lsp-and-development.md) | LSP 能力矩阵、45 个内置命令、代码布局、`AGENTS.md` 规范与黑盒测试边界 |
+| [Neovim 指南](neovim-guide.md) | 插件安装、`:checkhealth`、29 条 `:Ghidra*` 命令（含 `:GhidraInstall`）、快捷键与虚拟缓冲区 |
+| [编辑与安全模型](editing-and-safety.md) | 只读伪代码保障、`<F2>` 作用域预览与 Origin Save、内存事务撤销/重做与会话重置、写超时后状态重读、`all_or_none` 批量事务、`.ghidra-type` JSONC 模式 |
+| [LSP 与开发指南](lsp-and-development.md) | LSP 能力矩阵、49 个内置命令、代码布局、`AGENTS.md` 规范与黑盒测试边界 |
 
 ---
 

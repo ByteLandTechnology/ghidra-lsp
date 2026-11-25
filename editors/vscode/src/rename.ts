@@ -210,6 +210,12 @@ export class ReadonlyRenames implements vscode.Disposable, vscode.FileDecoration
         if (plan && (plan.applied || plan.patched)) { throw new Error('Save or discard the pending rename in this session first'); }
     }
 
+    /** Throw an error when program `md5` holds any pending rename preview, including unpatched previews. */
+    async assertNoPendingPreview(md5: string): Promise<void> {
+        const plan = await this.refresh(md5);
+        if (plan) { throw new Error('Save or discard the pending rename in this session first'); }
+    }
+
     /** Cancel timers and dispose UI resources. */
     dispose(): void {
         this.disposed = true;

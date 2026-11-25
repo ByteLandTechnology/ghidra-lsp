@@ -763,6 +763,18 @@ function M.reanalyze()
     end)
 end
 
+--- Undo the latest committed Ghidra transaction in the active or specified session.
+function M.undo(md5_arg) require('ghidra-lsp.session_ops').undo(md5_arg) end
+
+--- Redo the latest undone Ghidra transaction in the active or specified session.
+function M.redo(md5_arg) require('ghidra-lsp.session_ops').redo(md5_arg) end
+
+--- Save committed Ghidra program changes to disk for the active or specified session.
+function M.save_program(md5_arg) require('ghidra-lsp.session_ops').save_program(md5_arg) end
+
+--- Reset the active or specified Ghidra session to its clean cached binary.
+function M.reset_session(md5_arg) require('ghidra-lsp.session_ops').reset_session(md5_arg) end
+
 --- Show incoming or outgoing call hierarchy for the symbol under cursor.
 function M.call_hierarchy(_arg)
     local c = client.get_client()

@@ -140,6 +140,7 @@ const READ: &[(&str, &str)] = &[
   ("memory_block", "get"),
   ("memory_block", "list"),
   ("program", "get"),
+  ("program", "history"),
   ("program_language", "get"),
   ("reference", "list"),
   ("session", "get"),

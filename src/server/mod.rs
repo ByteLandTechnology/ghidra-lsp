@@ -79,6 +79,10 @@ const COMMANDS: &[&str] = &[
   "ghidra.reveal",
   "ghidra.typeAtPosition",
   "ghidra.binaryInterface",
+  "ghidra.undo",
+  "ghidra.redo",
+  "ghidra.saveProgram",
+  "ghidra.resetSession",
   "ghidra.closeSession",
   "ghidra.reanalyze",
   "ghidra.cancelJob",
@@ -220,6 +224,29 @@ impl Server {
     Ok(())
   }
 
+  /// Clears cached symbols and functions, regenerates clean views, and notifies the client.
+  async fn refresh_after_mutation(&self, mut e: MutexGuard<'_, Engine>, md5: &str) -> Result<()> {
+    e.clear_session_caches(md5);
+    let changes = e.refresh_session(md5, None).await;
+    let uris: Vec<Uri> = e
+      .docs
+      .values()
+      .filter(|d| d.md5 == md5)
+      .map(|d| d.uri.clone())
+      .collect();
+    drop(e);
+    self.changed(md5).await;
+    self
+      .apply_refresh(changes.context(
+        "Modification reached Ghidra, but function regeneration failed. Refresh Documents to recover",
+      )?)
+      .await?;
+    for uri in uris {
+      self.report(&uri).await;
+    }
+    Ok(())
+  }
+
   /// Persists a backend write, refreshes session documents, and pushes editor updates.
   async fn commit_and_refresh(
     &self,
@@ -240,6 +267,7 @@ impl Server {
         "Modification reached Ghidra, but saving the project failed. Refresh and inspect the program before retrying",
       );
     }
+    e.clear_session_caches(md5);
     let changes = e.refresh_session(md5, None).await;
     drop(e);
     self.changed(md5).await;

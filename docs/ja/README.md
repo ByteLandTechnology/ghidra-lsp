@@ -18,11 +18,11 @@
 
 - **ゼロディスク出力の仮想ドキュメント**: `ghidra://`、`ghidra-listing://`、`ghidra-memory://`、`ghidra-type://`、`ghidra-string://`、`ghidra-reference://` の 6 つの仮想 URI スキームで解析ビューをすべてプロセス内メモリに保持します。
 - **シングルデコンパイル予算の精密アライメント**: 1 回の `decompilation.get`（`format: "document"`, `include_comments: true`）呼び出しで C テキスト、GUI トークン、カーソル／コードユニットアドレス、および 5 種類のコメント（`plate`、`pre`、`eol`、`post`、`repeatable`）を取得し、UTF-8 文字境界と UTF-16 LSP 座標に正確に対応付けます。
-- **制御された永続化と安全性**: 読み取り専用 C 擬似コードに対するスコープ付き `<F2>` 名前変更プレビューとオリジン保存コミット、楽観的競合検出（Conflict Check）、書き込みタイムアウト後のバックエンド状態再読込リカバリ、および `all_or_none` バッチ変更を実装しています。
+- **制御された永続化と安全性**: 読み取り専用 C 擬似コードに対するスコープ付き `<F2>` 名前変更プレビューとオリジン保存コミット、Ghidra トランザクションの Undo／Redo（`ghidra.undo` / `ghidra.redo`）、明示的プログラム保存（`ghidra.saveProgram`）とセッションリセット（`ghidra.resetSession`）、楽観的競合検出（Conflict Check）、書き込みタイムアウト後のバックエンド状態再読込リカバリ、および `all_or_none` バッチ変更を実装しています。
 - **リッチな LSP コードインテリジェンス**: ホバー、定義／宣言／実装／型定義へのジャンプ、相互参照、セマンティックトークン、コードレンズ、インレイヒント（ローカル変数ストレージとコール先アドレス）、折りたたみ範囲、ドキュメントリンク、コール階層、補完、シグネチャヘルプを提供します。
 - **デュアルエディタ統合**:
   - **Visual Studio Code 拡張機能**（[editors/vscode/README.md](../../editors/vscode/README.md)）: Program Browser サイドバー、双方向カーソル同期付きの Listing / Hex + Data Inspector / Control Flow ビュー、`[Graph | Columns]` 切替とホバー内縁グラバーバーを備えた Call Graph と Miller カラム探索、JSONC およびグラフィカル Data Type Editor、横並び 5 種バッジタブ付きインラインコメントスレッドを備えています。
-  - **Neovim プラグイン**（[editors/nvim/README.md](../../editors/nvim/README.md)）: 25 個の `:Ghidra*` コマンド（`:GhidraInstall` を含む）、`:GhidraEditType` によるライブ診断付き `.ghidra-type` JSONC 編集、フローティング 5 種コメントエディタ、関数プロトタイプ／変数フォーム、仮想 Listing / Hex / CFG / Call Graph バッファを備えています。
+  - **Neovim プラグイン**（[editors/nvim/README.md](../../editors/nvim/README.md)）: 29 個の `:Ghidra*` コマンド（`:GhidraInstall` を含む）、`:GhidraEditType` によるライブ診断付き `.ghidra-type` JSONC 編集、フローティング 5 種コメントエディタ、関数プロトタイプ／変数フォーム、仮想 Listing / Hex / CFG / Call Graph バッファを備えています。
 
 ![Ghidra LSP システムアーキテクチャ](../assets/diagrams/ja/system-architecture.svg)
 
@@ -94,8 +94,8 @@ CLI オプションの概要は次のとおりです（詳細は [クイック�
 | クイックスタート | 前提環境、ビルド、CLI オプション、初期動作確認、トラブルシューティング | [getting-started.md](getting-started.md) |
 | アーキテクチャ | プロセス境界、6 つの仮想 URI、正規化 ID、UTF-16 整合、単一デコンパイルパイプライン | [architecture.md](architecture.md) |
 | VS Code ガイド | サイドバー、カスタムエディタ、グラフ、Hex インスペクタ、設定とコマンド一覧 | [vscode-guide.md](vscode-guide.md) |
-| Neovim ガイド | 導入設定、25 個の `:Ghidra*` コマンド、キーマップ、フローティング編集 UI | [neovim-guide.md](neovim-guide.md) |
-| 編集と安全性 | 読み取り専用保証、`<F2>` スコープ付きリネーム、5 種コメント、データ型 JSONC スキーマ | [editing-and-safety.md](editing-and-safety.md) |
+| Neovim ガイド | 導入設定、29 個の `:Ghidra*` コマンド、キーマップ、フローティング編集 UI | [neovim-guide.md](neovim-guide.md) |
+| 編集と安全性 | 読み取り専用保証、`<F2>` スコープ付きリネーム、トランザクション Undo/Redo とリセット、5 種コメント、データ型 JSONC スキーマ | [editing-and-safety.md](editing-and-safety.md) |
 | LSP と開発規約 | LSP ケーパビリティ行列、`ghidra.*` カスタムコマンド、`AGENTS.md` と `cargo xtask ci` | [lsp-and-development.md](lsp-and-development.md) |
 
 ## ライセンス

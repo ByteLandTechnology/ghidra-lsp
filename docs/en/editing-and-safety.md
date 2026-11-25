@@ -30,8 +30,9 @@ When you press `<F2>` (or run `ghidraLsp.renameSymbol` / `vim.lsp.buf.rename`) o
 3. **In-memory staging (`Pending`)**: No MCP write runs during `<F2>`. The server stores `{origin, symbol, new_name, expected, patched: false}` in memory.
 4. **Origin-only commit**:
   - Saving a non-origin modified buffer validates the preview text locally without calling `ghidra-mcp`.
-  - Saving the `origin` buffer (`Ctrl+S` in VS Code, `:w` in Neovim) verifies that every affected buffer matches either its original `base` or `expected` text, re-verifies live symbol identity (`id`, `address`, `namespace`, `kind`) against Ghidra, marks `patched = true`, sends the `patch` call, calls `program.save`, and regenerates all affected session documents.
+  - Saving the `origin` buffer (`Ctrl+S` in VS Code, `:w` in Neovim) verifies that every affected buffer matches either its original `base` or `expected` text, re-verifies live symbol identity (`id`, `address`, `namespace`, `kind`) against Ghidra, marks `patched = true`, sends the `patch` call in one named Ghidra transaction, and regenerates all affected session documents while keeping the transaction undoable in memory.
 5. **Cancellation**: Running **Ghidra: Discard Pending Rename** (`ghidra.discardRename` / `:GhidraDiscardRename`) reverts preview buffers back to `doc.base` and removes the pending plan.
+6. **Transaction undo, redo, save, and reset**: Committed renames, comments, function prototypes, variable edits, data type edits, and `ghidra.mutate` writes stay in Ghidra's live transaction stack without automatic `program.save` calls. Run `ghidra.undo` / `ghidra.redo` to step backward or forward across committed transactions, `ghidra.saveProgram` (or clean `ghidra.closeSession`) to persist the database to disk, or `ghidra.resetSession` to discard saved and unsaved Ghidra project changes and re-import the cached binary. Pending rename previews and dirty buffers block `ghidra.undo`, `ghidra.redo`, and `ghidra.resetSession`.
 
 ![VS Code comments and pending rename preview](../assets/screenshots/vscode-comments-and-rename.svg)
 
@@ -49,7 +50,7 @@ When you press `<F2>` (or run `ghidraLsp.renameSymbol` / `vim.lsp.buf.rename`) o
 | `post` | `POST` | Comment displayed immediately after the target instruction or data unit |
 | `repeatable` | `REPEATABLE (ext)` | Supplemental repeatable comment inserted by `comments::include` during `decompilation.get` (when selected in VS Code, the active comment editor below shows author `REPEATABLE` and status `extension`) |
 
-Before writing a comment, `prepare_comment_mutation` queries current comments at the target `CodeUnit` address and checks the client-supplied `expected` baseline. If the backend value changed concurrently, it fails with a conflict error instead of overwriting external work. Saving empty or whitespace-only text issues `comment.delete`; non-empty text issues `comment.upsert`, followed by `program.save` and session refresh.
+Before writing a comment, `prepare_comment_mutation` queries current comments at the target `CodeUnit` address and checks the client-supplied `expected` baseline. If the backend value changed concurrently, it fails with a conflict error instead of overwriting external work. Saving empty or whitespace-only text issues `comment.delete`; non-empty text issues `comment.upsert`, followed by in-memory session refresh.
 
 ### Function signatures and local variables (`src/mutations/prototype.rs`)
 
@@ -66,7 +67,7 @@ When saving through `ghidra.saveFunctionPrototype` or `ghidra.saveVariables`, th
 
 Recovery behavior across subsystems:
 
-- **Pending renames (`Engine::save`)**: Sets `pending.patched = true` before dispatching `patch`. If a write times out, `patched` remains `true`. On the next origin save, `resolve_rename_target` reads the current symbol name from Ghidra first: if the new name is already live, it skips `patch` and proceeds directly to `program.save`; if the old name is still active, it clears `patched` and asks the user to save again.
+- **Pending renames (`Engine::save`)**: Sets `pending.patched = true` before dispatching `patch`. If a write times out, `patched` remains `true`. On the next origin save, `resolve_rename_target` reads the current symbol name from Ghidra first: if the new name is already live, it skips `patch` and refreshes the session documents directly; if the old name is still active, it clears `patched` and asks the user to save again.
 - **Comments, prototypes, and data types**: When a write returns an uncertain result, the editor sets its state to `uncertain` (`InlineComments`, `EditingUI`, `DataTypeFiles`, and Neovim `edit.lua` / `buffer.lua`) and blocks blind resubmission until you close, refresh, or compare against current Ghidra state.
 
 ## JSONC `ghidra-type://` schema and transactions
@@ -96,6 +97,6 @@ Built-in primitives, pointers, arrays, typedefs, enums containing 64-bit values 
 
 1. **Live validation**: `ghidra.validateTypeDocument` parses JSONC, forbids duplicate object keys, checks schema constraints and type syntax (`parse_type_ref`), and returns exact UTF-16 `Range` diagnostics.
 2. **Optimistic conflict detection**: On save, `ghidra.saveTypeDocument` queries `data_type.get` again and compares it structurally (`same_type_data`) against the opened `original` snapshot. On mismatch, it rejects the write, preserves your draft, and lets you inspect differences with **Compare Data Type with Ghidra**.
-3. **Atomic write and readback**: Applies `data_type.patch` or `data_type.upsert` (gated by `workbench::allow_write`), saves with `program.save`, refreshes open function decompilations, and reads back the normalized type text (actual Ghidra field offsets and updated member `id` values) and the refreshed `original` snapshot.
+3. **Atomic write and readback**: Applies `data_type.patch` or `data_type.upsert` (gated by `workbench::allow_write`), refreshes open function decompilations, and reads back the normalized type text (actual Ghidra field offsets and updated member `id` values) and the refreshed `original` snapshot.
 
 Next chapter: [LSP and Development Guide](lsp-and-development.md).

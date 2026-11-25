@@ -22,6 +22,22 @@ vim.api.nvim_create_user_command('GhidraCloseSession', function(opts)
     ghidra.close_session(opts.args ~= '' and opts.args or nil)
 end, { nargs = '?', desc = 'Close active or specified Ghidra session' })
 
+vim.api.nvim_create_user_command('GhidraUndo', function(opts)
+    ghidra.undo(opts.args ~= '' and opts.args or nil)
+end, { nargs = '?', desc = 'Undo the last committed Ghidra transaction' })
+
+vim.api.nvim_create_user_command('GhidraRedo', function(opts)
+    ghidra.redo(opts.args ~= '' and opts.args or nil)
+end, { nargs = '?', desc = 'Redo the last undone Ghidra transaction' })
+
+vim.api.nvim_create_user_command('GhidraSaveProgram', function(opts)
+    ghidra.save_program(opts.args ~= '' and opts.args or nil)
+end, { nargs = '?', desc = 'Save committed Ghidra program edits to disk' })
+
+vim.api.nvim_create_user_command('GhidraResetSession', function(opts)
+    ghidra.reset_session(opts.args ~= '' and opts.args or nil)
+end, { nargs = '?', desc = 'Reset Ghidra session to its clean cached binary' })
+
 vim.api.nvim_create_user_command('GhidraReanalyze', function()
     ghidra.reanalyze()
 end, { desc = 'Analyze or re-analyze the active Ghidra program' })

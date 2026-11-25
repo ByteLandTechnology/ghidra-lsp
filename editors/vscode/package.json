@@ -211,6 +211,26 @@
         "title": "Ghidra: Open Recent Program"
       },
       {
+        "command": "ghidraLsp.undo",
+        "title": "Ghidra: Undo",
+        "icon": "$(discard)"
+      },
+      {
+        "command": "ghidraLsp.redo",
+        "title": "Ghidra: Redo",
+        "icon": "$(redo)"
+      },
+      {
+        "command": "ghidraLsp.saveProgram",
+        "title": "Ghidra: Save Program",
+        "icon": "$(save)"
+      },
+      {
+        "command": "ghidraLsp.resetSession",
+        "title": "Ghidra: Reset Session",
+        "icon": "$(debug-restart)"
+      },
+      {
         "command": "ghidraLsp.closeSession",
         "title": "Ghidra: Close Program"
       },
@@ -823,6 +843,22 @@
         {
           "command": "ghidraLsp.applyType",
           "group": "editing@4"
+        },
+        {
+          "command": "ghidraLsp.undo",
+          "group": "session@1"
+        },
+        {
+          "command": "ghidraLsp.redo",
+          "group": "session@2"
+        },
+        {
+          "command": "ghidraLsp.saveProgram",
+          "group": "session@3"
+        },
+        {
+          "command": "ghidraLsp.resetSession",
+          "group": "session@4"
         }
       ],
       "view/item/context": [
@@ -905,6 +941,26 @@
           "command": "ghidraLsp.reanalyze",
           "when": "viewItem == ghidra.session || viewItem == ghidra.activeSession || viewItem == ghidra.sessionTask || viewItem == ghidra.activeSessionTask",
           "group": "ghidra@1"
+        },
+        {
+          "command": "ghidraLsp.undo",
+          "when": "viewItem == ghidra.session || viewItem == ghidra.activeSession",
+          "group": "ghidra@1b"
+        },
+        {
+          "command": "ghidraLsp.redo",
+          "when": "viewItem == ghidra.session || viewItem == ghidra.activeSession",
+          "group": "ghidra@1c"
+        },
+        {
+          "command": "ghidraLsp.saveProgram",
+          "when": "viewItem == ghidra.session || viewItem == ghidra.activeSession",
+          "group": "ghidra@1d"
+        },
+        {
+          "command": "ghidraLsp.resetSession",
+          "when": "viewItem == ghidra.session || viewItem == ghidra.activeSession || viewItem == ghidra.recentItem",
+          "group": "ghidra@1e"
         },
         {
           "command": "ghidraLsp.closeSession",

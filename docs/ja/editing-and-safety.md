@@ -26,7 +26,7 @@
 3. **オリジン保存によるコミット（`Engine::save`）**:
    - オリジン以外のバッファで保存しても、バックエンド書き込みは走らず、エラー（Neovim）またはステータス保存のみとなります。
    - オリジンバッファを保存（VS Code で `Ctrl+S`/`Cmd+S` または **Ghidra: Submit Pending Rename**、Neovim で `:w`）すると、全対象ドキュメントに無関係な編集が混入していないことを検証したうえで、対象種別に応じたパッチ（`function.patch`、`symbol.patch`、`function.local_variable.patch`、`function.parameter.patch`）を送信します。
-   - 続いて `program.save` で Ghidra プロジェクトをディスクへ永続化し、セッション内の全関数バッファとスナップショットを再生成・再同期します。
+   - 変更は名前付き Ghidra トランザクションとしてメモリ上にコミットされ（自動 `program.save` は行わないため `ghidra.undo` / `ghidra.redo` で取り消し・やり直しが可能）、セッション内の全関数バッファとスナップショットを再生成・再同期します。明示的な `ghidra.saveProgram` または通常の `ghidra.closeSession` でディスクへ永続化され、`ghidra.resetSession` で未保存破棄と元のバイナリからの再インポートが可能です。
 4. **取り消し（`ghidra.discardRename`）**:
    - バックエンド書き込み前（`patched == false`）であれば、いつでも変更をすべて元に戻してプレビューを破棄できます。
 
@@ -34,7 +34,7 @@
 
 リネームパッチ送信直前に、サーバーは `pending.patched = true` を記録します（`src/engine/rename.rs`）。もしバックエンド呼び出しがタイムアウトした場合、`patched` は `true` のまま維持され、再試行前に必ずバックエンドの実際の状態を読み直します（`resolve_rename_target`）。
 
-- バックエンド側で**すでに新しい名前に変わっていた場合**: 二重パッチを避け、そのまま `program.save` による永続化と画面更新のみを完了させます。
+- バックエンド側で**すでに新しい名前に変わっていた場合**: 二重パッチを避け、そのまま保留状態のクリアと画面更新のみを完了させます。
 - バックエンド側が**まだ元の名前のままだった場合**: `patched = false` へ戻し、「以前の書き込みは適用されませんでした。再度保存してください」と通知します。
 - 外部から**別の名前に書き換えられていた場合**: 競合エラーとしてコミットを停止し、安全を守ります。
 
@@ -54,11 +54,11 @@
 
 ![VS Code での 5 種インラインコメントと保留中リネーム](../assets/screenshots/vscode-comments-and-rename.svg)
 
-`ghidra.saveComment` を実行すると、サーバーは事前に `ghidra.commentsAt` で現在のサーバー値を再取得し、クライアントが開いた時点の `expected` 値と一致しない場合は楽観的競合エラー（`This comment changed outside the editor.`）を返します。テキストを空（空白のみ）にして保存すると `comment.delete`、非空なら `comment.upsert` を呼び出し、`program.save` と全バッファ更新を行います。
+`ghidra.saveComment` を実行すると、サーバーは事前に `ghidra.commentsAt` で現在のサーバー値を再取得し、クライアントが開いた時点の `expected` 値と一致しない場合は楽観的競合エラー（`This comment changed outside the editor.`）を返します。テキストを空（空白のみ）にして保存すると `comment.delete`、非空なら `comment.upsert` を名前付きトランザクションとして呼び出し、全バッファ更新を行います（`ghidra.undo` / `ghidra.redo` 対応）。
 
 ### 関数プロトタイプとローカル変数のバッチ変更
 
-`ghidra.saveFunctionPrototype` と `ghidra.saveVariables`（`src/mutations/prototype.rs`）は、フォームを開いた時点の `original` スナップショットと現在の Ghidra 状態を照合し、外部変更があれば保存を拒否します。差分がない場合は何もしない、単一操作の場合は直接実行、複数操作（最大 1000 件）の場合は `batch.execute` に `"transaction_mode": "all_or_none"` を指定して複数変更（関数名、戻り値型、呼び出し規約、可変長引数、`noreturn`、`inline`、コメント、パラメータ追加・削除・変更、ローカル変数変更）をまとめて実行し、成功後に `program.save` とセッション再描画を行います。
+`ghidra.saveFunctionPrototype` と `ghidra.saveVariables`（`src/mutations/prototype.rs`）は、フォームを開いた時点の `original` スナップショットと現在の Ghidra 状態を照合し、外部変更があれば保存を拒否します。差分がない場合は何もしない、単一操作の場合は直接実行、複数操作（最大 1000 件）の場合は `batch.execute` に `"transaction_mode": "all_or_none"` を指定して複数変更（関数名、戻り値型、呼び出し規約、可変長引数、`noreturn`、`inline`、コメント、パラメータ追加・削除・変更、ローカル変数変更）を単一トランザクションとしてまとめて実行し、成功後にセッション再描画を行います（ディスク永続化は `ghidra.saveProgram` または通常のセッションクローズ時に行われます）。
 
 ## データ型編集（`ghidra-type://`）と JSONC スキーマ
 
@@ -118,7 +118,7 @@
 ### 競合検査・書き戻し正規化・エラー回復
 
 1. **保存前競合チェック**: `ghidra.saveTypeDocument` は保存前に Ghidra から最新の型定義を再取得し、開いた時点の `original` と一致しない場合（外部変更あり）は保存を中止してドラフトをそのまま保持します。VS Code では **Compare Data Type with Ghidra**（`ghidraLsp.compareType`）でサーバー上の現行版（`ghidra-type-current://`）と差分比較し、**Reload Data Type from Ghidra**（`ghidraLsp.reloadType`）で安全に破棄・再読込できます。
-2. **レイアウト再読込（Readback）**: `data_type.patch` / `data_type.upsert` と `program.save` が完了すると、Ghidra が再計算した実際のメンバオフセット・パディング・新しい `id` を読み戻し、エディタ上の JSONC テキストを正規化して同期します。
+2. **レイアウト再読込（Readback）**: `data_type.patch` / `data_type.upsert` がメモリ上のトランザクションとして完了すると、Ghidra が再計算した実際のメンバオフセット・パディング・新しい `id` を読み戻し、エディタ上の JSONC テキストを正規化して同期します。
 3. **送信後エラーのロック保護**: リクエスト送信後にタイムアウトや永続化失敗が起きた場合、サーバーは `The save may have reached Ghidra; compare and reload before retrying` を返し、クライアントは再試行前に比較と再読込を促します。
 
 次の章: [LSP と開発規約](lsp-and-development.md)。

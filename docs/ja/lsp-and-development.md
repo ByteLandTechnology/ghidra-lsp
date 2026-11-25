@@ -1,6 +1,6 @@
 # LSP と開発規約
 
-この章では、`ghidra-lsp` が公開する LSP ケーパビリティの完全一覧、45 個のカスタムコマンド（`workspace/executeCommand`）、ワークベンチ操作の許可リスト、`AGENTS.md` の設計規約、および `cargo xtask ci` 検証パイプラインをまとめます。
+この章では、`ghidra-lsp` が公開する LSP ケーパビリティの完全一覧、49 個のカスタムコマンド（`workspace/executeCommand`）、ワークベンチ操作の許可リスト、`AGENTS.md` の設計規約、および `cargo xtask ci` 検証パイプラインをまとめます。
 
 ## LSP ケーパビリティ一覧
 
@@ -29,7 +29,7 @@
 | `codeLensProvider` | `resolveProvider: false` | 関数ヘッダ上に `Listing`, `Call Graph`, `Control Flow`, `Callers`, `Callees`, `References` を表示 |
 | `foldingRangeProvider` | `true` | `{ ... }` ブロックおよび複数行 `//`・`/* ... */` コメントの折りたたみ範囲を返却 |
 | `documentLinkProvider` | `resolveProvider: false` | 本文やコメント内の `ghidra://`、`ram:...`、`0x...` をクリック可能リンクに変換 |
-| `executeCommandProvider` | 全 45 個の `ghidra.*` コマンド | セッション、ナビゲーション、ビュー、グラフ、安全編集を実行 |
+| `executeCommandProvider` | 全 49 個の `ghidra.*` コマンド | セッション、ナビゲーション、ビュー、グラフ、安全編集を実行 |
 
 ### カスタム LSP 通知
 
@@ -44,9 +44,9 @@
 }
 ```
 
-## `workspace/executeCommand` カタログ（全 45 コマンド）
+## `workspace/executeCommand` カタログ（全 49 コマンド）
 
-`src/server/mod.rs` の `COMMANDS` 配列で公開され、`commands.rs` / `domain_commands.rs` / `edit_commands.rs` / `view_commands.rs` にディスパッチされる全 45 コマンドです。
+`src/server/mod.rs` の `COMMANDS` 配列で公開され、`commands.rs` / `domain_commands.rs` / `edit_commands.rs` / `view_commands.rs` にディスパッチされる全 49 コマンドです。
 
 ### セッション・プログラムライフサイクル
 
@@ -61,6 +61,10 @@
 | `ghidra.reanalyze` | `{ md5?, analyzers?, wait? }` | プログラム再解析を開始（既定で `wait: true`、完了後 `program.save` と文書更新） |
 | `ghidra.cancelJob` | `{}` | 現在の `ghidra-mcp` に `job.cancel` がないことを明示通知（解析自体の中断は不可） |
 | `ghidra.closeSession` | `{ md5?, force? }` | 保留中リネームや未保存編集がないことを確認してセッションを閉じ、キャッシュを破棄 |
+| `ghidra.undo` | `{ md5? }` | 直近のコミット済み Ghidra トランザクションを取り消して開いている全ビューを更新（保留中リネームや未保存ドラフトがある場合は拒否） |
+| `ghidra.redo` | `{ md5? }` | 直近に取り消した Ghidra トランザクションをやり直して開いている全ビューを更新（保留中リネームや未保存ドラフトがある場合は拒否） |
+| `ghidra.saveProgram` | `{ md5? }` | `program.save` を明示実行し、メモリ上の変更を Ghidra プロジェクトへ永続化 |
+| `ghidra.resetSession` | `{ md5?, reopen?, analyze? }` | 保存せずにセッションを停止して Ghidra プロジェクトを削除し、元のバイナリを保持したまま必要に応じて再オープン・再解析 |
 | `ghidra.configure` | `{ templateArguments? }` | 表示設定（`"omit"` / `"show"`）を動的更新 |
 
 ### カタログ・検索・ドキュメント管理
@@ -103,20 +107,20 @@
 | `ghidra.controlFlowGraph` | `{ md5?, entry?, address?, showTemplateArguments? }` | 命令と参照から基本ブロック CFG ノード・エッジを構築 |
 | `ghidra.callGraph` | `{ md5?, entry?, address?, callersDepth?, calleesDepth?, expansion?, refresh?, showTemplateArguments? }` | 深さ指定探索（`callersDepth` / `calleesDepth`）またはノード単位の対話的展開集合（`expansion.callers` / `expansion.callees`）により、境界付き（最大 80 ノード / 240 エッジ / 40 クエリ）のコールグラフを構築 |
 | `ghidra.commentsAt` | `{ md5?, address }` | 指定アドレスの 5 種コメント（`plate`, `pre`, `eol`, `post`, `repeatable`）を取得 |
-| `ghidra.saveComment` | `{ md5?, address, kind, text, expected? }` | 楽観的競合検査付きでコメント作成・更新・削除（空文字）し、`program.save` を実行 |
+| `ghidra.saveComment` | `{ md5?, address, kind, text, expected? }` | 楽観的競合検査付きでコメント作成・更新・削除（空文字）し、メモリ上のトランザクションとして反映 |
 | `ghidra.functionPrototype` | `{ md5?, entry }` | 関数シグネチャ、属性、パラメータ、ローカル変数および元スナップショットを取得 |
-| `ghidra.saveFunctionPrototype` | `{ md5?, entry, original, ... }` | 競合検査後、`all_or_none` バッチで関数シグネチャ／パラメータを更新し永続化 |
-| `ghidra.saveVariables` | `{ md5?, entry, original, parameters?, locals? }` | 競合検査後、`all_or_none` バッチでパラメータ／ローカル変数を更新し永続化 |
+| `ghidra.saveFunctionPrototype` | `{ md5?, entry, original, ... }` | 競合検査後、`all_or_none` バッチで関数シグネチャ／パラメータを更新 |
+| `ghidra.saveVariables` | `{ md5?, entry, original, parameters?, locals? }` | 競合検査後、`all_or_none` バッチでパラメータ／ローカル変数を更新 |
 | `ghidra.typeDocument` | `{ md5?, path }` | `.ghidra-type` JSONC テキスト、読み取り専用理由、`original`、`model` を取得 |
 | `ghidra.validateTypeDocument` | `{ text, original }` | JSONC 構文・重複キー・スキーマ・型記法を検査し UTF-16 エラー範囲を返却 |
-| `ghidra.saveTypeDocument` | `{ md5?, path, text, original }` | 競合検査、型差分パッチ適用、`program.save`、正規化読み戻しを実行 |
-| `ghidra.query` | `{ md5?, domain, operation, params? }` | `workbench::READ` 許可リスト（32 操作）に含まれる読み取り MCP 操作のみ実行 |
-| `ghidra.mutate` | `{ md5?, domain, operation, params? }` | `workbench::WRITE` 許可リスト（22 操作）に含まれる書き込み操作を実行後に永続化・更新 |
+| `ghidra.saveTypeDocument` | `{ md5?, path, text, original }` | 競合検査、型差分パッチ適用、正規化読み戻しを実行 |
+| `ghidra.query` | `{ md5?, domain, operation, params? }` | `workbench::READ` 許可リスト（33 操作）に含まれる読み取り MCP 操作のみ実行 |
+| `ghidra.mutate` | `{ md5?, domain, operation, params? }` | `workbench::WRITE` 許可リスト（22 操作）に含まれる書き込み操作を実行後に更新（`program.save` 指定時のみ永続化） |
 
 ### `workbench` 許可リスト（`src/workbench.rs`）
 
-- **`ghidra.query`（32 種の読み取り操作）**:
-  `address.resolve`、`address_space.list`、`analysis.get`、`code_unit.list`、`comment.get`、`comment.list`、`data_type.get`、`data_type.list`、`data_type_category.list`、`data_unit.list`、`decompilation.get`、`flow_override.list`、`function.get`、`function.list`、`function_call.list`、`global_variable.get`、`global_variable.list`、`instruction.get`、`instruction.list`、`interface.get`、`job.get`、`job.wait`、`memory.read`、`memory_block.get`、`memory_block.list`、`program.get`、`program_language.get`、`reference.list`、`session.get`、`session.list`、`symbol.get`、`symbol.list`
+- **`ghidra.query`（33 種の読み取り操作）**:
+  `address.resolve`、`address_space.list`、`analysis.get`、`code_unit.list`、`comment.get`、`comment.list`、`data_type.get`、`data_type.list`、`data_type_category.list`、`data_unit.list`、`decompilation.get`、`flow_override.list`、`function.get`、`function.list`、`function_call.list`、`global_variable.get`、`global_variable.list`、`instruction.get`、`instruction.list`、`interface.get`、`job.get`、`job.wait`、`memory.read`、`memory_block.get`、`memory_block.list`、`program.get`、`program.history`、`program_language.get`、`reference.list`、`session.get`、`session.list`、`symbol.get`、`symbol.list`
 - **`ghidra.mutate`（22 種の書き込み操作）**:
   `comment.{create,delete,patch,upsert}`、`data_type.{create,delete,patch,upsert}`、`flow_override.patch`、`function.patch`、`function_local_variable.patch`、`function_parameter.{create,delete,patch}`、`global_variable.{create,delete,patch,upsert}`、`memory.write`、`program.save`、`symbol.{patch,demangle}`
 

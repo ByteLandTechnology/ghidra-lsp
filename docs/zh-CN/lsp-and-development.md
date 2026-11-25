@@ -1,6 +1,6 @@
 # LSP 能力参考与开发规范
 
-本文档完整列出 `ghidra-lsp` 实现的 Language Server Protocol 能力、45 个 `workspace/executeCommand` 自定义命令、仓库目录结构、`AGENTS.md` 强制规范、`cargo xtask ci` 检查流水线以及外部黑盒测试边界。
+本文档完整列出 `ghidra-lsp` 实现的 Language Server Protocol 能力、49 个 `workspace/executeCommand` 自定义命令、仓库目录结构、`AGENTS.md` 强制规范、`cargo xtask ci` 检查流水线以及外部黑盒测试边界。
 
 ---
 
@@ -29,7 +29,7 @@
 | `codeLensProvider` | `resolveProvider: false`；在函数声明处提供 `Listing`、`Call Graph`、`Control Flow`、`Callers`、`Callees`、`References` 入口。 |
 | `foldingRangeProvider` | 计算多行注释、`//` 连续注释与 `{ ... }` 代码块折叠范围。 |
 | `documentLinkProvider` | `resolveProvider: false`；提取函数内可点击链接。 |
-| `executeCommandProvider` | 注册下述 45 个 `ghidra.*` 自定义命令，支持 `workDoneToken` 进度通知。 |
+| `executeCommandProvider` | 注册下述 49 个 `ghidra.*` 自定义命令，支持 `workDoneToken` 进度通知。 |
 
 ### 自定义通知
 
@@ -39,7 +39,7 @@
 
 ## 自定义命令目录（`workspace/executeCommand`）
 
-`src/server/mod.rs` 中的 `COMMANDS` 常量完整注册了以下 45 个命令，并按职责分发至 `commands.rs`、`domain_commands.rs`、`edit_commands.rs` 与 `view_commands.rs`：
+`src/server/mod.rs` 中的 `COMMANDS` 常量完整注册了以下 49 个命令，并按职责分发至 `commands.rs`、`domain_commands.rs`、`edit_commands.rs` 与 `view_commands.rs`：
 
 ### 会话、二进制与分析任务
 
@@ -53,6 +53,10 @@
 | `ghidra.beginReanalyze` | `{"md5?", "analyzers?"}` | 启动异步重分析作业并返回轮询 `token` |
 | `ghidra.reanalyze` | `{"md5?", "analyzers?", "wait?"}` | 触发重分析，可选等待完成（默认 `true`）、持久化并刷新打开文档 |
 | `ghidra.closeSession` | `{"md5?", "force?"}` | 关闭干净的会话（拒绝存在待决重命名或未保存改动的会话）并清理缓存 |
+| `ghidra.undo` | `{"md5?"}` | 撤销最近一次已提交的 Ghidra 事务并刷新所有打开视图（存在待决重命名或未保存草稿时拒绝） |
+| `ghidra.redo` | `{"md5?"}` | 重做最近一次已撤销的 Ghidra 事务并刷新所有打开视图（存在待决重命名或未保存草稿时拒绝） |
+| `ghidra.saveProgram` | `{"md5?"}` | 显式调用 `program.save` 将当前内存修改持久化到 Ghidra 项目 |
+| `ghidra.resetSession` | `{"md5?", "reopen?", "analyze?"}` | 不保存直接重置会话并删除 Ghidra 项目数据，保留原始二进制并可选重新打开与分析 |
 | `ghidra.cancelJob` | `{}` | 返回明确指引：已安装的 `ghidra-mcp` 仅暴露 `job.get`/`job.wait` 而无 `job.cancel` |
 
 ### 程序目录与虚拟文档
@@ -96,15 +100,15 @@
 | `ghidra.renameState` | `{"md5?"}` | 返回待决重命名的 `origin`、`oldName`、`newName`、`documents`、`applied`、`originApplied` 与 `patched` 状态 |
 | `ghidra.discardRename` | `{"md5?"}` | 放弃待决重命名预览并恢复干净缓冲区 |
 | `ghidra.commentsAt` | `{"md5?", "address"}` | 读取指定地址的全部 5 类注释（`plate`、`pre`、`eol`、`post`、`repeatable`） |
-| `ghidra.saveComment` | `{"md5?", "address", "kind" \| "commentType", "text", "expected?"}` | 执行乐观锁校验后更新或删除单条注释并持久化项目 |
+| `ghidra.saveComment` | `{"md5?", "address", "kind" \| "commentType", "text", "expected?"}` | 执行乐观锁校验后在内存事务中更新或删除单条注释并刷新视图 |
 | `ghidra.functionPrototype` | `{"md5?", "entry"}` | 读取函数签名、标志位、参数列表、局部变量与 `original` 快照 |
 | `ghidra.saveFunctionPrototype` | `{"md5?", "entry", "original", "payload?" \| fields...}` | 校验并通过单一 `all_or_none` 批处理事务提交函数签名与参数改动 |
 | `ghidra.saveVariables` | `{"md5?", "entry", "original", "payload?" \| fields...}` | 校验并通过单一 `all_or_none` 批处理事务提交参数或局部变量的名称与类型改动 |
 | `ghidra.typeDocument` | `{"md5?", "path"}` | 渲染 `.ghidra-type` JSONC 文本、只读状态、`original` 快照与 `model` |
 | `ghidra.validateTypeDocument` | `{"text", "original"}` | 校验编辑中的 JSONC 草稿并返回精确到 UTF-16 `range` 的诊断结果 |
-| `ghidra.saveTypeDocument` | `{"md5?", "path", "text", "original"}` | 检测冲突、执行 `data_type` 写入、保存项目、刷新函数并回读归一化 JSONC |
-| `ghidra.query` | `{"md5?", "domain", "operation", "params?"}` | 经 `src/workbench.rs` `READ` 白名单校验的受控只读 MCP 查询 |
-| `ghidra.mutate` | `{"md5?", "domain", "operation", "params?"}` | 经 `WRITE` 白名单或 `all_or_none` 批处理校验的受控写操作、持久化与刷新 |
+| `ghidra.saveTypeDocument` | `{"md5?", "path", "text", "original"}` | 检测冲突、执行 `data_type` 内存事务写入、刷新函数并回读归一化 JSONC |
+| `ghidra.query` | `{"md5?", "domain", "operation", "params?"}` | 经 `src/workbench.rs` `READ` 白名单（含 `program.history`）校验的受控只读 MCP 查询 |
+| `ghidra.mutate` | `{"md5?", "domain", "operation", "params?"}` | 经 `WRITE` 白名单或 `all_or_none` 批处理校验的受控写操作与视图刷新（`program.save` 时持久化） |
 
 ---
 
@@ -127,7 +131,7 @@ ghidra-lsp/
 │   ├── engine/                # 会话管理、单次反编译生成、导航、高亮与 F2 重命名计划
 │   ├── graph/                 # 基本块控制流图与有界调用图查询
 │   ├── mutations/             # 5 类注释、函数原型与变量批量变更编译器
-│   ├── server/                # LSP 协议实现、符号检索与 45 个命令分发器
+│   ├── server/                # LSP 协议实现、符号检索与 49 个命令分发器
 │   ├── types_doc/             # .ghidra-type JSONC 词法/AST、校验、冲突检测与修改计划
 │   └── views/                 # 汇编清单窗口、十六进制内存窗口、元数据缓存与数据检视器
 ├── xtask/                     # 自动化规则检查与 CI 编排器

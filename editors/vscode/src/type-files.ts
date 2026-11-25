@@ -337,12 +337,56 @@ export class DataTypeFiles implements vscode.FileSystemProvider, vscode.Disposab
         this.diagnostics.delete(uri);
         this.events.fire([{ type: vscode.FileChangeType.Changed, uri }]);
     }
+    /** Throw an error when program `md5` has any dirty, saving, or uncertain data type draft. */
+    assertClean(md5: string): void {
+        const target = md5.toLowerCase();
+        for (const document of vscode.workspace.textDocuments) {
+            if (!document.isClosed && document.uri.scheme === typeScheme && document.uri.authority.toLowerCase() === target && document.isDirty) {
+                throw new Error('Save or revert unsaved data type drafts in this session first.');
+            }
+        }
+        for (const [key, entry] of this.entries) {
+            const uri = vscode.Uri.parse(key);
+            if (uri.authority.toLowerCase() !== target) { continue; }
+            if (this.saving.has(key)) { throw new Error('Wait for data type saves in this session to finish first.'); }
+            if (entry.uncertain && this.hasTab(uri)) { throw new Error('Reload uncertain data type drafts in this session first.'); }
+        }
+    }
     /** Reload all open, clean data type documents belonging to program `md5`. */
     async refresh(md5: string): Promise<void> {
-        for (const key of this.entries.keys()) {
+        const target = md5.toLowerCase();
+        for (const key of [...this.entries.keys()]) {
             const uri = vscode.Uri.parse(key);
-            if (uri.authority === md5 && this.hasTab(uri) && !this.document(uri)?.isDirty && !this.saving.has(key)) { await this.reload(uri); }
+            if (uri.authority.toLowerCase() !== target || !this.hasTab(uri) || this.document(uri)?.isDirty || this.saving.has(key)) { continue; }
+            try {
+                await this.reload(uri);
+            } catch (error) {
+                if (!/not found|not_found|does not exist/i.test(String(error))) { throw error; }
+                this.entries.delete(key);
+                this.diagnostics.delete(uri);
+                await this.persist();
+                const tabs = vscode.window.tabGroups.all.flatMap(group => group.tabs).filter(tab =>
+                    (tab.input instanceof vscode.TabInputText || tab.input instanceof vscode.TabInputCustom) && tab.input.uri.toString() === key);
+                if (tabs.length) { await vscode.window.tabGroups.close(tabs); }
+            }
         }
+    }
+    /** Clear cached snapshots and reload or close open clean type tabs after resetting program `md5`. */
+    async resetSnapshots(md5: string): Promise<void> {
+        const target = md5.toLowerCase();
+        const diffTabs = vscode.window.tabGroups.all.flatMap(group => group.tabs).filter(tab =>
+            tab.input instanceof vscode.TabInputTextDiff && [tab.input.original, tab.input.modified].some(uri =>
+                uri.authority.toLowerCase() === target && [typeScheme, 'ghidra-type-current'].includes(uri.scheme)));
+        if (diffTabs.length) { await vscode.window.tabGroups.close(diffTabs); }
+        for (const key of [...this.comparisons.keys()]) {
+            if (vscode.Uri.parse(key).authority.toLowerCase() === target) { this.comparisons.delete(key); }
+        }
+        for (const key of [...this.entries.keys()]) {
+            const uri = vscode.Uri.parse(key);
+            if (uri.authority.toLowerCase() === target && !this.hasTab(uri)) { this.entries.delete(key); }
+        }
+        await this.persist();
+        await this.refresh(target);
     }
     /** Open a diff view comparing the live Ghidra type against the local draft `uri`. */
     private async compare(uri: vscode.Uri): Promise<void> {

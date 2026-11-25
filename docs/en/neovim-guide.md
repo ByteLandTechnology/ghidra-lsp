@@ -81,7 +81,7 @@ Run `:checkhealth ghidra-lsp` at any time to inspect the Neovim version, `npm` a
 
 ## Complete `:Ghidra*` command reference
 
-`editors/nvim/plugin/ghidra-lsp.lua` registers all 25 user commands:
+`editors/nvim/plugin/ghidra-lsp.lua` registers all 29 user commands:
 
 | Command | Arguments | Action |
 | --- | --- | --- |
@@ -89,6 +89,10 @@ Run `:checkhealth ghidra-lsp` at any time to inspect the Neovim version, `npm` a
 | `:GhidraOpenBinary` | `[path]` | Open a binary (file completion); restores silently if analyzed, or prompts to analyze |
 | `:GhidraSelectSession` | `[md5]` | Pick or activate an open or saved Ghidra session |
 | `:GhidraCloseSession` | `[md5]` | Close the active or specified clean session |
+| `:GhidraUndo` | `[md5]` | Undo the latest committed Ghidra transaction and refresh open buffers |
+| `:GhidraRedo` | `[md5]` | Redo the latest undone Ghidra transaction and refresh open buffers |
+| `:GhidraSaveProgram` | `[md5]` | Save committed Ghidra program changes to disk |
+| `:GhidraResetSession` | `[md5]` | Reset the Ghidra session to its clean cached binary and reopen it |
 | `:GhidraReanalyze` | — | Run or re-run auto-analysis on the active program |
 | `:GhidraOpenFunction` | `[entry\|name]` | Open a function by entry/name (supports `<Tab>` completion) or from the picker |
 | `:GhidraFunctions` | — | Open the searchable floating picker for program functions |
@@ -155,7 +159,7 @@ Running `<leader>gc`, `:GhidraComment [address]`, or choosing the comment Code A
 - The bottom border displays all five Ghidra comment categories in fixed order (`[PLATE]`, `[PRE]`, `[EOL]`, `[POST]`, `[REPEATABLE (ext)]`) with distinct active (`GhidraTabActive`), dirty `*` (`GhidraTabDirty`), populated (`GhidraTabFilled`), and empty (`GhidraFloatFooter`) highlights, followed by ` │ :w/<C-s> save · <Tab> kind · q close` (adapting compactly on narrow windows).
 - **Edit**: Edit text directly in the float for the active tab, and press `<Tab>` or `<S-Tab>` to switch among the five comment kinds while keeping unsaved per-kind drafts intact. Native `d` is never mapped in normal mode so Vim operators (`dd`, `dw`, `d$`) work normally.
 - **Save**: Run `:w` or press `<C-s>` to commit the active tab to Ghidra through `ghidra.saveComment` with optimistic `expected` conflict verification.
-- **Delete**: Clear the text inside the active comment tab (empty or whitespace-only, for example `:%d`) and save with `:w` or `<C-s>`. The server issues a `comment.delete` operation and persists the project.
+- **Delete**: Clear the text inside the active comment tab (empty or whitespace-only, for example `:%d`) and save with `:w` or `<C-s>`. The server issues a `comment.delete` operation and refreshes open buffers.
 - **Close**: Press `q` or `<Esc>` to close the float (prompts to keep or discard when any tab has unsaved drafts).
 
 ## Reverse-engineering windows and view sync
