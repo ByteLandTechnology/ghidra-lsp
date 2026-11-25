@@ -7,11 +7,10 @@ import * as vscode from 'vscode';
 import { Call } from './memory';
 import { ProgramContext } from './context';
 import { escapeHtml, GraphEdge, GraphNode, page, Row, table } from './workbench-page';
-import { controlFlowGraph, layoutControlFlow } from './control-flow-graph';
-import { CallDirection, CallExpansion, CallGraph, CallRecord, callGraph, layoutCalls } from './call-graph';
+import { controlFlowGraph } from './control-flow-graph';
+import { CallDirection, CallExpansion, CallGraph, CallRecord, callGraph } from './call-graph';
 import { callIcon } from './call-graph-icons';
 import { CallColumns, callColumns, collectColumns, columnPathLimit } from './call-columns';
-import { parseMeasuredSizes } from './graph-layout';
 import { formatFriendlyError } from './error';
 import { cursorLocation } from './location';
 import { ProgramPanelState, ProgramViewsController, singleKeyShortcutsEnabled } from './program-views-controller';
@@ -32,11 +31,10 @@ interface PanelState extends ProgramPanelState {
     callRoots?: Map<string, CallExpansion>; callHistory?: string[];
     callView?: 'graph' | 'columns'; callColumnDirection?: CallDirection; callColumnPath?: string[];
     callColumnPaths?: Map<string, string[]>; callColumnModel?: CallColumns;
-    callGraphModel?: CallGraph; cfgModel?: { nodes: GraphNode[]; edges: GraphEdge[] };
     generation: number; panel: vscode.WebviewPanel;
 }
-/** Rendered control-flow HTML markup, graph model, and basic-block instruction map. */
-export interface ControlFlowData { body: string; scope: string; name: string; nodes: GraphNode[]; edges: GraphEdge[]; blocks: { address: string; instructions: { address: string; length: number }[] }[] }
+/** Rendered control-flow SVG markup and basic-block instruction map. */
+export interface ControlFlowData { body: string; scope: string; name: string; blocks: { address: string; instructions: { address: string; length: number }[] }[] }
 /** Binary import and export metadata returned by `ghidra.binaryInterface`. */
 interface BinaryInterface { imports?: Data[]; exports?: Data[]; format?: string; source?: string; limitations?: string[] }
 /** Reveal payload returned by `ghidra.reveal`. */
@@ -427,7 +425,7 @@ export class Workbench implements vscode.Disposable {
                 };
                 const model = await collectColumns({ entry: state.entry!, name: rootTitle }, state.callColumnDirection || 'callees', state.callColumnPath || [], readCalls, () => generation === owner.generation);
                 if (generation !== owner.generation) { return; }
-                owner.callColumnPath = state.callColumnPath = model.path; owner.callColumnModel = model; owner.callGraphModel = undefined;
+                owner.callColumnPath = state.callColumnPath = model.path; owner.callColumnModel = model;
                 body = callColumns(model);
                 callTools = `<div class="call-controls call-icon-row" role="group" aria-label="Column view options"><button id="call-column-home" aria-label="Return to current function" title="Return to current function">${callIcon('back')}</button><button data-action="refresh" aria-label="Refresh calls" title="Refresh calls">${callIcon('refresh')}</button></div>`;
                 callName = rootTitle;
@@ -482,7 +480,6 @@ export class Workbench implements vscode.Disposable {
                     cells: [names.get(edge.from)!.name, names.get(edge.to)!.name, site || 'Not reported'],
                     entry: names.get(edge.to)!.entry, address: site || names.get(edge.to)!.entry, label: names.get(edge.to)!.name, kind: 'function',
                 })));
-                owner.callGraphModel = model;
                 body = await callGraph(model) + `<details class="call-details" hidden><summary>Call relationships and sites (${model.edges.length})</summary>${table(['Caller', 'Callee', 'Call site'], rows)}</details>`;
                 callTools = `<div class="call-controls call-icon-row" role="group" aria-label="Call graph exploration"><button id="call-center" aria-label="Center current function" title="Center current function">${callIcon('center')}</button><button id="call-focus" data-action="focusCallGraph" aria-label="Focus selected function" title="Focus selected function">${callIcon('focus')}</button><span class="call-divider" aria-hidden="true"></span><button id="call-menu-overview" aria-pressed="true" aria-label="Overview" title="Overview">${callIcon('overview')}</button><button id="call-details-toggle" aria-pressed="false" aria-label="Call sites" title="Call sites">${callIcon('details')}</button><span class="call-divider" aria-hidden="true"></span><button data-action="refresh" aria-label="Refresh graph" title="Refresh graph">${callIcon('refresh')}</button></div>`;
                 scope = `${model.limited ? 'Graph limit reached; fold branches for a smaller neighborhood. ' : ''}${model.warnings.length ? `${model.warnings.length} functions could not be expanded; refresh to retry.` : ''}`;
@@ -491,8 +488,6 @@ export class Workbench implements vscode.Disposable {
             }
         } else {
             const rendered = await this.controlFlow(state.md5, state.entry!);
-            if (generation !== owner.generation) { return; }
-            owner.cfgModel = { nodes: rendered.nodes, edges: rendered.edges };
             subtitle = `${rendered.name} · ${this.context.name(state.md5)}`;
             body = rendered.body; scope = rendered.scope;
         }
@@ -515,21 +510,15 @@ export class Workbench implements vscode.Disposable {
         if (!res.hasBody) {
             return {
                 name: res.name,
-                nodes: [],
-                edges: [],
                 blocks: [],
                 body: `<p class="empty">${escapeHtml(res.emptyReason || 'This function has no instruction body.')}</p>`,
                 scope: res.scope || '',
             };
         }
-        const nodes = res.nodes || [];
-        const edges = res.edges || [];
         return {
             name: res.name,
-            nodes,
-            edges,
             blocks: res.blocks || [],
-            body: await controlFlowGraph(nodes, edges),
+            body: await controlFlowGraph(res.nodes || [], res.edges || []),
             scope: res.scope || '',
         };
     }
@@ -539,37 +528,6 @@ export class Workbench implements vscode.Disposable {
         state.pendingFocusId = focusId && ['refresh', 'goto', 'next', 'previous'].includes(stringOf(message.action)) ? focusId : undefined;
         if (await this.programViews.handleMessage(state, message)) { return; }
         const action = stringOf(message.action), address = stringOf(message.address), entry = stringOf(message.entry);
-        if (action === 'measureGraph') {
-            const sizes = parseMeasuredSizes(message.sizes ?? message.nodes);
-            const generation = state.generation;
-            if (state.kind === 'controlFlow' && state.cfgModel?.nodes.length) {
-                const layout = await layoutControlFlow(state.cfgModel.nodes, state.cfgModel.edges, sizes);
-                if (generation !== state.generation) { return; }
-                await state.panel.webview.postMessage({
-                    action: 'graphLayout',
-                    graphKind: 'controlFlow',
-                    requestId: message.requestId,
-                    width: layout.width,
-                    height: layout.height,
-                    nodes: layout.nodes.map(node => ({ id: node.id, x: node.x, y: node.y, width: node.width, height: node.height })),
-                    edges: layout.edges.map(edge => ({ index: edge.index, from: edge.from, to: edge.to, path: edge.path, kind: edge.kind, backward: edge.backward })),
-                });
-            } else if (state.kind === 'callGraph' && state.callView !== 'columns' && state.callGraphModel?.nodes.length) {
-                if (message.graphRoot && message.graphRoot !== state.entry) { return; }
-                const layout = await layoutCalls(state.callGraphModel, sizes);
-                if (generation !== state.generation) { return; }
-                await state.panel.webview.postMessage({
-                    action: 'graphLayout',
-                    graphKind: 'callGraph',
-                    requestId: message.requestId,
-                    width: layout.width,
-                    height: layout.height,
-                    nodes: layout.nodes.map(node => ({ id: node.id, x: node.x, y: node.y, width: node.width, height: node.height })),
-                    edges: layout.edges.map(edge => ({ index: edge.index, from: edge.from, to: edge.to, path: edge.path })),
-                });
-            }
-            return;
-        }
         if (address) { state.selected = address; }
         if (state.kind === 'callGraph' && ['listing', 'memory', 'references', 'controlFlow'].includes(action)) { return; }
         if (state.kind === 'callGraph' && action === 'decompile' && entry) {
