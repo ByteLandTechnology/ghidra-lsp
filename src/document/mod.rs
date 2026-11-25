@@ -3,9 +3,6 @@
 
 //! Virtual document state, token alignment, symbol resolution, and UTF-16 positions.
 
-/// Session symbol index and case-insensitive symbol filter helpers.
-mod symbol_index;
-
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -13,10 +10,6 @@ use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tower_lsp_server::ls_types::{Position, Range, TextEdit, Uri};
-
-pub(crate) use symbol_index::{
-  SymbolIndex, contains_case_insensitive, starts_with_case_insensitive,
-};
 
 /// Display flag that controls whether full C++ template arguments appear in text.
 pub(crate) static SHOW_TEMPLATE_ARGUMENTS: AtomicBool = AtomicBool::new(false);
@@ -141,6 +134,11 @@ impl Symbol {
     }
   }
 }
+
+/// Indexed session symbol lookup tables and match helpers.
+mod index;
+
+pub(crate) use index::{SymbolIndex, contains_case_insensitive, starts_with_case_insensitive};
 
 /// Raw decompiler token returned by `ghidra-mcp`.
 #[derive(Clone, Debug, Deserialize)]

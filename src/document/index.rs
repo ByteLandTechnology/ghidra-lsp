@@ -1,7 +1,7 @@
 // Copyright 2026 ByteLand Technology Limited
 // SPDX-License-Identifier: MIT
 
-//! Session symbol index and case-insensitive symbol filter helpers.
+//! Indexed session symbol lookup tables and case-insensitive match helpers.
 
 use std::collections::HashMap;
 
