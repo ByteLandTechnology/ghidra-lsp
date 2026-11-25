@@ -339,7 +339,7 @@ impl LanguageServer for Server {
         } else {
           format!("```c\n{signature}\n```\n\n{comment}")
         }
-      } else {
+      } else if !symbol.local() {
         backend
           .call(
             "global_variable",
@@ -372,6 +372,8 @@ impl LanguageServer for Server {
             }
           })
           .unwrap_or_default()
+      } else {
+        String::new()
       };
       let demangled_full = symbol.full_name();
       let raw_mangled =

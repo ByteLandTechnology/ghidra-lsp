@@ -16,7 +16,7 @@ use super::{Engine, Pending, Refresh};
 use crate::backend::unsupported_storage_selector;
 use crate::document::{
   Document, Span, Symbol, apply_edits, canonical_virtual_uri, is_field_access, matches_text,
-  position, same_address, storage_selector, valid_name,
+  position, same_address, same_storage, storage_selector, valid_name,
 };
 
 impl Engine {
@@ -470,6 +470,13 @@ impl Engine {
         .as_ref()
         .and_then(|d| d.get("ordinal").and_then(Value::as_u64))
         .or_else(|| {
+          pending
+            .symbol
+            .id
+            .rsplit_once(":symbol=parameter:")
+            .and_then(|(_, ord)| ord.parse::<u64>().ok())
+        })
+        .or_else(|| {
           function
             .as_ref()
             .and_then(|f| f.get("parameters"))
@@ -514,6 +521,17 @@ impl Engine {
       .as_ref()
       .and_then(|d| d.get("storage"))
       .filter(|s| !s.is_null());
+    let had_symbol_name = self
+      .functions
+      .get(&(md5.to_owned(), pending.symbol.address.clone()))
+      .and_then(|f| f.get("local_variables"))
+      .and_then(Value::as_array)
+      .is_some_and(|vars| {
+        vars.iter().any(|v| {
+          v.get("name").and_then(Value::as_str) == Some(&pending.symbol.name)
+            && expected_storage.is_none_or(|st| same_storage(v.get("storage"), Some(st)))
+        })
+      });
     let matched = function
       .as_ref()
       .and_then(|f| f.get("local_variables"))
@@ -524,13 +542,21 @@ impl Engine {
             vars
               .iter()
               .find(|v| {
-                v.get("storage") == Some(st)
+                same_storage(v.get("storage"), Some(st))
                   && v
                     .get("name")
                     .and_then(Value::as_str)
                     .is_some_and(|n| n == pending.symbol.name || n == pending.new_name)
               })
-              .or_else(|| vars.iter().find(|v| v.get("storage") == Some(st)))
+              .or_else(|| {
+                had_symbol_name
+                  .then(|| {
+                    vars
+                      .iter()
+                      .find(|v| same_storage(v.get("storage"), Some(st)))
+                  })
+                  .flatten()
+              })
           })
           .or_else(|| {
             vars.iter().find(|v| {

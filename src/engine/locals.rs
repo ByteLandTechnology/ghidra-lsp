@@ -236,7 +236,17 @@ fn bind_native_local_spans(
     };
     if !local_details.contains_key(&scoped_id) {
       let detail = if let Some(bound) = match_tagged_local(local_symbols, &native.id, target_name) {
-        local_details.get(&bound.symbol.id).cloned()
+        local_details.get(&bound.symbol.id).cloned().map(|mut d| {
+          d["name"] = json!(target_name);
+          d
+        })
+      } else if let Some(ord) = tagged_parameter_ordinal(&native.id) {
+        Some(json!({
+          "name": target_name,
+          "ordinal": ord,
+          "entry": entry_str,
+          "kind": "Parameter",
+        }))
       } else if let Some(storage_ser) = tagged_local_storage(&native.id) {
         Some(json!({
           "name": target_name,
@@ -244,14 +254,12 @@ fn bind_native_local_spans(
           "entry": entry_str,
           "kind": kind,
         }))
-      } else if !native.id.starts_with("parameter:") {
+      } else {
         local_ids
           .get(&(kind, target_name))
           .copied()
           .flatten()
           .and_then(|id| local_details.get(id).cloned())
-      } else {
-        None
       };
       if let Some(detail) = detail {
         local_details.insert(scoped_id.clone(), detail);
@@ -267,6 +275,11 @@ fn bind_native_local_spans(
   }
 }
 
+/// Reads a zero-based parameter ordinal from a `"parameter:<ordinal>"` tag.
+fn tagged_parameter_ordinal(raw_id: &str) -> Option<u64> {
+  raw_id.strip_prefix("parameter:")?.parse::<u64>().ok()
+}
+
 /// Extracts a non-empty storage serialization suffix from a `"local:<id>:<storage>"` tag.
 fn tagged_local_storage(raw_id: &str) -> Option<&str> {
   let rest = raw_id.strip_prefix("local:")?;
@@ -280,9 +293,7 @@ fn match_tagged_local<'a>(
   raw_id: &str,
   target_name: &str,
 ) -> Option<&'a LocalBinding> {
-  if let Some(ord_text) = raw_id.strip_prefix("parameter:")
-    && let Ok(ord) = ord_text.parse::<u64>()
-  {
+  if let Some(ord) = tagged_parameter_ordinal(raw_id) {
     return locals.iter().find(|b| b.ordinal == Some(ord));
   }
   let storage_ser = tagged_local_storage(raw_id)?;

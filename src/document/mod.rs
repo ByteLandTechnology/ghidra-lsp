@@ -122,7 +122,10 @@ impl Symbol {
 
   /// Returns true when this symbol represents a function-local variable or parameter.
   pub(crate) fn local(&self) -> bool {
-    matches!(self.kind.as_str(), "Local" | "Local Var" | "Parameter")
+    matches!(
+      self.kind.as_str(),
+      "Local" | "Local Var" | "LocalVar" | "Parameter"
+    )
   }
 
   /// Returns the name prefixed with its namespace when it is not in `Global`.
@@ -499,7 +502,8 @@ pub(crate) fn format_storage_value(value: Option<&Value>) -> String {
       parts.push(r.to_owned());
     }
     if let Some(off) = obj.get("stack_offset").and_then(Value::as_i64) {
-      parts.push(format!("stack {off:+#x}"));
+      let sign = if off < 0 { '-' } else { '+' };
+      parts.push(format!("stack {sign}{:#x}", off.unsigned_abs()));
     }
     if !parts.is_empty() {
       return parts.join(", ");
@@ -514,11 +518,47 @@ pub(crate) fn format_storage_value(value: Option<&Value>) -> String {
 /// Converts a backend storage value into a valid `selector.storage` wire object when present.
 pub(crate) fn storage_selector(value: Option<&Value>) -> Option<Value> {
   let value = value.filter(|v| !v.is_null())?;
-  if value.is_object() && value.get("kind").and_then(Value::as_str).is_some() {
-    return Some(value.clone());
+  if let Some(obj) = value.as_object() {
+    if let Some(ser) = obj
+      .get("serialization")
+      .and_then(Value::as_str)
+      .map(str::trim)
+      .filter(|s| !s.is_empty())
+    {
+      return Some(json!({ "kind": "serialization", "serialization": ser }));
+    }
+    if obj.get("stack_offset").is_none()
+      && let Some(reg) = obj
+        .get("register")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+      return Some(json!({ "kind": "register", "register": reg }));
+    }
+    return None;
   }
   let text = value.as_str().map(str::trim).filter(|s| !s.is_empty())?;
   Some(json!({ "kind": "serialization", "serialization": text }))
+}
+
+/// Returns true when two `storage` JSON values identify the same storage location.
+pub(crate) fn same_storage(a: Option<&Value>, b: Option<&Value>) -> bool {
+  let (Some(a), Some(b)) = (a.filter(|v| !v.is_null()), b.filter(|v| !v.is_null())) else {
+    return false;
+  };
+  if a == b {
+    return true;
+  }
+  let sa = a
+    .get("serialization")
+    .and_then(Value::as_str)
+    .or_else(|| a.as_str());
+  let sb = b
+    .get("serialization")
+    .and_then(Value::as_str)
+    .or_else(|| b.as_str());
+  matches!((sa, sb), (Some(sa), Some(sb)) if !sa.is_empty() && sa == sb)
 }
 
 /// Formats a structured or string Ghidra data type reference into C-style text.

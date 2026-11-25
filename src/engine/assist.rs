@@ -16,7 +16,7 @@ use super::{Engine, find_function_symbol, format_type_markdown};
 use crate::backend::list_all;
 use crate::document::{
   Document, Symbol, canonical_virtual_uri, contains_case_insensitive, data_type_name, offset,
-  starts_with_case_insensitive, virtual_uri,
+  same_storage, starts_with_case_insensitive, virtual_uri,
 };
 
 /// Built-in decompiler type names offered alongside program and local symbols.
@@ -114,7 +114,11 @@ impl Engine {
       let display = symbol.display_name();
       let detail = self
         .local_detail(symbol)
-        .map(|v| format!("{} · {}", data_type_name(&v["data_type"]), symbol.kind))
+        .and_then(|v| {
+          v.get("data_type")
+            .filter(|dt| !dt.is_null())
+            .map(|dt| format!("{} · {}", data_type_name(dt), symbol.kind))
+        })
         .unwrap_or_else(|| format!("{} · {}", symbol.kind, symbol.address));
       items.push(CompletionItem {
         label: display,
@@ -313,8 +317,12 @@ impl Engine {
     let mut reference = if span.token.kind == "type" {
       json!({"kind": "named", "name": span.token.text})
     } else if let Some(symbol) = &span.symbol {
-      if let Some(detail) = self.local_detail(symbol) {
-        detail["data_type"].clone()
+      if let Some(dt) = self
+        .local_detail(symbol)
+        .and_then(|d| d.get("data_type").cloned())
+        .filter(|v| !v.is_null())
+      {
+        dt
       } else if symbol.local() {
         let cached = self
           .functions
@@ -334,6 +342,14 @@ impl Engine {
               .await?
           }
         };
+        let local_info = self.local_detail(symbol);
+        let expected_ord = local_info
+          .as_ref()
+          .and_then(|d| d.get("ordinal").and_then(Value::as_u64));
+        let expected_storage = local_info
+          .as_ref()
+          .and_then(|d| d.get("storage"))
+          .filter(|s| !s.is_null());
         let key = if symbol.kind == "Parameter" {
           "parameters"
         } else {
@@ -343,11 +359,27 @@ impl Engine {
           .get(key)
           .and_then(Value::as_array)
           .and_then(|items| {
-            items
-              .iter()
-              .find(|v| v.get("name").and_then(Value::as_str) == Some(&symbol.name))
+            expected_ord
+              .and_then(|ord| {
+                items
+                  .iter()
+                  .find(|v| v.get("ordinal").and_then(Value::as_u64) == Some(ord))
+              })
+              .or_else(|| {
+                expected_storage.and_then(|st| {
+                  items
+                    .iter()
+                    .find(|v| same_storage(v.get("storage"), Some(st)))
+                })
+              })
+              .or_else(|| {
+                items
+                  .iter()
+                  .find(|v| v.get("name").and_then(Value::as_str) == Some(&symbol.name))
+              })
           })
           .and_then(|v| v.get("data_type"))
+          .filter(|v| !v.is_null())
           .cloned()
         else {
           return Ok(None);
