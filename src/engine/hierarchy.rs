@@ -67,10 +67,9 @@ impl Engine {
         }
       } else if s.token.kind == "function" {
         let symbols = self.symbols(&md5).await?;
-        symbols.into_iter().find(|sym| {
-          sym.kind.eq_ignore_ascii_case("function")
-            && (sym.name == s.token.text || s.token.address.as_deref() == Some(&sym.address))
-        })
+        symbols
+          .find_function_by_name_or_exact_address(&s.token.text, s.token.address.as_deref())
+          .cloned()
       } else {
         None
       }

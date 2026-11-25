@@ -31,26 +31,17 @@ pub(crate) use state::{ClientBuffer, EngineState};
 
 use crate::backend::{McpBackend, list_all};
 use crate::document::{
-  Document, Symbol, Token, align, extract_label_address, is_label_token, resolve, resolve_locals,
-  same_address, virtual_uri,
+  Document, Symbol, SymbolIndex, Token, align, extract_label_address, is_label_token, resolve,
+  resolve_locals, virtual_uri,
 };
 
 /// Finds a function symbol by address first and by name or qualified name second.
 fn find_function_symbol<'a>(
-  symbols: &'a [Symbol],
+  symbols: &'a SymbolIndex,
   entry_or_addr: Option<&str>,
   name: &str,
 ) -> Option<&'a Symbol> {
-  if let Some(addr) = entry_or_addr
-    && let Some(sym) = symbols
-      .iter()
-      .find(|s| s.kind.eq_ignore_ascii_case("function") && same_address(&s.address, addr))
-  {
-    return Some(sym);
-  }
-  symbols
-    .iter()
-    .find(|s| s.kind.eq_ignore_ascii_case("function") && (s.name == name || s.qualified() == name))
+  symbols.find_function(entry_or_addr, name)
 }
 
 /// Planned symbol rename held in memory until the origin buffer saves to Ghidra.
@@ -177,13 +168,13 @@ impl Engine {
     self.write_state().forget_session(&key);
   }
 
-  /// Fetches and caches all symbols for session `md5` with singleflight deduplication.
-  pub(crate) async fn symbols(&self, md5: &str) -> Result<Vec<Symbol>> {
+  /// Fetches and caches the indexed symbol table for session `md5` with singleflight deduplication.
+  pub(crate) async fn symbols(&self, md5: &str) -> Result<Arc<SymbolIndex>> {
     let md5_key = md5.to_ascii_lowercase();
     let (initial_gen, initial_epoch) = {
       let state = self.read_state();
       if let Some(symbols) = state.symbols.get(&md5_key) {
-        return Ok(symbols.clone());
+        return Ok(Arc::clone(symbols));
       }
       (state.generation, state.epoch(&md5_key))
     };
@@ -216,7 +207,7 @@ impl Engine {
     md5_key: &str,
     initial_epoch: u64,
     initial_gen: u64,
-  ) -> Result<Vec<Symbol>> {
+  ) -> Result<Arc<SymbolIndex>> {
     let backend = self.backend();
     loop {
       let (generation, epoch) = {
@@ -226,7 +217,7 @@ impl Engine {
           "Session was closed"
         );
         if let Some(cached) = state.symbols.get(md5_key) {
-          return Ok(cached.clone());
+          return Ok(Arc::clone(cached));
         }
         (state.generation, state.epoch(md5_key))
       };
@@ -241,6 +232,7 @@ impl Engine {
         .into_iter()
         .map(serde_json::from_value)
         .collect::<std::result::Result<Vec<Symbol>, _>>()?;
+      let index = Arc::new(SymbolIndex::new(symbols));
       let mut state = self.write_state();
       ensure!(
         !state.is_closed_since(md5_key, initial_epoch, initial_gen)
@@ -248,11 +240,11 @@ impl Engine {
         "Session was closed"
       );
       if state.epoch(md5_key) == epoch {
-        state.symbols.insert(md5_key.to_owned(), symbols.clone());
-        return Ok(symbols);
+        state.symbols.insert(md5_key.to_owned(), Arc::clone(&index));
+        return Ok(index);
       }
       if let Some(cached) = state.symbols.get(md5_key) {
-        return Ok(cached.clone());
+        return Ok(Arc::clone(cached));
       }
     }
   }
@@ -460,6 +452,14 @@ impl Engine {
           });
         }
       }
+      let mut local_ids: HashMap<(&str, &str), Option<&str>> =
+        HashMap::with_capacity(local_symbols.len());
+      for sym in &local_symbols {
+        local_ids
+          .entry((sym.kind.as_str(), sym.name.as_str()))
+          .and_modify(|slot| *slot = None)
+          .or_insert(Some(sym.id.as_str()));
+      }
       for span in &mut spans {
         if !matches!(span.token.kind.as_str(), "variable" | "parameter") {
           continue;
@@ -487,10 +487,11 @@ impl Engine {
           } else {
             native.name.as_str()
           };
-          if let Some(matched) = local_symbols
-            .iter()
-            .find(|sym| sym.kind == kind && sym.name == target_name)
-            .and_then(|sym| local_details.get(&sym.id).cloned())
+          if let Some(matched) = local_ids
+            .get(&(kind, target_name))
+            .copied()
+            .flatten()
+            .and_then(|id| local_details.get(id).cloned())
           {
             local_details.insert(scoped_id.clone(), matched);
           }

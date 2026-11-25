@@ -3,13 +3,20 @@
 
 //! Virtual document state, token alignment, symbol resolution, and UTF-16 positions.
 
-use std::collections::HashSet;
+/// Session symbol index and case-insensitive symbol filter helpers.
+mod symbol_index;
+
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tower_lsp_server::ls_types::{Position, Range, TextEdit, Uri};
+
+pub(crate) use symbol_index::{
+  SymbolIndex, contains_case_insensitive, starts_with_case_insensitive,
+};
 
 /// Display flag that controls whether full C++ template arguments appear in text.
 pub(crate) static SHOW_TEMPLATE_ARGUMENTS: AtomicBool = AtomicBool::new(false);
@@ -174,6 +181,20 @@ pub(crate) struct CodeLocation {
   pub(crate) exact: bool,
 }
 
+/// One-line UTF-16 token span record from `ghidra.location` snapshot mode.
+#[derive(Clone, Debug, Serialize)]
+pub(crate) struct LocationSpan<'a> {
+  /// Zero-based line number in `Document::base`.
+  pub(crate) line: u32,
+  /// Inclusive UTF-16 start column on `line`.
+  pub(crate) start: u32,
+  /// Exclusive UTF-16 end column on `line`.
+  pub(crate) end: u32,
+  /// The `code_unit_address`, or `address` when `code_unit_address` is absent or empty.
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub(crate) address: Option<&'a str>,
+}
+
 /// In-memory state of an opened `ghidra://` virtual document.
 #[derive(Clone, Debug)]
 pub(crate) struct Document {
@@ -262,6 +283,57 @@ impl Document {
     Ok(None)
   }
 
+  /// Builds ordered UTF-16 [`LocationSpan`] records for a clean native GUI document in one pass.
+  pub(crate) fn location_spans(&self) -> Result<Vec<LocationSpan<'_>>> {
+    anyhow::ensure!(
+      self.clean(),
+      "Save or discard the pending edit before mapping a code selection"
+    );
+    anyhow::ensure!(
+      self.spans.iter().any(|span| span.location.is_some()),
+      "Upgrade ghidra-mcp for GUI cursor locations; this document has no native layout"
+    );
+    let mut out = Vec::with_capacity(self.spans.len());
+    let (mut byte, mut line, mut character) = (0usize, 0u32, 0u32);
+    for span in &self.spans {
+      let Some(location) = &span.location else {
+        continue;
+      };
+      let address = location
+        .code_unit_address
+        .as_deref()
+        .filter(|value| !value.is_empty())
+        .or_else(|| (!location.address.is_empty()).then_some(location.address.as_str()));
+      let gap = self
+        .base
+        .get(byte..span.start)
+        .context("span start is out of order or outside the document")?;
+      advance_position(gap, &mut line, &mut character);
+      byte = span.start;
+      let slice = self
+        .base
+        .get(span.start..span.end)
+        .context("span bounds are outside the document")?;
+      if !slice.contains('\n') {
+        let start = character;
+        advance_position(slice, &mut line, &mut character);
+        byte = span.end;
+        push_location_span(&mut out, line, start, character, address);
+      } else {
+        for segment in slice.split_inclusive('\n') {
+          let content = segment.trim_end_matches(['\r', '\n']);
+          let length = content.encode_utf16().count() as u32;
+          if length > 0 || !segment.ends_with('\n') {
+            push_location_span(&mut out, line, character, character + length, address);
+          }
+          advance_position(segment, &mut line, &mut character);
+          byte += segment.len();
+        }
+      }
+    }
+    Ok(out)
+  }
+
   /// Finds the first non-comment span whose address or address range matches `target`.
   pub(crate) fn span_for_address(&self, target: &str) -> Option<&Span> {
     self.spans.iter().find(|span| {
@@ -326,112 +398,58 @@ pub(crate) fn align(code: &str, tokens: Vec<Token>) -> Result<Vec<Span>> {
   Ok(spans)
 }
 
-/// Resolves global, function, label, and constant token spans against the symbol table.
-pub(crate) fn resolve(spans: &mut [Span], symbols: &[Symbol], locals: &HashSet<String>) {
-  let shadowed: HashSet<&str> = spans
-    .iter()
-    .filter(|s| matches!(s.token.kind.as_str(), "variable" | "parameter"))
-    .map(|s| s.token.text.as_str())
-    .chain(locals.iter().map(String::as_str))
-    .collect();
-  let resolved: Vec<Option<Symbol>> = spans
-    .iter()
-    .map(|s| {
-      // Native GUI tokens keep their attached function, variable, parameter, or global symbol.
-      if s.location.is_some()
-        && matches!(
-          s.token.kind.as_str(),
-          "function" | "variable" | "parameter" | "global"
-        )
-        && s.symbol.is_some()
-      {
-        return s.symbol.clone();
-      }
-      if !matches!(
-        s.token.kind.as_str(),
-        "function" | "global" | "label" | "constant"
-      ) || shadowed.contains(s.token.text.as_str())
-      {
-        return None;
-      }
-      let candidates: Vec<_> = symbols
-        .iter()
-        .filter(|sym| {
-          if !sym.eligible() {
-            return false;
-          }
-          if s.token.kind == "function" && !sym.kind.eq_ignore_ascii_case("function") {
-            return false;
-          }
-          if s.token.kind == "label" && !sym.kind.eq_ignore_ascii_case("label") {
-            return false;
-          }
-          if s.token.kind == "constant"
-            && !sym.kind.eq_ignore_ascii_case("constant")
-            && !sym.kind.eq_ignore_ascii_case("label")
-            && !sym.kind.eq_ignore_ascii_case("global")
-          {
-            return false;
-          }
-          if sym.name == s.token.text || sym.qualified() == s.token.text {
-            return true;
-          }
-          if s.location.is_none()
-            && let Some(addr) = &s.token.address
-            && same_address(addr, &sym.address)
-          {
-            return true;
-          }
-          false
-        })
-        .collect();
-      if candidates.len() == 1 {
-        Some(candidates[0].clone())
-      } else if candidates.len() > 1 {
-        if let Some(exact) = candidates.iter().find(|sym| {
-          s.location.is_none()
-            && (sym.name == s.token.text || sym.qualified() == s.token.text)
-            && s
-              .token
-              .address
-              .as_deref()
-              .is_some_and(|a| same_address(a, &sym.address))
-        }) {
-          Some((*exact).clone())
-        } else {
-          let matching_name: Vec<_> = candidates
-            .iter()
-            .filter(|sym| sym.name == s.token.text || sym.qualified() == s.token.text)
-            .collect();
-          if matching_name.len() == 1 {
-            Some((*matching_name[0]).clone())
-          } else {
-            None
-          }
-        }
-      } else {
-        None
-      }
-    })
-    .collect();
-  for (span, symbol) in spans.iter_mut().zip(resolved) {
-    span.symbol = symbol;
+/// Resolves global, function, label, and constant token spans against the symbol index.
+pub(crate) fn resolve(spans: &mut [Span], symbols: &SymbolIndex, locals: &HashSet<String>) {
+  let mut extra_shadowed: HashSet<String> = HashSet::new();
+  for span in spans.iter() {
+    if matches!(span.token.kind.as_str(), "variable" | "parameter")
+      && !locals.contains(span.token.text.as_str())
+    {
+      extra_shadowed.insert(span.token.text.clone());
+    }
+  }
+  for span in spans.iter_mut() {
+    // Native GUI tokens keep their attached function, variable, parameter, or global symbol.
+    if span.location.is_some()
+      && matches!(
+        span.token.kind.as_str(),
+        "function" | "variable" | "parameter" | "global"
+      )
+      && span.symbol.is_some()
+    {
+      continue;
+    }
+    if !matches!(
+      span.token.kind.as_str(),
+      "function" | "global" | "label" | "constant"
+    ) || locals.contains(span.token.text.as_str())
+      || extra_shadowed.contains(span.token.text.as_str())
+    {
+      span.symbol = None;
+      continue;
+    }
+    span.symbol = symbols.resolve_span(span).cloned();
   }
 }
 
 /// Resolves variable and parameter spans without a symbol when `locals` has one match.
 pub(crate) fn resolve_locals(spans: &mut [Span], locals: &[Symbol]) {
+  let mut by_name: HashMap<&str, Option<&Symbol>> = HashMap::with_capacity(locals.len());
+  for local in locals {
+    by_name
+      .entry(local.name.as_str())
+      .and_modify(|slot| *slot = None)
+      .or_insert(Some(local));
+  }
   for span in spans {
     if !matches!(span.token.kind.as_str(), "variable" | "parameter") || span.symbol.is_some() {
       continue;
     }
-    let mut candidates = locals.iter().filter(|s| s.name == span.token.text);
-    let candidate = candidates.next();
-    span.symbol = if candidates.next().is_none() {
-      candidate.cloned()
-    } else {
-      None
-    };
+    span.symbol = by_name
+      .get(span.token.text.as_str())
+      .copied()
+      .flatten()
+      .cloned();
   }
 }
 
@@ -447,6 +465,53 @@ pub(crate) fn data_type_name(value: &Value) -> String {
     Some("array") => format!("{}[{}]", data_type_name(&value["element"]), value["count"]),
     Some("untyped_pointer") => "void *".into(),
     _ => value.as_str().unwrap_or("unknown").into(),
+  }
+}
+
+/// Adds a UTF-16 [`LocationSpan`], or joins it with the last span on the same line and address.
+fn push_location_span<'a>(
+  out: &mut Vec<LocationSpan<'a>>,
+  line: u32,
+  start: u32,
+  end: u32,
+  address: Option<&'a str>,
+) {
+  if let Some(previous) = out.last_mut()
+    && previous.line == line
+    && previous.end == start
+    && previous.address == address
+  {
+    previous.end = end;
+    return;
+  }
+  out.push(LocationSpan {
+    line,
+    start,
+    end,
+    address,
+  });
+}
+
+/// Advances zero-based `line` and UTF-16 `character` coordinates across `text`.
+pub(crate) fn advance_position(text: &str, line: &mut u32, character: &mut u32) {
+  if text.is_ascii() {
+    for segment in text.split_inclusive('\n') {
+      if segment.ends_with('\n') {
+        *line += 1;
+        *character = 0;
+      } else {
+        *character += segment.len() as u32;
+      }
+    }
+    return;
+  }
+  for c in text.chars() {
+    if c == '\n' {
+      *line += 1;
+      *character = 0;
+    } else {
+      *character += c.len_utf16() as u32;
+    }
   }
 }
 

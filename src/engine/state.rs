@@ -4,13 +4,14 @@
 //! Synchronous in-memory session, document, cache, and epoch state for [`crate::engine::Engine`].
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use serde_json::Value;
 use tower_lsp_server::ls_types::Uri;
 
 use super::Pending;
-use crate::document::{Document, Symbol, canonical_virtual_uri, same_address};
+use crate::document::{Document, Symbol, SymbolIndex, canonical_virtual_uri, same_address};
 
 /// Buffered client document state recorded while an initial uncached open is in flight.
 #[derive(Clone, Debug)]
@@ -39,8 +40,8 @@ pub(crate) struct EngineState {
   pub(crate) client_buffers: HashMap<Uri, ClientBuffer>,
   /// Pending scoped rename plan keyed by lowercase session MD5.
   pub(crate) pending: HashMap<String, Pending>,
-  /// Cached symbol tables keyed by lowercase session MD5.
-  pub(crate) symbols: HashMap<String, Vec<Symbol>>,
+  /// Cached symbol indexes keyed by lowercase session MD5.
+  pub(crate) symbols: HashMap<String, Arc<SymbolIndex>>,
   /// Pre-accepted document text after a confirmed backend save, keyed by URI.
   pub(crate) refresh_allowed: HashMap<Uri, String>,
   /// Cached function JSON payloads indexed by session MD5 and entry address.

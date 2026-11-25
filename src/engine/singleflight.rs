@@ -5,13 +5,13 @@
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Mutex, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use anyhow::{Result, bail};
 use tokio::sync::watch;
 use tower_lsp_server::ls_types::Uri;
 
-use crate::document::{Symbol, same_address};
+use crate::document::{SymbolIndex, same_address};
 
 /// Broadcast state of one in-flight operation.
 #[derive(Clone)]
@@ -147,7 +147,7 @@ struct SymbolEntry {
   /// Monotonic slot identifier used to remove only this leader on completion.
   id: u64,
   /// Watch receiver cloned by followers that join this slot.
-  receiver: watch::Receiver<FlightState<Vec<Symbol>>>,
+  receiver: watch::Receiver<FlightState<Arc<SymbolIndex>>>,
 }
 
 /// Coordinates concurrent cache-miss symbol loads per `md5` session.
@@ -167,7 +167,7 @@ pub(super) struct SymbolLeader<'a> {
   /// Unique identifier of this leader slot.
   id: u64,
   /// Watch sender used to broadcast completion or cancellation to followers.
-  sender: watch::Sender<FlightState<Vec<Symbol>>>,
+  sender: watch::Sender<FlightState<Arc<SymbolIndex>>>,
   /// True after [`SymbolLeader::complete`] publishes the final result.
   completed: bool,
 }
@@ -200,7 +200,7 @@ impl SymbolFlights {
   }
 
   /// Joins an existing `md5` symbol-load slot or registers the caller as leader.
-  pub(super) fn acquire(&self, md5: &str) -> Registration<Vec<Symbol>, SymbolLeader<'_>> {
+  pub(super) fn acquire(&self, md5: &str) -> Registration<Arc<SymbolIndex>, SymbolLeader<'_>> {
     let mut entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
     if let Some(existing) = entries.get(md5) {
       return Registration::Follower(existing.receiver.clone());
@@ -228,10 +228,10 @@ impl SymbolFlights {
 
 impl SymbolLeader<'_> {
   /// Publishes `result` to waiting followers and removes this slot.
-  pub(super) fn complete(mut self, result: &Result<Vec<Symbol>>) {
+  pub(super) fn complete(mut self, result: &Result<Arc<SymbolIndex>>) {
     self.flights.remove(&self.md5, self.id);
     let payload = match result {
-      Ok(symbols) => Ok(symbols.clone()),
+      Ok(symbols) => Ok(Arc::clone(symbols)),
       Err(error) => Err(format!("{error:#}")),
     };
     let _ = self.sender.send(FlightState::Ready(payload));
