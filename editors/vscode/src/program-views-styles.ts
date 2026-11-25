@@ -181,10 +181,10 @@ body.program-view[data-view-kind="listing"]:is(.vscode-high-contrast,.vscode-hig
 body.program-view[data-view-kind="memory"]:is(.vscode-high-contrast,.vscode-high-contrast-light) :is(td.hb.is-selected,.ha.is-selected){background:var(--vscode-editor-background);color:var(--vscode-foreground);box-shadow:none;outline:2px solid var(--ghidra-active-border);outline-offset:-2px}
 @media(prefers-contrast:more){.program-view[data-view-kind="memory"] .hex-endian-pill:not([aria-pressed="true"]){border:1px solid var(--ghidra-hv-border)}}
 @media(forced-colors:active){
-  .program-view .pv-toolbar .icon-button[aria-pressed="true"],.program-view[data-view-kind="memory"] .hex-endian-pill[aria-pressed="true"]{background:Canvas;color:CanvasText;border:2px solid Highlight}
-  .program-view[data-view-kind="memory"] .hex-endian-pill:not([aria-pressed="true"]){background:ButtonFace;color:ButtonText;border:1px solid ButtonText}
-  .program-view[data-view-kind="listing"] tr.listing-unit-row.selected,.program-view[data-view-kind="memory"] tr.hex-row.selected{background:Canvas;color:CanvasText;box-shadow:none;outline:2px solid Highlight;outline-offset:-2px}
-  .program-view[data-view-kind="listing"] table.listing-table tr.listing-unit-row.selected td.addr,.program-view[data-view-kind="listing"] table.listing-table tr.listing-unit-row.selected:focus td.addr,.program-view[data-view-kind="memory"] tr.hex-row.selected th.addr{background:Canvas;color:CanvasText;box-shadow:inset 3px 0 Highlight}
-  .program-view[data-view-kind="memory"] td.hb.is-selected,.program-view[data-view-kind="memory"] .ha.is-selected{background:Canvas;color:CanvasText;box-shadow:none;outline:2px solid Highlight;outline-offset:-2px}
+  .program-view .pv-toolbar .icon-button[aria-pressed="true"],.program-view[data-view-kind="memory"] .hex-endian-pill[aria-pressed="true"]{background:var(--ghidra-pressed-bg);color:var(--ghidra-selection-fg);border:2px solid var(--ghidra-active-border)}
+  .program-view[data-view-kind="memory"] .hex-endian-pill:not([aria-pressed="true"]){background:ButtonFace;color:ButtonText;border:1px solid var(--ghidra-hv-border)}
+  .program-view[data-view-kind="listing"] tr.listing-unit-row.selected,.program-view[data-view-kind="memory"] tr.hex-row.selected{background:var(--ghidra-selection-bg);color:var(--ghidra-selection-fg);box-shadow:none;outline:2px solid var(--ghidra-active-border);outline-offset:-2px}
+  .program-view[data-view-kind="listing"] table.listing-table tr.listing-unit-row.selected td.addr,.program-view[data-view-kind="listing"] table.listing-table tr.listing-unit-row.selected:focus td.addr,.program-view[data-view-kind="memory"] tr.hex-row.selected th.addr{background:var(--ghidra-active-selection-bg);color:var(--ghidra-active-selection-fg);box-shadow:inset 3px 0 var(--ghidra-active-border)}
+  .program-view[data-view-kind="memory"] td.hb.is-selected,.program-view[data-view-kind="memory"] .ha.is-selected{background:var(--ghidra-selection-bg);color:var(--ghidra-selection-fg);box-shadow:none;outline:2px solid var(--ghidra-active-border);outline-offset:-2px}
 }
 `;

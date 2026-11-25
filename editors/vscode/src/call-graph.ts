@@ -69,12 +69,15 @@ async function layoutCalls(graph: CallGraph): Promise<{ width: number; height: n
     };
 }
 
+/** Render the decorative non-color badge identifying the root function card. */
+export const callRootBadge = (): string => '<span class="call-root-badge" aria-hidden="true">ROOT</span>';
+
 /** Render the interactive SVG call graph and overview map. */
 export async function callGraph(graph: CallGraph): Promise<string> {
     const layout = await layoutCalls(graph);
     const path = (edge: PlacedEdge): string => roundedOrthogonalPath(edge.points, 8);
     const functions = new Map(graph.nodes.map(node => [node.id, node.name]));
-    const edgeSvg = layout.edges.map(edge => `<g class="call-edge" tabindex="0" role="button" aria-pressed="false" aria-label="${escapeHtml(`${functions.get(edge.from)} calls ${functions.get(edge.to)}`)}" data-from="${escapeHtml(edge.from)}" data-to="${escapeHtml(edge.to)}"><path class="call-edge-hit" d="${path(edge)}"/><path class="edge" d="${path(edge)}" marker-end="url(#call-arrow)"/><title>${escapeHtml(edge.sites.length ? `Known static call sites: ${edge.sites.join(', ')}` : 'Static call relationship; call-site address not reported')}</title></g>`).join('');
+    const edgeSvg = layout.edges.map((edge, index) => `<g class="call-edge" tabindex="0" role="button" aria-pressed="false" aria-label="${escapeHtml(`${functions.get(edge.from)} calls ${functions.get(edge.to)}`)}" data-edge-index="${index}" data-from="${escapeHtml(edge.from)}" data-to="${escapeHtml(edge.to)}"><path class="call-edge-hit" d="${path(edge)}"/><path class="edge" d="${path(edge)}" marker-end="url(#call-arrow)"/><title>${escapeHtml(edge.sites.length ? `Known static call sites: ${edge.sites.join(', ')}` : 'Static call relationship; call-site address not reported')}</title></g>`).join('');
     const nodeSvg = layout.nodes.map(node => {
         const root = node.id === graph.root;
         const relation = root ? 'Current function' : node.callerDistance && node.calleeDistance ? 'Caller / callee' : node.callerDistance ? `Caller · ${node.callerDistance} ${node.callerDistance === 1 ? 'level' : 'levels'}` : `Callee · ${node.calleeDistance} ${node.calleeDistance === 1 ? 'level' : 'levels'}`;
@@ -90,7 +93,7 @@ export async function callGraph(graph: CallGraph): Promise<string> {
             return html(portX, portY, 52, 14, `<button id="call-branch-${encodeURIComponent(node.id)}-${direction}" class="node-branch" data-direction="${direction}" aria-expanded="${branch.expanded}" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}">${glyph}</button>`, `node-${direction}`);
         }).join('');
         const titleBaseline = root ? 50 : Math.round((node.height - node.lines.length * 18) / 2 + 14);
-        const rootRing = root ? `<rect class="call-root-ring" x="4" y="4" width="${node.width - 8}" height="${node.height - 8}" rx="5" aria-hidden="true"/><g class="call-root-badge" aria-hidden="true" transform="translate(${Math.round(node.width / 2)},24)"><rect x="-23" y="-8" width="46" height="16" rx="8"/><text y="3.5" text-anchor="middle">ROOT</text></g>` : '';
+        const rootRing = root ? `<rect class="call-root-ring" x="4" y="4" width="${node.width - 8}" height="${node.height - 8}" rx="5" aria-hidden="true"/><foreignObject class="call-root-badge-slot" x="${Math.round(node.width / 2 - 34)}" y="13" width="68" height="22" aria-hidden="true"><div xmlns="http://www.w3.org/1999/xhtml" class="node-control-content">${callRootBadge()}</div></foreignObject>` : '';
         const rootAddress = root ? `<text x="${node.width / 2}" y="${titleBaseline + (node.lines.length - 1) * 18 + 19}" text-anchor="middle" class="node-subtitle call-root-address">${escapeHtml(displayAddress(node.entry))}</text>` : '';
         const controls = html(node.width - 36, Math.round(node.height / 2 - 14), 28, 28, action, 'node-code') + ports;
         return `<g class="graph-node call-node${root ? ' is-root' : ''}" data-node="${escapeHtml(node.id)}" data-entry="${escapeHtml(node.entry)}" data-address="${escapeHtml(node.entry)}" data-kind="function" data-label="${escapeHtml(node.name)}" data-x="${node.x}" data-y="${node.y}" data-width="${node.width}" data-height="${node.height}" transform="translate(${node.x},${node.y})" tabindex="0" role="group" aria-label="${escapeHtml(node.name)}" aria-description="${escapeHtml(`${relation}, ${node.entry}`)}"><title>${escapeHtml(`${node.name}\n${node.entry}\n${relation}\nDouble-click or Enter to focus this function's call graph`)}</title><rect class="call-node-body" width="${node.width}" height="${node.height}" rx="8"/>${rootRing}${node.lines.map((line, index) => `<text x="${node.width / 2}" y="${titleBaseline + index * 18}" text-anchor="middle" class="node-title">${escapeHtml(line)}</text>`).join('')}${rootAddress}${controls}</g>`;

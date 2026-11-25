@@ -66,12 +66,12 @@ body.call-page:is(.vscode-high-contrast,.vscode-high-contrast-light) .call-colum
 }
 @media(forced-colors:active){
   .call-page .call-column-row>.call-column-code{opacity:1;transition:none}
-  .call-page .call-column-code,.call-page .call-column-source-code,.call-page .call-view-switch button:not([aria-pressed="true"]),.call-page .call-direction button:not([aria-pressed="true"]),.call-page .call-column-trail button{background:ButtonFace;color:ButtonText;border:1px solid ButtonText}
-  .call-page .call-view-switch [aria-pressed="true"],.call-page .call-direction [aria-pressed="true"]{background:Canvas;color:CanvasText;border:2px solid Highlight}
-  .call-column-row.is-selected,.call-column-row:focus-within{background:Canvas;color:CanvasText;outline:2px solid Highlight;outline-offset:-2px}
-  .call-page .call-column-pick{background:transparent;color:CanvasText;border:0}
-  .call-column-pick>.call-icon,.call-column-pick[aria-pressed="true"]::before,.call-column-addr,.call-column-chevron{color:CanvasText}
-  .call-column-row:focus-within :is(.call-column-pick,.call-column-code):focus-visible,.call-page .call-column-pick:focus-visible{outline:2px solid Highlight;outline-offset:-2px}
+  .call-page .call-column-code,.call-page .call-column-source-code,.call-page .call-view-switch button:not([aria-pressed="true"]),.call-page .call-direction button:not([aria-pressed="true"]),.call-page .call-column-trail button{background:ButtonFace;color:ButtonText;border:1px solid var(--ghidra-hv-border)}
+  .call-page .call-view-switch [aria-pressed="true"],.call-page .call-direction [aria-pressed="true"]{background:var(--ghidra-pressed-bg);color:var(--ghidra-selection-fg);border:2px solid var(--ghidra-active-border)}
+  .call-column-row.is-selected,.call-column-row:focus-within{background:var(--ghidra-selection-bg);color:var(--ghidra-selection-fg);outline:2px solid var(--ghidra-active-border);outline-offset:-2px}
+  .call-page .call-column-pick{background:transparent;color:var(--ghidra-selection-fg);border:0}
+  .call-column-pick>.call-icon,.call-column-pick[aria-pressed="true"]::before,.call-column-addr,.call-column-chevron{color:var(--ghidra-muted)}
+  .call-column-row:focus-within :is(.call-column-pick,.call-column-code):focus-visible,.call-page .call-column-pick:focus-visible{outline:2px solid var(--ghidra-focus);outline-offset:-2px}
 }
 @media(max-width:640px){.call-page .call-view-switch button,.call-page .call-direction button{padding:0 6px;gap:3px}}
 `;
