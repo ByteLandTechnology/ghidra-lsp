@@ -13,7 +13,7 @@ import { displayAddress } from './names';
 import { pageStyles } from './page-styles';
 import { addrSpan, programViewStyles } from './program-views-styles';
 import { highlightAsm, highlightName } from './syntax';
-import { viewStyles, webviewShortcutScript } from './view-ui';
+import { moreActionsPopover, pageOptionsPopover, viewStyles, webviewPopoverScript, webviewShortcutScript } from './view-ui';
 import { escape } from './web';
 
 /** Full view-model payload used to render the graphical Program Listing HTML page. */
@@ -33,6 +33,7 @@ export interface ListingViewPayload {
     syncEnabled: boolean;
     singleKeyShortcuts?: boolean;
     totalUnitsLabel: string;
+    focusId?: string;
 }
 
 /** Turn inline hex address literals inside highlighted operands into jump buttons. */
@@ -144,6 +145,7 @@ export function renderProgramListingPage(payload: ListingViewPayload): string {
         windowEnd: payload.window.endAddress,
         syncEnabled: payload.syncEnabled,
         singleKeyShortcuts: payload.singleKeyShortcuts !== false,
+        ...(payload.focusId ? { focusId: payload.focusId } : {}),
     }).replace(/</g, '\\u003c');
 
     return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; font-src data:; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}';"><title>${escape(payload.title)}</title><style nonce="${nonce}">
@@ -155,30 +157,16 @@ ${programViewStyles}
 <h1 class="page-context">${escape(payload.title)}</h1>
 <div class="toolbar pv-toolbar" role="group" aria-label="Listing navigation">
   <div class="pv-nav" role="group" aria-label="History and window">
-    <button type="button" class="icon-button" data-action="navBack" aria-label="Back" title="Back (Alt+Left)"${payload.canBack ? '' : ' disabled'}>${callIcon('back')}</button>
-    <button type="button" class="icon-button" data-action="navForward" aria-label="Forward" title="Forward (Alt+Right)"${payload.canForward ? '' : ' disabled'}>${callIcon('forward')}</button>
+    <button type="button" id="nav-back" class="icon-button" data-action="navBack" aria-label="Back" title="Back (Alt+Left)"${payload.canBack ? '' : ' disabled'}>${callIcon('back')}</button>
+    <button type="button" id="nav-forward" class="icon-button" data-action="navForward" aria-label="Forward" title="Forward (Alt+Right)"${payload.canForward ? '' : ' disabled'}>${callIcon('forward')}</button>
     <span class="pv-step" id="pv-step"${payload.hasMoreBefore || payload.hasMoreAfter ? '' : ' hidden'}><span class="pv-divider" aria-hidden="true"></span><button type="button" id="pager-before" class="icon-button" data-action="loadBefore" aria-label="Previous window" title="Previous window"${payload.hasMoreBefore ? '' : ' disabled'}>${callIcon('up')}</button><button type="button" id="pager-after" class="icon-button" data-action="loadAfter" aria-label="Next window" title="Next window"${payload.hasMoreAfter ? '' : ' disabled'}>${callIcon('down')}</button></span>
   </div>
-  <form id="goto"><input id="address" aria-label="Address or symbol" value="${escape(displayAddress(payload.cursorAddress))}" placeholder="Address or symbol…"><button type="submit" aria-label="Go to address" title="Go to address">${callIcon('right')}</button></form>
+  <form id="goto"><input id="address" aria-label="Address or symbol" value="${escape(displayAddress(payload.cursorAddress))}" placeholder="Address or symbol…"><button type="submit" id="goto-submit" aria-label="Go to address" title="Go to address">${callIcon('right')}</button></form>
   <div class="browser-search">${callIcon('search')}<input class="search" id="search" aria-label="Filter displayed rows" placeholder="Filter instructions, labels, comments…"></div>
   <div class="pv-tools" role="group" aria-label="Listing tools">
     <button type="button" id="sync-toggle" class="icon-button" data-action="toggleSync" aria-pressed="${payload.syncEnabled}" aria-label="Sync cursor with other Ghidra views" title="Sync cursor with other Ghidra views">${callIcon('link')}</button>
-    <button type="button" class="icon-button" data-action="openHexBeside" aria-label="Open Hex view beside" title="Open Hex view beside">${callIcon('memory')}</button>
-    <details id="page-options" class="page-options">
-      <summary aria-label="View options" title="View options">${callIcon('more')}</summary>
-      <div class="page-options-content">
-        <div class="page-options-actions" role="group" aria-label="Page actions">
-          <button type="button" class="icon-button" data-action="refresh" aria-label="Refresh" title="Refresh">${callIcon('refresh')}</button>
-        </div>
-        ${blockOptions ? `<label class="pv-option-row">Memory block<select id="block-select" aria-label="Memory block">${blockOptions}</select></label>` : ''}
-        <label><input id="listing-bytes" type="checkbox" checked>Show bytes</label>
-        <label><input id="listing-headers" type="checkbox" checked>Show function headers</label>
-        <label><input id="listing-vars" type="checkbox">Show function variables</label>
-        <label><input id="listing-xrefs" type="checkbox" checked>Show cross-references</label>
-        <label><input id="listing-collapse" type="checkbox" checked>Collapse undefined byte runs</label>
-        <p id="listing-scope-note">${escape(payload.totalUnitsLabel)}</p>
-      </div>
-    </details>
+    <button type="button" id="open-hex-beside" class="icon-button" data-action="openHexBeside" aria-label="Open Hex view beside" title="Open Hex view beside">${callIcon('memory')}</button>
+    ${pageOptionsPopover(`${blockOptions ? `<label class="pv-option-row">Memory block<select id="block-select" aria-label="Memory block">${blockOptions}</select></label>` : ''}<label><input id="listing-bytes" type="checkbox" checked>Show bytes</label><label><input id="listing-headers" type="checkbox" checked>Show function headers</label><label><input id="listing-vars" type="checkbox">Show function variables</label><label><input id="listing-xrefs" type="checkbox" checked>Show cross-references</label><label><input id="listing-collapse" type="checkbox" checked>Collapse undefined byte runs</label><p id="listing-scope-note">${escape(payload.totalUnitsLabel)}</p>`)}
   </div>
 </div>
 <p id="filter-status" role="status" aria-live="polite" hidden></p>
@@ -192,12 +180,13 @@ ${programViewStyles}
 <div class="toolbar selection-tools" role="group" aria-label="Selected item actions" aria-describedby="selection-label" hidden>
   <span id="selection-label"></span>
   <div id="selection-primary" class="selection-buttons"></div>
-  <details id="more-actions" class="more-actions" hidden><summary id="more-summary" aria-label="More actions" title="More actions">${callIcon('more')}</summary><div id="selection-more" class="selection-buttons" role="group" aria-label="Additional actions"></div></details>
+  ${moreActionsPopover()}
 </div>
 </main>
 <script nonce="${nonce}">
 const vscode = acquireVsCodeApi();
-const state = ${stateJson};
+const rawState = ${stateJson};
+const { focusId: initialFocusId, ...state } = rawState;
 const previous = vscode.getState() || {};
 const samePage = previous.md5 === state.md5 && previous.kind === 'listing';
 let selected = state.selected || '';
@@ -223,7 +212,7 @@ const pagerBefore = document.getElementById('pager-before');
 const pagerAfter = document.getElementById('pager-after');
 const scopeNote = document.getElementById('listing-scope-note');
 const more = document.getElementById('more-actions');
-const moreSummary = document.getElementById('more-summary');
+const moreSummary = document.getElementById('more-actions-button');
 const icons = ${JSON.stringify(callIcons)};
 
 if (samePage) {
@@ -259,9 +248,13 @@ const persist = () => {
     showXrefs: optXrefs.checked,
     collapseRuns: optCollapse.checked,
     scrollTop: wrap.scrollTop,
+    focusId: document.activeElement?.id || '',
   });
 };
 ${webviewShortcutScript}
+${webviewPopoverScript}
+document.addEventListener('focusin', persist);
+wrap.addEventListener('scroll', () => persist(), { passive: true });
 
 const unitRows = () => [...tbody.querySelectorAll('tr.listing-unit-row')];
 const findUnitRow = addr => addr ? unitRows().find(r => r.dataset.address?.toLowerCase() === addr.toLowerCase()) : undefined;
@@ -273,7 +266,7 @@ const updateSelectionTools = () => {
   const visible = !!active && !active.hidden;
   bar.hidden = !visible;
   document.body.classList.toggle('has-selection', visible);
-  if (!visible) return;
+  if (!visible) { closePopover(more); return; }
   const short = v => /^ram:[0-9a-f]+$/i.test(v || '') ? v.slice(4) : v;
   const fn = active.dataset.entry || '';
   const fnName = active.dataset.fnName || '';
@@ -296,7 +289,7 @@ const updateSelectionTools = () => {
   primaryAction = canDecompile ? 'decompile' : 'memory';
   const main = items.filter(i => i.action === primaryAction);
   const extra = items.filter(i => i.action !== primaryAction);
-  const hosts = [document.getElementById('selection-primary'), document.getElementById('selection-more')];
+  const hosts = [document.getElementById('selection-primary'), more];
   for (const [idx, list] of [main, extra].entries()) {
     hosts[idx].replaceChildren(...list.map(item => {
       const btn = document.createElement('button');
@@ -314,7 +307,11 @@ const updateSelectionTools = () => {
       return btn;
     }));
   }
-  more.hidden = !extra.length;
+  if (!extra.length) closePopover(more);
+  moreSummary.hidden = !extra.length;
+  const moreLabel = 'More actions for ' + label.textContent;
+  moreSummary.setAttribute('aria-label', moreLabel);
+  moreSummary.title = moreLabel;
 };
 
 const selectRow = (row, notify = true, scroll = true) => {
@@ -456,28 +453,31 @@ document.addEventListener('click', event => {
   const btn = event.target.closest('button[data-action]');
   if (btn && !btn.disabled) {
     const act = btn.dataset.action;
+    const menu = btn.closest('[data-popover-menu]');
+    if (menu) focusInvokerAndClose(menu);
+    persist();
+    const focusId = document.activeElement?.id || '';
     if (['navBack', 'navForward', 'refresh', 'loadBefore', 'loadAfter', 'toggleSync', 'openHexBeside'].includes(act)) {
-      vscode.postMessage({ action: act });
+      vscode.postMessage({ action: act, focusId });
     } else if (act === 'copyAddress' && selected) {
-      vscode.postMessage({ action: 'copyAddress', address: selected });
+      vscode.postMessage({ action: 'copyAddress', address: selected, focusId });
     } else if (selected) {
-      vscode.postMessage({ action: act, address: selected, entry: selectedEntry, kind: selectedKind });
+      vscode.postMessage({ action: act, address: selected, entry: selectedEntry, kind: selectedKind, focusId });
     }
-    if (more && more.contains(btn)) { more.open = false; moreSummary.focus({ preventScroll: true }); }
-    pageOptions.open = false;
-    return;
   }
-  if (pageOptions.open && !pageOptions.contains(event.target)) pageOptions.open = false;
-  if (more.open && !more.contains(event.target)) more.open = false;
 });
 
 document.getElementById('goto').addEventListener('submit', event => {
   event.preventDefault();
   const val = addressInput.value.trim();
-  if (val) vscode.postMessage({ action: 'goto', address: val });
+  if (val) vscode.postMessage({ action: 'goto', address: val, focusId: document.activeElement?.id || '' });
 });
 blockSelect?.addEventListener('change', () => {
-  if (blockSelect.value) { pageOptions.open = false; vscode.postMessage({ action: 'goto', address: blockSelect.value, pushHistory: true }); }
+  if (blockSelect.value) {
+    focusInvokerAndClose(pageOptions);
+    persist();
+    vscode.postMessage({ action: 'goto', address: blockSelect.value, pushHistory: true, focusId: document.activeElement?.id || '' });
+  }
 });
 search.addEventListener('input', () => { applyFilter(); persist(); });
 document.getElementById('clear-filter').addEventListener('click', () => { search.value = ''; applyFilter(); persist(); search.focus(); });
@@ -493,8 +493,6 @@ document.addEventListener('keydown', event => {
   if (isModShortcut(event, 'f')) { event.preventDefault(); search.focus(); search.select(); return; }
   if (isModShortcut(event, 'g')) { event.preventDefault(); addressInput.focus(); addressInput.select(); return; }
   if (event.key === 'Escape') {
-    if (pageOptions.open) { pageOptions.open = false; pageOptions.querySelector('summary').focus(); return; }
-    if (more.open) { more.open = false; moreSummary.focus(); return; }
     if (search.value) { search.value = ''; applyFilter(); persist(); return; }
   }
   if (event.key === '/' && canUseSingleKeyShortcut(event)) { event.preventDefault(); search.focus(); search.select(); }
@@ -562,9 +560,15 @@ window.addEventListener('message', event => {
 
 bindTableInteractions();
 requestAnimationFrame(() => {
-  const initialRow = findUnitRow(selected);
-  if (initialRow && !samePage) initialRow.scrollIntoView({ block: 'center' });
   updateSelectionTools();
+  const initialRow = findUnitRow(selected);
+  if (samePage && previous.windowStart === state.windowStart && typeof previous.scrollTop === 'number') {
+    wrap.scrollTop = previous.scrollTop;
+  } else if (initialRow && !samePage) {
+    initialRow.scrollIntoView({ block: 'center' });
+  }
+  const savedFocusId = (samePage && previous.focusId) || initialFocusId || '';
+  if (savedFocusId) restorePopoverAwareFocus(savedFocusId);
   persist();
   document.body.dataset.viewReady = 'true';
 });
