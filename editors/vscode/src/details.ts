@@ -17,7 +17,7 @@ type PanelState = { kind: PanelKind; md5: string; name?: string; path?: string; 
 /** Back/forward history stack entry inside an inspector panel. */
 type HistoryEntry = { state: PanelState; title: string };
 /** Live inspector webview panel state and history stacks. */
-interface Panel { key: string; state: PanelState; panel: vscode.WebviewPanel; generation: number; title: string; back: HistoryEntry[]; forward: HistoryEntry[]; /** The object whose content is on screen, if any. */ shown?: PanelState; }
+interface Panel { key: string; state: PanelState; panel: vscode.WebviewPanel; generation: number; title: string; back: HistoryEntry[]; forward: HistoryEntry[]; /** The object whose content is on screen, if any. */ shown?: PanelState; /** Control ID to focus again on the next full render. */ pendingFocusId?: string; }
 /** Maximum back/forward entries retained per inspector panel. */
 const historyLimit = 50;
 /** Eyebrow headings displayed for each inspector kind. */
@@ -199,8 +199,10 @@ export class Details implements vscode.Disposable {
         panel.onDidChangeViewState(event => { if (event.webviewPanel.active) { void this.context.activate(item.state.md5).catch(error => vscode.window.showErrorMessage(formatFriendlyError(error))); } });
         panel.webview.onDidReceiveMessage(async raw => {
             const message = object(raw);
+            const act = String(message.action);
+            item.pendingFocusId = typeof message.focusId === 'string' && message.focusId && !['back', 'forward', 'type'].includes(act) ? message.focusId : undefined;
             this.origin = item;
-            try { await this.action(item, String(message.action), typeof message.value === 'string' ? message.value : undefined); }
+            try { await this.action(item, act, typeof message.value === 'string' ? message.value : undefined); }
             catch (error) { if (!panel.visible) { void vscode.window.showErrorMessage(formatFriendlyError(error)); } else { await panel.webview.postMessage({ action: 'error', error: formatFriendlyError(error) }); } }
             finally { if (this.origin === item) { this.origin = undefined; } }
         });
@@ -220,7 +222,7 @@ export class Details implements vscode.Disposable {
         const fromCode = !this.origin;
         const existing = this.panels.get(this.key(state));
         if (existing) {
-            if (!sameTarget(existing.state, state)) { existing.back = [...existing.back, { state: existing.state, title: existing.title }].slice(-historyLimit); existing.forward = []; }
+            if (!sameTarget(existing.state, state)) { existing.pendingFocusId = undefined; existing.back = [...existing.back, { state: existing.state, title: existing.title }].slice(-historyLimit); existing.forward = []; }
             await this.navigate(existing, state);
             existing.panel.reveal(existing.panel.viewColumn, fromCode && existing !== this.origin);
             return;
@@ -244,6 +246,7 @@ export class Details implements vscode.Disposable {
         const from = direction === 'back' ? item.back : item.forward, to = direction === 'back' ? item.forward : item.back;
         const entry = from.pop();
         if (!entry) { return; }
+        item.pendingFocusId = undefined;
         to.push({ state: item.state, title: item.title });
         await this.navigate(item, entry.state);
     }
@@ -347,7 +350,8 @@ export class Details implements vscode.Disposable {
         if (generation !== item.generation) { return; }
         item.title = title; item.shown = state;
         item.panel.title = this.context.titled(title, state.md5);
-        item.panel.webview.html = page(title, eyebrow, subtitle, body, '', state, actions, { ...extras, nav: this.nav(item) });
+        const focusId = item.pendingFocusId; item.pendingFocusId = undefined;
+        item.panel.webview.html = page(title, eyebrow, subtitle, body, '', focusId ? { ...state, focusId } : state, actions, { ...extras, nav: this.nav(item) });
     }
     /** Dispatch button, link, and history actions posted by an inspector webview. */
     private async action(item: Panel, action: string, value?: string): Promise<void> {
