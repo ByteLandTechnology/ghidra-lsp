@@ -176,6 +176,14 @@ fn is_read_only_operation(domain: &str, operation: &str) -> bool {
   if domain == "batch" {
     return false;
   }
+  if matches!(
+    (domain, operation),
+    ("listing", "window.get")
+      | ("function", "control_flow_graph.get")
+      | ("reference", "context.list")
+  ) {
+    return true;
+  }
   let verb = operation.rsplit('.').next().unwrap_or(operation);
   matches!(
     verb,

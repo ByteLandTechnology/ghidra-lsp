@@ -1,24 +1,22 @@
 // Copyright 2026 ByteLand Technology Limited
 // SPDX-License-Identifier: MIT
 
-//! Bounded MCP batch pipeline for fetching and assembling listing windows.
+//! Bounded single-RPC fetch and assembly for address windows.
 
 use std::cmp::Ordering;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use anyhow::Result;
 use serde_json::{Value, json};
 
-use super::format::{
-  canonical_key, decode_bytes_vec, extract_batch_items, opt_nonempty_str, value_str,
-};
+use super::format::{opt_nonempty_str, value_str};
 use super::listing_build::{ListingBuildInput, build_listing_window};
 use super::meta::get_or_load_meta;
-use super::{COLLAPSE_THRESHOLD, DEFAULT_LISTING_LIMIT, MAX_XREF_BATCH, ProgramMetaCache};
-use crate::address::{add_address_offset, compare_addresses, find_memory_block, same_address};
+use super::{COLLAPSE_THRESHOLD, DEFAULT_LISTING_LIMIT, ProgramMetaCache};
+use crate::address::{add_address_offset, compare_addresses, find_memory_block};
 use crate::backend::McpBackend;
 
-/// Parameters controlling a bounded listing window fetch.
+/// Parameters for one bounded address window request.
 pub(crate) struct ListingWindowRequest<'a> {
   /// Lowercase 32-character session MD5 hash.
   pub(crate) md5: &'a str,
@@ -34,25 +32,31 @@ pub(crate) struct ListingWindowRequest<'a> {
   pub(crate) exact_start: bool,
 }
 
-/// Checks whether an instruction mnemonic typically receives incoming cross-references.
-fn is_xref_target_mnemonic(mnemonic: &str) -> bool {
-  let upper = mnemonic.to_ascii_uppercase();
-  upper.starts_with("CALL")
-    || upper.starts_with('J')
-    || upper.starts_with('B')
-    || upper.starts_with("RET")
-    || upper.starts_with("ADR")
-    || upper.starts_with("LEA")
+/// Groups a flat JSON array of reference records by the string value at `key_field`.
+fn group_references_by_field(
+  items: Option<&Value>,
+  key_field: &str,
+) -> HashMap<String, Vec<Value>> {
+  let mut grouped: HashMap<String, Vec<Value>> = HashMap::new();
+  let Some(records) = items.and_then(Value::as_array) else {
+    return grouped;
+  };
+  for record in records {
+    let key = value_str(&record[key_field]);
+    if !key.is_empty() {
+      grouped.entry(key).or_default().push(record.clone());
+    }
+  }
+  grouped
 }
 
-/// Checks whether an instruction mnemonic typically originates outgoing references.
-fn is_xref_source_mnemonic(mnemonic: &str) -> bool {
-  let upper = mnemonic.to_ascii_uppercase();
-  upper.starts_with("CALL")
-    || upper.starts_with('J')
-    || upper.starts_with('B')
-    || upper.starts_with("MOV")
-    || upper.starts_with("LEA")
+/// Extracts a cloned JSON array field from `parent`, or returns an empty vector.
+fn array_field(parent: &Value, field: &str) -> Vec<Value> {
+  parent
+    .get(field)
+    .and_then(Value::as_array)
+    .cloned()
+    .unwrap_or_default()
 }
 
 /// Fetches a bounded listing window with overlay symbols, comments, and cross-references.
@@ -107,10 +111,10 @@ pub(crate) async fn listing_window(
     scan["range"] = json!({ "start": scan_start });
   }
 
-  let unit_res = backend
+  let window_res = backend
     .call(
       "listing",
-      "code_unit.list",
+      "window.get",
       Some(&meta.md5),
       json!({
         "filter": { "kind": "all" },
@@ -120,13 +124,9 @@ pub(crate) async fn listing_window(
     )
     .await?;
 
-  let mut units = unit_res
-    .get("items")
-    .and_then(Value::as_array)
-    .cloned()
-    .unwrap_or_default();
+  let units = array_field(&window_res, "items");
   let next_cursor =
-    opt_nonempty_str(unit_res.get("next_cursor")).map(|raw| format!("v1|{scan_start}|{raw}"));
+    opt_nonempty_str(window_res.get("next_cursor")).map(|raw| format!("v1|{scan_start}|{raw}"));
 
   let mut demangled_functions = HashMap::new();
   for f in &meta.functions {
@@ -141,176 +141,12 @@ pub(crate) async fn listing_window(
   }
 
   let window = if !units.is_empty() {
-    units.sort_by(|a, b| compare_addresses(&value_str(&a["address"]), &value_str(&b["address"])));
-    let first_addr = value_str(&units[0]["address"]);
-    let last_unit = &units[units.len() - 1];
-    let last_bytes_len = decode_bytes_vec(&last_unit["bytes"]).len();
-    let last_len = last_unit
-      .get("length")
-      .and_then(Value::as_u64)
-      .map(|n| n as usize)
-      .filter(|&n| n > 0)
-      .or_else(|| (last_bytes_len > 0).then_some(last_bytes_len))
-      .unwrap_or(1);
-    let last_unit_addr = value_str(&last_unit["address"]);
-    let last_addr =
-      add_address_offset(&last_unit_addr, (last_len - 1) as i128).unwrap_or(last_unit_addr);
-
-    let range = json!({ "start": first_addr, "end": last_addr });
-    let overlay_res = backend
-      .call(
-        "batch",
-        "execute",
-        Some(&meta.md5),
-        json!({
-          "transaction_mode": "per_item",
-          "items": [
-            {
-              "id": "dataUnits",
-              "method": "data_unit.list",
-              "arguments": { "page": { "limit": 400 }, "scan": { "range": range, "timeout_ms": 15000 } }
-            },
-            {
-              "id": "symbols",
-              "method": "symbol.list",
-              "arguments": { "page": { "limit": 500 }, "scan": { "range": range, "timeout_ms": 15000 } }
-            },
-            {
-              "id": "functions",
-              "method": "function.list",
-              "arguments": { "page": { "limit": 200 }, "scan": { "range": range, "timeout_ms": 15000 } }
-            },
-            {
-              "id": "comments",
-              "method": "comment.list",
-              "arguments": { "page": { "limit": 500 }, "scan": { "range": range, "timeout_ms": 15000 } }
-            }
-          ]
-        }),
-      )
-      .await?;
-
-    let overlay = extract_batch_items(&overlay_res);
-    let extract_array = |id: &str| -> Vec<Value> {
-      overlay
-        .get(id)
-        .and_then(|v| v.get("items"))
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default()
-    };
-    let data_units = extract_array("dataUnits");
-    let symbols = extract_array("symbols");
-    let functions = extract_array("functions");
-    let comments = extract_array("comments");
-
-    let mut target_set = HashSet::new();
-    for sym in &symbols {
-      let addr = value_str(&sym["address"]);
-      if !addr.is_empty() {
-        target_set.insert(canonical_key(&addr, &meta.default_space));
-      }
-    }
-    for f in &functions {
-      let entry = value_str(&f["entry"]);
-      if !entry.is_empty() {
-        target_set.insert(canonical_key(&entry, &meta.default_space));
-      }
-    }
-    for unit in &units {
-      let addr = value_str(&unit["address"]);
-      if addr.is_empty() {
-        continue;
-      }
-      if unit.get("kind").and_then(Value::as_str) == Some("instruction")
-        && is_xref_target_mnemonic(&value_str(&unit["mnemonic"]))
-      {
-        target_set.insert(canonical_key(&addr, &meta.default_space));
-      }
-    }
-
-    let mut xref_addresses = Vec::new();
-    let mut seen_raw = HashSet::new();
-    let mut push_addr = |raw: String| {
-      if raw.is_empty() || xref_addresses.len() >= MAX_XREF_BATCH {
-        return;
-      }
-      let key = canonical_key(&raw, &meta.default_space);
-      if seen_raw.insert(key) {
-        xref_addresses.push(raw);
-      }
-    };
-    for f in &functions {
-      push_addr(value_str(&f["entry"]));
-    }
-    for sym in &symbols {
-      push_addr(value_str(&sym["address"]));
-    }
-    for unit in &units {
-      if unit.get("kind").and_then(Value::as_str) == Some("instruction")
-        && is_xref_source_mnemonic(&value_str(&unit["mnemonic"]))
-      {
-        push_addr(value_str(&unit["address"]));
-      }
-    }
-
-    let mut ref_requests = Vec::new();
-    for (idx, addr) in xref_addresses.iter().enumerate() {
-      if target_set.contains(&canonical_key(addr, &meta.default_space)) {
-        ref_requests.push(json!({
-          "id": format!("in:{idx}"),
-          "method": "reference.list",
-          "arguments": { "filter": { "direction": "to", "to": addr }, "page": { "limit": 25 } }
-        }));
-      }
-      let has_insn = units.iter().any(|u| {
-        u.get("kind").and_then(Value::as_str) == Some("instruction")
-          && same_address(&value_str(&u["address"]), addr)
-      });
-      if has_insn {
-        ref_requests.push(json!({
-          "id": format!("out:{idx}"),
-          "method": "reference.list",
-          "arguments": { "filter": { "direction": "from", "from": addr }, "page": { "limit": 10 } }
-        }));
-      }
-    }
-
-    let mut incoming_refs: HashMap<String, Vec<Value>> = HashMap::new();
-    let mut outgoing_refs: HashMap<String, Vec<Value>> = HashMap::new();
-    if !ref_requests.is_empty() {
-      let ref_res = backend
-        .call(
-          "batch",
-          "execute",
-          Some(&meta.md5),
-          json!({
-            "transaction_mode": "per_item",
-            "items": ref_requests,
-          }),
-        )
-        .await
-        .unwrap_or_else(|_| json!({}));
-      let ref_map = extract_batch_items(&ref_res);
-      for (idx, addr) in xref_addresses.into_iter().enumerate() {
-        if let Some(items) = ref_map
-          .get(&format!("in:{idx}"))
-          .and_then(|v| v.get("items"))
-          .and_then(Value::as_array)
-          .filter(|a| !a.is_empty())
-        {
-          incoming_refs.insert(addr.clone(), items.clone());
-        }
-        if let Some(items) = ref_map
-          .get(&format!("out:{idx}"))
-          .and_then(|v| v.get("items"))
-          .and_then(Value::as_array)
-          .filter(|a| !a.is_empty())
-        {
-          outgoing_refs.insert(addr, items.clone());
-        }
-      }
-    }
+    let data_units = array_field(&window_res, "data_units");
+    let symbols = array_field(&window_res, "symbols");
+    let functions = array_field(&window_res, "functions");
+    let comments = array_field(&window_res, "comments");
+    let incoming_refs = group_references_by_field(window_res.get("incoming_references"), "to");
+    let outgoing_refs = group_references_by_field(window_res.get("outgoing_references"), "from");
 
     build_listing_window(ListingBuildInput {
       units,

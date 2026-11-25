@@ -13,10 +13,8 @@ use tower_lsp_server::ls_types::{
 };
 
 use super::Engine;
-use crate::backend::list_all;
-use crate::document::{
-  canonical_virtual_uri, in_address_range, position, same_address, virtual_uri,
-};
+use crate::backend::list_operation;
+use crate::document::{canonical_virtual_uri, position, same_address, virtual_uri};
 
 impl Engine {
   /// Builds the root [`CallHierarchyItem`] for the function or call expression at `pos`.
@@ -174,53 +172,45 @@ impl Engine {
       .and_then(Value::as_str)
       .context("Missing entry")?;
 
-    let mut refs = list_all(
+    let refs = match list_operation(
       self.backend.as_ref(),
       "reference",
-      md5,
-      json!({"filter": {"direction": "to", "to": entry}, "page": {"limit": 1000}}),
-    )
-    .await
-    .unwrap_or_default();
-
-    if refs.is_empty()
-      && let Some((_, raw)) = entry.split_once(':')
-      && let Ok(extra) = list_all(
-        self.backend.as_ref(),
-        "reference",
-        md5,
-        json!({"filter": {"direction": "to", "to": raw}, "page": {"limit": 1000}}),
-      )
-      .await
-    {
-      refs = extra;
-    }
-
-    let functions = list_all(
-      self.backend.as_ref(),
-      "function",
+      "context.list",
       md5,
       json!({
+        "filter": {"entry": entry},
         "page": {"limit": 1000},
         "scan": {"timeout_ms": 60000},
-        "projection": {"fields": ["entry", "name", "namespace", "body"]},
       }),
     )
-    .await?;
+    .await
+    {
+      Ok(found) => found,
+      Err(_) => list_operation(
+        self.backend.as_ref(),
+        "reference",
+        "context.list",
+        md5,
+        json!({
+          "filter": {"to": entry},
+          "page": {"limit": 1000},
+          "scan": {"timeout_ms": 60000},
+        }),
+      )
+      .await
+      .unwrap_or_default(),
+    };
 
     let mut callers: HashMap<String, (Value, Vec<Range>)> = HashMap::new();
     for reference in refs {
-      let Some(from) = reference.get("from").and_then(Value::as_str) else {
+      let Some(from) = reference
+        .get("call_site")
+        .and_then(Value::as_str)
+        .or_else(|| reference.get("from").and_then(Value::as_str))
+      else {
         continue;
       };
-      let caller_func = functions.iter().find(|f| {
-        let start = f.pointer("/body/start").and_then(Value::as_str);
-        let end = f.pointer("/body/end").and_then(Value::as_str);
-        match (start, end) {
-          (Some(s), Some(e)) => in_address_range(from, s, e),
-          _ => false,
-        }
-      });
+      let caller_func = reference.get("caller").filter(|v| v.is_object());
 
       if let Some(func) = caller_func
         && let Some(caller_entry) = func.get("entry").and_then(Value::as_str)

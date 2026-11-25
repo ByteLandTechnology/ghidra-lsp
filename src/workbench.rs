@@ -117,6 +117,7 @@ const READ: &[(&str, &str)] = &[
   ("code_unit", "list"),
   ("comment", "get"),
   ("comment", "list"),
+  ("control_flow_graph", "get"),
   ("data_type", "get"),
   ("data_type", "list"),
   ("data_type_category", "list"),
@@ -136,12 +137,14 @@ const READ: &[(&str, &str)] = &[
   ("interface", "get"),
   ("job", "get"),
   ("job", "wait"),
+  ("listing_window", "get"),
   ("memory", "read"),
   ("memory_block", "get"),
   ("memory_block", "list"),
   ("program", "get"),
   ("program_language", "get"),
   ("reference", "list"),
+  ("reference_context", "list"),
   ("session", "get"),
   ("session", "list"),
   ("symbol", "get"),
@@ -202,9 +205,12 @@ pub(crate) fn mcp_operation<'a>(domain: &'a str, operation: &'a str) -> (&'a str
     "import" | "export" | "entry_point" => ("program", domain),
     "memory_block" => ("memory", "block"),
     "code_unit" | "data_unit" | "instruction" | "flow_override" => ("listing", domain),
+    "listing_window" => ("listing", "window"),
     "function_call" => ("function", "call"),
     "function_parameter" => ("function", "parameter"),
     "function_local_variable" => ("function", "local_variable"),
+    "control_flow_graph" => ("function", "control_flow_graph"),
+    "reference_context" => ("reference", "context"),
     "data_type_category" => ("data_type", "category"),
     "interface" => ("bridge", ""),
     _ => (domain, ""),
@@ -230,9 +236,12 @@ fn resource_operation<'a>(domain: &'a str, operation: &'a str) -> (&'a str, &'a 
       "listing",
       Some((resource @ ("code_unit" | "data_unit" | "instruction" | "flow_override"), op)),
     ) => (resource, op),
+    ("listing", Some(("window", op))) => ("listing_window", op),
     ("function", Some(("call", op))) => ("function_call", op),
     ("function", Some(("parameter", op))) => ("function_parameter", op),
     ("function", Some(("local_variable", op))) => ("function_local_variable", op),
+    ("function", Some(("control_flow_graph", op))) => ("control_flow_graph", op),
+    ("reference", Some(("context", op))) => ("reference_context", op),
     ("data_type", Some(("category", op))) => ("data_type_category", op),
     ("bridge", None) => ("interface", operation),
     _ => (domain, operation),
@@ -335,8 +344,10 @@ pub(crate) fn coverage(domain: &str, params: &Value, count: usize, complete: boo
         | "global_variable"
         | "code_unit"
         | "data_unit"
+        | "listing_window"
         | "instruction"
         | "comment"
+        | "reference_context"
     );
   let scope = if address_scan {
     if scoped {

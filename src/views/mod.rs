@@ -34,8 +34,6 @@ pub(crate) use meta::{program_meta, resolve_target};
 pub(super) const DEFAULT_LISTING_LIMIT: usize = 140;
 /// Default byte window size fetched for one hexadecimal memory chunk.
 pub(super) const DEFAULT_HEX_CHUNK_BYTES: usize = 1024;
-/// Maximum address count batched per cross-reference lookup wave.
-pub(super) const MAX_XREF_BATCH: usize = 64;
 /// Minimum consecutive undefined bytes collapsed into a single summary run.
 pub(super) const COLLAPSE_THRESHOLD: usize = 8;
 
