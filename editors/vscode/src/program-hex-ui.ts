@@ -12,7 +12,7 @@ import { iconFontStyles } from './icon-font';
 import { displayAddress } from './names';
 import { pageStyles } from './page-styles';
 import { addrSpan, programViewStyles } from './program-views-styles';
-import { viewStyles, webviewShortcutScript } from './view-ui';
+import { moreActionsPopover, pageOptionsPopover, viewStyles, webviewPopoverScript, webviewShortcutScript } from './view-ui';
 import { escape } from './web';
 
 /** Short byte-order identifier used by the Data Inspector pill toggle. */
@@ -41,6 +41,7 @@ export interface HexViewPayload {
     singleKeyShortcuts?: boolean;
     bytesPerRow: 8 | 16;
     initialInspector: DataInspectorEntry[];
+    focusId?: string;
 }
 
 /** Render the column header cells for an 8-byte or 16-byte hex layout. */
@@ -153,7 +154,7 @@ export function renderDataInspectorHtml(
         selectionLength > 1 ? `${selectionLength} bytes selected` : '',
     ].filter(Boolean).join(' · ');
     const endianLabel = endian === 'be' ? 'Big Endian' : 'Little Endian';
-    const headHtml = `<div class="hex-inspector-head"><h2>Data inspector</h2><button type="button" class="hex-endian-pill" data-toggle-endian data-endian="${endian}" aria-pressed="${endian === 'be'}" aria-label="${endianLabel}, toggle byte order" title="Switch byte order">${endianLabel}</button></div>`;
+    const headHtml = `<div class="hex-inspector-head"><h2>Data inspector</h2><button type="button" id="hex-endian-toggle" class="hex-endian-pill" data-toggle-endian data-endian="${endian}" aria-pressed="${endian === 'be'}" aria-label="${endianLabel}, toggle byte order" title="Switch byte order">${endianLabel}</button></div>`;
 
     if (!entries.length) {
         return `${headHtml}<p class="hex-inspector-meta" title="${escape(address)}">${escape(meta || 'Select a byte to inspect decoded values.')}</p>`;
@@ -200,6 +201,7 @@ export function renderProgramHexPage(payload: HexViewPayload): string {
         addressWidth: payload.addressWidth,
         bytesPerRow: payload.bytesPerRow,
         blocks: payload.blocks.map(b => ({ name: b.name, start: b.start, end: b.end, initialized: b.initialized, read: b.read, write: b.write, execute: b.execute })),
+        ...(payload.focusId ? { focusId: payload.focusId } : {}),
     }).replace(/</g, '\\u003c');
 
     const scopeText = `${payload.currentBlock.name} · ${displayAddress(payload.chunk.start)}–${displayAddress(payload.chunk.end)} (${payload.chunk.byteLength} bytes)`;
@@ -213,28 +215,16 @@ ${programViewStyles}
 <h1 class="page-context">${escape(payload.title)}</h1>
 <div class="toolbar pv-toolbar" role="group" aria-label="Hex navigation">
   <div class="pv-nav" role="group" aria-label="History and window">
-    <button type="button" class="icon-button" data-action="navBack" aria-label="Back" title="Back (Alt+Left)"${payload.canBack ? '' : ' disabled'}>${callIcon('back')}</button>
-    <button type="button" class="icon-button" data-action="navForward" aria-label="Forward" title="Forward (Alt+Right)"${payload.canForward ? '' : ' disabled'}>${callIcon('forward')}</button>
+    <button type="button" id="nav-back" class="icon-button" data-action="navBack" aria-label="Back" title="Back (Alt+Left)"${payload.canBack ? '' : ' disabled'}>${callIcon('back')}</button>
+    <button type="button" id="nav-forward" class="icon-button" data-action="navForward" aria-label="Forward" title="Forward (Alt+Right)"${payload.canForward ? '' : ' disabled'}>${callIcon('forward')}</button>
     <span class="pv-step" id="pv-step"${payload.hasMoreBefore || payload.hasMoreAfter ? '' : ' hidden'}><span class="pv-divider" aria-hidden="true"></span><button type="button" id="pager-before" class="icon-button" data-action="loadBefore" aria-label="Previous window" title="Previous window"${payload.hasMoreBefore ? '' : ' disabled'}>${callIcon('up')}</button><button type="button" id="pager-after" class="icon-button" data-action="loadAfter" aria-label="Next window" title="Next window"${payload.hasMoreAfter ? '' : ' disabled'}>${callIcon('down')}</button></span>
   </div>
-  <form id="goto"><input id="address" aria-label="Address" value="${escape(displayAddress(payload.cursorAddress))}" placeholder="Address or +offset…"><button type="submit" aria-label="Go to address" title="Go to address">${callIcon('right')}</button></form>
+  <form id="goto"><input id="address" aria-label="Address" value="${escape(displayAddress(payload.cursorAddress))}" placeholder="Address or +offset…"><button type="submit" id="goto-submit" aria-label="Go to address" title="Go to address">${callIcon('right')}</button></form>
   <div class="browser-search">${callIcon('search')}<input class="search" id="search" aria-label="Filter displayed rows" placeholder="Filter hex, ASCII, or block…"></div>
   <div class="pv-tools" role="group" aria-label="Hex tools">
     <button type="button" id="sync-toggle" class="icon-button" data-action="toggleSync" aria-pressed="${payload.syncEnabled}" aria-label="Sync cursor with other Ghidra views" title="Sync cursor with other Ghidra views">${callIcon('link')}</button>
-    <button type="button" class="icon-button" data-action="openListingBeside" aria-label="Open Program Listing beside" title="Open Program Listing beside">${callIcon('listing')}</button>
-    <details id="page-options" class="page-options">
-      <summary aria-label="View options" title="View options">${callIcon('more')}</summary>
-      <div class="page-options-content">
-        <div class="page-options-actions" role="group" aria-label="Page actions">
-          <button type="button" class="icon-button" data-action="refresh" aria-label="Refresh" title="Refresh">${callIcon('refresh')}</button>
-        </div>
-        ${blockOptions ? `<label class="pv-option-row">Memory block<select id="block-select" aria-label="Memory block">${blockOptions}</select></label>` : ''}
-        <label class="pv-option-row">Byte order<select id="hex-endian" aria-label="Byte order"><option value="little"${payload.endian === 'little' ? ' selected' : ''}>Little-endian</option><option value="big"${payload.endian === 'big' ? ' selected' : ''}>Big-endian</option></select></label>
-        <label class="pv-option-row">Bytes per row<select id="hex-row-width" aria-label="Bytes per row"><option value="16"${payload.bytesPerRow === 16 ? ' selected' : ''}>16 bytes</option><option value="8"${payload.bytesPerRow === 8 ? ' selected' : ''}>8 bytes</option></select></label>
-        <label><input id="hex-show-inspector" type="checkbox" checked>Show Data Inspector</label>
-        <p id="hex-scope-note">${escape(scopeText)}</p>
-      </div>
-    </details>
+    <button type="button" id="open-listing-beside" class="icon-button" data-action="openListingBeside" aria-label="Open Program Listing beside" title="Open Program Listing beside">${callIcon('listing')}</button>
+    ${pageOptionsPopover(`${blockOptions ? `<label class="pv-option-row">Memory block<select id="block-select" aria-label="Memory block">${blockOptions}</select></label>` : ''}<label class="pv-option-row">Byte order<select id="hex-endian" aria-label="Byte order"><option value="little"${payload.endian === 'little' ? ' selected' : ''}>Little-endian</option><option value="big"${payload.endian === 'big' ? ' selected' : ''}>Big-endian</option></select></label><label class="pv-option-row">Bytes per row<select id="hex-row-width" aria-label="Bytes per row"><option value="16"${payload.bytesPerRow === 16 ? ' selected' : ''}>16 bytes</option><option value="8"${payload.bytesPerRow === 8 ? ' selected' : ''}>8 bytes</option></select></label><label><input id="hex-show-inspector" type="checkbox" checked>Show Data Inspector</label><p id="hex-scope-note">${escape(scopeText)}</p>`)}
   </div>
 </div>
 <p id="filter-status" role="status" aria-live="polite" hidden></p>
@@ -254,12 +244,13 @@ ${renderMemoryMapHtml(payload.blocks)}
 <div class="toolbar selection-tools" role="group" aria-label="Selected item actions" aria-describedby="selection-label" hidden>
   <span id="selection-label"></span>
   <div id="selection-primary" class="selection-buttons"></div>
-  <details id="more-actions" class="more-actions" hidden><summary id="more-summary" aria-label="More actions" title="More actions">${callIcon('more')}</summary><div id="selection-more" class="selection-buttons" role="group" aria-label="Additional actions"></div></details>
+  ${moreActionsPopover()}
 </div>
 </main>
 <script nonce="${nonce}">
 const vscode = acquireVsCodeApi();
-const state = ${stateJson};
+const rawState = ${stateJson};
+const { focusId: initialFocusId, ...state } = rawState;
 const previous = vscode.getState() || {};
 const samePage = previous.md5 === state.md5 && previous.kind === 'memory';
 
@@ -288,7 +279,7 @@ const pagerBefore = document.getElementById('pager-before');
 const pagerAfter = document.getElementById('pager-after');
 const scopeNote = document.getElementById('hex-scope-note');
 const more = document.getElementById('more-actions');
-const moreSummary = document.getElementById('more-summary');
+const moreSummary = document.getElementById('more-actions-button');
 const icons = ${JSON.stringify(callIcons)};
 const toInspectorEndian = val => (val === 'big' || val === 'be') ? 'be' : 'le';
 const toProgramEndian = val => (val === 'big' || val === 'be') ? 'big' : 'little';
@@ -393,7 +384,7 @@ const applyInspector = (startAddr, metaText, rows) => {
   const label = mode === 'be' ? 'Big Endian' : 'Little Endian';
   const head = document.createElement('div'); head.className = 'hex-inspector-head';
   const heading = document.createElement('h2'); heading.textContent = 'Data inspector';
-  const pill = document.createElement('button'); pill.type = 'button'; pill.className = 'hex-endian-pill';
+  const pill = document.createElement('button'); pill.type = 'button'; pill.id = 'hex-endian-toggle'; pill.className = 'hex-endian-pill';
   pill.setAttribute('data-toggle-endian', ''); pill.dataset.endian = mode;
   pill.setAttribute('aria-pressed', String(mode === 'be'));
   pill.setAttribute('aria-label', label + ', toggle byte order');
@@ -434,9 +425,13 @@ const persist = () => {
     inspectorEndian: toInspectorEndian(state.endian),
     bytesPerRow: state.bytesPerRow,
     scrollTop: hexWrap.scrollTop,
+    focusId: document.activeElement?.id || '',
   });
 };
 ${webviewShortcutScript}
+${webviewPopoverScript}
+document.addEventListener('focusin', persist);
+hexWrap.addEventListener('scroll', () => persist(), { passive: true });
 
 const updateSelectionTools = () => {
   const label = document.getElementById('selection-label');
@@ -446,7 +441,7 @@ const updateSelectionTools = () => {
   const visible = (!!activeHex && !activeHex.closest('tr')?.hidden && !hexMain.hidden) || (!!activeMap && !activeMap.hidden && memoryMap?.open);
   bar.hidden = !visible;
   document.body.classList.toggle('has-selection', visible);
-  if (!visible) return;
+  if (!visible) { closePopover(more); return; }
 
   const isBlock = selectedKind === 'block' || (!!activeMap && !activeHex);
   const curBlock = findBlockFor(selected);
@@ -463,7 +458,7 @@ const updateSelectionTools = () => {
   primaryAction = 'listing';
   const main = items.filter(i => i.action === primaryAction);
   const extra = items.filter(i => i.action !== primaryAction);
-  const hosts = [document.getElementById('selection-primary'), document.getElementById('selection-more')];
+  const hosts = [document.getElementById('selection-primary'), more];
   for (const [idx, list] of [main, extra].entries()) {
     hosts[idx].replaceChildren(...list.map(item => {
       const btn = document.createElement('button');
@@ -481,7 +476,11 @@ const updateSelectionTools = () => {
       return btn;
     }));
   }
-  more.hidden = !extra.length;
+  if (!extra.length) closePopover(more);
+  moreSummary.hidden = !extra.length;
+  const moreLabel = 'More actions for ' + label.textContent;
+  moreSummary.setAttribute('aria-label', moreLabel);
+  moreSummary.title = moreLabel;
 };
 
 const highlightRange = (startAddr, len = 1, notify = true, scroll = true) => {
@@ -694,28 +693,31 @@ document.addEventListener('click', event => {
   const btn = event.target.closest('button[data-action]');
   if (btn && !btn.disabled) {
     const act = btn.dataset.action;
+    const menu = btn.closest('[data-popover-menu]');
+    if (menu) focusInvokerAndClose(menu);
+    persist();
+    const focusId = document.activeElement?.id || '';
     if (['navBack', 'navForward', 'refresh', 'loadBefore', 'loadAfter', 'toggleSync', 'openListingBeside'].includes(act)) {
-      vscode.postMessage({ action: act });
+      vscode.postMessage({ action: act, focusId });
     } else if (act === 'copyAddress' && selected) {
-      vscode.postMessage({ action: 'copyAddress', address: selected });
+      vscode.postMessage({ action: 'copyAddress', address: selected, focusId });
     } else if (selected) {
-      vscode.postMessage({ action: act, address: selected, kind: selectedKind });
+      vscode.postMessage({ action: act, address: selected, kind: selectedKind, focusId });
     }
-    if (more && more.contains(btn)) { more.open = false; moreSummary.focus({ preventScroll: true }); }
-    pageOptions.open = false;
-    return;
   }
-  if (pageOptions.open && !pageOptions.contains(event.target)) pageOptions.open = false;
-  if (more.open && !more.contains(event.target)) more.open = false;
 });
 
 document.getElementById('goto').addEventListener('submit', event => {
   event.preventDefault();
   const val = addressInput.value.trim();
-  if (val) vscode.postMessage({ action: 'goto', address: val });
+  if (val) vscode.postMessage({ action: 'goto', address: val, focusId: document.activeElement?.id || '' });
 });
 blockSelect?.addEventListener('change', () => {
-  if (blockSelect.value) { pageOptions.open = false; vscode.postMessage({ action: 'goto', address: blockSelect.value, pushHistory: true }); }
+  if (blockSelect.value) {
+    focusInvokerAndClose(pageOptions);
+    persist();
+    vscode.postMessage({ action: 'goto', address: blockSelect.value, pushHistory: true, focusId: document.activeElement?.id || '' });
+  }
 });
 search.addEventListener('input', () => { applyFilter(); persist(); });
 document.getElementById('clear-filter').addEventListener('click', () => { search.value = ''; applyFilter(); persist(); search.focus(); });
@@ -744,8 +746,6 @@ document.addEventListener('keydown', event => {
   if (isModShortcut(event, 'f')) { event.preventDefault(); search.focus(); search.select(); return; }
   if (isModShortcut(event, 'g')) { event.preventDefault(); addressInput.focus(); addressInput.select(); return; }
   if (event.key === 'Escape') {
-    if (pageOptions.open) { pageOptions.open = false; pageOptions.querySelector('summary').focus(); return; }
-    if (more.open) { more.open = false; moreSummary.focus(); return; }
     if (search.value) { search.value = ''; applyFilter(); persist(); return; }
   }
   if (event.key === '/' && canUseSingleKeyShortcut(event)) { event.preventDefault(); search.focus(); search.select(); }
@@ -788,12 +788,18 @@ window.addEventListener('message', event => {
     if (focusWasInGrid || (hadFocusedElement && (!document.activeElement || document.activeElement === document.body))) {
       syncRovingTabindex(nextSelected)?.focus({ preventScroll: true });
     }
+    persist();
   }
 });
 
 applyFilter();
 highlightRange(selected, selectionLength, false, !samePage);
 requestAnimationFrame(() => {
+  if (samePage && previous.address === state.address && typeof previous.scrollTop === 'number') {
+    hexWrap.scrollTop = previous.scrollTop;
+  }
+  const savedFocusId = (samePage && previous.focusId) || initialFocusId || '';
+  if (savedFocusId) restorePopoverAwareFocus(savedFocusId);
   persist();
   document.body.dataset.viewReady = 'true';
 });
