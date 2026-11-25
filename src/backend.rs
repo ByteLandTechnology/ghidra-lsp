@@ -174,7 +174,7 @@ impl McpBackend {
 /// Returns true when `(domain, operation)` is known to be read-only.
 fn is_read_only_operation(domain: &str, operation: &str) -> bool {
   if domain == "batch" {
-    return false;
+    return operation == "query";
   }
   let verb = operation.rsplit('.').next().unwrap_or(operation);
   matches!(

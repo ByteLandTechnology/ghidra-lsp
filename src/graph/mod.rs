@@ -28,7 +28,7 @@ pub(super) struct BatchRequest {
   pub(super) domain: &'static str,
   /// Backend operation name inside `domain`.
   pub(super) operation: &'static str,
-  /// Full `domain.operation` method name sent to `batch.execute`.
+  /// Full `domain.operation` method name sent to `batch.query`.
   pub(super) method: &'static str,
   /// JSON argument object for the operation.
   pub(super) params: Value,
@@ -117,7 +117,7 @@ async fn execute_single_request(
   }
 }
 
-/// Executes many read requests via `batch.execute` with direct fallback for failures or partial pages.
+/// Executes many read requests via `batch.query` with direct fallback for failures or partial pages.
 pub(super) async fn batch_query(
   backend: &McpBackend,
   md5: &str,
@@ -151,7 +151,7 @@ pub(super) async fn batch_query(
     match backend
       .call(
         "batch",
-        "execute",
+        "query",
         Some(md5),
         json!({ "transaction_mode": "per_item", "items": batch_items }),
       )

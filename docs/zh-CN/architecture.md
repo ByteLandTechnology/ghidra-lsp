@@ -76,7 +76,7 @@ VS Code 扩展使用专用后缀（`editors/vscode/src/virtual-files.ts` 中定�
    - `gui::spans`（`src/gui.rs`）逐行比对缩进、Token 起止列和字符串拼接，验证 `lines` 与 `c` 逐字节一致。
    - `comments::include`（`src/comments.rs`）将返回的 `repeatable` 补充注释按锚点地址精确插入虚拟 C 缓冲区的函数体或对应指令行，并自动平移后续所有 `Span` 的字节偏移。此时单份内存文档已承载 `PLATE`、`PRE`、`EOL`、`POST`、`REPEATABLE` 全部 5 类注释上下文。
 3. **批处理与有界分页查询**：
-   - 汇编清单的批量交叉引用查询使用 `ghidra_batch`（单波最多 `MAX_XREF_BATCH = 64` 个地址）；视图与图查询使用 `batch.execute`（只读批处理采用 `transaction_mode: "per_item"`）或上限为 `page.limit = 1000` 的游标分页 `list_all`，并内置游标去重防环检查。
+   - 汇编清单的批量交叉引用查询使用 `ghidra_batch`（单波最多 `MAX_XREF_BATCH = 64` 个地址）；视图与图查询使用 `batch.query`（只读批处理采用 `transaction_mode: "per_item"`）或上限为 `page.limit = 1000` 的游标分页 `list_all`，并内置游标去重防环检查。
    - 内存缓存由 `ViewCache`（`ProgramMetaCache`，`src/views/mod.rs`）与 `Engine` 共用：当任何变更提交至 Ghidra 后，服务器立即调用 `self.view_cache.invalidate(md5)` 清除元数据与调用图缓存，刷新所有受影响的 `ghidra://` 文档并广播 `ghidra/changed` 通知。
 
 下一章：[Visual Studio Code 使用指南](vscode-guide.md) 或 [Neovim 插件使用指南](neovim-guide.md)。
