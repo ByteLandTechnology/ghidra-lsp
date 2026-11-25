@@ -13,7 +13,7 @@ import { displayAddress } from './names';
 import { pageStyles } from './page-styles';
 import { renderProgramHexScript } from './program-hex-script';
 import { addrSpan, programViewStyles } from './program-views-styles';
-import { viewStyles } from './view-ui';
+import { moreActionsPopover, pageOptionsPopover, viewStyles } from './view-ui';
 import { domId, escape, gotoFormHtml, liveRegionsHtml } from './web';
 
 /** Short byte-order identifier used by the Data Inspector pill toggle. */
@@ -44,6 +44,7 @@ export interface HexViewPayload {
     initialInspector: DataInspectorEntry[];
     busy?: boolean;
     error?: string;
+    focusId?: string;
 }
 
 /** Render the column header cells for an 8-byte or 16-byte hex layout. */
@@ -186,6 +187,7 @@ export function renderProgramHexPage(payload: HexViewPayload): string {
         addressWidth: payload.addressWidth,
         bytesPerRow: payload.bytesPerRow,
         blocks: payload.blocks.map(b => ({ name: b.name, start: b.start, end: b.end, initialized: b.initialized, read: b.read, write: b.write, execute: b.execute })),
+        ...(payload.focusId ? { focusId: payload.focusId } : {}),
     }).replace(/</g, '\\u003c');
 
     const scopeText = `${payload.currentBlock.name} · ${displayAddress(payload.chunk.start)}–${displayAddress(payload.chunk.end)} (${payload.chunk.byteLength} bytes)`;
@@ -208,19 +210,7 @@ ${programViewStyles}
   <div class="pv-tools" role="group" aria-label="Hex tools">
     <button type="button" id="sync-toggle" class="icon-button" data-action="toggleSync" aria-pressed="${payload.syncEnabled}" aria-label="Sync cursor with other Ghidra views" title="Sync cursor with other Ghidra views">${callIcon('link')}</button>
     <button type="button" id="open-listing-beside" class="icon-button" data-action="openListingBeside" aria-label="Open Program Listing beside" title="Open Program Listing beside">${callIcon('listing')}</button>
-    <details id="page-options" class="page-options">
-      <summary id="page-options-button" aria-label="View options" title="View options">${callIcon('more')}</summary>
-      <div class="page-options-content">
-        <div class="page-options-actions" role="group" aria-label="Page actions">
-          <button type="button" id="page-options-refresh" class="icon-button" data-action="refresh" aria-label="Refresh" title="Refresh">${callIcon('refresh')}</button>
-        </div>
-        ${blockOptions ? `<label class="pv-option-row">Memory block<select id="block-select" aria-label="Memory block">${blockOptions}</select></label>` : ''}
-        <label class="pv-option-row">Byte order<select id="hex-endian" aria-label="Byte order"><option value="little"${payload.endian === 'little' ? ' selected' : ''}>Little-endian</option><option value="big"${payload.endian === 'big' ? ' selected' : ''}>Big-endian</option></select></label>
-        <label class="pv-option-row">Bytes per row<select id="hex-row-width" aria-label="Bytes per row"><option value="16"${payload.bytesPerRow === 16 ? ' selected' : ''}>16 bytes</option><option value="8"${payload.bytesPerRow === 8 ? ' selected' : ''}>8 bytes</option></select></label>
-        <label><input id="hex-show-inspector" type="checkbox" checked>Show Data Inspector</label>
-        <p id="hex-scope-note">${escape(scopeText)}</p>
-      </div>
-    </details>
+    ${pageOptionsPopover(`${blockOptions ? `<label class="pv-option-row">Memory block<select id="block-select" aria-label="Memory block">${blockOptions}</select></label>` : ''}<label class="pv-option-row">Byte order<select id="hex-endian" aria-label="Byte order"><option value="little"${payload.endian === 'little' ? ' selected' : ''}>Little-endian</option><option value="big"${payload.endian === 'big' ? ' selected' : ''}>Big-endian</option></select></label><label class="pv-option-row">Bytes per row<select id="hex-row-width" aria-label="Bytes per row"><option value="16"${payload.bytesPerRow === 16 ? ' selected' : ''}>16 bytes</option><option value="8"${payload.bytesPerRow === 8 ? ' selected' : ''}>8 bytes</option></select></label><label><input id="hex-show-inspector" type="checkbox" checked>Show Data Inspector</label><p id="hex-scope-note">${escape(scopeText)}</p>`)}
   </div>
 </div>
 ${liveRegionsHtml(Boolean(payload.busy), payload.error ?? '')}
@@ -241,7 +231,7 @@ ${renderMemoryMapHtml(payload.blocks)}
 <div class="toolbar selection-tools" role="group" aria-label="Selected item actions" aria-describedby="selection-label" hidden>
   <span id="selection-label"></span>
   <div id="selection-primary" class="selection-buttons"></div>
-  <details id="more-actions" class="more-actions" hidden><summary id="more-summary" aria-label="More actions" title="More actions">${callIcon('more')}</summary><div id="selection-more" class="selection-buttons" role="group" aria-label="Additional actions"></div></details>
+  ${moreActionsPopover()}
 </div>
 </main>
 <script nonce="${nonce}">

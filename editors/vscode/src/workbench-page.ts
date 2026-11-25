@@ -5,8 +5,8 @@ import { randomBytes } from 'node:crypto';
 import { pageStyles } from './page-styles';
 import { displayAddress } from './names';
 import { iconFontStyles } from './icon-font';
-import { escape as escapeHtml, domId, gotoFormHtml, liveRegionsHtml, object } from './web';
-import { browserViewScript, fitGraphTitle, searchShortcutTitle, viewStyles, webviewShortcutScript } from './view-ui';
+import { domId, escape as escapeHtml, gotoFormHtml, liveRegionsHtml, object } from './web';
+import { browserViewScript, fitGraphTitle, moreActionsPopover, pageOptionsPopover, searchShortcutTitle, viewStyles, webviewPopoverScript, webviewShortcutScript } from './view-ui';
 import { controlFlowStyles, controlFlowScript } from './control-flow-canvas';
 import { controlFlowToolbar, controlFlowUiStyles, controlFlowUiScript } from './control-flow-ui';
 import { callIcon, callIcons } from './call-graph-icons';
@@ -58,7 +58,8 @@ export function page(options: PageOptions): string {
     const flow = options.controlFlow || options.callGraph;
     const cfg = options.controlFlow && !options.callGraph;
     const browser = !flow;
-    const browserTools = browser ? `<h1 id="page-title" class="page-context">${escapeHtml(options.title)}</h1><p id="browser-subtitle-scope" class="scope"${['callers', 'callees'].includes(options.viewKind || '') ? '' : ' hidden'}>${escapeHtml(options.subtitle)}</p><div class="toolbar" role="group" aria-label="Page tools">${options.address !== undefined ? gotoFormHtml(displayAddress(options.address ?? ''), 'Address', 'Go to address…') : ''}<div class="browser-search">${callIcon('search')}<input class="search" id="search" aria-label="Filter displayed rows" placeholder="Filter rows…"></div><details id="page-options" class="page-options"><summary id="page-options-button" aria-label="View options" title="View options">${callIcon('more')}</summary><div class="page-options-content"><div class="page-options-actions" role="group" aria-label="Page actions"><button id="page-options-refresh" class="icon-button" data-action="refresh" aria-label="Refresh" title="Refresh">${callIcon('refresh')}</button></div>${options.viewKind === 'listing' ? '<label><input id="listing-details" type="checkbox">Show bytes and kind</label>' : ''}${['strings', 'references', 'callers', 'callees', 'imports', 'exports'].includes(options.viewKind || '') ? '<label><input id="extra-columns" type="checkbox">Show details</label>' : ''}<div id="page-options-scope">${options.scope ? `<p>${escapeHtml(options.subtitle)}</p><p>${escapeHtml(options.scope)}</p>` : ''}</div></div></details></div>${options.actions ? `<div class="toolbar selection-tools" role="group" aria-label="Selected item actions" aria-describedby="selection-label" hidden><span id="selection-label"></span><div id="selection-primary" class="selection-buttons"></div><details id="more-actions" class="more-actions" hidden><summary id="more-summary" aria-label="More actions" title="More actions">${callIcon('more')}</summary><div id="selection-more" class="selection-buttons" role="group" aria-label="Additional actions"></div></details></div>` : ''}` : '';
+    const browserOptions = `${options.viewKind === 'listing' ? '<label><input id="listing-details" type="checkbox">Show bytes and kind</label>' : ''}${['strings', 'references', 'callers', 'callees', 'imports', 'exports'].includes(options.viewKind || '') ? '<label><input id="extra-columns" type="checkbox">Show details</label>' : ''}<div id="page-options-scope">${options.scope ? `<p>${escapeHtml(options.subtitle)}</p><p>${escapeHtml(options.scope)}</p>` : ''}</div>`;
+    const browserTools = browser ? `<h1 id="page-title" class="page-context">${escapeHtml(options.title)}</h1><p id="browser-subtitle-scope" class="scope"${['callers', 'callees'].includes(options.viewKind || '') ? '' : ' hidden'}>${escapeHtml(options.subtitle)}</p><div class="toolbar" role="group" aria-label="Page tools">${options.address !== undefined ? gotoFormHtml(displayAddress(options.address ?? ''), 'Address', 'Go to address…') : ''}<div class="browser-search">${callIcon('search')}<input class="search" id="search" aria-label="Filter displayed rows" placeholder="Filter rows…"></div>${pageOptionsPopover(browserOptions)}</div>${options.actions ? `<div class="toolbar selection-tools" role="group" aria-label="Selected item actions" aria-describedby="selection-label" hidden><span id="selection-label"></span><div id="selection-primary" class="selection-buttons"></div>${moreActionsPopover()}</div>` : ''}` : '';
     const bodyClass = `${flow ? `flow-page${options.callGraph ? ' call-page' : cfg ? ' cfg-page' : ''}` : 'browser-page'}${options.busy ? ' is-busy' : ''}`;
     return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; font-src data:; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}';"><title>${escapeHtml(options.title)}</title><style nonce="${nonce}">
     ${pageStyles}
@@ -68,10 +69,6 @@ export function page(options: PageOptions): string {
     .search{flex:1 1 180px;max-width:480px}
     .selection-tools{padding-bottom:12px;border-bottom:1px solid var(--vscode-panel-border)}
     .selection-buttons{display:flex;flex-wrap:wrap;gap:8px;min-width:0}
-    .more-actions{margin:0;padding:0;border:0;max-width:100%}
-    .more-actions>summary{font-weight:400;min-height:28px;padding:4px 10px;border:1px solid var(--vscode-contrastBorder,var(--vscode-panel-border));border-radius:2px;background:var(--vscode-button-secondaryBackground,var(--vscode-input-background));color:var(--vscode-button-secondaryForeground,var(--vscode-foreground))}
-    .more-actions>summary:hover{background:var(--vscode-button-secondaryHoverBackground,var(--vscode-list-hoverBackground))}
-    .more-actions[open]{flex-basis:100%}.more-actions[open]>summary{display:list-item;width:fit-content;margin-bottom:8px}
     #selection-label{flex:0 1 auto;margin-right:4px;font-size:12px;color:var(--ghidra-muted);overflow-wrap:anywhere}
     td{white-space:pre-wrap}
     tr[data-address],tr[data-entry]{cursor:pointer}
@@ -118,6 +115,7 @@ export function page(options: PageOptions): string {
     const listingDetails=document.getElementById('listing-details');if(listingDetails){listingDetails.checked=samePage&&previous.listingDetails===true;document.querySelector('.listing')?.classList.toggle('show-details',listingDetails.checked)}
     let graphViewport;let branchAnchor;let cfgOverviewPosition=samePage?previous.cfgOverviewPosition:undefined;let cfgOverviewDismissed=samePage&&previous.cfgOverviewDismissed===true;let columnUi=samePage?previous.columnUi:undefined;
     let persistFrame=0,inPageUpdate=false;
+    const initialFocusId=state.focusId||'';delete state.focusId;
     const shortAddr=value=>/^ram:[0-9a-f]+$/i.test(value||'')?value.slice(4):String(value||'');
     const inClosedDetails=node=>{let cur=node;while(cur){const det=cur.parentElement?.closest('details:not([open])');if(!det){return false}if(cur.tagName==='SUMMARY'&&cur.parentElement===det){cur=det;continue}return true}return false};
     const inClosedPopover=el=>{const pop=el?.closest?.('[popover]');if(!pop){return false}try{return !pop.matches(':popover-open')}catch{return false}};
@@ -126,14 +124,12 @@ export function page(options: PageOptions): string {
     const persist=()=>{if(persistFrame){cancelAnimationFrame(persistFrame);persistFrame=0}vscode.setState({...state,selected,selectedEntry:entry,selectedKind,selectedLabel,filter:search.value,addressDraft:addressInput?.value,mapOpen:memoryMap?.open,listingDetails:listingDetails?.checked,extraColumns:extraColumns?.checked,branchAnchor,callDetails:document.querySelector('.call-details')?.open??(samePage?previous.callDetails:undefined),callOverview:document.querySelector('.call-overview')?.open??(samePage?previous.callOverview:undefined),cfgOverview:document.querySelector('.cfg-overview')?.open,cfgOverviewPosition,cfgOverviewDismissed,cfgActiveEdge:document.querySelector('.cfg-edge.is-active')?.dataset.edgeKey,tableScroll:[...document.querySelectorAll('.table-wrap')].map(table=>({top:table.scrollTop,left:table.scrollLeft})),scrollX:window.scrollX,scrollY:window.scrollY,focusId:branchAnchor?.focusId||document.activeElement?.id,columnUi,graphViewport:graphViewport?.snapshot()||(samePage?previous.graphViewport:undefined)})};
     const schedulePersist=()=>{if(!persistFrame){persistFrame=requestAnimationFrame(()=>{persistFrame=0;persist()})}};
     ${webviewShortcutScript}
+    ${browser ? webviewPopoverScript : ''}
     const bindMemoryMap=()=>{memoryMap=document.querySelector('.memory-map');if(memoryMap&&!memoryMap.dataset.mapBound){memoryMap.dataset.mapBound='true';memoryMap.addEventListener('toggle',()=>{filter();persist()})}};
     bindMemoryMap();
     ${flow ? controlFlowScript : ''}
     listingDetails?.addEventListener('change',()=>{document.querySelector('.listing')?.classList.toggle('show-details',listingDetails.checked);persist()});
     extraColumns?.addEventListener('change',()=>{document.body.classList.toggle('show-extra-columns',extraColumns.checked);persist()});
-    const pageOptions=document.getElementById('page-options');
-    document.addEventListener('click',event=>{if(pageOptions?.open&&(!pageOptions.contains(event.target)||event.target.closest('button'))){const restore=Boolean(event.target.closest('button')&&pageOptions.contains(document.activeElement));pageOptions.open=false;if(restore){pageOptions.querySelector('summary')?.focus({preventScroll:true})}}});
-    document.addEventListener('keydown',event=>{if(event.key==='Escape'&&pageOptions?.open){pageOptions.open=false;pageOptions.querySelector('summary')?.focus()}});
     const target=()=>{
       const fn=entry||(!selected?state.entry||'':'');const address=selected||state.address||fn||'';
       const row=selectable.find(item=>address&&item.dataset.address===address&&(!fn||item.dataset.entry===fn));
@@ -141,7 +137,7 @@ export function page(options: PageOptions): string {
     };
     const reloadActions=new Set(['refresh','previous','next','callGraphBack','focusCallGraph']);
     const send=(action,extra={})=>{if(reloadActions.has(action)){setBusyState(true)}vscode.postMessage({action,...target(),...extra})};
-    const more=document.getElementById('more-actions');const moreSummary=document.getElementById('more-summary');
+    const more=document.getElementById('more-actions');const moreSummary=document.getElementById('more-actions-button');
     const selectionTools=()=>{
       if(state.kind==='callGraph'){primaryAction='decompile';const focus=document.getElementById('call-focus');if(focus){const fn=target().entry;const hadFocus=document.activeElement===focus;focus.disabled=!fn||fn===state.entry;focus.hidden=focus.disabled;if(hadFocus&&focus.disabled&&!inPageUpdate){tryFocus(document.querySelector('#call-menu>summary'))||tryFocus(document.querySelector('.call-node.is-root'))}}return}
       const label=document.getElementById('selection-label');if(!label){return}
@@ -149,6 +145,7 @@ export function page(options: PageOptions): string {
       const visibleSelection=!!activeRow&&!activeRow.hidden&&!activeRow.closest('details:not([open])');
       const toolsHost=label.closest('.selection-tools');
       const lostToolsFocus=!visibleSelection&&Boolean(toolsHost?.contains(document.activeElement));
+      if(!visibleSelection&&more&&typeof closePopover==='function'){closePopover(more)}
       toolsHost.hidden=!visibleSelection;document.body.classList.toggle('has-selection',visibleSelection);
       if(lostToolsFocus&&!inPageUpdate){tryFocus(activeRow)||tryFocus(search)||tryFocus(addressInput)}
       const current=target();const at=current.address;const fn=current.entry;const kind=current.kind;
@@ -171,16 +168,16 @@ export function page(options: PageOptions): string {
       if(!items.some(item=>item.action===primaryAction)){primaryAction=items[0]?.action||''}
       const main=items.filter(item=>item.action===primaryAction).sort((a,b)=>Number(b.action===primaryAction)-Number(a.action===primaryAction));
       const extra=items.filter(item=>!main.includes(item));
-      const active=document.activeElement?.dataset.action;const hosts=[document.getElementById('selection-primary'),document.getElementById('selection-more')];
+      const active=document.activeElement?.dataset.action;const hosts=[document.getElementById('selection-primary'),more];
       for(const [index,actions] of [main,extra].entries()){
         hosts[index].replaceChildren(...actions.map(item=>{const button=document.createElement('button');const destination=['decompile','callGraph','controlFlow'].includes(item.action)&&fn?fn:at;button.type='button';button.id='action-'+item.action;button.dataset.action=item.action;button.textContent=document.body.classList.contains('browser-page')?({listing:'Listing',memory:'Bytes',references:'References',callGraph:'Call graph',controlFlow:'Control flow',decompile:fn||kind==='instruction'||kind==='block'?'Decompile':'Open'}[item.action]||item.label):item.label;if(document.body.classList.contains('browser-page')||state.kind==='callGraph'){button.textContent='';const glyph=document.createElement('span');glyph.className='call-icon';glyph.setAttribute('aria-hidden','true');glyph.textContent=String.fromCodePoint((${JSON.stringify(callIcons)})[item.action]||${callIcons.function});button.append(glyph);button.classList.add('icon-only');button.setAttribute('aria-label',item.label)}button.title=item.label+(destination?' · '+destination:'');button.disabled=!at&&!fn;if(item.action===primaryAction&&document.body.classList.contains('browser-page')){button.classList.add('primary')}return button}));
       }
-      more.hidden=!extra.length;moreSummary.title='More actions'+(current.label?' for '+current.label:at?' at '+at:'');moreSummary.setAttribute('aria-label',moreSummary.title);
-      if(active){const restore=document.getElementById('action-'+active);if(restore){restore.focus({preventScroll:true})}}
+      if(!extra.length&&more&&typeof closePopover==='function'){closePopover(more)}
+      moreSummary.hidden=!extra.length;moreSummary.title='More actions'+(current.label?' for '+current.label:at?' at '+at:'');moreSummary.setAttribute('aria-label',moreSummary.title);
+      if(active){const restore=document.getElementById('action-'+active);if(restore&&(!more?.contains(restore)||(typeof isPopoverOpen==='function'&&isPopoverOpen(more)))){restore.focus({preventScroll:true})}}
     };selectionTools();
-    document.addEventListener('click',event=>{const button=event.target.closest('button[data-action]');if(button&&!button.disabled){send(button.dataset.action);if(more){const returnFocus=more.open&&more.contains(button);more.open=false;if(returnFocus){moreSummary.focus({preventScroll:true})}}}else if(more&&!more.contains(event.target)){more.open=false}});
-    document.addEventListener('keydown',event=>{if(event.key==='Escape'&&more?.open){event.preventDefault();more.open=false;moreSummary.focus()}});
-    bindGotoForm(raw=>send('goto',{address:raw,fromGoto:true}),persist);
+    document.addEventListener('click',event=>{const button=event.target.closest('button[data-action]');if(button&&!button.disabled){const menu=button.closest('[data-popover-menu]');if(menu&&typeof focusInvokerAndClose==='function'){focusInvokerAndClose(menu)}persist();send(button.dataset.action,{focusId:document.activeElement?.id||''})}});
+    bindGotoForm(raw=>send('goto',{address:raw,fromGoto:true,focusId:document.activeElement?.id||''}),persist);
     const bindSelectableRows=()=>{
       selectable=[...document.querySelectorAll('tr[data-address],tr[data-entry],.graph-node')];
       selectable.forEach(row=>{
@@ -290,7 +287,8 @@ export function page(options: PageOptions): string {
         if(typeof cfgUiCleanup==='function'){cfgUiCleanup()}
         if(typeof callGraphCleanup==='function'){callGraphCleanup()}
         setViewError(nextOpts.error||'');
-        const nextStateObj=nextOpts.state&&typeof nextOpts.state==='object'?nextOpts.state:{};
+        const nextStateObj=nextOpts.state&&typeof nextOpts.state==='object'?{...nextOpts.state}:{};
+        delete nextStateObj.focusId;
         const sameTarget=nextStateObj.md5===state.md5&&nextStateObj.kind===state.kind&&(flowPage?nextStateObj.entry===prevEntry:nextStateObj.address===prevAddress);
         samePage=sameTarget;
         Object.assign(state,nextStateObj);
@@ -378,6 +376,6 @@ export function page(options: PageOptions): string {
     });
     ${browser ? browserViewScript : ''}
     ${options.callGraph ? callViewScript + callGraphScript + callColumnsScript : cfg ? controlFlowUiScript : ''}
-    requestAnimationFrame(()=>{if(state.analysisUri){send('ready')}if(samePage){[...document.querySelectorAll('.table-wrap')].forEach((table,index)=>{table.scrollTop=previous.tableScroll?.[index]?.top||0;table.scrollLeft=previous.tableScroll?.[index]?.left||0});window.scrollTo(previous.scrollX||0,previous.scrollY||0);if(previous.focusId){document.getElementById(previous.focusId)?.focus({preventScroll:true})}}persist();document.body.dataset.viewReady='true'});
+    requestAnimationFrame(()=>{if(state.analysisUri){send('ready')}const savedFocusId=(samePage&&previous.focusId)||initialFocusId||'';if(samePage){[...document.querySelectorAll('.table-wrap')].forEach((table,index)=>{table.scrollTop=previous.tableScroll?.[index]?.top||0;table.scrollLeft=previous.tableScroll?.[index]?.left||0});window.scrollTo(previous.scrollX||0,previous.scrollY||0)}if(savedFocusId&&(samePage||initialFocusId)){if(typeof restorePopoverAwareFocus==='function'){restorePopoverAwareFocus(savedFocusId)}else{document.getElementById(savedFocusId)?.focus({preventScroll:true})}}persist();document.body.dataset.viewReady='true'});
     </script></body></html>`;
 }

@@ -5,12 +5,13 @@
  * Client-side script for keyboard navigation, range selection, and focus retention in the Memory and Bytes webview.
  */
 import { callIcons } from './call-graph-icons';
-import { webviewShortcutScript } from './view-ui';
+import { webviewPopoverScript, webviewShortcutScript } from './view-ui';
 
 /** Build the inline client script for the Memory and Bytes webview page. */
 export function renderProgramHexScript(stateJson: string): string {
     return `const vscode = acquireVsCodeApi();
-const state = ${stateJson};
+const rawState = ${stateJson};
+const { focusId: initialFocusId, ...state } = rawState;
 const previous = vscode.getState() || {};
 const samePage = previous.md5 === state.md5 && previous.kind === 'memory';
 
@@ -40,7 +41,7 @@ const pagerBefore = document.getElementById('pager-before');
 const pagerAfter = document.getElementById('pager-after');
 const scopeNote = document.getElementById('hex-scope-note');
 const more = document.getElementById('more-actions');
-const moreSummary = document.getElementById('more-summary');
+const moreSummary = document.getElementById('more-actions-button');
 const icons = ${JSON.stringify(callIcons)};
 const toInspectorEndian = val => (val === 'big' || val === 'be') ? 'be' : 'le';
 const toProgramEndian = val => (val === 'big' || val === 'be') ? 'big' : 'little';
@@ -219,6 +220,9 @@ const persist = () => {
   });
 };
 ${webviewShortcutScript}
+${webviewPopoverScript}
+document.addEventListener('focusin', persist);
+hexWrap.addEventListener('scroll', () => persist(), { passive: true });
 
 const focusHexFallback = () => {
   const cell = syncRovingTabindex(cursorAddress || selected);
@@ -237,7 +241,7 @@ const updateSelectionTools = () => {
   const visible = (!!activeHex && !hexMain.hidden) || (!!activeMap && memoryMap?.open);
   bar.hidden = !visible;
   document.body.classList.toggle('has-selection', visible);
-  if (!visible) { if (focusedAction) focusHexFallback(); return; }
+  if (!visible) { closePopover(more); if (focusedAction) focusHexFallback(); return; }
 
   const isBlock = selectedKind === 'block' || (!!activeMap && !activeHex);
   const curBlock = findBlockFor(selected);
@@ -254,7 +258,7 @@ const updateSelectionTools = () => {
   primaryAction = 'listing';
   const main = items.filter(i => i.action === primaryAction);
   const extra = items.filter(i => i.action !== primaryAction);
-  const hosts = [document.getElementById('selection-primary'), document.getElementById('selection-more')];
+  const hosts = [document.getElementById('selection-primary'), more];
   for (const [idx, list] of [main, extra].entries()) {
     hosts[idx].replaceChildren(...list.map(item => {
       const btn = document.createElement('button');
@@ -272,10 +276,17 @@ const updateSelectionTools = () => {
       return btn;
     }));
   }
-  more.hidden = !extra.length;
+  if (!extra.length) closePopover(more);
+  moreSummary.hidden = !extra.length;
+  const moreLabel = 'More actions for ' + label.textContent;
+  moreSummary.setAttribute('aria-label', moreLabel);
+  moreSummary.title = moreLabel;
   if (focusedAction) {
-    const restore = focusedAction === '__more__' ? (!more.hidden ? moreSummary : null) : document.getElementById('action-' + focusedAction);
-    (restore || document.getElementById('action-' + primaryAction) || (!more.hidden ? moreSummary : null))?.focus({ preventScroll: true });
+    const candidate = focusedAction === '__more__' ? (!moreSummary.hidden ? moreSummary : null) : document.getElementById('action-' + focusedAction);
+    const restore = (candidate && (!more.contains(candidate) || isPopoverOpen(more)))
+      ? candidate
+      : (isPopoverOpen(more) ? (menuButtons(more)[0] || (!moreSummary.hidden ? moreSummary : null)) : (document.getElementById('action-' + primaryAction) || (!moreSummary.hidden ? moreSummary : null)));
+    restore?.focus({ preventScroll: true });
   }
 };
 
@@ -569,32 +580,28 @@ document.addEventListener('click', event => {
   const btn = event.target.closest('button[data-action]');
   if (btn && !btn.disabled) {
     const act = btn.dataset.action;
+    const menu = btn.closest('[data-popover-menu]');
+    if (menu) focusInvokerAndClose(menu);
     if (['navBack', 'navForward', 'refresh', 'loadBefore', 'loadAfter'].includes(act)) setBusyState(true);
+    persist();
+    const focusId = document.activeElement?.id || '';
     if (['navBack', 'navForward', 'refresh', 'loadBefore', 'loadAfter', 'toggleSync', 'openListingBeside'].includes(act)) {
-      vscode.postMessage({ action: act });
+      vscode.postMessage({ action: act, focusId });
     } else if (act === 'copyAddress' && selected) {
-      vscode.postMessage({ action: 'copyAddress', address: selected });
+      vscode.postMessage({ action: 'copyAddress', address: selected, focusId });
     } else if (selected) {
-      vscode.postMessage({ action: act, address: selected, kind: selectedKind });
+      vscode.postMessage({ action: act, address: selected, kind: selectedKind, focusId });
     }
-    if (more && more.contains(btn)) { more.open = false; moreSummary.focus({ preventScroll: true }); }
-    const restoreOpts = pageOptions.open && pageOptions.contains(btn);
-    pageOptions.open = false;
-    if (restoreOpts) pageOptions.querySelector('summary')?.focus({ preventScroll: true });
-    return;
   }
-  if (pageOptions.open && !pageOptions.contains(event.target)) pageOptions.open = false;
-  if (more.open && !more.contains(event.target)) more.open = false;
 });
 
-bindGotoForm(val => vscode.postMessage({ action: 'goto', address: val, fromGoto: true }), persist);
+bindGotoForm(val => vscode.postMessage({ action: 'goto', address: val, fromGoto: true, focusId: document.activeElement?.id || '' }), persist);
 blockSelect?.addEventListener('change', () => {
   if (blockSelect.value) {
-    const restoreOpts = pageOptions.open && pageOptions.contains(blockSelect);
-    pageOptions.open = false;
-    if (restoreOpts) pageOptions.querySelector('summary')?.focus({ preventScroll: true });
+    focusInvokerAndClose(pageOptions);
+    persist();
     setBusyState(true);
-    vscode.postMessage({ action: 'goto', address: blockSelect.value, pushHistory: true, fromGoto: false });
+    vscode.postMessage({ action: 'goto', address: blockSelect.value, pushHistory: true, fromGoto: false, focusId: document.activeElement?.id || '' });
   }
 });
 search.addEventListener('input', () => { applyFilter(); persist(); });
@@ -625,8 +632,6 @@ document.addEventListener('keydown', event => {
   if (isModShortcut(event, 'f')) { event.preventDefault(); search.focus(); search.select(); return; }
   if (isModShortcut(event, 'g')) { event.preventDefault(); addressInput.focus(); addressInput.select(); return; }
   if (event.key === 'Escape') {
-    if (pageOptions.open) { pageOptions.open = false; pageOptions.querySelector('summary').focus(); return; }
-    if (more.open) { more.open = false; moreSummary.focus(); return; }
     if (search.value) { search.value = ''; applyFilter(); persist(); return; }
   }
   if (event.key === '/' && canUseSingleKeyShortcut(event)) { event.preventDefault(); search.focus(); search.select(); }
@@ -746,9 +751,11 @@ window.addEventListener('message', event => {
 applyFilter();
 highlightRange(selected, selectionLength, false, !samePage);
 requestAnimationFrame(() => {
-  if (samePage && previous.focusId && (!document.activeElement || document.activeElement === document.body)) {
-    document.getElementById(previous.focusId)?.focus({ preventScroll: true });
+  if (samePage && previous.address === state.address && typeof previous.scrollTop === 'number') {
+    hexWrap.scrollTop = previous.scrollTop;
   }
+  const savedFocusId = (samePage && previous.focusId) || initialFocusId || '';
+  if (savedFocusId) restorePopoverAwareFocus(savedFocusId);
   persist();
   document.body.dataset.viewReady = 'true';
 });`;

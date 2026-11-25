@@ -110,6 +110,7 @@ export interface ProgramPanelState {
     pvBytesPerRow?: 8 | 16;
     pvEndian?: ProgramEndian;
     pvSelectionLength?: number;
+    pendingFocusId?: string;
 }
 
 /** Maximum number of code units fetched per graphical Listing page. */
@@ -352,6 +353,8 @@ export class ProgramViewsController {
             return;
         }
 
+        const focusId = state.pendingFocusId;
+        state.pendingFocusId = undefined;
         const payload: ListingViewPayload = {
             md5: state.md5,
             programName: stringOf(res.programName) || meta.programName,
@@ -368,6 +371,7 @@ export class ProgramViewsController {
             syncEnabled: Boolean(state.syncEnabled),
             singleKeyShortcuts: this.singleKeyShortcutsEnabled(),
             totalUnitsLabel,
+            ...(focusId ? { focusId } : {}),
         };
         state.mounted = true;
         state.panel.webview.html = renderProgramListingPage(payload);
@@ -462,6 +466,8 @@ export class ProgramViewsController {
             return;
         }
 
+        const focusId = state.pendingFocusId;
+        state.pendingFocusId = undefined;
         const payload: HexViewPayload = {
             md5: state.md5,
             programName: stringOf(res.programName) || meta.programName,
@@ -484,6 +490,7 @@ export class ProgramViewsController {
             singleKeyShortcuts: this.singleKeyShortcutsEnabled(),
             bytesPerRow,
             initialInspector: inspectorEntries,
+            ...(focusId ? { focusId } : {}),
         };
         state.mounted = true;
         state.panel.webview.html = renderProgramHexPage(payload);
@@ -585,6 +592,8 @@ export class ProgramViewsController {
         }
         const action = stringOf(message.action);
         const address = stringOf(message.address);
+        const focusId = stringOf(message.focusId);
+        state.pendingFocusId = focusId || undefined;
 
         if (action === 'toggleSync') {
             state.syncEnabled = !(state.syncEnabled ?? this.defaultSyncEnabled());

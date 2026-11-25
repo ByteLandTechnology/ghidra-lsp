@@ -13,7 +13,7 @@ import { displayAddress } from './names';
 import { pageStyles } from './page-styles';
 import { addrSpan, programViewStyles } from './program-views-styles';
 import { highlightAsm, highlightName } from './syntax';
-import { viewStyles, webviewShortcutScript } from './view-ui';
+import { moreActionsPopover, pageOptionsPopover, viewStyles, webviewPopoverScript, webviewShortcutScript } from './view-ui';
 import { domId, escape, gotoFormHtml, liveRegionsHtml } from './web';
 
 /** Full view-model payload used to render the graphical Program Listing HTML page. */
@@ -35,6 +35,7 @@ export interface ListingViewPayload {
     totalUnitsLabel: string;
     busy?: boolean;
     error?: string;
+    focusId?: string;
 }
 
 /** Turn inline hex address literals inside highlighted operands into jump buttons. */
@@ -146,6 +147,7 @@ export function renderProgramListingPage(payload: ListingViewPayload): string {
         windowEnd: payload.window.endAddress,
         syncEnabled: payload.syncEnabled,
         singleKeyShortcuts: payload.singleKeyShortcuts !== false,
+        ...(payload.focusId ? { focusId: payload.focusId } : {}),
     }).replace(/</g, '\\u003c');
 
     return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; font-src data:; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}';"><title>${escape(payload.title)}</title><style nonce="${nonce}">
@@ -166,21 +168,7 @@ ${programViewStyles}
   <div class="pv-tools" role="group" aria-label="Listing tools">
     <button type="button" id="sync-toggle" class="icon-button" data-action="toggleSync" aria-pressed="${payload.syncEnabled}" aria-label="Sync cursor with other Ghidra views" title="Sync cursor with other Ghidra views">${callIcon('link')}</button>
     <button type="button" id="open-hex-beside" class="icon-button" data-action="openHexBeside" aria-label="Open Hex view beside" title="Open Hex view beside">${callIcon('memory')}</button>
-    <details id="page-options" class="page-options">
-      <summary id="page-options-button" aria-label="View options" title="View options">${callIcon('more')}</summary>
-      <div class="page-options-content">
-        <div class="page-options-actions" role="group" aria-label="Page actions">
-          <button type="button" id="page-options-refresh" class="icon-button" data-action="refresh" aria-label="Refresh" title="Refresh">${callIcon('refresh')}</button>
-        </div>
-        ${blockOptions ? `<label class="pv-option-row">Memory block<select id="block-select" aria-label="Memory block">${blockOptions}</select></label>` : ''}
-        <label><input id="listing-bytes" type="checkbox" checked>Show bytes</label>
-        <label><input id="listing-headers" type="checkbox" checked>Show function headers</label>
-        <label><input id="listing-vars" type="checkbox">Show function variables</label>
-        <label><input id="listing-xrefs" type="checkbox" checked>Show cross-references</label>
-        <label><input id="listing-collapse" type="checkbox" checked>Collapse undefined byte runs</label>
-        <p id="listing-scope-note">${escape(payload.totalUnitsLabel)}</p>
-      </div>
-    </details>
+    ${pageOptionsPopover(`${blockOptions ? `<label class="pv-option-row">Memory block<select id="block-select" aria-label="Memory block">${blockOptions}</select></label>` : ''}<label><input id="listing-bytes" type="checkbox" checked>Show bytes</label><label><input id="listing-headers" type="checkbox" checked>Show function headers</label><label><input id="listing-vars" type="checkbox">Show function variables</label><label><input id="listing-xrefs" type="checkbox" checked>Show cross-references</label><label><input id="listing-collapse" type="checkbox" checked>Collapse undefined byte runs</label><p id="listing-scope-note">${escape(payload.totalUnitsLabel)}</p>`)}
   </div>
 </div>
 ${liveRegionsHtml(Boolean(payload.busy), payload.error ?? '')}
@@ -195,12 +183,13 @@ ${liveRegionsHtml(Boolean(payload.busy), payload.error ?? '')}
 <div class="toolbar selection-tools" role="group" aria-label="Selected item actions" aria-describedby="selection-label" hidden>
   <span id="selection-label"></span>
   <div id="selection-primary" class="selection-buttons"></div>
-  <details id="more-actions" class="more-actions" hidden><summary id="more-summary" aria-label="More actions" title="More actions">${callIcon('more')}</summary><div id="selection-more" class="selection-buttons" role="group" aria-label="Additional actions"></div></details>
+  ${moreActionsPopover()}
 </div>
 </main>
 <script nonce="${nonce}">
 const vscode = acquireVsCodeApi();
-const state = ${stateJson};
+const rawState = ${stateJson};
+const { focusId: initialFocusId, ...state } = rawState;
 const previous = vscode.getState() || {};
 const samePage = previous.md5 === state.md5 && previous.kind === 'listing';
 let selected = state.selected || '';
@@ -226,7 +215,7 @@ const pagerBefore = document.getElementById('pager-before');
 const pagerAfter = document.getElementById('pager-after');
 const scopeNote = document.getElementById('listing-scope-note');
 const more = document.getElementById('more-actions');
-const moreSummary = document.getElementById('more-summary');
+const moreSummary = document.getElementById('more-actions-button');
 const icons = ${JSON.stringify(callIcons)};
 
 if (samePage) {
@@ -266,6 +255,9 @@ const persist = () => {
   });
 };
 ${webviewShortcutScript}
+${webviewPopoverScript}
+document.addEventListener('focusin', persist);
+wrap.addEventListener('scroll', () => persist(), { passive: true });
 
 const unitRows = () => [...tbody.querySelectorAll('tr.listing-unit-row')];
 const findUnitRow = addr => addr ? unitRows().find(r => r.dataset.address?.toLowerCase() === addr.toLowerCase()) : undefined;
@@ -296,6 +288,7 @@ const updateSelectionTools = () => {
   bar.hidden = !visible;
   document.body.classList.toggle('has-selection', visible);
   if (!visible) {
+    closePopover(more);
     if (focusedAction) focusListingFallback();
     return;
   }
@@ -320,7 +313,7 @@ const updateSelectionTools = () => {
   primaryAction = canDecompile ? 'decompile' : 'memory';
   const main = items.filter(i => i.action === primaryAction);
   const extra = items.filter(i => i.action !== primaryAction);
-  const hosts = [document.getElementById('selection-primary'), document.getElementById('selection-more')];
+  const hosts = [document.getElementById('selection-primary'), more];
   for (const [idx, list] of [main, extra].entries()) {
     hosts[idx].replaceChildren(...list.map(item => {
       const btn = document.createElement('button');
@@ -338,12 +331,17 @@ const updateSelectionTools = () => {
       return btn;
     }));
   }
-  more.hidden = !extra.length;
+  if (!extra.length) closePopover(more);
+  moreSummary.hidden = !extra.length;
+  const moreLabel = 'More actions for ' + label.textContent;
+  moreSummary.setAttribute('aria-label', moreLabel);
+  moreSummary.title = moreLabel;
   if (focusedAction) {
-    const restored = focusedAction === '__more__'
-      ? (!more.hidden ? moreSummary : null)
-      : bar.querySelector('[data-action="' + focusedAction + '"]');
-    (restored || bar.querySelector('#selection-primary button') || (!more.hidden ? moreSummary : null))?.focus({ preventScroll: true });
+    const candidate = focusedAction === '__more__' ? (!moreSummary.hidden ? moreSummary : null) : bar.querySelector('[data-action="' + focusedAction + '"]');
+    const restore = (candidate && (!more.contains(candidate) || isPopoverOpen(more)))
+      ? candidate
+      : (isPopoverOpen(more) ? (menuButtons(more)[0] || (!moreSummary.hidden ? moreSummary : null)) : (bar.querySelector('#selection-primary button') || (!moreSummary.hidden ? moreSummary : null)));
+    restore?.focus({ preventScroll: true });
   }
 };
 
@@ -472,32 +470,28 @@ document.addEventListener('click', event => {
   const btn = event.target.closest('button[data-action]');
   if (btn && !btn.disabled) {
     const act = btn.dataset.action;
+    const menu = btn.closest('[data-popover-menu]');
+    if (menu) focusInvokerAndClose(menu);
     if (['navBack', 'navForward', 'refresh', 'loadBefore', 'loadAfter'].includes(act)) setBusyState(true);
+    persist();
+    const focusId = document.activeElement?.id || '';
     if (['navBack', 'navForward', 'refresh', 'loadBefore', 'loadAfter', 'toggleSync', 'openHexBeside'].includes(act)) {
-      vscode.postMessage({ action: act });
+      vscode.postMessage({ action: act, focusId });
     } else if (act === 'copyAddress' && selected) {
-      vscode.postMessage({ action: 'copyAddress', address: selected });
+      vscode.postMessage({ action: 'copyAddress', address: selected, focusId });
     } else if (selected) {
-      vscode.postMessage({ action: act, address: selected, entry: selectedEntry, kind: selectedKind });
+      vscode.postMessage({ action: act, address: selected, entry: selectedEntry, kind: selectedKind, focusId });
     }
-    if (more && more.contains(btn)) { more.open = false; moreSummary.focus({ preventScroll: true }); }
-    const restoreOpts = pageOptions.open && pageOptions.contains(btn);
-    pageOptions.open = false;
-    if (restoreOpts) pageOptions.querySelector('summary')?.focus({ preventScroll: true });
-    return;
   }
-  if (pageOptions.open && !pageOptions.contains(event.target)) pageOptions.open = false;
-  if (more.open && !more.contains(event.target)) more.open = false;
 });
 
-bindGotoForm(val => vscode.postMessage({ action: 'goto', address: val, fromGoto: true }), persist);
+bindGotoForm(val => vscode.postMessage({ action: 'goto', address: val, fromGoto: true, focusId: document.activeElement?.id || '' }), persist);
 blockSelect?.addEventListener('change', () => {
   if (blockSelect.value) {
-    const restoreOpts = pageOptions.open && pageOptions.contains(blockSelect);
-    pageOptions.open = false;
-    if (restoreOpts) pageOptions.querySelector('summary')?.focus({ preventScroll: true });
+    focusInvokerAndClose(pageOptions);
+    persist();
     setBusyState(true);
-    vscode.postMessage({ action: 'goto', address: blockSelect.value, pushHistory: true, fromGoto: false });
+    vscode.postMessage({ action: 'goto', address: blockSelect.value, pushHistory: true, fromGoto: false, focusId: document.activeElement?.id || '' });
   }
 });
 search.addEventListener('input', () => { applyFilter(); persist(); });
@@ -522,8 +516,6 @@ document.addEventListener('keydown', event => {
   if (isModShortcut(event, 'f')) { event.preventDefault(); search.focus(); search.select(); return; }
   if (isModShortcut(event, 'g')) { event.preventDefault(); addressInput.focus(); addressInput.select(); return; }
   if (event.key === 'Escape') {
-    if (pageOptions.open) { pageOptions.open = false; pageOptions.querySelector('summary').focus(); return; }
-    if (more.open) { more.open = false; moreSummary.focus(); return; }
     if (search.value) { search.value = ''; applyFilter(); persist(); return; }
   }
   if (event.key === '/' && canUseSingleKeyShortcut(event)) { event.preventDefault(); search.focus(); search.select(); }
@@ -612,12 +604,15 @@ window.addEventListener('message', event => {
 
 bindTableInteractions();
 requestAnimationFrame(() => {
-  const initialRow = findUnitRow(selected);
-  if (initialRow && !samePage) initialRow.scrollIntoView({ block: 'center' });
-  if (samePage && previous.focusId && (!document.activeElement || document.activeElement === document.body)) {
-    document.getElementById(previous.focusId)?.focus({ preventScroll: true });
-  }
   updateSelectionTools();
+  const initialRow = findUnitRow(selected);
+  if (samePage && previous.windowStart === state.windowStart && typeof previous.scrollTop === 'number') {
+    wrap.scrollTop = previous.scrollTop;
+  } else if (initialRow && !samePage) {
+    initialRow.scrollIntoView({ block: 'center' });
+  }
+  const savedFocusId = (samePage && previous.focusId) || initialFocusId || '';
+  if (savedFocusId) restorePopoverAwareFocus(savedFocusId);
   persist();
   document.body.dataset.viewReady = 'true';
 });
