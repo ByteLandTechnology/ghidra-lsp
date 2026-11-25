@@ -122,7 +122,7 @@ export class DataTypeEditorView implements vscode.CustomTextEditorProvider, vsco
         let cachedRawBytes: number | undefined;
         const sorts: Record<string, EditorSort> = {};
         let typeOptions = ['void', 'pointer', 'int', 'char', 'byte', 'undefined1', 'undefined4', 'uint', 'long'];
-        const render = (focus?: EditorFocus, saving = false): void => {
+        const render = (focus?: EditorFocus, saving = false, statusMessage?: string): void => {
             const renderGeneration = ++generation; panelVersion = document.version; pendingSaveError = undefined;
             const errors: ParseError[] = [];
             const model = parse(document.getText(), errors, { allowTrailingComma: true, disallowComments: false });
@@ -135,15 +135,16 @@ export class DataTypeEditorView implements vscode.CustomTextEditorProvider, vsco
                 if (path[0] === 'fields') { return leaf === 'type' || (modelKind === 'struct' ? leaf === 'offset' : leaf === 'name'); }
                 return false;
             };
-            const input = (path: FieldPath, value: unknown, label: string, inline = false, newKey = '', isNewRow = false, describedBy = ''): string => {
+            const input = (path: FieldPath, value: unknown, label: string, inline = false, newKey = '', isNewRow = false, describedBy = '', id?: string): string => {
                 if (typeof value === 'boolean') {
-                    return formControl({ path, label, describedBy: describedBy || undefined, value, kind: 'checkbox', disabled: readonly, checkboxClass: 'type-flag' });
+                    return formControl({ id, path, label, describedBy: describedBy || undefined, value, kind: 'checkbox', disabled: readonly, checkboxClass: 'type-flag' });
                 }
                 const leaf = String(path[path.length - 1]);
                 const optionalLength = leaf === 'length';
                 const isTypeRef = ['type', 'return_type'].includes(leaf);
                 const mandatory = !readonly && fieldRequired(path);
                 return formControl({
+                    id,
                     path,
                     label,
                     describedBy: describedBy || undefined,
@@ -154,7 +155,6 @@ export class DataTypeEditorView implements vscode.CustomTextEditorProvider, vsco
                     requiredWhenActive: mandatory && isNewRow,
                     readonly,
                     placeholder: newKey ? `+ Add ${newKey === 'fields' ? 'field' : newKey === 'values' ? 'value' : 'parameter'}` : optionalLength && !readonly ? 'Auto' : undefined,
-                    title: !newKey && optionalLength && !readonly ? 'Leave empty to use the natural size' : undefined,
                     data: {
                         number: String(typeof value === 'number' || ['offset', 'length', 'value'].includes(leaf)),
                         'new-key': newKey || undefined,
@@ -166,30 +166,42 @@ export class DataTypeEditorView implements vscode.CustomTextEditorProvider, vsco
                 const columns = fields.filter(field => field !== 'offset' || modelKind === 'struct');
                 const base: FieldPath = key === 'parameters' ? ['signature', key] : [key];
                 const canMove = !readonly && (key === 'fields' || key === 'parameters');
-                const entry = (item: unknown, index: number, isNew = false): string => {
+                const moveHintId = canMove ? `type-move-hint-${key}` : '';
+                const lengthHintId = !readonly && columns.includes('length') ? `type-length-hint-${key}` : '';
+                const entry = (item: unknown, index: number, rowNumber: number, isNew = false): string => {
                     const data = item && typeof item === 'object' ? item as Record<string, unknown> : {};
-                    const cells = columns.map(field => `<td data-field="${escape(field)}" data-label="${escape(field[0].toUpperCase() + field.slice(1))}">${input([...base, index, field], data[field], isNew && field === 'name' ? `Add ${singular}` : `${singular} ${index + 1} ${field}`, true, isNew && field === 'name' ? key : '', isNew)}</td>`).join('');
-                    const move = canMove ? `<td class="type-row-handle"><button type="button" class="type-icon type-move" data-move aria-label="Move ${singular} ${index + 1}" title="Drag or use arrow keys to move ${singular}"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 3h2v2H4zm6 0h2v2h-2zM4 7h2v2H4zm6 0h2v2h-2zM4 11h2v2H4zm6 0h2v2h-2z"/></svg></button></td>` : '';
-                    const remove = readonly ? '' : `<td class="type-row-action"><button type="button" class="type-icon" data-action="remove" aria-label="Remove ${singular} ${index + 1}" title="Remove ${singular}">${callIcon('trash')}</button></td>`;
+                    const cells = columns.map(field => {
+                        const isNewName = isNew && field === 'name';
+                        const desc = readonly ? 'type-readonly-hint' : field === 'length' ? lengthHintId : '';
+                        return `<td data-field="${escape(field)}" data-label="${escape(field[0].toUpperCase() + field.slice(1))}">${input([...base, index, field], data[field], isNewName ? `Add ${singular}` : `${singular} ${rowNumber} ${field}`, true, isNewName ? key : '', isNew, desc, `type-${key}-${rowNumber}-${field}`)}</td>`;
+                    }).join('');
+                    const move = canMove ? `<td class="type-row-handle"><button id="type-${escape(key)}-${rowNumber}-move" type="button" class="type-icon type-move" data-move aria-label="Move ${singular} ${rowNumber}" aria-describedby="${escape(moveHintId)}" title="Move ${singular}"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 3h2v2H4zm6 0h2v2h-2zM4 7h2v2H4zm6 0h2v2h-2zM4 11h2v2H4zm6 0h2v2h-2z"/></svg></button></td>` : '';
+                    const remove = readonly ? '' : `<td class="type-row-action"><button id="type-${escape(key)}-${rowNumber}-remove" type="button" class="type-icon" data-action="remove" aria-label="Remove ${singular} ${rowNumber}" title="Remove ${singular}">${callIcon('trash')}</button></td>`;
                     return `<tr data-index="${index}"${isNew ? ' data-new="true"' : ''}>${move}${cells}${remove}</tr>`;
                 };
                 const indexed = rows.map((item, index) => ({ item, index }));
                 if (key === 'fields' && modelKind === 'struct') { indexed.sort((a, b) => Number(object(a.item).offset) - Number(object(b.item).offset)); }
-                const contents = indexed.map(({ item, index }) => entry(item, index)).join('');
+                const contents = indexed.map(({ item, index }, position) => entry(item, index, position + 1)).join('');
                 const nextOffset = rows.reduce<number>((end, item) => Math.max(end, Number(object(item).offset || 0) + Number(object(item).length || 1)), 0);
                 const newItem = key === 'values' ? { name: '', value: 0 } : key === 'parameters' ? { name: '', type: 'int' } : { offset: nextOffset, name: '', type: 'undefined1' };
-                const blank = readonly ? '' : entry(newItem, rows.length, true);
+                const blank = readonly ? '' : entry(newItem, rows.length, indexed.length + 1, true);
                 const heading = key === 'parameters' ? '<h2>Parameters</h2>' : '';
-                const headers = columns.map(field => `<th scope="col" data-field="${escape(field)}" aria-sort="none"><button type="button" class="type-sort" data-sort="${escape(field)}" aria-label="Sort by ${escape(field)}">${escape(field[0].toUpperCase() + field.slice(1))}<span aria-hidden="true"></span></button></th>`).join('');
-                return `<section class="type-list">${heading}<div class="type-table-wrap"><table class="type-table" data-type-list="${escape(key)}" data-kind="${escape(modelKind)}" data-readonly="${readonly}"><thead><tr>${canMove ? '<th class="type-handle-col" scope="col"><span class="type-sr-only">Move</span></th>' : ''}${headers}${readonly ? '' : '<th class="type-action-col" scope="col"><span class="type-sr-only">Actions</span></th>'}</tr></thead><tbody>${contents}${blank}</tbody></table></div></section>`;
+                const hints = [
+                    moveHintId ? `<span id="${escape(moveHintId)}">Drag or use arrow keys to move a ${singular}.</span>` : '',
+                    lengthHintId ? `<span id="${escape(lengthHintId)}">Leave length empty to use the natural size.</span>` : '',
+                ].filter(Boolean).join(' ');
+                const hintMarkup = hints ? `<p class="hint type-table-hint">${hints}</p>` : '';
+                const headers = columns.map(field => `<th scope="col" data-field="${escape(field)}" aria-sort="${field === 'offset' ? 'ascending' : 'none'}"><button type="button" class="type-sort" data-sort="${escape(field)}" aria-label="Sort by ${escape(field)}">${escape(field[0].toUpperCase() + field.slice(1))}<span aria-hidden="true"></span></button></th>`).join('');
+                return `<section class="type-list">${heading}${hintMarkup}<div class="type-table-wrap"><table class="type-table" data-type-list="${escape(key)}" data-kind="${escape(modelKind)}" data-readonly="${readonly}"><thead><tr>${canMove ? '<th class="type-handle-col" scope="col"><span class="type-sr-only">Move</span></th>' : ''}${headers}${readonly ? '' : '<th class="type-action-col" scope="col"><span class="type-sr-only">Actions</span></th>'}</tr></thead><tbody>${contents}${blank}</tbody></table></div></section>`;
             };
             let body = '', pageError = '';
             if (readonly && !errors.length && model && typeof model === 'object' && !Array.isArray(model)) {
                 const m = model as Record<string, any>;
                 const reason = document.getText().split('\n').find(line => line.startsWith('// Read-only: '))?.slice('// Read-only: '.length) || 'This type is read-only.';
-                const information: [string, unknown][] = [['Kind', m.kind], ['Size', m.length ?? m.size]];
+                const readonlyNote = /^read-only\b/i.test(reason) || reason === 'This type is read-only.' ? reason : `Read-only: ${reason}`;
+                const information: [string, unknown][] = [['Kind', m.kind ? kindOf(m) : m.kind], ['Size', m.length ?? m.size]];
                 if (m.base_type) { information.push(['Base type', reference(m.base_type)]); }
-                body = `<section class="type-definition"><p class="hint" title="${escape(reason)}">Read-only</p>${properties(information)}</section>`;
+                body = `<section class="type-definition"><p id="type-readonly-hint" class="hint">${escape(readonlyNote)}</p>${properties(information)}</section>`;
                 if (Array.isArray(m.fields)) { body += list('fields', m.fields.map((field: unknown) => ({ ...object(field), type: reference(object(field).data_type) })), ['offset', 'name', 'type', 'length']); }
                 if (Array.isArray(m.values)) { body += list('values', m.values, ['name', 'value']); }
                 if (m.signature && typeof m.signature === 'object') {
@@ -255,32 +267,33 @@ export class DataTypeEditorView implements vscode.CustomTextEditorProvider, vsco
               document.addEventListener('selectionchange',()=>{if(!busy&&document.activeElement?.dataset?.path)enqueue({action:'focus',focus:focusInfo()})});
               window.addEventListener('blur',()=>{if(!busy)enqueue({action:'focus',focus:null})});
               document.addEventListener('beforeinput',event=>{if(busy&&event.target.closest?.('input'))event.preventDefault()},true);
+              const reindex=table=>ghidraA11y.syncTable(table);
               const nextBlank=row=>{
-                const blank=row.cloneNode(true), index=Number(row.dataset.index)+1, key=row.closest('table').dataset.typeList;
-                const singular=key==='fields'?'field':key==='values'?'value':'parameter';
+                const blank=row.cloneNode(true), index=Number(row.dataset.index)+1;
                 blank.dataset.index=String(index);
                 for(const el of blank.querySelectorAll('[data-path]')){
-                  const path=JSON.parse(el.dataset.path);path[path.length-2]=index;const id=ghidraA11y.fieldId(path),errId=id+'-error';
-                  const errEl=el.nextElementSibling;
-                  el.id=id;el.dataset.path=JSON.stringify(path);el.dataset.errorId=errId;
-                  el.removeAttribute('aria-invalid');el.removeAttribute('aria-describedby');
-                  if(errEl?.classList.contains('field-error')){errEl.id=errId;errEl.textContent='';errEl.hidden=true}
-                  el.setAttribute('aria-label',el.dataset.newKey?'Add '+singular:singular+' '+(index+1)+' '+path[path.length-1]);delete el.dataset.edited;
+                  const prevErr=el.dataset.errorId;
+                  el.removeAttribute('aria-invalid');
+                  if(prevErr&&el.hasAttribute('aria-describedby')){
+                    const kept=el.getAttribute('aria-describedby').split(/\\s+/).filter(id=>id&&id!==prevErr&&id!=='error'&&id!=='type-validation');
+                    if(kept.length)el.setAttribute('aria-describedby',kept.join(' '));else el.removeAttribute('aria-describedby');
+                  }
+                  const path=JSON.parse(el.dataset.path);path[path.length-2]=index;el.dataset.path=JSON.stringify(path);
+                  delete el.dataset.edited;delete el.dataset.errorId;
                   if(el.dataset.newKey)el.value='';
                 }
-                const move=blank.querySelector('[data-move]'),remove=blank.querySelector('[data-action=remove]');
-                if(move){move.id='f-move-'+key+'-'+(index+1);move.setAttribute('aria-label','Move '+singular+' '+(index+1))}
-                if(remove){remove.id='f-remove-'+key+'-'+(index+1);remove.setAttribute('aria-label','Remove '+singular+' '+(index+1))}
+                for(const el of blank.querySelectorAll('[id]'))el.removeAttribute('id');
+                for(const el of blank.querySelectorAll('.field-error')){el.textContent='';el.hidden=true}
                 row.after(blank);
               };
               const edit=el=>{
                 if(!el||el.readOnly||el.disabled||el.getAttribute('aria-disabled')==='true'||busy)return;
                 if(el.dataset.newKey){
                   if(!el.value)return;
-                  const key=el.dataset.newKey,row=el.closest('tr'),index=Number(row.dataset.index),name=el.value;
+                  const key=el.dataset.newKey,row=el.closest('tr'),table=row.closest('table'),index=Number(row.dataset.index),name=el.value;
                   nextBlank(row);delete row.dataset.new;delete el.dataset.newKey;el.removeAttribute('placeholder');
                   for(const req of row.querySelectorAll('[data-required-when-active="true"]')){req.required=true;req.setAttribute('aria-required','true');delete req.dataset.requiredWhenActive}
-                  const singular=key==='fields'?'field':key==='values'?'value':'parameter';el.setAttribute('aria-label',singular+' '+(index+1)+' name');
+                  reindex(table);
                   enqueue({action:'add',key,index,name});return;
                 }
                 el.dataset.edited='true';ghidraA11y.clearFieldError(el);let value=el.type==='checkbox'?el.checked:el.value;
@@ -289,23 +302,26 @@ export class DataTypeEditorView implements vscode.CustomTextEditorProvider, vsco
               };
               const sort=(table,field,direction)=>{
                 const body=table.tBodies[0], items=[...body.querySelectorAll('tr[data-index]:not([data-new])')], blank=body.querySelector('tr[data-new]');
+                const isStructFields=['struct','structure'].includes(table.dataset.kind)&&table.dataset.typeList==='fields';
                 const value=(row,key)=>row.querySelector('td[data-field="'+key+'"] input')?.value||'';
                 items.sort((a,b)=>{
-                  if(direction==='none')return table.dataset.kind==='struct'&&table.dataset.typeList==='fields'?(Number(value(a,'offset'))-Number(value(b,'offset'))):Number(a.dataset.index)-Number(b.dataset.index);
+                  if(direction==='none')return isStructFields?(Number(value(a,'offset'))-Number(value(b,'offset'))):Number(a.dataset.index)-Number(b.dataset.index);
                   const x=value(a,field),y=value(b,field), numeric=['offset','length','value'].includes(field);
                   const result=numeric?(Number(x)-Number(y)):x.localeCompare(y,undefined,{numeric:true,sensitivity:'base'});
                   return (direction==='ascending'?1:-1)*result||Number(a.dataset.index)-Number(b.dataset.index);
                 });
                 for(const row of items)body.append(row);if(blank)body.append(blank);
-                for(const head of table.querySelectorAll('th[data-field]'))head.setAttribute('aria-sort',head.dataset.field===field?direction:'none');
+                const defaultOffset=direction==='none'&&isStructFields;
+                for(const head of table.querySelectorAll('th[data-field]'))head.setAttribute('aria-sort',defaultOffset&&head.dataset.field==='offset'?'ascending':head.dataset.field===field?direction:'none');
+                reindex(table);
               };
               const initialSort=${JSON.stringify(sorts).replace(/</g, '\\u003c')};
-              for(const table of document.querySelectorAll('.type-table')){const saved=initialSort[table.dataset.typeList];if(saved&&table.querySelector('[data-sort="'+saved.field+'"]'))sort(table,saved.field,saved.direction)}
+              for(const table of document.querySelectorAll('.type-table')){const saved=initialSort[table.dataset.typeList];if(saved&&table.querySelector('[data-sort="'+saved.field+'"]'))sort(table,saved.field,saved.direction);else reindex(table)}
               const move=(row,target,before)=>{
                 if(!row||!target||row===target||busy)return;
                 const table=row.closest('table');if(table!==target.closest('table'))return;
-                const key=table.dataset.typeList;enqueue({action:'sort',key,direction:'none'});
-                setBusy(true,'move');enqueue({action:'move',key,from:Number(row.dataset.index),to:Number(target.dataset.index),before});
+                const key=table.dataset.typeList,order=[...table.tBodies[0].querySelectorAll('tr[data-index]:not([data-new])')].map(item=>Number(item.dataset.index));
+                setBusy(true,'move');enqueue({action:'move',key,from:Number(row.dataset.index),to:Number(target.dataset.index),before,order});
               };
               window.addEventListener('message',event=>{
                 if(event.data.action==='type-diagnostics'){
@@ -347,7 +363,7 @@ export class DataTypeEditorView implements vscode.CustomTextEditorProvider, vsco
               document.addEventListener('pointerup',event=>{if(!dragging||dragging.id!==event.pointerId)return;const state=dragging;if(state.handle.hasPointerCapture(event.pointerId))state.handle.releasePointerCapture(event.pointerId);clearDrag();if(state.active)move(state.row,state.target,state.before)});
               document.addEventListener('pointercancel',clearDrag);
               document.addEventListener('keydown',event=>{
-                const handle=event.target.closest('[data-move]');if(handle&&(event.key==='ArrowUp'||event.key==='ArrowDown')){event.preventDefault();if(busy||handle.getAttribute('aria-disabled')==='true')return;const row=handle.closest('tr'),items=[...row.parentElement.querySelectorAll('tr[data-index]:not([data-new])')],index=items.indexOf(row),up=event.key==='ArrowUp';move(row,items[index+(up?-1:1)],up);return}
+                const handle=event.target.closest?.('[data-move]');if(handle&&(event.key==='ArrowUp'||event.key==='ArrowDown')){event.preventDefault();if(busy||handle.getAttribute('aria-disabled')==='true')return;const row=handle.closest('tr'),table=row.closest('table'),items=[...table.tBodies[0].querySelectorAll('tr[data-index]:not([data-new])')],index=items.indexOf(row),up=event.key==='ArrowUp',target=items[index+(up?-1:1)];if(!target){const status=document.querySelector('.type-status');if(status&&index>=0){const singular=table.dataset.typeList==='fields'?'field':'parameter',name=(row.querySelector('td[data-field="name"] input')?.value||'').trim(),label=singular[0].toUpperCase()+singular.slice(1)+(name?' '+name:'');status.dataset.state=draftDirty?'dirty':'clean';ghidraA11y.announce(status,label+' is at row '+(index+1)+' of '+items.length+(draftDirty?' · Unsaved changes':''))}return}move(row,target,up);return}
                 if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='s'){event.preventDefault();event.stopPropagation();if(${readonly})return;if(busy){if(busyAction!=='save'&&!saveQueued){saveQueued=true;enqueue({action:'save-after-update'})}return}ghidraA11y.announce('error','');setBusy(true,'save');enqueue({action:'save',focus:busyFocus})}
               },true);
               const focusTarget=${JSON.stringify(focus || null).replace(/</g, '\\u003c')};if(focusTarget){restoreFocus(focusTarget);requestAnimationFrame(()=>restoreFocus(focusTarget))}if(${saving}){setBusy(true,'save');if(focusTarget)busyFocus=focusTarget}
@@ -355,7 +371,8 @@ export class DataTypeEditorView implements vscode.CustomTextEditorProvider, vsco
             `;
             const path = typePath(document.uri);
             const summary = typeHeaderSummary(!errors.length ? model : undefined, path, readonly, document.isDirty ? undefined : cachedRawBytes);
-            const actions = `<div class="type-actions"><span class="type-status" data-state="${document.isDirty ? 'dirty' : 'clean'}" role="status">${document.isDirty ? 'Unsaved changes' : ''}</span><button type="button" data-open-jsonc aria-label="Open JSONC text editor beside" title="Open .ghidra-type JSONC text editor beside">${callIcon('edit')}<span>JSONC</span></button></div>`;
+            const statusText = statusMessage ? `${statusMessage}${document.isDirty ? ' · Unsaved changes' : ''}` : document.isDirty ? 'Unsaved changes' : '';
+            const actions = `<div class="type-actions"><span class="type-status" data-state="${document.isDirty ? 'dirty' : 'clean'}" role="status">${escape(statusText)}</span><button type="button" data-open-jsonc aria-label="Open JSONC text editor beside" title="Open .ghidra-type JSONC text editor beside">${callIcon('edit')}<span>JSONC</span></button></div>`;
             panel.webview.html = page(path.split('/').pop() || 'Data type', 'Data type editor', summary.subtitle, `<p id="type-validation" class="type-validation" role="alert"></p>` + body + `<datalist id="type-options">${typeOptions.map(value => `<option value="${escape(value)}"></option>`).join('')}</datalist>`, script, { kind: 'type-editor', md5: document.uri.authority, path }, actions, { subtitleHtml: summary.subtitleHtml, ...(pageError ? { error: pageError } : {}) });
         };
         const diagnostics = (): TypeDiagnosticIssue[] => typeDiagnosticIssues(document);
@@ -421,22 +438,39 @@ export class DataTypeEditorView implements vscode.CustomTextEditorProvider, vsco
                     const items: any[] = request.key === 'parameters' ? model.signature?.parameters : model[request.key];
                     if (!Array.isArray(items)) { return; }
                     if (message.action === 'remove' && (!Number.isInteger(request.index) || request.index < 0 || request.index >= items.length)) { return; }
-                    let next: string, offset: number | string | undefined, focus: EditorFocus | undefined;
+                    let next: string, offset: number | string | undefined, focus: EditorFocus | undefined, statusMessage: string | undefined;
                     const normalizedKind = kindOf(object(model));
                     if (message.action === 'move') {
                         if (!['fields', 'parameters'].includes(request.key)) { return; }
                         if (!Number.isInteger(request.from) || !Number.isInteger(request.to) || request.from < 0 || request.to < 0 || request.from >= items.length || request.to >= items.length || typeof request.before !== 'boolean') { return; }
-                        const order = items.map((_, index) => index);
-                        if (request.key === 'fields' && normalizedKind === 'struct') { order.sort((a, b) => Number(items[a].offset) - Number(items[b].offset)); }
+                        const hasVisualOrder = Array.isArray(request.order)
+                            && request.order.length === items.length
+                            && request.order.every((idx: unknown) => typeof idx === 'number' && Number.isInteger(idx) && idx >= 0 && idx < items.length)
+                            && new Set(request.order).size === items.length;
+                        const order: number[] = hasVisualOrder ? [...request.order] : items.map((_, index) => index);
+                        if (!hasVisualOrder && request.key === 'fields' && normalizedKind === 'struct') { order.sort((a, b) => Number(items[a].offset) - Number(items[b].offset)); }
                         const source = order.indexOf(request.from), target = order.indexOf(request.to);
                         let destination = target + (request.before ? 0 : 1);
                         if (source < destination) { destination--; }
-                        if (destination === source) { editorFocus = { move: { key: request.key, index: request.from } }; completedUpdateGeneration = request.generation; render(editorFocus); return; }
+                        const singular = request.key === 'fields' ? 'field' : 'parameter';
+                        if (destination === source) {
+                            const memberName = String(object(items[request.from]).name ?? '').trim();
+                            const label = `${singular[0].toUpperCase()}${singular.slice(1)}${memberName ? ` ${memberName}` : ''}`;
+                            editorFocus = { move: { key: request.key, index: request.from } };
+                            completedUpdateGeneration = request.generation;
+                            render(editorFocus, false, `${label} is at row ${source + 1} of ${items.length}`);
+                            return;
+                        }
                         const raw = await this.call<Data>('ghidra.type', { md5: document.uri.authority, path: typePath(document.uri) });
                         if (request.generation !== generation || panelVersion !== document.version) { return; }
-                        const moved = reorderTypeMembers(text, raw, request.key, request.from, order[destination]);
-                        const original = typeModel(raw); typeMutations(original, parseType(moved.text, original), raw);
+                        const moved = reorderTypeMembers(text, raw, request.key, request.from, order[destination], order);
+                        const original = typeModel(raw), draft = parseType(moved.text, original);
+                        typeMutations(original, draft, raw);
+                        delete sorts[request.key];
                         next = moved.text; focus = { move: { key: request.key, index: moved.index } };
+                        const movedItems = request.key === 'parameters' ? rows(draft.signature?.parameters) : rows(draft.fields);
+                        const memberName = String(object(movedItems[moved.index] ?? items[request.from]).name ?? '').trim();
+                        statusMessage = `Moved ${singular}${memberName ? ` ${memberName}` : ''} to row ${moved.index + 1} of ${movedItems.length || items.length}`;
                     } else {
                         if (message.action === 'add' && (request.index !== items.length || typeof request.name !== 'string')) { render(); throw new Error('The member list changed. Try adding it again.'); }
                         if (message.action === 'add' && request.key === 'fields' && normalizedKind === 'struct') {
@@ -460,12 +494,14 @@ export class DataTypeEditorView implements vscode.CustomTextEditorProvider, vsco
                         next = applyEdits(text, edits);
                         if (message.action === 'remove') { focus = { path: [...path, Math.max(0, Math.min(request.index, items.length - 2)), 'name'] }; }
                     }
-                    const edit = new vscode.WorkspaceEdit(); edit.replace(document.uri, new vscode.Range(document.positionAt(0), document.positionAt(text.length)), next);
-                    applying = true; try { if (!await vscode.workspace.applyEdit(edit)) { throw new Error('Could not update the data type draft.'); } } finally { applying = false; }
+                    if (next !== text) {
+                        const edit = new vscode.WorkspaceEdit(); edit.replace(document.uri, new vscode.Range(document.positionAt(0), document.positionAt(text.length)), next);
+                        applying = true; try { if (!await vscode.workspace.applyEdit(edit)) { throw new Error('Could not update the data type draft.'); } } finally { applying = false; }
+                    }
                     panelVersion = document.version;
                     const meta = typeHeaderSummary(parse(next), typePath(document.uri), readonly);
                     if (message.action === 'add') { await post({ action: 'draft-version', version: document.version, dirty: document.isDirty, added: { key: request.key, index: request.index, offset }, meta: { bytesLabel: meta.bytesLabel || '', countLabel: meta.countLabel || '' } }); }
-                    else { editorFocus = focus; completedUpdateGeneration = request.generation; render(focus); }
+                    else { editorFocus = focus; completedUpdateGeneration = request.generation; render(focus, false, statusMessage); }
                     return;
                 }
                 if (message.action !== 'change' || readonly || !Array.isArray(message.path)) { return; }

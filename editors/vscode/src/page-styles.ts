@@ -88,4 +88,28 @@ input[type=checkbox]{width:auto;margin:0;accent-color:var(--vscode-checkbox-sele
 #error:empty,#status:empty{position:absolute;width:1px;height:1px;padding:0;margin:0;border:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .empty{padding:20px 0;color:var(--ghidra-muted)}
 @media(max-width:640px){main{padding:16px}h1{font-size:20px}dl>div{grid-template-columns:1fr;gap:2px}.toolbar{gap:6px}.form-grid{gap:12px}.editable,.editable input{min-width:0}}
+:root,body{--ghidra-hv-border:var(--vscode-contrastBorder,color-mix(in srgb,var(--vscode-foreground) 72%,var(--vscode-editor-background)));--ghidra-active-border:var(--vscode-contrastActiveBorder,var(--ghidra-focus))}
+button[aria-pressed="true"]:not(.node-branch)::before,button[aria-expanded="true"]:not(.node-branch):not(.expand-run-btn)::before{content:"\\eab2" / "";font:11px/1 call-icons;display:inline-block;vertical-align:middle;flex-shrink:0}
+button[aria-pressed="true"]:not(.node-branch):not(.call-column-pick),button[aria-expanded="true"]:not(.node-branch):not(.expand-run-btn){border:2px solid var(--ghidra-active-border)}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--ghidra-focus);outline-offset:-1px}
+.selected{outline:2px solid var(--ghidra-active-border);outline-offset:-2px}
+:is(body.vscode-high-contrast,body.vscode-high-contrast-light) :is(input:not([type="checkbox"]),select,textarea){border:1px solid var(--ghidra-hv-border)}
+:is(body.vscode-high-contrast,body.vscode-high-contrast-light) button:where(:not(.link,.type-sort,.xref-link,.target-link,.expand-run-btn,.hex-ptr-btn,.call-column-pick,[aria-pressed="true"],[aria-expanded="true"])){border:1px solid var(--ghidra-hv-border)}
+:is(body.vscode-high-contrast,body.vscode-high-contrast-light) :is(button[aria-pressed="true"]:where(:not(.node-branch,.call-column-pick)),button[aria-expanded="true"]:where(:not(.node-branch,.expand-run-btn))){background:var(--vscode-editor-background);color:var(--vscode-foreground);border:2px solid var(--ghidra-active-border)}
+@media(prefers-contrast:more){
+  input:not([type="checkbox"]),select,textarea{border:1px solid var(--ghidra-hv-border)}
+  button:where(:not(.link,.type-sort,.xref-link,.target-link,.expand-run-btn,.hex-ptr-btn,.call-column-pick,[aria-pressed="true"],[aria-expanded="true"])){border:1px solid var(--ghidra-hv-border)}
+}
+@media(forced-colors:active){
+  :root,body{background:Canvas;color:CanvasText;--ghidra-muted:CanvasText;--ghidra-placeholder:GrayText;--ghidra-accent:LinkText;--ghidra-focus:Highlight;--ghidra-pressed-bg:Canvas;--ghidra-warning:CanvasText;--ghidra-success:CanvasText;--ghidra-selection-bg:Canvas;--ghidra-selection-fg:CanvasText;--ghidra-active-selection-bg:Canvas;--ghidra-active-selection-fg:CanvasText;--ghidra-hv-border:ButtonText;--ghidra-active-border:Highlight}
+  input:not([type="checkbox"]),select,textarea{background:Field;color:FieldText;border:1px solid var(--ghidra-hv-border)}
+  input[type="checkbox"]{border:1px solid var(--ghidra-hv-border)}
+  button:where(:not(.link,.type-sort,.xref-link,.target-link,.expand-run-btn,.hex-ptr-btn,.call-column-pick,[aria-pressed="true"],[aria-expanded="true"])){background:ButtonFace;color:ButtonText;border:1px solid var(--ghidra-hv-border)}
+  button.link,.xref-link,.target-link,.expand-run-btn,.hex-ptr-btn{color:var(--ghidra-accent);text-decoration:underline}
+  button[aria-pressed="true"]:not(.node-branch):not(.call-column-pick),button[aria-expanded="true"]:not(.node-branch):not(.expand-run-btn){background:var(--ghidra-pressed-bg);color:var(--ghidra-selection-fg);border:2px solid var(--ghidra-active-border)}
+  .selected,tbody tr.selected,tbody tr.selected:focus,tbody tr.selected:focus-within{background:var(--ghidra-selection-bg);color:var(--ghidra-selection-fg);box-shadow:none;outline:2px solid var(--ghidra-active-border);outline-offset:-2px}
+  :focus-visible,input:focus,select:focus,textarea:focus{outline:2px solid var(--ghidra-focus);outline-offset:2px}
+  :is(.tok-mnemonic,.tok-register,.tok-number,.tok-string,.tok-keyword,.tok-symbol,.tok-scope,.tok-params,.tok-name){color:var(--ghidra-selection-fg)}
+  svg :is(.tok-mnemonic,.tok-register,.tok-number,.tok-string,.tok-keyword,.tok-symbol){fill:var(--ghidra-selection-fg)}
+}
 `;

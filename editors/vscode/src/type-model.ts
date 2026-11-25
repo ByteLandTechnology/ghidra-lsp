@@ -157,14 +157,18 @@ export function parseType(text: string, original: TypeModel): TypeModel {
 }
 
 /** Move a member without discarding JSONC notes; structure offsets follow the new layout. */
-export function reorderTypeMembers(text: string, raw: Data, key: string, from: number, to: number): { text: string; index: number } {
+export function reorderTypeMembers(text: string, raw: Data, key: string, from: number, to: number, visualOrder?: readonly number[]): { text: string; index: number } {
     const original = typeModel(raw), draft = parseType(text, original);
     const path: JsonPath = key === 'parameters' ? ['signature', key] : [key];
     const members = key === 'parameters' ? rows(draft.signature?.parameters) : key === 'fields' ? draft.fields : undefined;
-    if (!members || !Number.isInteger(from) || !Number.isInteger(to) || from < 0 || to < 0 || from >= members.length || to >= members.length) {
+    const validVisualOrder = visualOrder !== undefined && Array.isArray(visualOrder) && !!members
+        && visualOrder.length === members.length
+        && visualOrder.every(index => Number.isInteger(index) && index >= 0 && index < members.length)
+        && new Set(visualOrder).size === members.length;
+    if (!members || !Number.isInteger(from) || !Number.isInteger(to) || from < 0 || to < 0 || from >= members.length || to >= members.length || (visualOrder !== undefined && !validVisualOrder)) {
         throw new Error('The member list changed. Try moving it again.');
     }
-    let order = members.map((_, index) => index);
+    let order = validVisualOrder ? [...visualOrder] : members.map((_, index) => index);
     if (draft.kind === 'struct' && key === 'fields') {
         const source = rows(raw.fields).filter(field => field.is_undefined !== true);
         const originals = original.fields || [];
@@ -176,9 +180,10 @@ export function reorderTypeMembers(text: string, raw: Data, key: string, from: n
             if (!previous && field.type === 'undefined1') { return 1; }
             throw new TypeEditError('Save changes to field types before moving fields.', ['fields', index, 'type']);
         });
-        order.sort((a, b) => Number(members[a].offset) - Number(members[b].offset));
+        const offsetOrder = members.map((_, index) => index).sort((a, b) => Number(members[a].offset) - Number(members[b].offset));
+        if (!validVisualOrder) { order = [...offsetOrder]; }
         const start = order.indexOf(from), end = order.indexOf(to);
-        const gaps = order.map((index, i) => Number(members[index].offset) - (i ? Number(members[order[i - 1]].offset) + lengths[order[i - 1]] : 0));
+        const gaps = offsetOrder.map((index, i) => Number(members[index].offset) - (i ? Number(members[offsetOrder[i - 1]].offset) + lengths[offsetOrder[i - 1]] : 0));
         if (gaps.some(gap => !Number.isSafeInteger(gap) || gap < 0)) { throw new TypeEditError('Fix overlapping fields before moving them.', ['fields']); }
         order.splice(end, 0, order.splice(start, 1)[0]);
         let offset = 0;
@@ -190,7 +195,8 @@ export function reorderTypeMembers(text: string, raw: Data, key: string, from: n
             offset += lengths[index];
         }
     } else {
-        order.splice(to, 0, order.splice(from, 1)[0]);
+        const start = order.indexOf(from), end = order.indexOf(to);
+        order.splice(end, 0, order.splice(start, 1)[0]);
     }
     const tree = parseTree(text), array = tree && findNodeAtLocation(tree, path), nodes = array?.children || [];
     if (nodes.length !== members.length) { throw new Error('The member list changed. Try moving it again.'); }
