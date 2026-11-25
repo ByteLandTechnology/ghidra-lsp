@@ -5,6 +5,7 @@ import { StringsView } from './strings-view';
 import { StringFiles, stringScheme } from './string-files';
 import { DataTypeEditorView } from './type-editor-view';
 import * as vscode from 'vscode';
+import { countLabel, inlineText, statusAccessibility } from './a11y';
 import { ProgramBrowser } from './browser';
 import { ProgramContext } from './context';
 import { EditingUI } from './editing';
@@ -25,6 +26,7 @@ import { plainAddress } from './listing-format';
 import { MemoryFiles, memoryAddressAt, memoryScheme } from './bytes';
 import { ViewSets } from './views';
 import { AnalysisMode, ControlFlowView } from './control-flow-view';
+import { singleKeyShortcutsEnabled } from './program-views-controller';
 import { DataTypeFiles, typeScheme } from './type-files';
 import { installManagedBinaries, resolveOrInstallBinaries, ResolvedBinaries } from './installer';
 
@@ -149,6 +151,11 @@ export async function activate(extension: vscode.ExtensionContext): Promise<void
     const listingFiles = new ListingFiles(call, context, byteFiles, extension.workspaceState);
     listingViews = new ListingViews(call, listingFiles);
     const graphView = new ControlFlowView(listingFiles, workbench, context);
+    extension.subscriptions.push(vscode.workspace.onDidChangeConfiguration(async event => {
+        if (!event.affectsConfiguration('ghidraLsp.views.singleKeyShortcuts')) { return; }
+        const enabled = singleKeyShortcutsEnabled();
+        await Promise.all([workbench.setSingleKeyShortcuts(enabled), graphView.setSingleKeyShortcuts(enabled)]);
+    }));
     const viewSets = new ViewSets(call, context, listingViews, graphView);
     const labels = new DocumentLabels(call, context, uri => {
         return uri.scheme === listingScheme ? listingFiles.entry(uri)?.window.name : undefined;
@@ -179,11 +186,13 @@ export async function activate(extension: vscode.ExtensionContext): Promise<void
     references = new ReferenceViews(call, labels, context, ensureLanguage);
     extension.subscriptions.push(references);
     const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 10);
+    status.name = 'Ghidra active program';
     status.command = 'ghidraLsp.programOverview';
-    status.tooltip = 'Ghidra program overview';
+    status.tooltip = 'Open Ghidra program overview';
     const analysisStatus = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 11);
+    analysisStatus.name = 'Ghidra analysis progress';
     analysisStatus.command = 'ghidra.sessions.focus';
-    analysisStatus.tooltip = 'Show Ghidra analysis progress';
+    analysisStatus.tooltip = 'Show Ghidra analysis progress in Sessions';
     extension.subscriptions.push(tracker.onDidChange(() => {
         const tasks = tracker.active;
         void vscode.commands.executeCommand('setContext', 'ghidra.hasWaitingAnalysis', tasks.some(task => task.cancellable));
@@ -191,8 +200,13 @@ export async function activate(extension: vscode.ExtensionContext): Promise<void
         const task = tasks[tasks.length - 1];
         const stage = task.stage === 'import' ? (task.background ? 'Background import' : 'Importing') : (task.background ? 'Background analysis' : 'Analyzing');
         const percentage = typeof task.percentage === 'number' ? ` ${Math.round(task.percentage)}%` : '';
-        analysisStatus.text = tasks.length > 1 ? `$(sync~spin) Ghidra: ${tasks.length} analysis tasks`
-            : `$(sync~spin) Ghidra: ${task.name} · ${stage}${percentage}`;
+        const detail = task.detail ? ` · ${inlineText(task.detail, 28)}` : '';
+        analysisStatus.text = tasks.length > 1 ? `$(sync~spin) Ghidra: ${countLabel(tasks.length, 'analysis task')}`
+            : `$(sync~spin) Ghidra: ${task.name} · ${stage}${percentage}${detail}`;
+        analysisStatus.tooltip = tasks.length > 1
+            ? `${countLabel(tasks.length, 'analysis task')}\nClick to focus Ghidra Sessions.`
+            : `${task.name} · ${stage}${percentage}${task.detail ? ` · ${task.detail}` : ''}\nClick to focus Ghidra Sessions.`;
+        analysisStatus.accessibilityInformation = statusAccessibility(analysisStatus.text, 'Show Ghidra Sessions');
         analysisStatus.show();
     }));
     const programVersions = new Map<string, string>();
@@ -203,6 +217,7 @@ export async function activate(extension: vscode.ExtensionContext): Promise<void
         const entry = uri?.scheme === 'ghidra' && uri.authority.toLowerCase() === md5 ? displayAddress(decodeURIComponent(uri.path.split('/').pop() || '')) : '';
         const address = listingViews.addressAt(vscode.window.activeTextEditor);
         status.text = `$(file-binary) ${context.name(md5)}${entry ? ` · ${entry}` : ''}${address ? ` · ${plainAddress(address)}` : ''}`;
+        status.accessibilityInformation = statusAccessibility(status.text, 'Open Ghidra program overview');
         status.show();
     };
     function log(error: unknown): void { output.appendLine(String(error)); }

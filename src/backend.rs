@@ -297,13 +297,24 @@ pub(crate) async fn list_all(
   backend: &McpBackend,
   domain: &str,
   md5: &str,
+  params: Value,
+) -> Result<Vec<Value>> {
+  list_operation(backend, domain, "list", md5, params).await
+}
+
+/// Fetches all pages from `operation` on `domain` for `md5` and rejects incomplete scans.
+pub(crate) async fn list_operation(
+  backend: &McpBackend,
+  domain: &str,
+  operation: &str,
+  md5: &str,
   mut params: Value,
 ) -> Result<Vec<Value>> {
   let mut items = Vec::new();
   let mut seen = HashSet::new();
   loop {
     let value = backend
-      .call(domain, "list", Some(md5), params.clone())
+      .call(domain, operation, Some(md5), params.clone())
       .await?;
     items.extend(
       value

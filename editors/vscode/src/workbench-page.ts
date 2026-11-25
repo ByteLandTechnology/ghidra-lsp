@@ -5,8 +5,8 @@ import { randomBytes } from 'node:crypto';
 import { pageStyles } from './page-styles';
 import { displayAddress } from './names';
 import { iconFontStyles } from './icon-font';
-import { escape as escapeHtml } from './web';
-import { browserViewScript, viewStyles } from './view-ui';
+import { escape as escapeHtml, object } from './web';
+import { browserViewScript, fitGraphTitle, searchShortcutTitle, viewStyles, webviewShortcutScript } from './view-ui';
 import { controlFlowStyles, controlFlowScript } from './control-flow-canvas';
 import { controlFlowToolbar, controlFlowUiStyles, controlFlowUiScript } from './control-flow-ui';
 import { callIcon, callIcons } from './call-graph-icons';
@@ -36,12 +36,15 @@ const addressCell = (cell: unknown): string => {
 /** Render an interactive data table for a workbench browser panel. */
 export const table = (headers: string[], rows: Row[]): string => `<div class="table-wrap"><table><thead><tr>${headers.map(h => `<th scope="col">${escapeHtml(h)}</th>`).join('')}</tr></thead><tbody>${rows.map(row => `<tr${targetAttributes(row)}${row.address || row.entry ? ' tabindex="0"' : ''}>${row.cells.map((cell, index) => `<td${addrHeaders.has(headers[index]) ? ' class="addr"' : ''}>${row.detail && index === row.cells.length - 1 ? `<span class="cell-main">${escapeHtml(cell)}</span><span class="cell-detail">${escapeHtml(row.detail)}</span>` : addressCell(cell)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
 /** Configuration options for rendering a workbench webview page. */
-export interface PageOptions { title: string; subtitle: string; body: string; address?: string; next?: boolean; previous?: boolean; scope?: string; scopeSummary?: string; actions?: boolean; graph?: boolean; controlFlow?: boolean; callGraph?: boolean; viewKind?: string; callView?: 'graph' | 'columns'; callTools?: string; callName?: string; callBack?: boolean; state?: unknown }
+export interface PageOptions { title: string; subtitle: string; body: string; address?: string; next?: boolean; previous?: boolean; scope?: string; scopeSummary?: string; actions?: boolean; graph?: boolean; controlFlow?: boolean; callGraph?: boolean; viewKind?: string; callView?: 'graph' | 'columns'; callTools?: string; callName?: string; callBack?: boolean; singleKeyShortcuts?: boolean; state?: unknown }
 /** Render one Codicon glyph from a hexadecimal code point string. */
 const icon = (code: string): string => `<span class="call-icon" aria-hidden="true">&#x${code};</span>`;
 /** Render a complete CSP-protected HTML workbench page. */
 export function page(options: PageOptions): string {
     const nonce = randomBytes(18).toString('base64');
+    const stateObj = object(options.state);
+    const singleKeyShortcuts = options.singleKeyShortcuts ?? (typeof stateObj.singleKeyShortcuts === 'boolean' ? stateObj.singleKeyShortcuts : true);
+    const initialState = { ...stateObj, singleKeyShortcuts };
     const flow = options.controlFlow || options.callGraph;
     const cfg = options.controlFlow && !options.callGraph;
     const browser = !flow;
@@ -58,7 +61,7 @@ export function page(options: PageOptions): string {
     .more-actions>summary{font-weight:400;min-height:28px;padding:4px 10px;border:1px solid var(--vscode-contrastBorder,var(--vscode-panel-border));border-radius:2px;background:var(--vscode-button-secondaryBackground,var(--vscode-input-background));color:var(--vscode-button-secondaryForeground,var(--vscode-foreground))}
     .more-actions>summary:hover{background:var(--vscode-button-secondaryHoverBackground,var(--vscode-list-hoverBackground))}
     .more-actions[open]{flex-basis:100%}.more-actions[open]>summary{display:list-item;width:fit-content;margin-bottom:8px}
-    #selection-label{flex:0 1 auto;margin-right:4px;font-size:12px;color:var(--vscode-descriptionForeground);overflow-wrap:anywhere}
+    #selection-label{flex:0 1 auto;margin-right:4px;font-size:12px;color:var(--ghidra-muted);overflow-wrap:anywhere}
     td{white-space:pre-wrap}
     tr[data-address],tr[data-entry]{cursor:pointer}
     .mono table{table-layout:fixed;min-width:760px}
@@ -67,18 +70,18 @@ export function page(options: PageOptions): string {
     .listing-meta{display:none}
     .listing-options{display:flex;align-items:center;gap:8px;margin-bottom:8px}
     .listing:not(.show-details) th:nth-child(n+3),.listing:not(.show-details) td:nth-child(n+3){display:none}
-    .listing-meta{margin-top:5px;color:var(--vscode-descriptionForeground);font-size:11px}
+    .listing-meta{margin-top:5px;color:var(--ghidra-muted);font-size:11px}
     .listing-meta span{display:block;white-space:pre-wrap;overflow-wrap:anywhere}
     .hex table{min-width:780px}.hex td:nth-child(2){white-space:pre}
-    .scope,.notice{font-size:12px;color:var(--vscode-descriptionForeground);margin:12px 0}
+    .scope,.notice{font-size:12px;color:var(--ghidra-muted);margin:12px 0}
     .graph-wrap{max-width:100%;overflow:auto;border:1px solid var(--vscode-panel-border);border-radius:2px}
     .graph-node{cursor:pointer}.graph-node rect{fill:var(--vscode-editor-background);stroke:var(--vscode-panel-border)}
-    .graph-node:hover rect,.graph-node.selected rect,.graph-node:focus-visible rect{stroke:var(--vscode-focusBorder);stroke-width:2}
-    .graph-node.search-muted{opacity:.35}.graph-node.search-match rect{stroke:var(--vscode-focusBorder);stroke-width:2}
+    .graph-node:hover rect,.graph-node.selected rect,.graph-node:focus-visible rect{stroke:var(--ghidra-focus);stroke-width:2}
+    .graph-node.search-muted{opacity:.35}.graph-node.search-match rect{stroke:var(--ghidra-focus);stroke-width:2}
     .graph-node text{fill:var(--vscode-foreground);pointer-events:none}.node-title{font-weight:600;font-size:14px}
-    .node-subtitle,.node-line{font-size:11px}.node-subtitle{fill:var(--vscode-descriptionForeground)}
+    .node-subtitle,.node-line{font-size:11px}.node-subtitle{fill:var(--ghidra-muted)}
     .edge{fill:none;stroke:var(--vscode-charts-blue);stroke-width:1.5}marker path{fill:var(--vscode-charts-blue)}
-    .edge-label{fill:var(--vscode-descriptionForeground);font-size:10px}
+    .edge-label{fill:var(--ghidra-muted);font-size:10px}
     .pagination{display:flex;gap:8px;margin-top:16px}
     @media(max-width:720px){.listing table{min-width:0}.listing th:first-child{width:126px}.listing td:first-child{white-space:normal;overflow-wrap:anywhere}.listing th:nth-child(n+3),.listing td:nth-child(n+3){display:none}.listing-options{display:flex;align-items:center;gap:8px;margin-bottom:8px}.listing.show-details .listing-meta{display:block}}
     @media(max-width:640px){#selection-label{flex-basis:100%}#goto{flex:1 1 100%}#address{flex:1;width:0}.search{max-width:none}#goto button{white-space:nowrap}}
@@ -87,10 +90,10 @@ export function page(options: PageOptions): string {
     ${iconFontStyles}
     ${options.callGraph ? callGraphStyles + callColumnsStyles : ''}
     ${browser ? viewStyles : ''}
-    </style></head><body${flow ? ` class="flow-page${options.callGraph ? ' call-page' : cfg ? ' cfg-page' : ''}"` : ' class="browser-page"'} data-view-kind="${escapeHtml(options.viewKind || '')}"><main>${options.callGraph ? `<div class="call-topbar" role="group" aria-label="Call graph tools"><button class="call-icon-button" data-action="callGraphBack" aria-label="Back" title="Back" ${options.callBack ? '' : 'disabled'}>${icon('ea9b')}</button><h1 class="call-function-title" title="${escapeHtml(options.callName)}"><button id="call-function-picker" data-action="pickCallGraphFunction" aria-label="Choose function: ${escapeHtml(options.callName)}" title="${escapeHtml(options.callName)} · Choose function">${callIcon('function')}<span class="call-function-name">${escapeHtml(options.callName)}</span>${callIcon('down')}</button></h1><div class="call-search" hidden><input id="search" class="search" aria-label="Find functions" placeholder="Find functions…"></div><div class="call-view-switch" role="group" aria-label="Call graph presentation"><button id="call-view-graph" data-call-view="graph" aria-label="Graph view" title="Graph view" aria-pressed="${options.callView !== 'columns'}">${callIcon('graph')}<span>Graph</span></button><button id="call-view-columns" data-call-view="columns" aria-label="Column view" title="Column view" aria-pressed="${options.callView === 'columns'}">${callIcon('columns')}<span>Columns</span></button></div><button id="call-search-toggle" class="call-icon-button" aria-label="Find functions" aria-expanded="false" title="Find functions (/)">${icon('ea6d')}</button>${options.callView !== 'columns' ? `<button id="graph-fit" class="call-icon-button" aria-label="Fit graph" title="Fit the entire graph (0)">${callIcon('fit')}</button>` : ''}<details id="call-menu"><summary aria-label="Graph options" title="Graph options">${icon('ea7c')}</summary><div class="call-menu-content">${options.callTools || ''}</div></details></div>${options.callView !== 'columns' ? `<div class="call-zoom" role="group" aria-label="Zoom"><button id="graph-zoom-out" aria-label="Zoom out">${icon('eb3b')}</button><button id="graph-zoom" aria-label="Actual size" title="Actual size (100%)">100%</button><button id="graph-zoom-in" aria-label="Zoom in">${icon('ea60')}</button></div>` : ''}` : cfg ? controlFlowToolbar(options.title, options.subtitle, options.body.includes('data-control-flow')) : browserTools}
+    </style></head><body${flow ? ` class="flow-page${options.callGraph ? ' call-page' : cfg ? ' cfg-page' : ''}"` : ' class="browser-page"'} data-view-kind="${escapeHtml(options.viewKind || '')}"><main>${options.callGraph ? `<div class="call-topbar" role="group" aria-label="Call graph tools"><button class="call-icon-button" data-action="callGraphBack" aria-label="Back" title="Back" ${options.callBack ? '' : 'disabled'}>${icon('ea9b')}</button><h1 class="call-function-title" title="${escapeHtml(options.callName)}"><button id="call-function-picker" data-action="pickCallGraphFunction" aria-label="Choose function: ${escapeHtml(options.callName)}" title="${escapeHtml(options.callName)} · Choose function">${callIcon('function')}<span class="call-function-name">${escapeHtml(options.callName)}</span>${callIcon('down')}</button></h1><div class="call-search" hidden><input id="search" class="search" aria-label="Find functions" placeholder="Find functions…"></div><div class="call-view-switch" role="group" aria-label="Call graph presentation"><button id="call-view-graph" data-call-view="graph" aria-label="Graph view" title="Graph view" aria-pressed="${options.callView !== 'columns'}">${callIcon('graph')}<span>Graph</span></button><button id="call-view-columns" data-call-view="columns" aria-label="Column view" title="Column view" aria-pressed="${options.callView === 'columns'}">${callIcon('columns')}<span>Columns</span></button></div><button id="call-search-toggle" class="call-icon-button" aria-label="Find functions" aria-expanded="false" title="${escapeHtml(searchShortcutTitle('Find functions', singleKeyShortcuts))}">${icon('ea6d')}</button>${options.callView !== 'columns' ? `<button id="graph-fit" class="call-icon-button" aria-label="Fit graph" title="${escapeHtml(fitGraphTitle(singleKeyShortcuts))}">${callIcon('fit')}</button>` : ''}<details id="call-menu"><summary aria-label="Graph options" title="Graph options">${icon('ea7c')}</summary><div class="call-menu-content">${options.callTools || ''}</div></details></div>${options.callView !== 'columns' ? `<div class="call-zoom" role="group" aria-label="Zoom"><button id="graph-zoom-out" aria-label="Zoom out">${icon('eb3b')}</button><button id="graph-zoom" aria-label="Actual size" title="Actual size (100%)">100%</button><button id="graph-zoom-in" aria-label="Zoom in">${icon('ea60')}</button></div>` : ''}` : cfg ? controlFlowToolbar(options.title, options.subtitle, options.body.includes('data-control-flow'), singleKeyShortcuts) : browserTools}
 
     <p id="filter-status" role="status" aria-live="polite" hidden></p>${options.scope && !browser ? `<p class="scope">${escapeHtml(options.scope)}</p>` : ''}${options.body}${browser ? '<div class="no-results" hidden><span>No matching rows.</span><button type="button" id="clear-filter" class="icon-button" aria-label="Clear filter" title="Clear filter">' + callIcon('close') + '</button></div>' : ''}${options.next || options.previous ? `<div class="pagination"><button class="icon-button" data-action="previous" aria-label="Previous page" title="Previous page" ${!options.previous ? 'disabled' : ''}>${callIcon('left')}</button><button class="icon-button" data-action="next" aria-label="Next page" title="Next page" ${!options.next ? 'disabled' : ''}>${callIcon('right')}</button></div>` : ''}</main><script nonce="${nonce}">
-    const vscode=acquireVsCodeApi();const previous=vscode.getState()||{};const state=${JSON.stringify(options.state ?? {}).replace(/</g, '\\u003c')};
+    const vscode=acquireVsCodeApi();const previous=vscode.getState()||{};const state=${JSON.stringify(initialState).replace(/</g, '\\u003c')};
     const samePage=previous.md5===state.md5&&previous.kind===state.kind&&previous.address===state.address${flow ? '&&previous.entry===state.entry' : ''};
     let selected=samePage?previous.selected||state.selected||'':state.selected||'';let entry=samePage?previous.selectedEntry||'':state.selectedEntry||'';
     let selectedKind=samePage?previous.selectedKind||'':'';let selectedLabel=samePage?previous.selectedLabel||'':'';let primaryAction='decompile';
@@ -104,6 +107,7 @@ export function page(options: PageOptions): string {
     let persistFrame=0;
     const persist=()=>{if(persistFrame){cancelAnimationFrame(persistFrame);persistFrame=0}vscode.setState({...state,selected,selectedEntry:entry,selectedKind,selectedLabel,filter:search.value,addressDraft:addressInput?.value,mapOpen:memoryMap?.open,listingDetails:listingDetails?.checked,extraColumns:extraColumns?.checked,branchAnchor,callDetails:document.querySelector('.call-details')?.open??(samePage?previous.callDetails:undefined),callOverview:document.querySelector('.call-overview')?.open??(samePage?previous.callOverview:undefined),cfgOverview:document.querySelector('.cfg-overview')?.open,cfgOverviewPosition,cfgOverviewDismissed,cfgActiveEdge:document.querySelector('.cfg-edge.is-active')?.dataset.edgeKey,tableScroll:[...document.querySelectorAll('.table-wrap')].map(table=>({top:table.scrollTop,left:table.scrollLeft})),scrollX:window.scrollX,scrollY:window.scrollY,focusId:branchAnchor?.focusId||document.activeElement?.id,columnUi,graphViewport:graphViewport?.snapshot()||(samePage?previous.graphViewport:undefined)})};
     const schedulePersist=()=>{if(!persistFrame){persistFrame=requestAnimationFrame(()=>{persistFrame=0;persist()})}};
+    ${webviewShortcutScript}
     memoryMap?.addEventListener('toggle',persist);
     ${flow ? controlFlowScript : ''}
     listingDetails?.addEventListener('change',()=>{document.querySelector('.listing').classList.toggle('show-details',listingDetails.checked);persist()});
