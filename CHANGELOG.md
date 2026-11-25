@@ -1,5 +1,53 @@
 # Changelog
 
+## [0.5.0](https://github.com/ByteLandTechnology/ghidra-lsp/compare/v0.4.0...v0.5.0) (2026-11-25)
+
+
+### Features
+
+* **vscode:** add inline disambiguation and accessible labels ([#43](https://github.com/ByteLandTechnology/ghidra-lsp/issues/43)) ([3396d0c](https://github.com/ByteLandTechnology/ghidra-lsp/commit/3396d0ce3cdfa72fe587bfaac89d278987bb7960))
+
+
+### Bug Fixes
+
+* **vscode:** normalize webview css tokens and selection contrast ([#46](https://github.com/ByteLandTechnology/ghidra-lsp/issues/46)) ([61e90d5](https://github.com/ByteLandTechnology/ghidra-lsp/commit/61e90d5516ae65dfc9789e00cad3578b59fc6942))
+* **vscode:** restore keyboard operability and focus in hex view ([#15](https://github.com/ByteLandTechnology/ghidra-lsp/issues/15)) ([5007a83](https://github.com/ByteLandTechnology/ghidra-lsp/commit/5007a83147888daeccbf76a6163b917a5f25593a))
+
+
+### Performance Improvements
+
+* cache versioned span snapshots in source selection ([#49](https://github.com/ByteLandTechnology/ghidra-lsp/issues/49)) ([fa6f290](https://github.com/ByteLandTechnology/ghidra-lsp/commit/fa6f290d29c437b256d6ab77282ee38143eb8827))
+* index session symbols with SymbolIndex ([#42](https://github.com/ByteLandTechnology/ghidra-lsp/issues/42)) ([775dac4](https://github.com/ByteLandTechnology/ghidra-lsp/commit/775dac4b930e68f57e3dd1153c56d9e36bad05dd))
+
+## [0.4.0](https://github.com/ByteLandTechnology/ghidra-lsp/compare/v0.3.1...v0.4.0) (2026-11-24)
+
+
+### Features
+
+* load binary imports and exports from program sessions ([#10](https://github.com/ByteLandTechnology/ghidra-lsp/issues/10)) ([ab4f320](https://github.com/ByteLandTechnology/ghidra-lsp/commit/ab4f32093915717aba1460832402878ce164a833))
+* preserve native decompiler variable symbols ([#3](https://github.com/ByteLandTechnology/ghidra-lsp/issues/3)) ([cf023f5](https://github.com/ByteLandTechnology/ghidra-lsp/commit/cf023f5b584447f1d1b6ac65d1a3527ddf2442bc))
+* **vscode:** guard webview single-key shortcuts ([#28](https://github.com/ByteLandTechnology/ghidra-lsp/issues/28)) ([3e7747f](https://github.com/ByteLandTechnology/ghidra-lsp/commit/3e7747f2d337018aeda787a8ac4d8e762e2708de))
+
+
+### Bug Fixes
+
+* **vscode:** reflow editable form grids and index row labels ([#14](https://github.com/ByteLandTechnology/ghidra-lsp/issues/14)) ([52ef531](https://github.com/ByteLandTechnology/ghidra-lsp/commit/52ef5319a5724a2499f90b40574d29f1dbcb31c5))
+* **vscode:** replace SVG comment tabs with Markdown text links ([#12](https://github.com/ByteLandTechnology/ghidra-lsp/issues/12)) ([82f204b](https://github.com/ByteLandTechnology/ghidra-lsp/commit/82f204bd72b8af210a93c9aebe3feb1bf7cc8684))
+* **vscode:** restore program listing focus and target sizes ([#21](https://github.com/ByteLandTechnology/ghidra-lsp/issues/21)) ([f16ddf7](https://github.com/ByteLandTechnology/ghidra-lsp/commit/f16ddf7d6b935d3f7cfb32fedcce261a8d78f1bd))
+* **vscode:** restructure hex table into per-byte ARIA gridcells ([#16](https://github.com/ByteLandTechnology/ghidra-lsp/issues/16)) ([726f7ec](https://github.com/ByteLandTechnology/ghidra-lsp/commit/726f7ec7ffd80a5fa4228f64b783e815f01bd82e))
+
+
+### Performance Improvements
+
+* set initial list page limit to 1000 ([#17](https://github.com/ByteLandTechnology/ghidra-lsp/issues/17)) ([16f65f8](https://github.com/ByteLandTechnology/ghidra-lsp/commit/16f65f82c800f472c219e0938a1b65fec0fef073))
+
+## [0.3.1](https://github.com/ByteLandTechnology/ghidra-lsp/compare/v0.3.0...v0.3.1) (2026-11-23)
+
+
+### Bug Fixes
+
+* **build:** upgrade url to 2.5.9 and remove stale advisory ([6695365](https://github.com/ByteLandTechnology/ghidra-lsp/commit/6695365743cc26784fe832fa0f1c39e45a898716))
+
 ## [0.3.0](https://github.com/ByteLandTechnology/ghidra-lsp/compare/v0.2.0...v0.3.0) (2026-11-20)
 
 

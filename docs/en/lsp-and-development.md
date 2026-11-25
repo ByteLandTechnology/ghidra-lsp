@@ -62,7 +62,7 @@ All 45 commands declared in `COMMANDS` (`src/server/mod.rs`) and dispatched acro
 | `ghidra.types` | `{"md5?"}` | List all program data types with pagination coverage |
 | `ghidra.type` | `{"md5?", "path"}` | Fetch one raw data type definition with `data_type.get` |
 | `ghidra.strings` | `{"md5?"}` | Query defined strings in the program (`address::defined_strings`) |
-| `ghidra.binaryInterface` | `{"md5?"}` | Inspect binary imports and exports (`binary::interface`) |
+| `ghidra.binaryInterface` | `{"md5?"}` | Load imports and exports from the Ghidra session (`import.list` and `export.list`), with a local loader-table fallback (`binary::interface`) |
 | `ghidra.openFunction` | `{"md5?", "entry"}` | Decompile `entry` and return its canonical `ghidra://` URI |
 | `ghidra.openSymbol` | `{"md5?", "id"}` | Resolve symbol `id` to its function or `/symbol/` URI |
 | `ghidra.document` | `{"uri", "includePending?"}` | Retrieve or lazily generate text and metadata for a `ghidra://` URI |
@@ -76,7 +76,7 @@ All 45 commands declared in `COMMANDS` (`src/server/mod.rs`) and dispatched acro
 | Command | Arguments | Description |
 | --- | --- | --- |
 | `ghidra.resolveTarget` | `{"md5?", "input" \| "target", "currentAddress?"}` | Resolve user input (address, relative offset `-0x80`, or symbol) to a canonical target |
-| `ghidra.location` | `{"uri", "position" \| "address", "version?"}` | Map cursor UTF-16 `Position` to native `CodeLocation`, or map `code_unit_address` back to `Position` |
+| `ghidra.location` | `{"uri", "position?" \| "address?", "version?"}` | Map cursor UTF-16 `Position` to native `CodeLocation`, map `code_unit_address` back to `Position`, or return ordered UTF-16 location spans when `position` and `address` are absent |
 | `ghidra.reveal` | `{"md5?", "address"}` | Open containing function and return UTF-16 `Range` for `address` |
 | `ghidra.typeAtPosition` | `{"uri", "position"}` | Resolve data type metadata at a decompiler token position |
 | `ghidra.listingWindow` | `{"md5?", "address?", "cursor?", "limit?", "showTemplateArguments?", "exactStart?"}` | Fetch bounded disassembly listing window with collapsed undefined byte runs and xrefs |

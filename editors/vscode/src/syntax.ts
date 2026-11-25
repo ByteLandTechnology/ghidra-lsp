@@ -69,14 +69,15 @@ export const syntaxStyles = `
 .tok-register{color:var(--vscode-symbolIcon-variableForeground,var(--vscode-foreground))}
 .tok-number{color:var(--vscode-debugTokenExpression-number,var(--vscode-foreground))}
 .tok-string{color:var(--vscode-debugTokenExpression-string,var(--vscode-foreground))}
-.tok-keyword{color:var(--vscode-descriptionForeground)}
+.tok-keyword{color:var(--ghidra-muted)}
 .tok-symbol{color:var(--vscode-symbolIcon-functionForeground,var(--vscode-foreground))}
-.tok-scope,.tok-params{color:var(--vscode-descriptionForeground);font-weight:400}
+.tok-scope,.tok-params{color:var(--ghidra-muted);font-weight:400}
 .tok-name{color:var(--vscode-foreground)}
+:is(tr.selected,.is-selected) :is(.tok-mnemonic,.tok-register,.tok-number,.tok-string,.tok-keyword,.tok-symbol,.tok-scope,.tok-params,.tok-name){color:inherit}
 svg .tok-mnemonic{fill:var(--vscode-symbolIcon-keywordForeground,var(--vscode-foreground))}
 svg .tok-register{fill:var(--vscode-symbolIcon-variableForeground,var(--vscode-foreground))}
 svg .tok-number{fill:var(--vscode-debugTokenExpression-number,var(--vscode-foreground))}
 svg .tok-string{fill:var(--vscode-debugTokenExpression-string,var(--vscode-foreground))}
-svg .tok-keyword{fill:var(--vscode-descriptionForeground)}
+svg .tok-keyword{fill:var(--ghidra-muted)}
 svg .tok-symbol{fill:var(--vscode-symbolIcon-functionForeground,var(--vscode-foreground))}
 `;

@@ -16,12 +16,12 @@ npm --prefix editors/vscode run check
 npm --prefix editors/vscode run package
 ```
 
-`npm run package` runs `vsce package` and writes `ghidra-lsp-0.1.0.vsix` inside `editors/vscode/`.
+`npm run package` runs `vsce package` and writes `ghidra-lsp-<version>.vsix` inside `editors/vscode/`.
 
 Install the VSIX from the terminal or through the VS Code Extensions view (**Install from VSIX...**):
 
 ```sh
-code --install-extension editors/vscode/ghidra-lsp-0.1.0.vsix
+code --install-extension editors/vscode/ghidra-lsp-<version>.vsix
 ```
 
 For local extension development, open `editors/vscode/` in VS Code and press `F5` to start an Extension Development Host.
