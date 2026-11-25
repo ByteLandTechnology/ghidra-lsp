@@ -197,7 +197,7 @@ export class EditingUI implements vscode.Disposable {
         const panel = vscode.window.createWebviewPanel('ghidra.edit', title, vscode.ViewColumn.Active, { enableScripts: true, localResourceRoots: [], retainContextWhenHidden: true });
         this.panels.set(panel, md5); panel.onDidDispose(() => this.panels.delete(panel));
         panel.onDidChangeViewState(event => { if (event.webviewPanel.active) { void this.context.activate(md5).catch(error => vscode.window.showErrorMessage(formatFriendlyError(error))); } });
-        const advanced = fields.filter(field => (field.kind === 'checkbox' && field.key !== 'confirmed' && field.value !== true) || (field.kind === 'textarea' && !field.value && field.key !== 'source') || (field.key === 'category' && (!field.value || field.value === '/') && title !== 'Import C header') || (field.key === 'size' && !field.value) || (field.key === 'convention' && ['default', 'unknown', '__cdecl'].includes(String(field.value))));
+        const advanced = fields.filter(field => (field.kind === 'checkbox' && field.key !== 'confirmed' && field.value !== true) || (field.kind === 'textarea' && !field.value && field.key !== 'declarations') || (field.key === 'category' && (!field.value || field.value === '/') && title !== 'Import C header') || (field.key === 'size' && !field.value) || (field.key === 'convention' && ['default', 'unknown', '__cdecl'].includes(String(field.value))));
         const visibleFields = fields.filter(field => !advanced.includes(field));
         const controls = visibleFields.filter(field => field.kind !== 'checkbox' && field.kind !== 'textarea');
         const flags = visibleFields.filter(field => field.kind === 'checkbox');

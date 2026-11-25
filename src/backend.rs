@@ -3,12 +3,13 @@
 
 //! Model Context Protocol child-process transport for `ghidra-mcp`.
 
+use std::borrow::Cow;
 use std::collections::HashSet;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, bail, ensure};
 use rmcp::model::CallToolRequestParams;
 use rmcp::service::{Peer, RunningService, ServiceError};
 use rmcp::transport::TokioChildProcess;
@@ -429,6 +430,17 @@ pub(crate) fn normalize(value: Value) -> Result<Value> {
   Ok(value)
 }
 
+/// Options for initial page selection and scan checks in `list_pages`.
+#[derive(Clone, Copy)]
+pub(crate) struct ListOptions<'a> {
+  /// Initial batch page (`Some(None)` returns an empty list without a backend call).
+  pub(crate) initial: Option<Option<&'a Value>>,
+  /// True when each page must contain an `"items"` array.
+  pub(crate) require_items: bool,
+  /// Error message when `/scan/complete` is `false`, or `None` to accept partial scans.
+  pub(crate) incomplete_error: Option<&'a str>,
+}
+
 /// Fetches all pages from a list operation on `domain` for `md5` and rejects incomplete scans.
 pub(crate) async fn list_all(
   backend: &McpBackend,
@@ -445,32 +457,52 @@ pub(crate) async fn list_operation(
   domain: &str,
   operation: &str,
   md5: &str,
-  mut params: Value,
+  params: Value,
 ) -> Result<Vec<Value>> {
+  let options = ListOptions {
+    initial: None,
+    require_items: true,
+    incomplete_error: Some("backend scan is incomplete; refresh after analysis finishes"),
+  };
+  list_pages(backend, domain, operation, Some(md5), params, options).await
+}
+
+/// Fetches all `next_cursor` pages for `operation` on `domain` with `options`.
+pub(crate) async fn list_pages(
+  backend: &McpBackend,
+  domain: &str,
+  operation: &str,
+  md5: Option<&str>,
+  mut params: Value,
+  options: ListOptions<'_>,
+) -> Result<Vec<Value>> {
+  let mut page = match options.initial {
+    Some(None) => return Ok(Vec::new()),
+    Some(Some(first)) => Cow::Borrowed(first),
+    None => Cow::Owned(backend.call(domain, operation, md5, params.clone()).await?),
+  };
   let mut items = Vec::new();
   let mut seen = HashSet::new();
   loop {
-    let value = backend
-      .call(domain, operation, Some(md5), params.clone())
-      .await?;
-    items.extend(
-      value
-        .get("items")
-        .and_then(Value::as_array)
-        .context("list response lacks items")?
-        .iter()
-        .cloned(),
-    );
-    if let Some(cursor) = value.get("next_cursor").and_then(Value::as_str) {
-      if !seen.insert(cursor.to_owned()) {
-        bail!("backend repeated a pagination cursor");
-      }
-      params["page"] = json!({"cursor": cursor, "limit": 1000});
-    } else {
-      if value.pointer("/scan/complete").and_then(Value::as_bool) == Some(false) {
-        bail!("backend scan is incomplete; refresh after analysis finishes");
+    if let Some(more) = page["items"].as_array() {
+      items.extend(more.iter().cloned());
+    } else if options.require_items {
+      bail!("list response lacks items");
+    }
+    let Some(cursor) = page["next_cursor"].as_str().filter(|s| !s.is_empty()) else {
+      if let Some(err) = options.incomplete_error {
+        ensure!(
+          page.pointer("/scan/complete").and_then(Value::as_bool) != Some(false),
+          "{err}"
+        );
       }
       return Ok(items);
-    }
+    };
+    ensure!(
+      seen.insert(cursor.to_owned()),
+      "backend repeated a pagination cursor"
+    );
+    params["page"] = json!({ "cursor": cursor, "limit": 1000 });
+    page = Cow::Owned(backend.call(domain, operation, md5, params.clone()).await?);
   }
 }

@@ -12,7 +12,7 @@ use tower_lsp_server::ls_types::{
 };
 
 use crate::address::parse_type_ref_for;
-use crate::backend::{BackendCapabilities, McpBackend};
+use crate::backend::{BackendCapabilities, ListOptions, McpBackend, list_pages};
 use crate::document::{Document, advance_position};
 
 /// Returns the LSP semantic token legend used for decompiled virtual documents.
@@ -229,47 +229,53 @@ fn resource_operation<'a>(domain: &'a str, operation: &'a str) -> (&'a str, &'a 
   }
 }
 
+/// Checks batch item count, unique IDs, dotted methods, allowlists, and object arguments.
+fn validate_batch_items(
+  params: &Value,
+  kind: &str,
+  allow: impl Fn(&str, &str) -> bool,
+) -> Result<()> {
+  let items = params["items"]
+    .as_array()
+    .context("batch items are required")?;
+  ensure!(
+    !items.is_empty() && items.len() <= 1000,
+    "batch must contain 1–1000 items"
+  );
+  let mut ids = HashSet::new();
+  for item in items {
+    let id = item["id"].as_str().context("batch item id is required")?;
+    ensure!(
+      !id.is_empty() && ids.insert(id),
+      "batch item IDs must be unique and nonempty"
+    );
+    let method = item["method"]
+      .as_str()
+      .context("batch method is required")?;
+    let (domain, operation) = method.split_once('.').context("invalid batch method")?;
+    ensure!(
+      allow(domain, operation),
+      "Unsupported batch {kind}: {method}"
+    );
+    ensure!(
+      item["arguments"].is_object(),
+      "batch arguments must be an object"
+    );
+  }
+  Ok(())
+}
+
 /// Verifies that `(domain, operation)` and any atomic batch items are approved write operations.
 pub(crate) fn allow_write(domain: &str, operation: &str, params: &Value) -> Result<()> {
   let (domain, operation) = resource_operation(domain, operation);
   if (domain, operation) == ("batch", "execute") {
     ensure!(
-      params.get("transaction_mode").and_then(Value::as_str) == Some("all_or_none"),
+      params["transaction_mode"].as_str() == Some("all_or_none"),
       "Workbench batches must use transaction_mode all_or_none"
     );
-    let items = params
-      .get("items")
-      .and_then(Value::as_array)
-      .context("batch items are required")?;
-    ensure!(
-      !items.is_empty() && items.len() <= 1000,
-      "batch must contain 1–1000 items"
-    );
-    let mut ids = HashSet::new();
-    for item in items {
-      let id = item
-        .get("id")
-        .and_then(Value::as_str)
-        .context("batch item id is required")?;
-      ensure!(
-        !id.is_empty() && ids.insert(id),
-        "batch item IDs must be unique and nonempty"
-      );
-      let method = item
-        .get("method")
-        .and_then(Value::as_str)
-        .context("batch method is required")?;
-      let (domain, operation) = method.split_once('.').context("invalid batch method")?;
-      ensure!(
-        (domain, operation) != ("program", "save") && WRITE.contains(&(domain, operation)),
-        "Unsupported batch mutation: {method}"
-      );
-      ensure!(
-        item.get("arguments").is_some_and(Value::is_object),
-        "batch arguments must be an object"
-      );
-    }
-    return Ok(());
+    return validate_batch_items(params, "mutation", |d, op| {
+      (d, op) != ("program", "save") && WRITE.contains(&(d, op))
+    });
   }
   ensure!(
     WRITE.contains(&(domain, operation)),
@@ -482,37 +488,9 @@ pub(crate) fn allow_read(domain: &str, operation: &str, params: &Value) -> Resul
       matches!(mode, None | Some("per_item") | Some("all_or_none")),
       "Unsupported batch transaction_mode"
     );
-    let items = params
-      .get("items")
-      .and_then(Value::as_array)
-      .context("batch items are required")?;
-    ensure!(
-      !items.is_empty() && items.len() <= 1000,
-      "batch must contain 1–1000 items"
-    );
-    let mut ids = HashSet::new();
-    for item in items {
-      let id = item
-        .get("id")
-        .and_then(Value::as_str)
-        .context("batch item id is required")?;
-      ensure!(
-        !id.is_empty() && ids.insert(id),
-        "batch item IDs must be unique and nonempty"
-      );
-      let method = item
-        .get("method")
-        .and_then(Value::as_str)
-        .context("batch method is required")?;
-      let (d, op) = method.split_once('.').context("invalid batch method")?;
-      let (r, v) = resource_operation(d, op);
-      ensure!(READ.contains(&(r, v)), "Unsupported batch query: {method}");
-      ensure!(
-        item.get("arguments").is_some_and(Value::is_object),
-        "batch arguments must be an object"
-      );
-    }
-    return Ok(());
+    return validate_batch_items(params, "query", |d, op| {
+      READ.contains(&resource_operation(d, op))
+    });
   }
   ensure!(
     READ.contains(&(domain, operation)),
@@ -533,35 +511,14 @@ pub(crate) async fn query(backend: &McpBackend, md5: Option<&str>, arg: &Value) 
   );
   let (domain, operation) = mcp_operation(domain, operation);
   if all && session_required(domain, &operation) {
-    let mut page_params = params.clone();
-    let mut items = Vec::new();
-    let mut seen = HashSet::new();
-    loop {
-      let page = backend
-        .call(domain, &operation, md5, page_params.clone())
-        .await?;
-      items.extend(
-        page
-          .get("items")
-          .and_then(Value::as_array)
-          .context("list response lacks items")?
-          .iter()
-          .cloned(),
-      );
-      if let Some(cursor) = page.get("next_cursor").and_then(Value::as_str) {
-        ensure!(
-          seen.insert(cursor.to_owned()),
-          "backend repeated a pagination cursor"
-        );
-        page_params["page"] = json!({"cursor": cursor, "limit": 1000});
-      } else {
-        ensure!(
-          page.pointer("/scan/complete").and_then(Value::as_bool) != Some(false),
-          "backend scan is incomplete; narrow the address range or retry after analysis"
-        );
-        break;
-      }
-    }
+    let options = ListOptions {
+      initial: None,
+      require_items: true,
+      incomplete_error: Some(
+        "backend scan is incomplete; narrow the address range or retry after analysis",
+      ),
+    };
+    let items = list_pages(backend, domain, &operation, md5, params.clone(), options).await?;
     let coverage = coverage(resource, &params, items.len(), true);
     return Ok(json!({"items": items, "coverage": coverage}));
   }

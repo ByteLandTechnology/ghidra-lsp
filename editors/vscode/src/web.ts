@@ -4,7 +4,7 @@
 import { randomBytes } from 'node:crypto';
 import { pageStyles } from './page-styles';
 import { iconFontStyles } from './icon-font';
-import { viewStyles } from './view-ui';
+import { viewStyles, webviewPopoverScript } from './view-ui';
 import { callIcon, callIcons } from './call-graph-icons';
 import { displayAddress } from './names';
 /** Generic JSON object map used for RPC payloads and webview state. */
@@ -108,7 +108,8 @@ export const button = (label: string, action: string, value?: unknown, variant: 
 export const iconButton = (icon: keyof typeof callIcons, label: string, action: string, value?: unknown, variant = ''): string => `<button class="icon-button${variant ? ` ${variant}` : ''}" type="button" data-action="${escape(action)}"${value === undefined ? '' : ` data-value="${escape(value)}"`} aria-label="${escape(label)}" title="${escape(label)}">${callIcon(icon)}</button>`;
 /** Render an expandable overflow menu containing secondary actions. */
 export function actionsMenu(contents: string, id = 'inspector-more'): string {
-    return `<details class="inspector-menu" id="${escape(id)}" data-action-menu><summary aria-label="More actions" title="More actions">${callIcon('more')}</summary><div class="inspector-menu-content" role="group" aria-label="More actions">${contents}</div></details>`;
+    const safeId = escape(id);
+    return `<button class="icon-button inspector-menu-button" id="${safeId}-button" type="button" popovertarget="${safeId}" aria-label="More actions" title="More actions">${callIcon('more')}</button><div class="inspector-menu-content" id="${safeId}" popover="auto" data-popover-menu data-action-menu role="group" aria-label="More actions">${contents}</div>`;
 }
 /** Formats addresses, offsets, storage locations, and raw identifiers as code. */
 export const code = (value: unknown): string => {
@@ -149,17 +150,18 @@ export function page(title: string, eyebrow: string, subtitle: unknown, body: st
     const inspectorSame=!!inspectorState.kind&&['kind','md5','path','entry','id'].every(key=>inspectorState[key]===inspectorPrevious[key]);
     const inspectorNavigated=!!inspectorState.kind&&!!inspectorPrevious.kind&&!inspectorSame&&!document.body.classList.contains('is-busy');
     {const used={};for(const control of document.querySelectorAll('button,summary,input,select,textarea')){if(control.id){continue}const base=('f-'+(control.dataset.action||control.tagName.toLowerCase())+'-'+(control.dataset.value||control.getAttribute('aria-label')||control.textContent.trim()||'')).slice(0,64).replace(/[^\\w-]/g,'_');used[base]=(used[base]||0)+1;control.id=used[base]>1?base+'-'+used[base]:base}}
-    const inspectorDetails=[...document.querySelectorAll('details:not([data-action-menu])')];
+    const inspectorDetails=[...document.querySelectorAll('details')];
     let inspectorPersistFrame=0;
-    const persistInspectorUi=()=>{if(inspectorPersistFrame){cancelAnimationFrame(inspectorPersistFrame);inspectorPersistFrame=0}vscode.setState({...inspectorState,ui:{scrollX:window.scrollX,scrollY:window.scrollY,focusId:document.activeElement?.id,details:inspectorDetails.map(details=>details.open)}})};
+    const {focusId:initialInspectorFocusId,...persistedInspectorState}=inspectorState;
+    const persistInspectorUi=()=>{if(inspectorPersistFrame){cancelAnimationFrame(inspectorPersistFrame);inspectorPersistFrame=0}vscode.setState({...persistedInspectorState,ui:{scrollX:window.scrollX,scrollY:window.scrollY,focusId:document.activeElement?.id,details:inspectorDetails.map(details=>details.open)}})};
     const scheduleInspectorPersist=()=>{if(!inspectorPersistFrame){inspectorPersistFrame=requestAnimationFrame(()=>{inspectorPersistFrame=0;persistInspectorUi()})}};
+    ${webviewPopoverScript}
     if(inspectorSame){inspectorDetails.forEach((details,index)=>{if(typeof inspectorPrevious.ui?.details?.[index]==='boolean'){details.open=inspectorPrevious.ui.details[index]}})}
     for(const details of inspectorDetails){details.addEventListener('toggle',persistInspectorUi)}
-    document.addEventListener('click',event=>{const button=event.target.closest('[data-action]');if(button&&!button.disabled){const menu=button.closest('[data-action-menu]');if(menu){menu.open=false}persistInspectorUi();vscode.postMessage({action:button.dataset.action,value:button.dataset.value})}for(const menu of document.querySelectorAll('[data-action-menu][open]')){if(!menu.contains(event.target)){menu.open=false}}});
-    for(const menu of document.querySelectorAll('[data-action-menu]')){menu.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();menu.open=false;menu.querySelector('summary').focus();return}if(!['ArrowDown','ArrowUp','ArrowLeft','ArrowRight','Home','End'].includes(event.key)){return}event.preventDefault();menu.open=true;const items=[...menu.querySelectorAll('button:not(:disabled)')],index=items.indexOf(document.activeElement),forward=event.key==='ArrowDown'||event.key==='ArrowRight',next=event.key==='Home'?0:event.key==='End'?items.length-1:forward?(index+1)%items.length:(index<=0?items.length-1:index-1);items[next]?.focus()});menu.addEventListener('focusout',()=>requestAnimationFrame(()=>{if(!menu.contains(document.activeElement)){menu.open=false}}))}
+    document.addEventListener('click',event=>{const button=event.target.closest('[data-action]');if(button&&!button.disabled){const menu=button.closest('[data-action-menu]');if(menu){focusInvokerAndClose(menu)}persistInspectorUi();vscode.postMessage({action:button.dataset.action,value:button.dataset.value,focusId:document.activeElement?.id||''})}});
     window.addEventListener('scroll',scheduleInspectorPersist,{passive:true});document.addEventListener('focusin',persistInspectorUi);
     window.addEventListener('message',event=>{const status=document.getElementById('busy-status');if(event.data?.action==='busy'){document.body.classList.add('is-busy');document.body.setAttribute('aria-busy','true');status.textContent='Loading'}else if(event.data?.action==='error'){document.body.classList.remove('is-busy');document.body.removeAttribute('aria-busy');status.textContent='';document.getElementById('error').textContent=event.data.error||''}});
     document.addEventListener('keydown',event=>{if(!event.altKey||event.ctrlKey||event.metaKey||!['ArrowLeft','ArrowRight'].includes(event.key)){return}const target=document.querySelector(event.key==='ArrowLeft'?'[data-action="back"]':'[data-action="forward"]');if(target){event.preventDefault();target.click()}});
-    requestAnimationFrame(()=>{if(inspectorSame){window.scrollTo(inspectorPrevious.ui?.scrollX||0,inspectorPrevious.ui?.scrollY||0);if(inspectorPrevious.ui?.focusId){document.getElementById(inspectorPrevious.ui.focusId)?.focus({preventScroll:true})}}else if(inspectorNavigated&&inspectorPrevious.ui?.focusId){document.querySelector('h1')?.focus({preventScroll:true})}if(!document.body.classList.contains('is-busy')){persistInspectorUi()}document.body.dataset.viewReady='true'});
+    requestAnimationFrame(()=>{const savedFocusId=(inspectorSame&&inspectorPrevious.ui?.focusId)||initialInspectorFocusId||'';if(inspectorSame){window.scrollTo(inspectorPrevious.ui?.scrollX||0,inspectorPrevious.ui?.scrollY||0)}if(savedFocusId&&(inspectorSame||initialInspectorFocusId)){restorePopoverAwareFocus(savedFocusId)}else if(inspectorNavigated&&inspectorPrevious.ui?.focusId){document.querySelector('h1')?.focus({preventScroll:true})}if(!document.body.classList.contains('is-busy')){persistInspectorUi()}document.body.dataset.viewReady='true'});
     ${script}</script></body></html>`;
 }

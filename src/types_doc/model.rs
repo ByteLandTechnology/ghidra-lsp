@@ -410,7 +410,7 @@ fn format_model_in_canonical_order(model: &Value) -> String {
 pub(super) fn render_type_jsonc(data: &Value, program: &str) -> String {
   let reason = readonly_type_reason(data);
   let path_str = data.get("path").and_then(Value::as_str).unwrap_or("");
-  let raw_kind = data.get("kind").and_then(Value::as_str).unwrap_or("");
+  let kind = kind_of(data);
   let mut out = format!(
     "// {} \u{00b7} {}\n",
     sanitize_comment_line(program),
@@ -418,7 +418,13 @@ pub(super) fn render_type_jsonc(data: &Value, program: &str) -> String {
   );
   if let Some(reason) = reason {
     out.push_str(&format!("// Read-only: {reason}\n"));
-    out.push_str(&serde_json::to_string_pretty(data).unwrap_or_else(|_| "{}".to_owned()));
+    let mut normalized = data.clone();
+    if let Some(obj) = normalized.as_object_mut()
+      && obj.get("kind").is_some_and(Value::is_string)
+    {
+      obj.insert("kind".to_owned(), json!(kind));
+    }
+    out.push_str(&serde_json::to_string_pretty(&normalized).unwrap_or_else(|_| "{}".to_owned()));
   } else {
     out.push_str(
       "// Save to update the Ghidra project. VS Code Auto Save also saves this document.\n",
@@ -426,7 +432,7 @@ pub(super) fn render_type_jsonc(data: &Value, program: &str) -> String {
     out.push_str(
       "// Keep existing ids; omit id for new members. path and kind identify this type.\n",
     );
-    if matches!(raw_kind, "struct" | "structure") {
+    if kind == "struct" {
       out.push_str(
         "// Insert/remove follows Ghidra layout rules; saved offsets are read back from Ghidra.\n",
       );
