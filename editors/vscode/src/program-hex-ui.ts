@@ -12,7 +12,7 @@ import { iconFontStyles } from './icon-font';
 import { displayAddress } from './names';
 import { pageStyles } from './page-styles';
 import { addrSpan, programViewStyles } from './program-views-styles';
-import { viewStyles, webviewShortcutScript } from './view-ui';
+import { disclosureMenuScript, viewStyles, webviewShortcutScript } from './view-ui';
 import { escape } from './web';
 
 /** Short byte-order identifier used by the Data Inspector pill toggle. */
@@ -213,20 +213,20 @@ ${programViewStyles}
 <h1 class="page-context">${escape(payload.title)}</h1>
 <div class="toolbar pv-toolbar" role="group" aria-label="Hex navigation">
   <div class="pv-nav" role="group" aria-label="History and window">
-    <button type="button" class="icon-button" data-action="navBack" aria-label="Back" title="Back (Alt+Left)"${payload.canBack ? '' : ' disabled'}>${callIcon('back')}</button>
-    <button type="button" class="icon-button" data-action="navForward" aria-label="Forward" title="Forward (Alt+Right)"${payload.canForward ? '' : ' disabled'}>${callIcon('forward')}</button>
+    <button id="nav-back" type="button" class="icon-button" data-action="navBack" aria-label="Back" title="Back (Alt+Left)"${payload.canBack ? '' : ' disabled'}>${callIcon('back')}</button>
+    <button id="nav-forward" type="button" class="icon-button" data-action="navForward" aria-label="Forward" title="Forward (Alt+Right)"${payload.canForward ? '' : ' disabled'}>${callIcon('forward')}</button>
     <span class="pv-step" id="pv-step"${payload.hasMoreBefore || payload.hasMoreAfter ? '' : ' hidden'}><span class="pv-divider" aria-hidden="true"></span><button type="button" id="pager-before" class="icon-button" data-action="loadBefore" aria-label="Previous window" title="Previous window"${payload.hasMoreBefore ? '' : ' disabled'}>${callIcon('up')}</button><button type="button" id="pager-after" class="icon-button" data-action="loadAfter" aria-label="Next window" title="Next window"${payload.hasMoreAfter ? '' : ' disabled'}>${callIcon('down')}</button></span>
   </div>
-  <form id="goto"><input id="address" aria-label="Address" value="${escape(displayAddress(payload.cursorAddress))}" placeholder="Address or +offset…"><button type="submit" aria-label="Go to address" title="Go to address">${callIcon('right')}</button></form>
+  <form id="goto"><input id="address" aria-label="Address" value="${escape(displayAddress(payload.cursorAddress))}" placeholder="Address or +offset…"><button id="goto-submit" type="submit" aria-label="Go to address" title="Go to address">${callIcon('right')}</button></form>
   <div class="browser-search">${callIcon('search')}<input class="search" id="search" aria-label="Filter displayed rows" placeholder="Filter hex, ASCII, or block…"></div>
   <div class="pv-tools" role="group" aria-label="Hex tools">
     <button type="button" id="sync-toggle" class="icon-button" data-action="toggleSync" aria-pressed="${payload.syncEnabled}" aria-label="Sync cursor with other Ghidra views" title="Sync cursor with other Ghidra views">${callIcon('link')}</button>
-    <button type="button" class="icon-button" data-action="openListingBeside" aria-label="Open Program Listing beside" title="Open Program Listing beside">${callIcon('listing')}</button>
+    <button id="open-listing-beside" type="button" class="icon-button" data-action="openListingBeside" aria-label="Open Program Listing beside" title="Open Program Listing beside">${callIcon('listing')}</button>
     <details id="page-options" class="page-options">
-      <summary aria-label="View options" title="View options">${callIcon('more')}</summary>
+      <summary id="page-options-summary" aria-label="View options" title="View options">${callIcon('more')}</summary>
       <div class="page-options-content">
         <div class="page-options-actions" role="group" aria-label="Page actions">
-          <button type="button" class="icon-button" data-action="refresh" aria-label="Refresh" title="Refresh">${callIcon('refresh')}</button>
+          <button id="page-options-refresh" type="button" class="icon-button" data-action="refresh" aria-label="Refresh" title="Refresh">${callIcon('refresh')}</button>
         </div>
         ${blockOptions ? `<label class="pv-option-row">Memory block<select id="block-select" aria-label="Memory block">${blockOptions}</select></label>` : ''}
         <label class="pv-option-row">Byte order<select id="hex-endian" aria-label="Byte order"><option value="little"${payload.endian === 'little' ? ' selected' : ''}>Little-endian</option><option value="big"${payload.endian === 'big' ? ' selected' : ''}>Big-endian</option></select></label>
@@ -278,7 +278,6 @@ const memoryMap = document.querySelector('.memory-map');
 const search = document.getElementById('search');
 const addressInput = document.getElementById('address');
 const blockSelect = document.getElementById('block-select');
-const pageOptions = document.getElementById('page-options');
 const syncToggle = document.getElementById('sync-toggle');
 const endianSelect = document.getElementById('hex-endian');
 const widthSelect = document.getElementById('hex-row-width');
@@ -288,7 +287,6 @@ const pagerBefore = document.getElementById('pager-before');
 const pagerAfter = document.getElementById('pager-after');
 const scopeNote = document.getElementById('hex-scope-note');
 const more = document.getElementById('more-actions');
-const moreSummary = document.getElementById('more-summary');
 const icons = ${JSON.stringify(callIcons)};
 const toInspectorEndian = val => (val === 'big' || val === 'be') ? 'be' : 'le';
 const toProgramEndian = val => (val === 'big' || val === 'be') ? 'big' : 'little';
@@ -422,6 +420,7 @@ const renderInspector = (startAddr, len) => {
   applyInspector(startAddr, data.meta, data.rows);
 };
 
+${disclosureMenuScript}
 const persist = () => {
   vscode.setState({
     ...state,
@@ -434,6 +433,7 @@ const persist = () => {
     inspectorEndian: toInspectorEndian(state.endian),
     bytesPerRow: state.bytesPerRow,
     scrollTop: hexWrap.scrollTop,
+    focusId: resolveDisclosureFocusId(document.activeElement),
   });
 };
 ${webviewShortcutScript}
@@ -445,8 +445,10 @@ const updateSelectionTools = () => {
   const activeMap = memoryMap?.querySelector('tr.selected');
   const visible = (!!activeHex && !activeHex.closest('tr')?.hidden && !hexMain.hidden) || (!!activeMap && !activeMap.hidden && memoryMap?.open);
   bar.hidden = !visible;
+  if (!visible) more.open = false;
   document.body.classList.toggle('has-selection', visible);
   if (!visible) return;
+  const activeAction = bar.contains(document.activeElement) ? document.activeElement.dataset.action : '';
 
   const isBlock = selectedKind === 'block' || (!!activeMap && !activeHex);
   const curBlock = findBlockFor(selected);
@@ -482,6 +484,8 @@ const updateSelectionTools = () => {
     }));
   }
   more.hidden = !extra.length;
+  if (more.hidden) more.open = false;
+  if (activeAction) document.getElementById('action-' + activeAction)?.focus({ preventScroll: true });
 };
 
 const highlightRange = (startAddr, len = 1, notify = true, scroll = true) => {
@@ -690,10 +694,12 @@ memoryMap?.querySelector('tbody')?.addEventListener('dblclick', event => {
 });
 memoryMap?.addEventListener('toggle', () => { applyFilter(); persist(); });
 
+bindDisclosureMenus(persist);
 document.addEventListener('click', event => {
   const btn = event.target.closest('button[data-action]');
   if (btn && !btn.disabled) {
     const act = btn.dataset.action;
+    if (closeDisclosureMenusForCommand(btn)) persist();
     if (['navBack', 'navForward', 'refresh', 'loadBefore', 'loadAfter', 'toggleSync', 'openListingBeside'].includes(act)) {
       vscode.postMessage({ action: act });
     } else if (act === 'copyAddress' && selected) {
@@ -701,12 +707,9 @@ document.addEventListener('click', event => {
     } else if (selected) {
       vscode.postMessage({ action: act, address: selected, kind: selectedKind });
     }
-    if (more && more.contains(btn)) { more.open = false; moreSummary.focus({ preventScroll: true }); }
-    pageOptions.open = false;
     return;
   }
-  if (pageOptions.open && !pageOptions.contains(event.target)) pageOptions.open = false;
-  if (more.open && !more.contains(event.target)) more.open = false;
+  closeDisclosureMenusOutside(event.target);
 });
 
 document.getElementById('goto').addEventListener('submit', event => {
@@ -715,7 +718,11 @@ document.getElementById('goto').addEventListener('submit', event => {
   if (val) vscode.postMessage({ action: 'goto', address: val });
 });
 blockSelect?.addEventListener('change', () => {
-  if (blockSelect.value) { pageOptions.open = false; vscode.postMessage({ action: 'goto', address: blockSelect.value, pushHistory: true }); }
+  if (blockSelect.value) {
+    closeDisclosureMenusForCommand(blockSelect);
+    persist();
+    vscode.postMessage({ action: 'goto', address: blockSelect.value, pushHistory: true });
+  }
 });
 search.addEventListener('input', () => { applyFilter(); persist(); });
 document.getElementById('clear-filter').addEventListener('click', () => { search.value = ''; applyFilter(); persist(); search.focus(); });
@@ -743,10 +750,8 @@ document.addEventListener('keydown', event => {
   }
   if (isModShortcut(event, 'f')) { event.preventDefault(); search.focus(); search.select(); return; }
   if (isModShortcut(event, 'g')) { event.preventDefault(); addressInput.focus(); addressInput.select(); return; }
-  if (event.key === 'Escape') {
-    if (pageOptions.open) { pageOptions.open = false; pageOptions.querySelector('summary').focus(); return; }
-    if (more.open) { more.open = false; moreSummary.focus(); return; }
-    if (search.value) { search.value = ''; applyFilter(); persist(); return; }
+  if (event.key === 'Escape' && search.value) {
+    search.value = ''; applyFilter(); persist(); return;
   }
   if (event.key === '/' && canUseSingleKeyShortcut(event)) { event.preventDefault(); search.focus(); search.select(); }
   else if ((event.key || '').toLowerCase() === 'g' && canUseSingleKeyShortcut(event)) { event.preventDefault(); addressInput.focus(); addressInput.select(); }
@@ -794,6 +799,7 @@ window.addEventListener('message', event => {
 applyFilter();
 highlightRange(selected, selectionLength, false, !samePage);
 requestAnimationFrame(() => {
+  if (samePage && previous.focusId) restoreDisclosureFocus(previous.focusId);
   persist();
   document.body.dataset.viewReady = 'true';
 });

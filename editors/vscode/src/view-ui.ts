@@ -344,6 +344,130 @@ window.addEventListener('message',event=>{
 syncShortcutHints();
 `;
 
+/** Close disclosure menus, move focus with arrow keys, and keep focus on menu triggers. */
+export const disclosureMenuScript = String.raw`
+const disclosureMenuSelector='#page-options,#more-actions,[data-action-menu]';
+const getDisclosureMenus=()=>[...document.querySelectorAll(disclosureMenuSelector)];
+const getDisclosureSummary=menu=>menu?.querySelector(':scope>summary')||menu?.querySelector('summary')||null;
+const resolveDisclosureFocusElement=element=>{
+  if(!(element instanceof Element)||typeof element.focus!=='function'){return null}
+  const closedMenu=element.closest(disclosureMenuSelector+':not([open])');
+  if(closedMenu){
+    const summary=getDisclosureSummary(closedMenu);
+    return summary&&!closedMenu.closest('[hidden]')?summary:null;
+  }
+  const closedDetails=element.closest('details:not([open])');
+  if(closedDetails){
+    const summary=getDisclosureSummary(closedDetails);
+    if(element!==summary){return summary&&!closedDetails.closest('[hidden]')?summary:null}
+  }
+  return element.closest('[hidden]')?null:element;
+};
+const resolveDisclosureFocusId=element=>resolveDisclosureFocusElement(element)?.id||'';
+const restoreDisclosureFocus=focusId=>{
+  if(!focusId){return false}
+  const target=resolveDisclosureFocusElement(document.getElementById(focusId));
+  if(!target){return false}
+  target.focus({preventScroll:true});
+  return document.activeElement===target;
+};
+const closeDisclosureMenu=(menu,returnFocus=false)=>{
+  if(!menu){return false}
+  menu.open=false;
+  const summary=returnFocus&&!menu.hidden&&!menu.closest('[hidden]')?getDisclosureSummary(menu):null;
+  summary?.focus({preventScroll:true});
+  return Boolean(summary);
+};
+const closeDisclosureMenusOutside=target=>{
+  for(const menu of getDisclosureMenus()){
+    if(menu.open&&(!(target instanceof Node)||!menu.contains(target))){menu.open=false}
+  }
+};
+const closeDisclosureMenusForCommand=control=>{
+  const owner=control instanceof Element?control.closest(disclosureMenuSelector):null;
+  for(const menu of getDisclosureMenus()){
+    if(menu===owner){closeDisclosureMenu(menu,true)}
+    else if(menu.open){menu.open=false}
+  }
+  return Boolean(owner);
+};
+const dismissOpenDisclosureMenusOnEscape=()=>{
+  const openMenus=getDisclosureMenus().filter(menu=>menu.open);
+  if(!openMenus.length){return false}
+  const active=document.activeElement;
+  const owner=openMenus.find(menu=>active instanceof Node&&menu.contains(active));
+  for(const menu of openMenus){menu.open=false}
+  if(owner){getDisclosureSummary(owner)?.focus({preventScroll:true})}
+  return true;
+};
+const bindDisclosureMenus=onPersist=>{
+  let tabbingMenu=null,pointerMenu=null;
+  const clearPointer=()=>requestAnimationFrame(()=>{pointerMenu=null});
+  document.addEventListener('pointerdown',event=>{
+    pointerMenu=event.target instanceof Element?event.target.closest(disclosureMenuSelector):null;
+  },true);
+  document.addEventListener('pointerup',clearPointer,true);
+  document.addEventListener('pointercancel',clearPointer,true);
+  for(const menu of getDisclosureMenus()){
+    if(menu.dataset.disclosureBound==='true'){continue}
+    menu.dataset.disclosureBound='true';
+    menu.addEventListener('focusout',event=>{
+      if(!document.hasFocus()&&tabbingMenu!==menu){return}
+      const next=event.relatedTarget;
+      if(next instanceof Node){
+        if(!menu.contains(next)&&menu.open){menu.open=false;onPersist?.()}
+        return;
+      }
+      if(tabbingMenu===menu){
+        tabbingMenu=null;
+        const active=document.activeElement;
+        if(menu.open&&(!(active instanceof Node)||!menu.contains(active))){menu.open=false;onPersist?.()}
+        return;
+      }
+      if(pointerMenu===menu){return}
+      requestAnimationFrame(()=>{
+        if(!document.hasFocus()||pointerMenu===menu){return}
+        const active=document.activeElement;
+        if(menu.open&&(!(active instanceof Node)||!menu.contains(active))){menu.open=false;onPersist?.()}
+      });
+    });
+    menu.addEventListener('keydown',event=>{
+      pointerMenu=null;
+      if(event.key==='Tab'&&!event.altKey&&!event.ctrlKey&&!event.metaKey){
+        tabbingMenu=menu;
+        requestAnimationFrame(()=>{if(tabbingMenu===menu){tabbingMenu=null}});
+        return;
+      }
+      if(event.defaultPrevented||event.altKey||event.ctrlKey||event.metaKey){return}
+      if(!['ArrowDown','ArrowUp','ArrowLeft','ArrowRight','Home','End'].includes(event.key)){return}
+      if(event.target instanceof Element&&event.target.closest('input,select,textarea')){return}
+      const buttons=[...menu.querySelectorAll('button:not(:disabled)')].filter(btn=>!btn.hidden&&!btn.closest('[hidden]'));
+      if(!buttons.length){return}
+      event.preventDefault();
+      event.stopPropagation();
+      menu.open=true;
+      const index=buttons.indexOf(document.activeElement);
+      const forward=event.key==='ArrowDown'||event.key==='ArrowRight';
+      const next=event.key==='Home'?0:event.key==='End'?buttons.length-1:forward?(index+1)%buttons.length:(index<=0?buttons.length-1:index-1);
+      buttons[next]?.focus({preventScroll:true});
+      onPersist?.();
+    });
+  }
+  document.addEventListener('focusin',event=>{
+    closeDisclosureMenusOutside(event.target);
+    onPersist?.();
+  });
+  document.addEventListener('keydown',event=>{
+    if(event.defaultPrevented||event.altKey||event.ctrlKey||event.metaKey||event.key!=='Escape'){return}
+    if(dismissOpenDisclosureMenusOnEscape()){
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      onPersist?.();
+    }
+  },true);
+};
+`;
+
 /** Client-side script for filterable browser tables and keyboard row navigation. */
 export const browserViewScript = String.raw`
     (()=>{
@@ -351,6 +475,5 @@ export const browserViewScript = String.raw`
       for(const table of document.querySelectorAll('.table-wrap')){table.addEventListener('scroll',schedulePersist,{passive:true});if(!table.querySelector('tbody tr')){table.hidden=true;const next=table.nextElementSibling;const counted=/\(0\)\s*$/.test(table.closest('section')?.querySelector('h2')?.textContent||'');if(!counted&&!next?.classList.contains('empty')){const empty=document.createElement('p');empty.className='table-empty';empty.hidden=!!search.value;empty.setAttribute('role','status');empty.textContent='No entries.';table.after(empty)}}}
       document.getElementById('clear-filter').addEventListener('click',()=>{search.value='';filter();persist();search.focus()});
       for(const row of selectable){row.addEventListener('keydown',event=>{if(!['ArrowDown','ArrowUp','Home','End'].includes(event.key)){return}const rows=[...row.closest('tbody').querySelectorAll('tr[data-address]:not([hidden]),tr[data-entry]:not([hidden])')],index=rows.indexOf(row),next=event.key==='Home'?0:event.key==='End'?rows.length-1:Math.max(0,Math.min(rows.length-1,index+(event.key==='ArrowDown'?1:-1)));event.preventDefault();rows[next]?.focus();rows[next]?.scrollIntoView({block:'nearest'})})}
-      more?.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();more.open=false;moreSummary.focus();return}if(!['ArrowDown','ArrowUp','ArrowLeft','ArrowRight','Home','End'].includes(event.key)){return}event.preventDefault();more.open=true;const buttons=[...more.querySelectorAll('button:not(:disabled)')],index=buttons.indexOf(document.activeElement),next=event.key==='Home'?0:event.key==='End'?buttons.length-1:(event.key==='ArrowDown'||event.key==='ArrowRight')?(index+1)%buttons.length:(index<=0?buttons.length-1:index-1);buttons[next]?.focus()});
     })();
 `;
