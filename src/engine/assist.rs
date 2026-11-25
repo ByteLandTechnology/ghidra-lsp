@@ -15,7 +15,8 @@ use tower_lsp_server::ls_types::{
 use super::{Engine, find_function_symbol, format_type_markdown};
 use crate::backend::list_all;
 use crate::document::{
-  Document, Symbol, canonical_virtual_uri, data_type_name, offset, virtual_uri,
+  Document, Symbol, canonical_virtual_uri, contains_case_insensitive, data_type_name, offset,
+  starts_with_case_insensitive, virtual_uri,
 };
 
 /// Built-in decompiler type names offered alongside program and local symbols.
@@ -86,24 +87,33 @@ impl Engine {
       .filter(|s| s.local())
       .cloned()
       .collect();
+    let session_symbols = self.symbols(&md5).await?;
+    let local_qualified: Vec<String> = locals.iter().map(Symbol::qualified).collect();
     let mut seen = HashSet::new();
     let mut items = vec![];
-    for symbol in locals.into_iter().chain(
-      self
-        .symbols(&md5)
-        .await?
-        .into_iter()
-        .filter(Symbol::eligible),
-    ) {
-      let display = symbol.display_name();
-      if !(symbol.name.to_lowercase().starts_with(&prefix_lower)
-        || symbol.full_name().to_lowercase().contains(&prefix_lower))
+    for (symbol, qualified) in locals
+      .iter()
+      .zip(local_qualified.iter().map(String::as_str))
+      .chain(
+        session_symbols
+          .iter_with_qualified()
+          .filter(|(s, _)| s.eligible()),
+      )
+    {
+      let full = symbol
+        .demangled_name
+        .as_deref()
+        .filter(|name| !name.is_empty())
+        .unwrap_or(qualified);
+      if !(starts_with_case_insensitive(&symbol.name, &prefix_lower)
+        || contains_case_insensitive(full, &prefix_lower))
         || !seen.insert(symbol.id.clone())
       {
         continue;
       }
+      let display = symbol.display_name();
       let detail = self
-        .local_detail(&symbol)
+        .local_detail(symbol)
         .map(|v| format!("{} · {}", data_type_name(&v["data_type"]), symbol.kind))
         .unwrap_or_else(|| format!("{} · {}", symbol.kind, symbol.address));
       items.push(CompletionItem {

@@ -189,6 +189,14 @@ fn bind_native_local_spans(
     .into_iter()
     .filter_map(|(bound_id, raw_ids)| (raw_ids.len() > 1).then(|| bound_id.to_owned()))
     .collect();
+  let mut local_ids: HashMap<(&str, &str), Option<&str>> =
+    HashMap::with_capacity(local_symbols.len());
+  for binding in local_symbols {
+    local_ids
+      .entry((binding.symbol.kind.as_str(), binding.symbol.name.as_str()))
+      .and_modify(|slot| *slot = None)
+      .or_insert(Some(binding.symbol.id.as_str()));
+  }
 
   for span in spans {
     if !matches!(span.token.kind.as_str(), "variable" | "parameter") {
@@ -237,10 +245,11 @@ fn bind_native_local_spans(
           "kind": kind,
         }))
       } else if !native.id.starts_with("parameter:") {
-        local_symbols
-          .iter()
-          .find(|b| b.symbol.kind == kind && b.symbol.name == target_name)
-          .and_then(|b| local_details.get(&b.symbol.id).cloned())
+        local_ids
+          .get(&(kind, target_name))
+          .copied()
+          .flatten()
+          .and_then(|id| local_details.get(id).cloned())
       } else {
         None
       };

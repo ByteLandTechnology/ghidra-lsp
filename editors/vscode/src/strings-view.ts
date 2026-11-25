@@ -3,6 +3,7 @@
 
 import { displayAddress } from './names';
 import * as vscode from 'vscode';
+import { countLabel, inlineText, treeAccessibility } from './a11y';
 import { Call } from './memory';
 import { ProgramContext, viewDescription } from './context';
 import { formatFriendlyError } from './error';
@@ -34,7 +35,7 @@ export class StringsView implements vscode.TreeDataProvider<vscode.TreeItem>, vs
 
     /** Update the tree view header description with count and optional program name. */
     private syncDescription(): void {
-        this.view.description = viewDescription(this.context, this.md5, this.count);
+        this.view.description = viewDescription(this.context, this.md5, this.count, 'string');
     }
 
     /** Create the Strings sidebar tree view and bind visibility and session listeners. */
@@ -96,13 +97,18 @@ export class StringsView implements vscode.TreeDataProvider<vscode.TreeItem>, vs
                     const label = item.value.replace(/\r/g, '\\r').replace(/\n/g, '\\n').replace(/\t/g, '\\t') || '""';
                     const node = new vscode.TreeItem(label);
                     node.id = `string:${md5}:${item.address}`;
-                    node.description = displayAddress(item.address);
-                    node.tooltip = `${item.value}\n\n${item.address} · ${item.length} bytes · ${item.type}`;
+                    const parsedLength = Number(item.length);
+                    const lengthLabel = item.length
+                        ? (Number.isFinite(parsedLength) ? countLabel(parsedLength, 'byte') : `${item.length} bytes`)
+                        : '';
+                    node.description = [displayAddress(item.address), lengthLabel, item.type].filter(Boolean).join(' · ');
+                    node.tooltip = `${item.value}\n\n${[item.address, lengthLabel, item.type].filter(Boolean).join(' · ')}`;
                     node.iconPath = new vscode.ThemeIcon('symbol-string');
                     node.contextValue = 'ghidra.string';
                     // Keep ownership on the item for native context-menu commands as well.
                     Object.assign(node, { md5, address: item.address });
                     node.command = { command: 'ghidraLsp.openString', title: 'Open string', arguments: [md5, item.address] };
+                    node.accessibilityInformation = treeAccessibility(label, node.description, 'Open string');
                     return node;
                 });
                 this.count = result.items.length;
@@ -110,19 +116,31 @@ export class StringsView implements vscode.TreeDataProvider<vscode.TreeItem>, vs
                 this.view.message = undefined;
                 if (!this.nodes.length) {
                     const empty = new vscode.TreeItem('No defined strings');
+                    empty.id = `strings:empty:${md5}`;
+                    empty.description = 'Analyze program, then refresh';
                     empty.iconPath = new vscode.ThemeIcon('info');
                     empty.tooltip = 'Ghidra has not defined any strings in the default address space. Analyze the program, then refresh this view.';
+                    empty.accessibilityInformation = treeAccessibility(
+                        'No defined strings',
+                        empty.description,
+                        'Ghidra has not defined any strings in the default address space',
+                    );
                     this.nodes = [empty];
                 }
                 this.dirty = false;
             } catch (error) {
                 if (generation !== this.generation) { return; }
+                const cause = formatFriendlyError(error);
                 this.count = undefined;
                 this.syncDescription();
-                this.view.message = `Could not load strings: ${formatFriendlyError(error)}`;
+                this.view.message = `Could not load strings: ${cause}`;
                 const retry = new vscode.TreeItem('Retry loading strings');
+                retry.id = `strings:retry:${md5}`;
+                retry.description = inlineText(cause, 48);
+                retry.tooltip = `Could not load strings: ${cause}\nClick to retry loading strings.`;
                 retry.iconPath = new vscode.ThemeIcon('refresh');
                 retry.command = { command: 'ghidraLsp.refreshStrings', title: 'Retry loading strings' };
+                retry.accessibilityInformation = treeAccessibility('Retry loading strings', retry.description, cause, 'Click to refresh strings');
                 this.nodes = [retry];
             }
             if (generation === this.generation) { this.changed.fire(); }
