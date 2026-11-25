@@ -49,6 +49,31 @@ export const callColumnsStyles = `
 .call-column-row[aria-busy="true"] .call-column-chevron{opacity:.4}
 .sr-only{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 @media(max-width:640px){.call-column-navigation{padding:8px 10px;gap:10px}.call-page .call-column{flex-basis:min(280px,calc(100% - 24px));width:min(280px,calc(100% - 24px))}.call-page .call-view-switch button,.call-page .call-direction button{padding:0 7px;gap:4px;font-size:11px}}
+.call-page .call-view-switch button{gap:5px;padding:0 9px}
+.call-page .call-view-switch [aria-pressed="true"],.call-page .call-direction [aria-pressed="true"]{border:2px solid var(--ghidra-active-border)}
+.call-column-pick[aria-pressed="true"]::before{color:var(--ghidra-focus);font-size:12px}
+.call-column-row:focus-within .call-column-pick[aria-pressed="true"]::before{color:inherit}
+.call-column-row.is-selected{outline:2px solid var(--ghidra-active-border);outline-offset:-2px}
+.call-page .call-column-pick:focus-visible{outline:2px solid var(--ghidra-focus);outline-offset:-2px}
+body.call-page:is(.vscode-high-contrast,.vscode-high-contrast-light) .call-column-row>.call-column-code{opacity:1;transition:none}
+body.call-page:is(.vscode-high-contrast,.vscode-high-contrast-light) :is(.call-column-code,.call-column-source-code,.call-view-switch button:not([aria-pressed="true"]),.call-direction button:not([aria-pressed="true"]),.call-column-trail button){border:1px solid var(--ghidra-hv-border);color:var(--vscode-foreground)}
+body.call-page:is(.vscode-high-contrast,.vscode-high-contrast-light) :is(.call-view-switch [aria-pressed="true"],.call-direction [aria-pressed="true"]){background:var(--vscode-editor-background);color:var(--vscode-foreground);border:2px solid var(--ghidra-active-border)}
+body.call-page:is(.vscode-high-contrast,.vscode-high-contrast-light) :is(.call-column-row.is-selected,.call-column-row:focus-within){background:var(--vscode-editor-background);color:var(--vscode-foreground);outline:2px solid var(--ghidra-active-border);outline-offset:-2px}
+body.call-page:is(.vscode-high-contrast,.vscode-high-contrast-light) .call-column-row:focus-within :is(.call-column-pick,.call-column-code):focus-visible{outline-color:var(--ghidra-active-border)}
+@media(prefers-contrast:more){
+  .call-page .call-column-row>.call-column-code{opacity:1;transition:none}
+  .call-page .call-column-code,.call-page .call-column-source-code,.call-page .call-view-switch button:not([aria-pressed="true"]),.call-page .call-direction button:not([aria-pressed="true"]),.call-page .call-column-trail button{border:1px solid var(--ghidra-hv-border);color:var(--vscode-foreground)}
+}
+@media(forced-colors:active){
+  .call-page .call-column-row>.call-column-code{opacity:1;transition:none}
+  .call-page .call-column-code,.call-page .call-column-source-code,.call-page .call-view-switch button:not([aria-pressed="true"]),.call-page .call-direction button:not([aria-pressed="true"]),.call-page .call-column-trail button{background:ButtonFace;color:ButtonText;border:1px solid var(--ghidra-hv-border)}
+  .call-page .call-view-switch [aria-pressed="true"],.call-page .call-direction [aria-pressed="true"]{background:var(--ghidra-pressed-bg);color:var(--ghidra-selection-fg);border:2px solid var(--ghidra-active-border)}
+  .call-column-row.is-selected,.call-column-row:focus-within{background:var(--ghidra-selection-bg);color:var(--ghidra-selection-fg);outline:2px solid var(--ghidra-active-border);outline-offset:-2px}
+  .call-page .call-column-pick{background:transparent;color:var(--ghidra-selection-fg);border:0}
+  .call-column-pick>.call-icon,.call-column-pick[aria-pressed="true"]::before,.call-column-addr,.call-column-chevron{color:var(--ghidra-muted)}
+  .call-column-row:focus-within :is(.call-column-pick,.call-column-code):focus-visible,.call-page .call-column-pick:focus-visible{outline:2px solid var(--ghidra-focus);outline-offset:-2px}
+}
+@media(max-width:640px){.call-page .call-view-switch button,.call-page .call-direction button{padding:0 6px;gap:3px}}
 `;
 
 /** Both presentations share the toolbar and the owning program, without sharing layout state. */

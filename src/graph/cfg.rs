@@ -9,8 +9,8 @@ use anyhow::Result;
 use serde_json::{Value, json};
 
 use super::{BatchRequest, batch_query, format_function_label, resolve_entry};
-use crate::address::{display_address, paginate_operation, parse_address, same_address};
-use crate::backend::McpBackend;
+use crate::address::{display_address, parse_address, same_address};
+use crate::backend::{McpBackend, list_operation};
 
 /// Computes decoded byte length from a base64 string without storing decoded bytes.
 fn base64_byte_len(data: &str) -> usize {
@@ -476,7 +476,7 @@ pub(crate) async fn control_flow_graph(
     ));
   };
 
-  let raw_instructions = paginate_operation(
+  let raw_instructions = list_operation(
     backend,
     "listing",
     "instruction.list",
