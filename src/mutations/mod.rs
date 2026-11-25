@@ -12,8 +12,8 @@ use serde_json::{Map, Value, json};
 pub(crate) use self::prototype::{
   execute_ops, function_prototype, prepare_function_prototype_ops, prepare_variables_ops,
 };
-use crate::address::{display_address, paginate_operation, same_address};
-use crate::backend::McpBackend;
+use crate::address::{display_address, same_address};
+use crate::backend::{McpBackend, list_operation};
 use crate::workbench;
 
 /// Canonical list of all five Ghidra comment types in fixed order.
@@ -55,7 +55,7 @@ async fn paginate_comment_list(
       "timeout_ms": 30000
     }
   });
-  paginate_operation(backend, "comment", "list", md5, params).await
+  list_operation(backend, "comment", "list", md5, params).await
 }
 
 /// Fetches all five comment kinds at `address` inside session `md5`.

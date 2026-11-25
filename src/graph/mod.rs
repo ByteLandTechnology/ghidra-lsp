@@ -13,8 +13,7 @@ use std::collections::HashMap;
 use anyhow::{Result, bail};
 use serde_json::{Value, json};
 
-use crate::address::paginate_operation;
-use crate::backend::McpBackend;
+use crate::backend::{McpBackend, list_operation};
 use crate::views::symbol_display_name;
 
 pub(crate) use call_graph::{CallExpansion, CallGraphRequest, call_graph_with_cache};
@@ -100,15 +99,14 @@ pub(super) async fn resolve_entry(
   bail!("No function contains {address}. Use Listing or bytes to inspect this address.");
 }
 
-/// Runs one `BatchRequest` directly through `paginate_operation` or `McpBackend::call`.
+/// Runs one `BatchRequest` directly through `list_operation` or `McpBackend::call`.
 async fn execute_single_request(
   backend: &McpBackend,
   md5: &str,
   req: &BatchRequest,
 ) -> Result<Value> {
   if req.all {
-    let items =
-      paginate_operation(backend, req.domain, req.operation, md5, req.params.clone()).await?;
+    let items = list_operation(backend, req.domain, req.operation, md5, req.params.clone()).await?;
     Ok(json!({ "items": items }))
   } else {
     backend
