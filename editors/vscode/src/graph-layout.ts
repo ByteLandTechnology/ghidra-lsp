@@ -117,3 +117,14 @@ export function roundedOrthogonalPath(points: { x: number; y: number }[], radius
 /** Load one shared layout engine only when an actual graph is opened. */
 export const layoutEngine = (): Promise<ELK> => engine ||= import('elkjs/lib/elk.bundled.js')
     .then(({ default: Engine }) => new Engine({ algorithms: ['layered'] }));
+
+/** Format polyline points as a space-separated `x,y` attribute string. */
+export function encodeLayoutPoints(points: { x: number; y: number }[]): string {
+    return points
+        .filter(point => Number.isFinite(point.x) && Number.isFinite(point.y))
+        .map(point => `${formatCoord(point.x)},${formatCoord(point.y)}`)
+        .join(' ');
+}
+
+/** Client-side script with path helpers that update SVG edges after text scaling. */
+export const graphPathScript = `${formatCoord.toString()}\n${isForwardCollinear.toString()}\n${roundedOrthogonalPath.toString()}`;

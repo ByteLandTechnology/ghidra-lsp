@@ -5,22 +5,23 @@
 export const callGraphStyles = `
 .call-page{padding:0}
 .call-page main{padding:0;gap:0;position:relative}
-.call-page .call-topbar{display:flex;align-items:center;gap:10px;min-height:56px;padding:10px 20px;border-bottom:1px solid var(--vscode-panel-border);flex-shrink:0}
-.call-page .call-topbar h1{font-size:14px;letter-spacing:.01em;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin:0}
+.call-page .call-topbar{position:relative;display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;min-height:48px;padding:8px 20px;border-bottom:1px solid var(--vscode-panel-border);flex-shrink:0}
+.call-page .call-topbar h1{font-size:14px;letter-spacing:.01em;flex:1 1 160px;min-width:min(160px,calc(100% - 42px));overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin:0}
 .call-page .call-topbar .call-function-title{display:flex;align-items:center}
-.call-page .call-topbar #call-function-picker{display:flex;align-items:center;gap:8px;max-width:100%;min-width:0;padding:4px 6px;margin-left:-6px;border:0;border-radius:3px;color:inherit;font:inherit;letter-spacing:inherit;text-align:left}
-.call-function-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.call-function-title .call-icon:first-child{color:var(--vscode-descriptionForeground)}
-.call-function-title .call-icon:last-child{font-size:12px;color:var(--vscode-descriptionForeground)}
+.call-page .call-topbar #call-function-picker{display:flex;align-items:center;gap:6px;max-width:100%;min-width:24px;min-height:28px;height:auto;padding:4px 6px;margin:0;border:0;border-radius:3px;color:inherit;font:inherit;letter-spacing:inherit;text-align:left;overflow:hidden}
+.call-function-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.call-function-title .call-icon:first-child{color:var(--vscode-descriptionForeground);flex-shrink:0}
+.call-function-title .call-icon:last-child{font-size:12px;color:var(--vscode-descriptionForeground);flex-shrink:0}
 .call-icon{font:16px call-icons;display:inline-block;line-height:1;vertical-align:middle}
-.call-page .call-icon-button,.call-page #call-menu>summary{width:32px;height:32px;padding:7px;border:0;background:transparent;text-align:center;cursor:pointer;flex-shrink:0}
-.call-page .call-topbar button{background:transparent;border:1px solid var(--vscode-panel-border);height:32px}
+.call-page .call-icon-button,.call-page #call-menu>summary{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;min-width:24px;min-height:24px;padding:6px;border:0;background:transparent;text-align:center;cursor:pointer;flex-shrink:0}
+.call-page .call-topbar button{background:transparent;border:1px solid var(--vscode-panel-border);min-height:28px}
 .call-page .call-topbar .call-icon-button{border:0}
 .call-page button:hover,.call-page #call-menu>summary:hover{background:var(--vscode-toolbar-hoverBackground,var(--vscode-list-hoverBackground))}
 .call-page #call-menu{margin:0;border:0;padding:0;flex-shrink:0}
-.call-page #call-menu>summary{list-style:none;display:block;margin:0}
+.call-page #call-menu>summary{list-style:none;margin:0}
 .call-page #call-menu>summary::-webkit-details-marker{display:none}
-.call-menu-content{position:absolute;z-index:5;right:12px;top:52px;width:min(320px,calc(100vw - 24px));max-height:calc(100vh - 76px);overflow:auto;background:var(--vscode-menu-background,var(--vscode-editor-background));color:var(--vscode-menu-foreground,var(--vscode-foreground));border:1px solid var(--vscode-menu-border,var(--vscode-panel-border));box-shadow:0 4px 12px var(--vscode-widget-shadow);padding:8px;cursor:default}
+.call-menu-content{position:absolute;z-index:5;right:12px;top:calc(100% + 2px);width:min(320px,calc(100vw - 20px));max-height:min(320px,calc(100vh - 120px));overflow:auto;background:var(--vscode-menu-background,var(--vscode-editor-background));color:var(--vscode-menu-foreground,var(--vscode-foreground));border:1px solid var(--vscode-menu-border,var(--vscode-panel-border));box-shadow:0 4px 12px var(--vscode-widget-shadow);padding:8px;cursor:default}
+.call-page #call-menu:not([open]) .call-menu-content{display:none}
 .call-page #call-menu[open] .call-menu-content{animation:call-reveal 140ms cubic-bezier(.2,.8,.2,1)}
 .call-page .selection-tools{display:flex;flex-direction:column;gap:4px;margin:0;padding:4px 0 8px;border-bottom:1px solid var(--vscode-panel-border)}
 .call-page #selection-label{display:flex;flex-direction:column;font-size:12px;line-height:1.6;padding:2px 8px 8px;overflow-wrap:anywhere;color:var(--vscode-descriptionForeground)}
@@ -45,21 +46,23 @@ export const callGraphStyles = `
 .call-page .call-icon-row button,.call-page .selection-buttons button{width:32px;min-width:32px;justify-content:center;padding:6px}
 .call-page .call-icon-row [aria-pressed="true"]{color:var(--vscode-focusBorder);background:var(--vscode-toolbar-activeBackground,var(--vscode-list-hoverBackground))}
 .call-divider{width:1px;align-self:stretch;margin:6px 3px;background:var(--vscode-panel-border)}
-.call-page .call-search{flex:0 1 240px;min-width:0}
+.call-page .call-search{flex:1 1 180px;min-width:0}
 .call-page .call-search input{width:100%;height:32px;border-radius:3px}
 .call-page .call-search:not([hidden]){animation:call-reveal 140ms cubic-bezier(.2,.8,.2,1)}
-.call-page .call-canvas{position:relative;min-height:160px;border:0;border-radius:0;background:var(--vscode-editor-background)}
+.call-page .call-canvas{position:relative;min-height:140px;border:0;border-radius:0;background:var(--vscode-editor-background)}
 .call-canvas svg{overflow:visible}
 .call-node-controls{overflow:visible}
 .call-node .call-node-controls{opacity:0;pointer-events:none;transition:opacity 140ms ease}
 .call-node:hover .call-node-controls,.call-node:focus-within .call-node-controls{opacity:1;pointer-events:auto}
 .node-control-content{display:flex;align-items:center;justify-content:center;width:100%;height:100%;font:12px var(--vscode-font-family);color:var(--vscode-foreground);cursor:default}
 .call-node-controls .call-icon{font-size:16px;flex-shrink:0}
-.call-page .node-decompile{display:flex;align-items:center;justify-content:center;width:28px;height:28px;min-height:0;padding:3px;background:transparent;border:0;border-radius:3px;color:var(--vscode-descriptionForeground)}
+.call-page .node-decompile{display:flex;align-items:center;justify-content:center;width:28px;height:28px;min-width:24px;min-height:24px;padding:3px;background:transparent;border:0;border-radius:3px;color:var(--vscode-descriptionForeground)}
 .call-node:hover .node-decompile,.call-node:focus-within .node-decompile{color:var(--vscode-foreground)}
 .call-node .node-decompile:hover{background:var(--vscode-list-hoverBackground)}
 .call-node.is-root .node-decompile{color:var(--vscode-list-activeSelectionForeground,var(--vscode-foreground))}
-.call-page .node-branch{display:inline-flex;align-items:center;justify-content:center;width:52px;height:12px;min-height:0;padding:0;border:0;border-radius:6px;background:transparent;color:color-mix(in srgb,var(--vscode-foreground) 32%,transparent);box-shadow:none;cursor:pointer;box-sizing:border-box;transition:color 150ms ease,transform 100ms ease-out}
+.call-page .node-branch{display:inline-flex;align-items:center;justify-content:center;width:52px;height:26px;min-width:24px;min-height:24px;padding:0;border:0;border-radius:6px;background:transparent;color:color-mix(in srgb,var(--vscode-foreground) 32%,transparent);box-shadow:none;cursor:pointer;box-sizing:border-box;transition:color 150ms ease,transform 100ms ease-out}
+.call-page .node-branch[data-direction="callers"]{align-items:flex-end}
+.call-page .node-branch[data-direction="callees"]{align-items:flex-start}
 .call-node.is-root .node-branch{color:color-mix(in srgb,var(--vscode-list-activeSelectionForeground,var(--vscode-foreground)) 36%,transparent)}
 .call-page .node-branch[aria-expanded="true"]{color:color-mix(in srgb,var(--vscode-focusBorder) 55%,transparent)}
 .call-node.is-root .node-branch[aria-expanded="true"]{color:color-mix(in srgb,var(--vscode-list-activeSelectionForeground,var(--vscode-foreground)) 38%,transparent)}
@@ -80,14 +83,13 @@ body.vscode-dark .call-page .node-branch:hover,body.vscode-dark .call-page .node
 .call-canvas .call-edge .edge{pointer-events:none}
 .call-canvas .call-node.edge-endpoint .call-node-body{stroke:var(--vscode-focusBorder);stroke-width:2}
 .call-page .call-canvas:focus-visible{outline:1px solid var(--vscode-focusBorder);outline-offset:-3px}
-.call-page .call-zoom{position:absolute;z-index:2;bottom:16px;right:16px;display:flex;gap:0;border:1px solid var(--vscode-panel-border);border-radius:8px;background:var(--vscode-editor-background);box-shadow:0 2px 8px var(--vscode-widget-shadow);overflow:visible}
-.call-page .call-zoom button{height:32px;background:transparent;border:0;border-radius:0;min-width:32px}
+.call-page .call-zoom{position:absolute;z-index:3;bottom:16px;right:16px;display:flex;gap:0;border:1px solid var(--vscode-panel-border);border-radius:8px;background:var(--vscode-editor-background);box-shadow:0 2px 8px var(--vscode-widget-shadow);overflow:visible}
+.call-page .call-zoom button{min-height:32px;height:auto;background:transparent;border:0;border-radius:0;min-width:32px}
 .call-page .call-zoom #graph-zoom{font-size:12px;border-inline:1px solid var(--vscode-panel-border);font-variant-numeric:tabular-nums;min-width:52px}
 .call-page .call-zoom button:first-child{border-radius:7px 0 0 7px}
 .call-page .call-zoom button:last-child{border-radius:0 7px 7px 0}
-.call-page .scope,.call-page #filter-status{position:absolute;z-index:2;top:58px;left:20px;margin:0;font-size:11px;background:var(--vscode-editor-background)}
-.call-page:has([data-call-columns]) #filter-status{top:104px}
-.call-page .scope{top:80px;color:var(--vscode-descriptionForeground)}
+.call-page .scope,.call-page #filter-status{font-size:11px;background:var(--vscode-editor-background)}
+.call-page .scope{color:var(--vscode-descriptionForeground)}
 .call-page [hidden]{display:none!important}
 .call-canvas .call-node-body{fill:var(--vscode-editor-background);stroke:var(--vscode-editorWidget-border,var(--vscode-panel-border));stroke-width:1;vector-effect:non-scaling-stroke;transition:stroke-width 120ms ease}
 .call-canvas .is-root .call-node-body{fill:var(--vscode-list-activeSelectionBackground);stroke:var(--vscode-focusBorder);stroke-width:2}
@@ -110,7 +112,8 @@ body.vscode-dark .call-page .node-branch:hover,body.vscode-dark .call-page .node
 .call-canvas .call-edge.is-hovered .edge{stroke-width:2.5}
 #call-arrow path{fill:var(--vscode-descriptionForeground);fill:context-stroke}
 .call-overview{margin:0;padding:0;position:absolute;right:16px;bottom:58px;width:176px;background:var(--vscode-editor-background);border:1px solid var(--vscode-editorWidget-border,var(--vscode-panel-border));border-radius:8px;box-shadow:0 2px 8px var(--vscode-widget-shadow);overflow:hidden;opacity:.95;cursor:default}
-.call-overview summary{display:flex;align-items:center;gap:6px;margin:0!important;padding:6px 8px;font-size:11px;font-weight:500;cursor:pointer;user-select:none;list-style:none}
+.call-overview summary{display:flex;align-items:center;gap:6px;min-height:24px;margin:0!important;padding:6px 8px;font-size:11px;font-weight:500;cursor:pointer;user-select:none;list-style:none}
+.call-overview summary>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .call-overview summary::-webkit-details-marker{display:none}
 .call-overview summary .call-icon{font-size:13px}
 .call-overview summary .call-icon:last-child{margin-left:auto}
@@ -120,15 +123,16 @@ body.vscode-dark .call-page .node-branch:hover,body.vscode-dark .call-page .node
 .call-overview .overview-root{fill:var(--vscode-focusBorder)}
 .call-overview #call-overview-window{fill:var(--vscode-focusBorder);fill-opacity:.12;stroke:var(--vscode-focusBorder);stroke-width:1;vector-effect:non-scaling-stroke;pointer-events:none}
 .call-page .call-details{position:absolute;z-index:3;bottom:58px;left:20px;right:20px;margin:0;padding:10px 14px;max-height:40vh;overflow:auto;font-size:12px;background:var(--vscode-editor-background);border:1px solid var(--vscode-panel-border)}
-.call-page .call-details summary{padding:5px 0;cursor:pointer}
+.call-page .call-details summary{display:flex;align-items:center;min-height:24px;padding:5px 0;cursor:pointer}
 .call-page .call-details .table-wrap{max-height:190px;overflow:auto}
 .call-page .call-details th,.call-page .call-details td{padding:7px 10px;font-size:12px}
 .call-page button,.call-page summary{transition:background-color 120ms ease,color 120ms ease}
 @keyframes call-reveal{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:translateY(0)}}
 @media(prefers-reduced-motion:reduce){.call-page *{animation:none!important;transition:none!important}}
 .vscode-high-contrast .call-canvas .call-edge,.vscode-high-contrast-light .call-canvas .call-edge{opacity:1!important}
-@media(forced-colors:active){.call-canvas .call-node-body{stroke:CanvasText}.call-canvas .is-root .call-node-body{fill:Highlight;stroke:Highlight}.call-canvas .call-node.selected .call-node-body,.call-canvas .call-node:focus-visible .call-node-body{stroke:Highlight}.call-canvas .call-edge{color:CanvasText}.call-page .call-menu-content,.call-page .call-zoom{border-color:CanvasText}.call-page .node-branch{color:ButtonText}}
-@media(max-width:640px){.call-page .call-topbar{padding:8px 10px;gap:5px;min-height:48px}.call-page .call-topbar h1{font-size:13px}.call-page .call-search{position:absolute;z-index:4;top:52px;left:10px;right:10px;background:var(--vscode-editor-background)}.call-page .call-overview{width:120px;right:10px;bottom:54px}.call-page .call-overview svg{height:82px}.call-page .call-zoom{bottom:12px;right:10px}}
+@media(forced-colors:active){.call-canvas .call-node-body{stroke:CanvasText}.call-canvas .is-root .call-node-body{fill:Highlight;stroke:Highlight}.call-canvas .is-root text{fill:HighlightText!important}.call-node.is-root .node-decompile,.call-node.is-root .node-branch{color:HighlightText}.call-canvas .call-node.selected .call-node-body,.call-canvas .call-node:focus-visible .call-node-body{stroke:Highlight}.call-canvas .call-edge{color:CanvasText}.call-page .call-menu-content,.call-page .call-zoom,.call-overview{border-color:CanvasText}.call-overview path{stroke:CanvasText}.call-overview rect{fill:CanvasText}.call-overview .overview-root{fill:Highlight}.call-overview #call-overview-window{stroke:Highlight;fill:Highlight;fill-opacity:.16}.call-page .node-branch{color:ButtonText}}
+@media(max-width:640px){.call-page .call-topbar{padding:6px 10px;gap:4px 6px;min-height:0}.call-page .call-topbar h1{font-size:13px}.call-page .call-search{flex:1 0 100%}.call-menu-content{right:10px}.call-page .call-overview{width:120px;right:10px;bottom:50px}.call-page .call-overview svg{height:82px}.call-page .call-zoom{bottom:10px;right:10px}}
+@media(max-height:420px){.call-page .call-topbar{padding:3px 8px;gap:3px 4px;min-height:0}.call-page .call-icon-button,.call-page #call-menu>summary{width:26px;height:26px;padding:4px}.call-page .call-topbar #call-function-picker{min-height:24px;padding:2px 5px;font-size:12px}.call-page .call-search input{height:26px;min-height:24px;padding:2px 6px}.call-page .call-canvas{min-height:48px}.call-page .call-zoom{bottom:6px;right:8px}.call-page .call-zoom button{min-height:26px;height:auto;min-width:26px;padding:2px 6px}.call-page .call-zoom #graph-zoom{min-width:46px}.call-page .call-overview{width:118px;max-height:calc(100% - 40px);right:8px;bottom:36px}.call-page .call-overview[open]{display:flex;flex-direction:column}.call-page .call-overview summary{gap:4px;padding:2px 6px;min-height:24px;flex-shrink:0}.call-page .call-overview svg{height:32px;min-height:24px;flex:1 1 auto}}
 
 @media(hover:none) and (pointer:coarse){.call-node.is-root .call-node-controls,.call-node.selected .call-node-controls{opacity:1;pointer-events:auto}}
 `;
