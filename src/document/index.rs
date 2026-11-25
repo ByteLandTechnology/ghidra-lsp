@@ -1,7 +1,7 @@
 // Copyright 2026 ByteLand Technology Limited
 // SPDX-License-Identifier: MIT
 
-//! Indexed session symbol table and token-span symbol resolution.
+//! Indexed session symbol lookup tables and case-insensitive match helpers.
 
 use std::collections::HashMap;
 
@@ -276,4 +276,34 @@ fn span_kind_matches(token_kind: &str, sym: &Symbol) -> bool {
     return false;
   }
   true
+}
+
+/// Returns true when `haystack` contains `needle_lower` under Unicode case folding.
+pub(crate) fn contains_case_insensitive(haystack: &str, needle_lower: &str) -> bool {
+  if needle_lower.is_empty() {
+    return true;
+  }
+  if haystack.is_ascii() && needle_lower.is_ascii() {
+    haystack
+      .as_bytes()
+      .windows(needle_lower.len())
+      .any(|window| window.eq_ignore_ascii_case(needle_lower.as_bytes()))
+  } else {
+    haystack.to_lowercase().contains(needle_lower)
+  }
+}
+
+/// Returns true when `haystack` starts with `prefix_lower` under Unicode case folding.
+pub(crate) fn starts_with_case_insensitive(haystack: &str, prefix_lower: &str) -> bool {
+  if prefix_lower.is_empty() {
+    return true;
+  }
+  if haystack.is_ascii() && prefix_lower.is_ascii() {
+    haystack
+      .as_bytes()
+      .get(..prefix_lower.len())
+      .is_some_and(|head| head.eq_ignore_ascii_case(prefix_lower.as_bytes()))
+  } else {
+    haystack.to_lowercase().starts_with(prefix_lower)
+  }
 }

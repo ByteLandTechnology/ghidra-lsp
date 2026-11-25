@@ -3,9 +3,6 @@
 
 //! Virtual document state, token alignment, symbol resolution, and UTF-16 positions.
 
-/// Indexed session symbol table and token-span symbol resolution.
-mod symbols;
-
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -13,8 +10,6 @@ use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tower_lsp_server::ls_types::{Position, Range, TextEdit, Uri};
-
-pub(crate) use symbols::SymbolIndex;
 
 /// Display flag that controls whether full C++ template arguments appear in text.
 pub(crate) static SHOW_TEMPLATE_ARGUMENTS: AtomicBool = AtomicBool::new(false);
@@ -140,35 +135,10 @@ impl Symbol {
   }
 }
 
-/// Returns true when `haystack` contains `needle_lower` under Unicode case folding.
-pub(crate) fn contains_case_insensitive(haystack: &str, needle_lower: &str) -> bool {
-  if needle_lower.is_empty() {
-    return true;
-  }
-  if haystack.is_ascii() && needle_lower.is_ascii() {
-    haystack
-      .as_bytes()
-      .windows(needle_lower.len())
-      .any(|window| window.eq_ignore_ascii_case(needle_lower.as_bytes()))
-  } else {
-    haystack.to_lowercase().contains(needle_lower)
-  }
-}
+/// Indexed session symbol lookup tables and match helpers.
+mod index;
 
-/// Returns true when `haystack` starts with `prefix_lower` under Unicode case folding.
-pub(crate) fn starts_with_case_insensitive(haystack: &str, prefix_lower: &str) -> bool {
-  if prefix_lower.is_empty() {
-    return true;
-  }
-  if haystack.is_ascii() && prefix_lower.is_ascii() {
-    haystack
-      .as_bytes()
-      .get(..prefix_lower.len())
-      .is_some_and(|head| head.eq_ignore_ascii_case(prefix_lower.as_bytes()))
-  } else {
-    haystack.to_lowercase().starts_with(prefix_lower)
-  }
-}
+pub(crate) use index::{SymbolIndex, contains_case_insensitive, starts_with_case_insensitive};
 
 /// Raw decompiler token returned by `ghidra-mcp`.
 #[derive(Clone, Debug, Deserialize)]
