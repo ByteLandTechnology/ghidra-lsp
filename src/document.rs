@@ -3,7 +3,7 @@
 
 //! Virtual document state, token alignment, symbol resolution, and UTF-16 positions.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::{Context, Result, bail};
@@ -132,6 +132,307 @@ impl Symbol {
     } else {
       format!("{}::{}", self.namespace, self.name)
     }
+  }
+}
+
+/// Session symbol table indexed by short name, qualified name, symbol ID, and address offset.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct SymbolIndex {
+  /// Session symbols stored in backend arrival order.
+  items: Vec<Symbol>,
+  /// Precomputed namespace-qualified name for each symbol in `items`.
+  qualified: Vec<String>,
+  /// Arrival-ordered symbol indices keyed by short name.
+  by_name: HashMap<String, Vec<usize>>,
+  /// Arrival-ordered symbol indices keyed by namespace-qualified name.
+  by_qualified: HashMap<String, Vec<usize>>,
+  /// Arrival-ordered symbol indices keyed by symbol identifier.
+  by_id: HashMap<String, Vec<usize>>,
+  /// Arrival-ordered symbol indices keyed by parsed hexadecimal address offset.
+  by_offset: HashMap<u64, Vec<usize>>,
+}
+
+impl SymbolIndex {
+  /// Builds an indexed symbol table that preserves arrival order across all lookup buckets.
+  pub(crate) fn new(items: Vec<Symbol>) -> Self {
+    let cap = items.len();
+    let mut qualified = Vec::with_capacity(cap);
+    let mut by_name: HashMap<String, Vec<usize>> = HashMap::with_capacity(cap);
+    let mut by_qualified: HashMap<String, Vec<usize>> = HashMap::with_capacity(cap);
+    let mut by_id: HashMap<String, Vec<usize>> = HashMap::with_capacity(cap);
+    let mut by_offset: HashMap<u64, Vec<usize>> = HashMap::with_capacity(cap);
+
+    for (idx, sym) in items.iter().enumerate() {
+      let qual = sym.qualified();
+      by_name.entry(sym.name.clone()).or_default().push(idx);
+      by_qualified.entry(qual.clone()).or_default().push(idx);
+      by_id.entry(sym.id.clone()).or_default().push(idx);
+      if let Some((_, off)) = address(&sym.address) {
+        by_offset.entry(off).or_default().push(idx);
+      }
+      qualified.push(qual);
+    }
+
+    Self {
+      items,
+      qualified,
+      by_name,
+      by_qualified,
+      by_id,
+      by_offset,
+    }
+  }
+
+  /// Returns the first symbol in arrival order with identifier `id`.
+  pub(crate) fn by_id(&self, id: &str) -> Option<&Symbol> {
+    self
+      .by_id
+      .get(id)
+      .and_then(|indices| indices.first())
+      .map(|&idx| &self.items[idx])
+  }
+
+  /// Iterates over all symbols paired with their precomputed qualified names in arrival order.
+  pub(crate) fn iter_with_qualified(&self) -> impl Iterator<Item = (&Symbol, &str)> {
+    self
+      .items
+      .iter()
+      .zip(self.qualified.iter().map(String::as_str))
+  }
+
+  /// Returns the first symbol in arrival order whose short or qualified name equals `name`.
+  pub(crate) fn find_by_name(&self, name: &str) -> Option<&Symbol> {
+    let by_short = self.by_name.get(name).and_then(|v| v.first().copied());
+    let by_qual = self.by_qualified.get(name).and_then(|v| v.first().copied());
+    by_short
+      .into_iter()
+      .chain(by_qual)
+      .min()
+      .map(|idx| &self.items[idx])
+  }
+
+  /// Returns the first symbol matching `name`, its qualified name, or `addr` via `same_address`.
+  pub(crate) fn find_by_name_or_address(&self, name: &str, addr: Option<&str>) -> Option<&Symbol> {
+    let by_short = self.by_name.get(name).and_then(|v| v.first().copied());
+    let by_qual = self.by_qualified.get(name).and_then(|v| v.first().copied());
+    let by_addr = addr.and_then(|target| {
+      let (_, off) = address(target)?;
+      self
+        .by_offset
+        .get(&off)?
+        .iter()
+        .copied()
+        .find(|&idx| same_address(target, &self.items[idx].address))
+    });
+    [by_short, by_qual, by_addr]
+      .into_iter()
+      .flatten()
+      .min()
+      .map(|idx| &self.items[idx])
+  }
+
+  /// Finds a function symbol by compatible address first, then by short or qualified name.
+  pub(crate) fn find_function(&self, entry_or_addr: Option<&str>, name: &str) -> Option<&Symbol> {
+    if let Some(addr) = entry_or_addr
+      && let Some((_, off)) = address(addr)
+      && let Some(idx) = self.by_offset.get(&off).and_then(|indices| {
+        indices.iter().copied().find(|&idx| {
+          let sym = &self.items[idx];
+          sym.kind.eq_ignore_ascii_case("function") && same_address(&sym.address, addr)
+        })
+      })
+    {
+      return Some(&self.items[idx]);
+    }
+    let by_short = self.by_name.get(name).and_then(|indices| {
+      indices
+        .iter()
+        .copied()
+        .find(|&idx| self.items[idx].kind.eq_ignore_ascii_case("function"))
+    });
+    let by_qual = self.by_qualified.get(name).and_then(|indices| {
+      indices
+        .iter()
+        .copied()
+        .find(|&idx| self.items[idx].kind.eq_ignore_ascii_case("function"))
+    });
+    by_short
+      .into_iter()
+      .chain(by_qual)
+      .min()
+      .map(|idx| &self.items[idx])
+  }
+
+  /// Finds the first function symbol in arrival order matching short `name` or exact `exact_addr`.
+  pub(crate) fn find_function_by_name_or_exact_address(
+    &self,
+    name: &str,
+    exact_addr: Option<&str>,
+  ) -> Option<&Symbol> {
+    let by_short = self.by_name.get(name).and_then(|indices| {
+      indices
+        .iter()
+        .copied()
+        .find(|&idx| self.items[idx].kind.eq_ignore_ascii_case("function"))
+    });
+    let by_addr = exact_addr.and_then(|target| {
+      let (_, off) = address(target)?;
+      self.by_offset.get(&off)?.iter().copied().find(|&idx| {
+        let sym = &self.items[idx];
+        sym.kind.eq_ignore_ascii_case("function") && sym.address == target
+      })
+    });
+    by_short
+      .into_iter()
+      .chain(by_addr)
+      .min()
+      .map(|idx| &self.items[idx])
+  }
+
+  /// Resolves a candidate decompiler `span` using arrival-ordered name and offset buckets.
+  fn resolve_span(&self, span: &Span) -> Option<&Symbol> {
+    let text = span.token.text.as_str();
+    let short_slice = self.by_name.get(text).map_or(&[][..], Vec::as_slice);
+    let qual_slice = self.by_qualified.get(text).map_or(&[][..], Vec::as_slice);
+    let addr_slice = if span.location.is_none() {
+      span
+        .token
+        .address
+        .as_deref()
+        .and_then(address)
+        .and_then(|(_, off)| self.by_offset.get(&off))
+        .map_or(&[][..], Vec::as_slice)
+    } else {
+      &[]
+    };
+
+    let mut count = 0usize;
+    let mut first_candidate = None;
+    let mut first_exact = None;
+    let mut name_match_count = 0usize;
+    let mut first_name_match = None;
+
+    for idx in (MergedIndices {
+      slices: [short_slice, qual_slice, addr_slice],
+    }) {
+      let sym = &self.items[idx];
+      if !span_kind_matches(&span.token.kind, sym) {
+        continue;
+      }
+      let name_match = sym.name == text || self.qualified[idx] == text;
+      let addr_match = span.location.is_none()
+        && span
+          .token
+          .address
+          .as_deref()
+          .is_some_and(|addr| same_address(addr, &sym.address));
+      if !name_match && !addr_match {
+        continue;
+      }
+      count += 1;
+      if first_candidate.is_none() {
+        first_candidate = Some(idx);
+      }
+      if name_match && addr_match && first_exact.is_none() {
+        first_exact = Some(idx);
+      }
+      if name_match {
+        name_match_count += 1;
+        if first_name_match.is_none() {
+          first_name_match = Some(idx);
+        }
+      }
+    }
+
+    let chosen = if count == 1 {
+      first_candidate
+    } else if count > 1 {
+      if first_exact.is_some() {
+        first_exact
+      } else if name_match_count == 1 {
+        first_name_match
+      } else {
+        None
+      }
+    } else {
+      None
+    };
+    chosen.map(|idx| &self.items[idx])
+  }
+}
+
+/// Yields unique symbol indices in ascending order across three sorted index slices.
+struct MergedIndices<'a> {
+  /// Remaining ascending index slices from short-name, qualified-name, and offset buckets.
+  slices: [&'a [usize]; 3],
+}
+
+impl Iterator for MergedIndices<'_> {
+  type Item = usize;
+
+  fn next(&mut self) -> Option<usize> {
+    let min = self
+      .slices
+      .iter()
+      .filter_map(|slice| slice.first().copied())
+      .min()?;
+    for slice in &mut self.slices {
+      if slice.first().copied() == Some(min) {
+        *slice = &slice[1..];
+      }
+    }
+    Some(min)
+  }
+}
+
+/// Returns true when `sym` is eligible to bind to a decompiler token of `token_kind`.
+fn span_kind_matches(token_kind: &str, sym: &Symbol) -> bool {
+  if !sym.eligible() {
+    return false;
+  }
+  if token_kind == "function" && !sym.kind.eq_ignore_ascii_case("function") {
+    return false;
+  }
+  if token_kind == "label" && !sym.kind.eq_ignore_ascii_case("label") {
+    return false;
+  }
+  if token_kind == "constant"
+    && !sym.kind.eq_ignore_ascii_case("constant")
+    && !sym.kind.eq_ignore_ascii_case("label")
+    && !sym.kind.eq_ignore_ascii_case("global")
+  {
+    return false;
+  }
+  true
+}
+
+/// Returns true when `haystack` contains `needle_lower` under Unicode case folding.
+pub(crate) fn contains_case_insensitive(haystack: &str, needle_lower: &str) -> bool {
+  if needle_lower.is_empty() {
+    return true;
+  }
+  if haystack.is_ascii() && needle_lower.is_ascii() {
+    haystack
+      .as_bytes()
+      .windows(needle_lower.len())
+      .any(|window| window.eq_ignore_ascii_case(needle_lower.as_bytes()))
+  } else {
+    haystack.to_lowercase().contains(needle_lower)
+  }
+}
+
+/// Returns true when `haystack` starts with `prefix_lower` under Unicode case folding.
+pub(crate) fn starts_with_case_insensitive(haystack: &str, prefix_lower: &str) -> bool {
+  if prefix_lower.is_empty() {
+    return true;
+  }
+  if haystack.is_ascii() && prefix_lower.is_ascii() {
+    haystack
+      .as_bytes()
+      .get(..prefix_lower.len())
+      .is_some_and(|head| head.eq_ignore_ascii_case(prefix_lower.as_bytes()))
+  } else {
+    haystack.to_lowercase().starts_with(prefix_lower)
   }
 }
 
@@ -326,112 +627,58 @@ pub(crate) fn align(code: &str, tokens: Vec<Token>) -> Result<Vec<Span>> {
   Ok(spans)
 }
 
-/// Resolves global, function, label, and constant token spans against the symbol table.
-pub(crate) fn resolve(spans: &mut [Span], symbols: &[Symbol], locals: &HashSet<String>) {
-  let shadowed: HashSet<&str> = spans
-    .iter()
-    .filter(|s| matches!(s.token.kind.as_str(), "variable" | "parameter"))
-    .map(|s| s.token.text.as_str())
-    .chain(locals.iter().map(String::as_str))
-    .collect();
-  let resolved: Vec<Option<Symbol>> = spans
-    .iter()
-    .map(|s| {
-      // Native GUI tokens keep their attached function, variable, parameter, or global symbol.
-      if s.location.is_some()
-        && matches!(
-          s.token.kind.as_str(),
-          "function" | "variable" | "parameter" | "global"
-        )
-        && s.symbol.is_some()
-      {
-        return s.symbol.clone();
-      }
-      if !matches!(
-        s.token.kind.as_str(),
-        "function" | "global" | "label" | "constant"
-      ) || shadowed.contains(s.token.text.as_str())
-      {
-        return None;
-      }
-      let candidates: Vec<_> = symbols
-        .iter()
-        .filter(|sym| {
-          if !sym.eligible() {
-            return false;
-          }
-          if s.token.kind == "function" && !sym.kind.eq_ignore_ascii_case("function") {
-            return false;
-          }
-          if s.token.kind == "label" && !sym.kind.eq_ignore_ascii_case("label") {
-            return false;
-          }
-          if s.token.kind == "constant"
-            && !sym.kind.eq_ignore_ascii_case("constant")
-            && !sym.kind.eq_ignore_ascii_case("label")
-            && !sym.kind.eq_ignore_ascii_case("global")
-          {
-            return false;
-          }
-          if sym.name == s.token.text || sym.qualified() == s.token.text {
-            return true;
-          }
-          if s.location.is_none()
-            && let Some(addr) = &s.token.address
-            && same_address(addr, &sym.address)
-          {
-            return true;
-          }
-          false
-        })
-        .collect();
-      if candidates.len() == 1 {
-        Some(candidates[0].clone())
-      } else if candidates.len() > 1 {
-        if let Some(exact) = candidates.iter().find(|sym| {
-          s.location.is_none()
-            && (sym.name == s.token.text || sym.qualified() == s.token.text)
-            && s
-              .token
-              .address
-              .as_deref()
-              .is_some_and(|a| same_address(a, &sym.address))
-        }) {
-          Some((*exact).clone())
-        } else {
-          let matching_name: Vec<_> = candidates
-            .iter()
-            .filter(|sym| sym.name == s.token.text || sym.qualified() == s.token.text)
-            .collect();
-          if matching_name.len() == 1 {
-            Some((*matching_name[0]).clone())
-          } else {
-            None
-          }
-        }
-      } else {
-        None
-      }
-    })
-    .collect();
-  for (span, symbol) in spans.iter_mut().zip(resolved) {
-    span.symbol = symbol;
+/// Resolves global, function, label, and constant token spans against the symbol index.
+pub(crate) fn resolve(spans: &mut [Span], symbols: &SymbolIndex, locals: &HashSet<String>) {
+  let mut extra_shadowed: HashSet<String> = HashSet::new();
+  for span in spans.iter() {
+    if matches!(span.token.kind.as_str(), "variable" | "parameter")
+      && !locals.contains(span.token.text.as_str())
+    {
+      extra_shadowed.insert(span.token.text.clone());
+    }
+  }
+  for span in spans.iter_mut() {
+    // Native GUI tokens keep their attached function, variable, parameter, or global symbol.
+    if span.location.is_some()
+      && matches!(
+        span.token.kind.as_str(),
+        "function" | "variable" | "parameter" | "global"
+      )
+      && span.symbol.is_some()
+    {
+      continue;
+    }
+    if !matches!(
+      span.token.kind.as_str(),
+      "function" | "global" | "label" | "constant"
+    ) || locals.contains(span.token.text.as_str())
+      || extra_shadowed.contains(span.token.text.as_str())
+    {
+      span.symbol = None;
+      continue;
+    }
+    span.symbol = symbols.resolve_span(span).cloned();
   }
 }
 
 /// Resolves variable and parameter spans without a symbol when `locals` has one match.
 pub(crate) fn resolve_locals(spans: &mut [Span], locals: &[Symbol]) {
+  let mut by_name: HashMap<&str, Option<&Symbol>> = HashMap::with_capacity(locals.len());
+  for local in locals {
+    by_name
+      .entry(local.name.as_str())
+      .and_modify(|slot| *slot = None)
+      .or_insert(Some(local));
+  }
   for span in spans {
     if !matches!(span.token.kind.as_str(), "variable" | "parameter") || span.symbol.is_some() {
       continue;
     }
-    let mut candidates = locals.iter().filter(|s| s.name == span.token.text);
-    let candidate = candidates.next();
-    span.symbol = if candidates.next().is_none() {
-      candidate.cloned()
-    } else {
-      None
-    };
+    span.symbol = by_name
+      .get(span.token.text.as_str())
+      .copied()
+      .flatten()
+      .cloned();
   }
 }
 
