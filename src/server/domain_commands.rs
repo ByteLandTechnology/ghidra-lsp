@@ -367,10 +367,11 @@ impl Server {
     let session_guard = self.engine.lock_session(&md5).await;
     Self::ensure_program_clean(&self.engine.read_state(), &md5)?;
     let (tool, tool_operation) = workbench::mcp_operation(domain, operation);
+    self.engine.invalidate_symbols(&md5);
     let call_result = backend
       .call(tool, &tool_operation, Some(&md5), parameters)
       .await;
-    self.engine.bump_epoch(&md5);
+    self.engine.invalidate_symbols(&md5);
     let result = call_result.context(
       "Modification may have reached Ghidra; refresh and inspect the actual program state before retrying",
     )?;

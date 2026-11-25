@@ -40,8 +40,8 @@ struct OpenEntry {
   md5: String,
   /// Decoded function entry selector string.
   entry: String,
-  /// Watch receiver cloned by followers that join this slot.
-  receiver: watch::Receiver<FlightState<Uri>>,
+  /// Watch sender used to subscribe followers and cancel detached flights.
+  sender: watch::Sender<FlightState<Uri>>,
 }
 
 /// Coordinates concurrent cache-miss decompilations for `(md5, entry)` targets.
@@ -73,19 +73,25 @@ impl OpenFlights {
     }
   }
 
-  /// Removes all tracked slots when the server resets engine state.
+  /// Removes and cancels all tracked slots when the server resets engine state.
   pub(crate) fn clear(&self) {
-    self
-      .entries
-      .lock()
-      .unwrap_or_else(PoisonError::into_inner)
-      .clear();
+    let mut entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
+    for item in entries.drain(..) {
+      let _ = item.sender.send(FlightState::Cancelled);
+    }
   }
 
-  /// Detaches active decompilation slots for `md5` when that session closes.
+  /// Detaches and cancels active decompilation slots for `md5` when that session closes.
   pub(crate) fn forget_session(&self, md5: &str) {
     let mut entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
-    entries.retain(|item| item.md5 != md5);
+    entries.retain(|item| {
+      if item.md5 == md5 {
+        let _ = item.sender.send(FlightState::Cancelled);
+        false
+      } else {
+        true
+      }
+    });
   }
 
   /// Joins an existing `(md5, entry)` slot or registers the caller as leader.
@@ -95,15 +101,15 @@ impl OpenFlights {
       .iter()
       .find(|item| item.md5 == md5 && (item.entry == entry || same_address(&item.entry, entry)))
     {
-      return Registration::Follower(existing.receiver.clone());
+      return Registration::Follower(existing.sender.subscribe());
     }
     let id = self.next_id.fetch_add(1, Ordering::Relaxed);
-    let (sender, receiver) = watch::channel(FlightState::Pending);
+    let (sender, _receiver) = watch::channel(FlightState::Pending);
     entries.push(OpenEntry {
       id,
       md5: md5.to_owned(),
       entry: entry.to_owned(),
-      receiver,
+      sender: sender.clone(),
     });
     Registration::Leader(OpenLeader {
       flights: self,
@@ -146,8 +152,8 @@ impl Drop for OpenLeader<'_> {
 struct SymbolEntry {
   /// Monotonic slot identifier used to remove only this leader on completion.
   id: u64,
-  /// Watch receiver cloned by followers that join this slot.
-  receiver: watch::Receiver<FlightState<Arc<SymbolIndex>>>,
+  /// Watch sender used to subscribe followers and cancel detached flights.
+  sender: watch::Sender<FlightState<Arc<SymbolIndex>>>,
 }
 
 /// Coordinates concurrent cache-miss symbol loads per `md5` session.
@@ -181,33 +187,41 @@ impl SymbolFlights {
     }
   }
 
-  /// Removes all tracked slots when the server resets engine state.
+  /// Removes and cancels all tracked slots when the server resets engine state.
   pub(crate) fn clear(&self) {
-    self
-      .entries
-      .lock()
-      .unwrap_or_else(PoisonError::into_inner)
-      .clear();
+    let mut entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
+    for (_, item) in entries.drain() {
+      let _ = item.sender.send(FlightState::Cancelled);
+    }
   }
 
-  /// Detaches any active symbol-load slot for `md5` when that session closes.
+  /// Detaches and cancels any active symbol-load slot for `md5` when that session closes.
   pub(crate) fn forget_session(&self, md5: &str) {
-    self
+    if let Some(removed) = self
       .entries
       .lock()
       .unwrap_or_else(PoisonError::into_inner)
-      .remove(md5);
+      .remove(md5)
+    {
+      let _ = removed.sender.send(FlightState::Cancelled);
+    }
   }
 
   /// Joins an existing `md5` symbol-load slot or registers the caller as leader.
   pub(super) fn acquire(&self, md5: &str) -> Registration<Arc<SymbolIndex>, SymbolLeader<'_>> {
     let mut entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
     if let Some(existing) = entries.get(md5) {
-      return Registration::Follower(existing.receiver.clone());
+      return Registration::Follower(existing.sender.subscribe());
     }
     let id = self.next_id.fetch_add(1, Ordering::Relaxed);
-    let (sender, receiver) = watch::channel(FlightState::Pending);
-    entries.insert(md5.to_owned(), SymbolEntry { id, receiver });
+    let (sender, _receiver) = watch::channel(FlightState::Pending);
+    entries.insert(
+      md5.to_owned(),
+      SymbolEntry {
+        id,
+        sender: sender.clone(),
+      },
+    );
     Registration::Leader(SymbolLeader {
       flights: self,
       md5: md5.to_owned(),

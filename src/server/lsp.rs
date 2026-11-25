@@ -35,9 +35,7 @@ use tower_lsp_server::{LanguageServer, jsonrpc};
 
 use super::{COMMANDS, Server, rpc};
 use crate::backend::{Config, McpBackend};
-use crate::document::{
-  Document, SHOW_TEMPLATE_ARGUMENTS, canonical_virtual_uri, matches_text, offset,
-};
+use crate::document::{SHOW_TEMPLATE_ARGUMENTS, canonical_virtual_uri, matches_text, offset};
 use crate::engine::ClientBuffer;
 use crate::workbench;
 
@@ -190,14 +188,14 @@ impl LanguageServer for Server {
         .into_owned();
       Some((md5, kind.to_owned(), key))
     });
-    let (already_open, start_gen, start_epoch) = {
+    let already_open = {
       let mut state = self.engine.write_state();
       if let Some(doc) = state.docs.get_mut(&uri) {
         if doc.version.is_none_or(|ver| ver <= item.version) {
           doc.current = item.text;
           doc.version = Some(item.version);
         }
-        (true, 0, 0)
+        true
       } else {
         let should_store = match state.client_buffers.get(&uri) {
           Some(ClientBuffer::Open { version, .. }) => *version <= item.version,
@@ -212,47 +210,42 @@ impl LanguageServer for Server {
             },
           );
         }
-        let epoch = parsed_ghidra
-          .as_ref()
-          .map_or(0, |(md5, _, _)| state.epoch(md5));
-        (false, state.generation, epoch)
+        false
       }
     };
     if already_open {
       self.report(&uri).await;
       return;
     }
+    let mut target_uri = uri.clone();
     if let Some((md5, kind, key)) = parsed_ghidra {
       if kind == "function" {
-        let _ = self.engine.open(&md5, &key).await;
-      } else if matches!(kind.as_str(), "symbol" | "references" | "type")
-        && let Ok(text) = self.engine.snapshot_text(&md5, &kind, &key).await
-      {
-        let mut state = self.engine.write_state();
-        if !state.is_closed_since(&md5, start_epoch, start_gen) {
-          let _ = state.install(Document {
-            uri: uri.clone(),
-            md5,
-            entry: None,
-            base: text.clone(),
-            current: text.clone(),
-            saved: text,
-            version: None,
-            spans: vec![],
-            warning: None,
-          });
+        if let Ok(opened) = self.engine.open(&md5, &key).await {
+          target_uri = opened;
         }
+      } else if matches!(kind.as_str(), "symbol" | "references" | "type")
+        && let Ok(opened) = self
+          .engine
+          .open_snapshot(&uri, &md5, &kind, &key, false)
+          .await
+      {
+        target_uri = opened;
       }
     }
     let closed_early = {
       let mut state = self.engine.write_state();
-      match state.client_buffers.remove(&uri) {
+      let pending_buffer = state.client_buffers.remove(&uri).or_else(|| {
+        (target_uri != uri)
+          .then(|| state.client_buffers.remove(&target_uri))
+          .flatten()
+      });
+      match pending_buffer {
         Some(ClientBuffer::Closed) => {
-          state.close_document(&uri);
-          Some(!state.docs.contains_key(&uri))
+          state.close_document(&target_uri);
+          Some(!state.docs.contains_key(&target_uri))
         }
         Some(ClientBuffer::Open { version, text }) => {
-          if let Some(doc) = state.docs.get_mut(&uri)
+          if let Some(doc) = state.docs.get_mut(&target_uri)
             && doc.version.is_none_or(|ver| ver <= version)
           {
             doc.current = text;
@@ -265,11 +258,14 @@ impl LanguageServer for Server {
     };
     if let Some(removed) = closed_early {
       if removed {
-        self.client.publish_diagnostics(uri, vec![], None).await;
+        self
+          .client
+          .publish_diagnostics(target_uri, vec![], None)
+          .await;
       }
       return;
     }
-    self.report(&uri).await;
+    self.report(&target_uri).await;
   }
 
   async fn did_change(&self, params: DidChangeTextDocumentParams) {

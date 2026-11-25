@@ -293,35 +293,9 @@ impl Engine {
       return Ok(Location::new(uri, range));
     }
     let uri = virtual_uri(md5, "symbol", &symbol.id)?;
-    let (need_fetch, start_gen, start_epoch) = {
-      let state = self.read_state();
-      (
-        state.docs.get(&uri).is_none_or(Document::clean),
-        state.generation,
-        state.epoch(md5),
-      )
-    };
-    if need_fetch {
-      let code = self.snapshot_text(md5, "symbol", &symbol.id).await?;
-      let mut state = self.write_state();
-      ensure!(
-        !state.is_closed_since(md5, start_epoch, start_gen),
-        "Session was closed"
-      );
-      if state.docs.get(&uri).is_none_or(Document::clean) {
-        state.install(Document {
-          uri: uri.clone(),
-          md5: md5.into(),
-          entry: None,
-          base: code.clone(),
-          current: code.clone(),
-          saved: code,
-          version: None,
-          spans: vec![],
-          warning: None,
-        })?;
-      }
-    }
+    let uri = self
+      .open_snapshot(&uri, md5, "symbol", &symbol.id, true)
+      .await?;
     Ok(Location::new(uri, Range::default()))
   }
 

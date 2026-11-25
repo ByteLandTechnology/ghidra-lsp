@@ -341,7 +341,8 @@ impl Server {
     for change in changes {
       if let Some(doc) = state.docs.get_mut(&change.uri) {
         // Never overwrite a concurrent unrelated user edit inside the synchronized buffer.
-        if doc.current == change.old || doc.current == change.new {
+        if (doc.version == change.version && doc.current == change.old) || doc.current == change.new
+        {
           doc.current = change.new;
         }
       }

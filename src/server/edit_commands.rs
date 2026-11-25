@@ -101,8 +101,9 @@ impl Server {
         "persisted": false,
       }));
     }
+    self.engine.invalidate_symbols(&md5);
     let call_result = crate::mutations::execute_comment_mutation(backend, &md5, &prepared).await;
-    self.engine.bump_epoch(&md5);
+    self.engine.invalidate_symbols(&md5);
     let result = call_result?;
     self
       .commit_and_refresh(session_guard, backend, &md5, None)
@@ -144,8 +145,9 @@ impl Server {
     } else {
       crate::mutations::prepare_variables_ops(backend, &md5, entry, original, payload).await?
     };
+    self.engine.invalidate_symbols(&md5);
     let call_result = crate::mutations::execute_ops(backend, &md5, &ops).await;
-    self.engine.bump_epoch(&md5);
+    self.engine.invalidate_symbols(&md5);
     let result = call_result?;
     self
       .commit_and_refresh(session_guard, backend, &md5, None)
@@ -186,10 +188,11 @@ impl Server {
     };
     workbench::allow_write(domain, operation, &parameters)?;
     let (tool, tool_operation) = workbench::mcp_operation(domain, operation);
+    self.engine.invalidate_symbols(&md5);
     let call_result = backend
       .call(tool, &tool_operation, Some(&md5), parameters)
       .await;
-    self.engine.bump_epoch(&md5);
+    self.engine.invalidate_symbols(&md5);
     let result = call_result.map_err(crate::types_doc::wrap_post_send_error)?;
     workbench::check_write_result(domain, operation, &result)
       .map_err(crate::types_doc::wrap_post_send_error)?;

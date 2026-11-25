@@ -11,9 +11,7 @@ use tower_lsp_server::ls_types::{Position, Uri};
 
 use super::Server;
 use crate::backend::{McpBackend, list_all};
-use crate::document::{
-  Document, SHOW_TEMPLATE_ARGUMENTS, canonical_virtual_uri, matches_text, same_address,
-};
+use crate::document::{SHOW_TEMPLATE_ARGUMENTS, canonical_virtual_uri, matches_text, same_address};
 use crate::workbench;
 
 impl Server {
@@ -117,30 +115,13 @@ impl Server {
           .split_once('/')
           .context("invalid virtual document path")?;
         let key = percent_encoding::percent_decode_str(raw_key).decode_utf8()?;
-        let (start_gen, start_epoch) = {
-          let state = self.engine.read_state();
-          (state.generation, state.epoch(md5))
-        };
         let doc_uri = if kind == "function" {
           self.engine.open(md5, &key).await?
         } else if matches!(kind, "symbol" | "references" | "type") {
-          let text = self.engine.snapshot_text(md5, kind, &key).await?;
-          let mut state = self.engine.write_state();
-          ensure!(
-            !state.is_closed_since(md5, start_epoch, start_gen),
-            "Session was closed"
-          );
-          state.install(Document {
-            uri: uri.clone(),
-            md5: md5.into(),
-            entry: None,
-            base: text.clone(),
-            current: text.clone(),
-            saved: text,
-            version: None,
-            spans: vec![],
-            warning: None,
-          })?
+          self
+            .engine
+            .open_snapshot(&uri, md5, kind, &key, false)
+            .await?
         } else {
           bail!("Open this symbol through Ghidra first");
         };

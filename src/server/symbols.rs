@@ -16,7 +16,7 @@ use tower_lsp_server::ls_types::{
 use super::{Server, rpc};
 use crate::backend::list_all;
 use crate::document::{
-  Document, Symbol, canonical_virtual_uri, contains_case_insensitive, position, virtual_uri,
+  Symbol, canonical_virtual_uri, contains_case_insensitive, position, virtual_uri,
 };
 
 impl Server {
@@ -250,40 +250,11 @@ impl Server {
       .map(str::to_owned)
     {
       let uri = virtual_uri(&md5, "type", &format!("{type_path}.md")).map_err(rpc)?;
-      let (need_fetch, start_gen, start_epoch) = {
-        let state = self.engine.read_state();
-        (
-          state.docs.get(&uri).is_none_or(Document::clean),
-          state.generation,
-          state.epoch(&md5),
-        )
-      };
-      if need_fetch {
-        let code = self
-          .engine
-          .snapshot_text(&md5, "type", &type_path)
-          .await
-          .map_err(rpc)?;
-        let mut state = self.engine.write_state();
-        if state.is_closed_since(&md5, start_epoch, start_gen) {
-          return Err(rpc("Session was closed"));
-        }
-        if state.docs.get(&uri).is_none_or(Document::clean) {
-          state
-            .install(Document {
-              uri: uri.clone(),
-              md5: md5.clone(),
-              entry: None,
-              base: code.clone(),
-              current: code.clone(),
-              saved: code,
-              version: None,
-              spans: vec![],
-              warning: None,
-            })
-            .map_err(rpc)?;
-        }
-      }
+      let uri = self
+        .engine
+        .open_snapshot(&uri, &md5, "type", &type_path, true)
+        .await
+        .map_err(rpc)?;
       self.changed(&md5).await;
       params.location = OneOf::Left(Location::new(uri, Range::default()));
       return Ok(params);

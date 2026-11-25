@@ -11,7 +11,9 @@ mod decorations;
 mod hierarchy;
 /// Symbol resolution, definitions, and cross-reference lookups.
 mod navigation;
-/// Scoped rename preview, origin save persistence, and document refresh.
+/// Session document regeneration, single-document refresh, and snapshot installation.
+mod refresh;
+/// Scoped rename preview, origin save persistence, and pending rename discard.
 mod rename;
 /// Singleflight coordinators for concurrent decompilations and symbol loads.
 mod singleflight;
@@ -109,6 +111,7 @@ impl Engine {
   /// Replaces the backend transport and clears cached engine state during `initialize`.
   pub(crate) fn reset(&self, backend: Arc<McpBackend>) {
     *self.backend.write().unwrap_or_else(PoisonError::into_inner) = backend;
+    self.write_state().reset();
     self.open_flights.clear();
     self.symbol_flights.clear();
     self
@@ -116,7 +119,6 @@ impl Engine {
       .lock()
       .unwrap_or_else(PoisonError::into_inner)
       .clear();
-    self.write_state().reset();
   }
 
   /// Clones the active [`McpBackend`] handle without locking [`EngineState`].
@@ -160,12 +162,20 @@ impl Engine {
     self.write_state().bump_epoch(md5)
   }
 
+  /// Advances the epoch for `md5` and evicts its cached symbol index.
+  pub(crate) fn invalidate_symbols(&self, md5: &str) {
+    let key = md5.to_ascii_lowercase();
+    let mut state = self.write_state();
+    state.bump_epoch(&key);
+    state.symbols.remove(&key);
+  }
+
   /// Evicts cached state and active singleflight slots for closed session `md5`.
   pub(crate) fn forget_session(&self, md5: &str) {
     let key = md5.to_ascii_lowercase();
+    self.write_state().forget_session(&key);
     self.open_flights.forget_session(&key);
     self.symbol_flights.forget_session(&key);
-    self.write_state().forget_session(&key);
   }
 
   /// Fetches and caches the indexed symbol table for session `md5` with singleflight deduplication.
@@ -179,6 +189,16 @@ impl Engine {
       (state.generation, state.epoch(&md5_key))
     };
     loop {
+      {
+        let state = self.read_state();
+        ensure!(
+          !state.is_closed_since(&md5_key, initial_epoch, initial_gen),
+          "Session was closed"
+        );
+        if let Some(symbols) = state.symbols.get(&md5_key) {
+          return Ok(Arc::clone(symbols));
+        }
+      }
       match self.symbol_flights.acquire(&md5_key) {
         singleflight::Registration::Follower(receiver) => {
           if let Some(symbols) = singleflight::wait_flight(receiver).await? {
@@ -191,31 +211,32 @@ impl Engine {
           }
         }
         singleflight::Registration::Leader(leader) => {
-          let result = self
-            .load_symbols_leader(&md5_key, initial_epoch, initial_gen)
-            .await;
+          if self
+            .read_state()
+            .is_closed_since(&md5_key, initial_epoch, initial_gen)
+          {
+            anyhow::bail!("Session was closed");
+          }
+          let result = self.load_symbols_leader(&md5_key).await;
           leader.complete(&result);
-          return result;
+          let symbols = result?;
+          let state = self.read_state();
+          ensure!(
+            !state.is_closed_since(&md5_key, initial_epoch, initial_gen),
+            "Session was closed"
+          );
+          return Ok(symbols);
         }
       }
     }
   }
 
   /// Executes the leader symbol-table RPC load and epoch-checked cache insertion.
-  async fn load_symbols_leader(
-    &self,
-    md5_key: &str,
-    initial_epoch: u64,
-    initial_gen: u64,
-  ) -> Result<Arc<SymbolIndex>> {
+  async fn load_symbols_leader(&self, md5_key: &str) -> Result<Arc<SymbolIndex>> {
     let backend = self.backend();
     loop {
       let (generation, epoch) = {
         let state = self.read_state();
-        ensure!(
-          !state.is_closed_since(md5_key, initial_epoch, initial_gen),
-          "Session was closed"
-        );
         if let Some(cached) = state.symbols.get(md5_key) {
           return Ok(Arc::clone(cached));
         }
@@ -235,8 +256,7 @@ impl Engine {
       let index = Arc::new(SymbolIndex::new(symbols));
       let mut state = self.write_state();
       ensure!(
-        !state.is_closed_since(md5_key, initial_epoch, initial_gen)
-          && !state.is_closed_since(md5_key, epoch, generation),
+        !state.is_closed_since(md5_key, epoch, generation),
         "Session was closed"
       );
       if state.epoch(md5_key) == epoch {
@@ -600,6 +620,16 @@ impl Engine {
       (state.generation, state.epoch(&md5))
     };
     loop {
+      {
+        let state = self.read_state();
+        ensure!(
+          !state.is_closed_since(&md5, initial_epoch, initial_gen),
+          "Session was closed"
+        );
+        if let Some(doc) = state.find_function_doc(&md5, entry, &decoded_entry) {
+          return Ok(doc.uri.clone());
+        }
+      }
       match self.open_flights.acquire(&md5, &decoded_entry) {
         singleflight::Registration::Follower(receiver) => {
           if let Some(uri) = singleflight::wait_flight(receiver).await? {
@@ -612,32 +642,31 @@ impl Engine {
           }
         }
         singleflight::Registration::Leader(leader) => {
-          let result = self
-            .open_leader(&md5, entry, &decoded_entry, initial_epoch, initial_gen)
-            .await;
+          if self
+            .read_state()
+            .is_closed_since(&md5, initial_epoch, initial_gen)
+          {
+            anyhow::bail!("Session was closed");
+          }
+          let result = self.open_leader(&md5, entry, &decoded_entry).await;
           leader.complete(&result);
-          return result;
+          let uri = result?;
+          let state = self.read_state();
+          ensure!(
+            !state.is_closed_since(&md5, initial_epoch, initial_gen),
+            "Session was closed"
+          );
+          return Ok(uri);
         }
       }
     }
   }
 
   /// Executes the leader `(md5, entry)` decompilation and epoch-checked document installation.
-  async fn open_leader(
-    &self,
-    md5: &str,
-    entry: &str,
-    decoded_entry: &str,
-    initial_epoch: u64,
-    initial_gen: u64,
-  ) -> Result<Uri> {
+  async fn open_leader(&self, md5: &str, entry: &str, decoded_entry: &str) -> Result<Uri> {
     loop {
       let (generation, epoch) = {
         let state = self.read_state();
-        ensure!(
-          !state.is_closed_since(md5, initial_epoch, initial_gen),
-          "Session was closed"
-        );
         if let Some(doc) = state.find_function_doc(md5, entry, decoded_entry) {
           return Ok(doc.uri.clone());
         }
@@ -646,8 +675,7 @@ impl Engine {
       let generated = self.generate_function(md5, decoded_entry, None).await?;
       let mut state = self.write_state();
       ensure!(
-        !state.is_closed_since(md5, initial_epoch, initial_gen)
-          && !state.is_closed_since(md5, epoch, generation),
+        !state.is_closed_since(md5, epoch, generation),
         "Session was closed"
       );
       if state.epoch(md5) != epoch {
