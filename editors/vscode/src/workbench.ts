@@ -375,14 +375,14 @@ export class Workbench implements vscode.Disposable {
         let callTools: string | undefined, callName: string | undefined;
         if (state.kind === 'strings') {
             const { items: strings, scanned } = await definedStrings(this.call, state.md5);
-            body = table(['Address', 'Length', 'Data type', 'String'], strings.map(unit => ({ cells: [unit.address, unit.length, unit.type, unit.value], address: unit.address, kind: 'data', detail: unit.type })));
+            body = table(['Address', 'Length', 'Data type', 'String'], strings.map(unit => ({ cells: [unit.address, unit.length, unit.type, unit.value], address: unit.address, kind: 'data', detail: unit.type })), 'Defined strings');
             scopeSummary = `${strings.length} strings`;
             scope = `${strings.length} strings recognized by Ghidra among ${scanned} defined data units in the default address space. Raw bytes are not scanned for strings.`;
             if (!strings.length) { body += '<p class="empty">Ghidra has not defined any strings in this program.</p>'; }
         } else if (state.kind === 'imports' || state.kind === 'exports') {
             const result = await this.call<BinaryInterface>('ghidra.binaryInterface', { md5: state.md5 });
             const symbols = items(result[state.kind]);
-            body = table(state.kind === 'imports' ? ['Name', 'Library', 'Address', 'Kind'] : ['Name', 'Address', 'Ordinal', 'Forwarded target', 'Kind'], symbols.map(symbol => ({ cells: state.kind === 'imports' ? [symbolName(symbol, true), stringOf(symbol.library), stringOf(symbol.address), stringOf(symbol.kind)] : [symbolName(symbol, true), stringOf(symbol.address), stringOf(symbol.ordinal), stringOf(symbol.forward), stringOf(symbol.kind)], address: stringOf(symbol.address) || undefined, label: symbolName(symbol, true), kind: 'symbol' })));
+            body = table(state.kind === 'imports' ? ['Name', 'Library', 'Address', 'Kind'] : ['Name', 'Address', 'Ordinal', 'Forwarded target', 'Kind'], symbols.map(symbol => ({ cells: state.kind === 'imports' ? [symbolName(symbol, true), stringOf(symbol.library), stringOf(symbol.address), stringOf(symbol.kind)] : [symbolName(symbol, true), stringOf(symbol.address), stringOf(symbol.ordinal), stringOf(symbol.forward), stringOf(symbol.kind)], address: stringOf(symbol.address) || undefined, label: symbolName(symbol, true), kind: 'symbol' })), names[state.kind]);
             scopeSummary = `${symbols.length} ${state.kind} · ${result.format || 'binary'}`;
             scope = `${symbols.length} ${state.kind} · ${result.format || 'binary'}${result.source ? ` · ${result.source}` : ''}${result.limitations?.length ? `. ${result.limitations.join(' ')}` : ''}`;
             if (!symbols.length) { body += `<p class="empty">No ${state.kind} reported.</p>`; }
@@ -393,13 +393,13 @@ export class Workbench implements vscode.Disposable {
                     const target = stringOf(direction === 'to' ? ref.from : ref.to);
                     const navigable = parseAddress(target) !== undefined;
                     return { cells: [stringOf(ref.from), stringOf(ref.to), stringOf(ref.type), stringOf(ref.operand_index), stringOf(ref.source_type), navigable ? direction === 'to' ? 'Open source' : 'Open destination' : 'Non-memory reference'], ...(navigable ? { address: target } : {}), kind: direction === 'to' ? 'reference-source' : 'reference-destination' };
-                }))}</section>`;
+                }), direction === 'to' ? 'Incoming references' : 'Outgoing references')}</section>`;
             }
             address = state.address;
             scope = '';
         } else if (state.kind === 'callers' || state.kind === 'callees') {
             const rows = collection(await this.query(state.md5, 'function', 'call.list', { filter: { entry: state.entry, direction: state.kind } }, true));
-            body = table(['Function', 'Entry', 'Call site'], rows.map(fn => ({ cells: [symbolName(fn, true), stringOf(fn.entry), stringOf(fn.call_site) || 'Not reported'], entry: stringOf(fn.entry), address: stringOf(fn.call_site || fn.entry), label: symbolName(fn, true), kind: 'function' })));
+            body = table(['Function', 'Entry', 'Call site'], rows.map(fn => ({ cells: [symbolName(fn, true), stringOf(fn.entry), stringOf(fn.call_site) || 'Not reported'], entry: stringOf(fn.entry), address: stringOf(fn.call_site || fn.entry), label: symbolName(fn, true), kind: 'function' })), names[state.kind]);
             scopeSummary = `${rows.length} ${state.kind}`;
             scope = scopeSummary;
         } else if (state.kind === 'callGraph') {
@@ -477,7 +477,7 @@ export class Workbench implements vscode.Disposable {
                     cells: [names.get(edge.from)!.name, names.get(edge.to)!.name, site || 'Not reported'],
                     entry: names.get(edge.to)!.entry, address: site || names.get(edge.to)!.entry, label: names.get(edge.to)!.name, kind: 'function',
                 })));
-                body = await callGraph(model) + `<details class="call-details" hidden><summary>Call relationships and sites (${model.edges.length})</summary>${table(['Caller', 'Callee', 'Call site'], rows)}</details>`;
+                body = await callGraph(model) + `<details class="call-details" hidden><summary>Call relationships and sites (${model.edges.length})</summary>${table(['Caller', 'Callee', 'Call site'], rows, 'Call relationships and sites')}</details>`;
                 callTools = `<div class="call-controls call-icon-row" role="group" aria-label="Call graph exploration"><button id="call-center" aria-label="Center current function" title="Center current function">${callIcon('center')}</button><button id="call-focus" data-action="focusCallGraph" aria-label="Focus selected function" title="Focus selected function">${callIcon('focus')}</button><span class="call-divider" aria-hidden="true"></span><button id="call-menu-overview" aria-pressed="true" aria-label="Overview" title="Overview">${callIcon('overview')}</button><button id="call-details-toggle" aria-pressed="false" aria-label="Call sites" title="Call sites">${callIcon('details')}</button><span class="call-divider" aria-hidden="true"></span><button data-action="refresh" aria-label="Refresh graph" title="Refresh graph">${callIcon('refresh')}</button></div>`;
                 scope = `${model.limited ? 'Graph limit reached; fold branches for a smaller neighborhood. ' : ''}${model.warnings.length ? `${model.warnings.length} functions could not be expanded; refresh to retry.` : ''}`;
                 callName = res.rootName || names.get(model.root)?.name || displayAddress(state.entry || '');

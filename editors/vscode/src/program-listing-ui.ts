@@ -54,7 +54,7 @@ function linkifyInlineTargets(opHtml: string, targets: ListingTarget[]): string 
         if (!match) {
             return full;
         }
-        return `<button type="button" class="target-link target-inline" data-jump="${escape(match.to)}" title="${escape(`Jump to ${match.to}${match.kind ? ` (${match.kind})` : ''}`)}">${escape(rawLiteral)}</button>`;
+        return `<button type="button" class="target-link target-inline" tabindex="-1" data-jump="${escape(match.to)}" title="${escape(`Jump to ${match.to}${match.kind ? ` (${match.kind})` : ''}`)}">${escape(rawLiteral)}</button>`;
     });
 }
 
@@ -65,32 +65,32 @@ export function renderListingRowsHtml(items: ListingRenderItem[], selectedAddres
         const parts: string[] = [];
         if (unit.blockHeader) {
             const b = unit.blockHeader;
-            parts.push(`<tr class="listing-aux-row listing-block-row"${hiddenRun ? ' hidden' : ''}><td colspan="5"><span class="listing-block-name">${escape(b.name)}</span><span>${addrSpan(b.start)}–${addrSpan(b.end)} · ${escape(b.permissions)}${b.initialized ? '' : ' · uninitialized'}${b.kind ? ` · ${escape(b.kind)}` : ''}${b.comment ? ` · ${escape(b.comment)}` : ''}</span></td></tr>`);
+            parts.push(`<tr class="listing-aux-row listing-block-row" role="row"${hiddenRun ? ' hidden' : ''}><td colspan="5" role="gridcell" tabindex="-1"><span class="listing-block-name">${escape(b.name)}</span><span>${addrSpan(b.start)}–${addrSpan(b.end)} · ${escape(b.permissions)}${b.initialized ? '' : ' · uninitialized'}${b.kind ? ` · ${escape(b.kind)}` : ''}${b.comment ? ` · ${escape(b.comment)}` : ''}</span></td></tr>`);
         }
         if (unit.plateComment) {
-            parts.push(`<tr class="listing-aux-row listing-plate-row"${hiddenRun ? ' hidden' : ''}><td class="addr"></td><td colspan="4">/* ${escape(unit.plateComment)} */</td></tr>`);
+            parts.push(`<tr class="listing-aux-row listing-plate-row" role="row"${hiddenRun ? ' hidden' : ''}><td class="addr" role="gridcell" tabindex="-1"></td><td colspan="4" role="gridcell" tabindex="-1">/* ${escape(unit.plateComment)} */</td></tr>`);
         }
         if (unit.functionHeader) {
             const fn = unit.functionHeader;
             const flagStr = [fn.callingConvention, ...fn.flags].filter(Boolean).join(' · ');
             const vars = fn.variables.slice(0, 12).map(v => `<span title="${escape(v.rawStorage || v.storage)}">${escape(v.kind)}: ${escape(v.dataType)} <strong>${escape(v.name)}</strong> [${escape(v.storage)}]</span>`).join('');
             const moreVars = fn.variables.length > 12 ? `<span>+${fn.variables.length - 12} more</span>` : '';
-            parts.push(`<tr class="listing-aux-row listing-fn-row"${hiddenRun ? ' hidden' : ''}><td class="addr"></td><td colspan="4"><div class="listing-fn-sig" title="${escape(fn.rawSignature)}${fn.mangledName ? `\nMangled: ${fn.mangledName}` : ''}">${highlightName(fn.displaySignature)}</div>${flagStr ? `<div class="listing-fn-meta">${escape(flagStr)}</div>` : ''}${vars ? `<div class="listing-var-list">${vars}${moreVars}</div>` : ''}</td></tr>`);
+            parts.push(`<tr class="listing-aux-row listing-fn-row" role="row"${hiddenRun ? ' hidden' : ''}><td class="addr" role="gridcell" tabindex="-1"></td><td colspan="4" role="gridcell" tabindex="-1"><div class="listing-fn-sig" title="${escape(fn.rawSignature)}${fn.mangledName ? `\nMangled: ${fn.mangledName}` : ''}">${highlightName(fn.displaySignature)}</div>${flagStr ? `<div class="listing-fn-meta">${escape(flagStr)}</div>` : ''}${vars ? `<div class="listing-var-list">${vars}${moreVars}</div>` : ''}</td></tr>`);
         }
         if (unit.labels.length || unit.xrefs.length) {
             const labelsHtml = unit.labels.map(l => `<span class="listing-label-name" title="${escape(l.fullTooltip)}">${highlightName(l.name)}:</span>`).join(' ');
             const xrefsHtml = unit.xrefs.length
                 ? `<span class="listing-xrefs">XREF[${unit.xrefTotal}]: ${unit.xrefs.map(x => x.navigable
-                    ? `<button type="button" class="xref-link" data-jump="${escape(x.from)}" title="${escape(`${x.type} from ${x.from}`)}">${escape(x.label)}${escape(x.suffix)}</button>`
+                    ? `<button type="button" class="xref-link" tabindex="-1" data-jump="${escape(x.from)}" title="${escape(`${x.type} from ${x.from}`)}">${escape(x.label)}${escape(x.suffix)}</button>`
                     : `<span class="xref-static" title="${escape(`${x.type} from ${x.from}`)}">${escape(x.label)}${escape(x.suffix)}</span>`).join(' ')}${unit.xrefTotal > unit.xrefs.length ? ` <span>+${unit.xrefTotal - unit.xrefs.length}</span>` : ''}</span>`
                 : '';
-            parts.push(`<tr class="listing-aux-row listing-label-row"${hiddenRun ? ' hidden' : ''}><td class="addr"></td><td colspan="4"><div class="listing-label-main">${labelsHtml}${xrefsHtml}</div></td></tr>`);
+            parts.push(`<tr class="listing-aux-row listing-label-row" role="row"${hiddenRun ? ' hidden' : ''}><td class="addr" role="gridcell" tabindex="-1"></td><td colspan="4" role="gridcell" tabindex="-1"><div class="listing-label-main">${labelsHtml}${xrefsHtml}</div></td></tr>`);
         }
         if (unit.preComment) {
-            parts.push(`<tr class="listing-aux-row listing-pre-row"${hiddenRun ? ' hidden' : ''}><td class="addr"></td><td colspan="4">; ${escape(unit.preComment)}</td></tr>`);
+            parts.push(`<tr class="listing-aux-row listing-pre-row" role="row"${hiddenRun ? ' hidden' : ''}><td class="addr" role="gridcell" tabindex="-1"></td><td colspan="4" role="gridcell" tabindex="-1">; ${escape(unit.preComment)}</td></tr>`);
         }
 
-        const isSel = selectedAddress && unit.address.toLowerCase() === selectedAddress.toLowerCase();
+        const isSel = Boolean(selectedAddress && unit.address.toLowerCase() === selectedAddress.toLowerCase());
         const rawOpHtml = unit.kind === 'instruction'
             ? highlightAsm(unit.operandsText, 'span', false)
             : unit.typePath
@@ -99,13 +99,13 @@ export function renderListingRowsHtml(items: ListingRenderItem[], selectedAddres
         const opHtml = unit.kind === 'instruction' ? linkifyInlineTargets(rawOpHtml, unit.targets) : rawOpHtml;
         const visibleTargets = unit.targets.filter(t => !t.inlineOnly);
         const chipsHtml = visibleTargets.length
-            ? `<span class="target-chips">${visibleTargets.map(t => `<button type="button" class="target-link" data-jump="${escape(t.to)}" title="${escape(`Jump to ${t.to}${t.kind ? ` (${t.kind})` : ''}`)}">→ ${escape(t.label)}</button>`).join('')}</span>`
+            ? `<span class="target-chips">${visibleTargets.map(t => `<button type="button" class="target-link" tabindex="-1" data-jump="${escape(t.to)}" title="${escape(`Jump to ${t.to}${t.kind ? ` (${t.kind})` : ''}`)}">→ ${escape(t.label)}</button>`).join('')}</span>`
             : '';
         const eolHtml = unit.eolComment ? `; ${escape(unit.eolComment)}` : '';
-        parts.push(`<tr class="listing-unit-row${isSel ? ' selected' : ''}" tabindex="0" data-address="${escape(unit.address)}" data-byte-length="${unit.byteLength}" data-kind="${escape(unit.kind)}"${unit.entry ? ` data-entry="${escape(unit.entry)}"` : ''}${unit.functionName ? ` data-fn-name="${escape(unit.functionName)}"` : ''}${unit.targets[0]?.to ? ` data-jump-primary="${escape(unit.targets[0].to)}"` : ''}${hiddenRun ? ' data-run-member="true" hidden' : ''}><td class="addr">${addrSpan(unit.address)}</td><td class="col-bytes" title="${escape(unit.bytesText)}">${escape(unit.bytesShort)}</td><td class="col-mnemonic"><span class="tok-mnemonic">${escape(unit.mnemonic)}</span></td><td class="col-operands">${opHtml}${chipsHtml}</td><td class="col-comment">${eolHtml}</td></tr>`);
+        parts.push(`<tr class="listing-unit-row${isSel ? ' selected' : ''}" role="row" aria-selected="${isSel ? 'true' : 'false'}" data-address="${escape(unit.address)}" data-byte-length="${unit.byteLength}" data-kind="${escape(unit.kind)}"${unit.entry ? ` data-entry="${escape(unit.entry)}"` : ''}${unit.functionName ? ` data-fn-name="${escape(unit.functionName)}"` : ''}${unit.targets[0]?.to ? ` data-jump-primary="${escape(unit.targets[0].to)}"` : ''}${hiddenRun ? ' data-run-member="true" hidden' : ''}><td class="addr" role="gridcell" tabindex="-1">${addrSpan(unit.address)}</td><td class="col-bytes" role="gridcell" tabindex="-1" title="${escape(unit.bytesText)}">${escape(unit.bytesShort)}</td><td class="col-mnemonic" role="gridcell" tabindex="-1"><span class="tok-mnemonic">${escape(unit.mnemonic)}</span></td><td class="col-operands" role="gridcell" tabindex="-1">${opHtml}${chipsHtml}</td><td class="col-comment" role="gridcell" tabindex="-1">${eolHtml}</td></tr>`);
 
         if (unit.postComment) {
-            parts.push(`<tr class="listing-aux-row listing-post-row"${hiddenRun ? ' hidden' : ''}><td class="addr"></td><td colspan="4">; post: ${escape(unit.postComment)}</td></tr>`);
+            parts.push(`<tr class="listing-aux-row listing-post-row" role="row"${hiddenRun ? ' hidden' : ''}><td class="addr" role="gridcell" tabindex="-1"></td><td colspan="4" role="gridcell" tabindex="-1">; post: ${escape(unit.postComment)}</td></tr>`);
         }
         return parts.join('');
     };
@@ -115,9 +115,9 @@ export function renderListingRowsHtml(items: ListingRenderItem[], selectedAddres
             const run = item as ListingUndefinedRun;
             if (run.blockHeader) {
                 const b = run.blockHeader;
-                out.push(`<tr class="listing-aux-row listing-block-row"><td colspan="5"><span class="listing-block-name">${escape(b.name)}</span><span>${addrSpan(b.start)}–${addrSpan(b.end)} · ${escape(b.permissions)}${b.initialized ? '' : ' · uninitialized'}${b.kind ? ` · ${escape(b.kind)}` : ''}${b.comment ? ` · ${escape(b.comment)}` : ''}</span></td></tr>`);
+                out.push(`<tr class="listing-aux-row listing-block-row" role="row"><td colspan="5" role="gridcell" tabindex="-1"><span class="listing-block-name">${escape(b.name)}</span><span>${addrSpan(b.start)}–${addrSpan(b.end)} · ${escape(b.permissions)}${b.initialized ? '' : ' · uninitialized'}${b.kind ? ` · ${escape(b.kind)}` : ''}${b.comment ? ` · ${escape(b.comment)}` : ''}</span></td></tr>`);
             }
-            out.push(`<tr class="listing-undef-run" data-run-start="${escape(run.startAddress)}"><td class="addr">${addrSpan(run.startAddress)}</td><td class="col-bytes"></td><td class="col-mnemonic">${run.uninitialized ? '??' : 'db'}</td><td class="col-operands"><button type="button" class="expand-run-btn" aria-expanded="false" data-expand-run="${escape(run.startAddress)}">${run.byteLength} ${run.uninitialized ? 'uninitialized' : 'undefined'} bytes (${escape(displayAddress(run.startAddress))}..${escape(displayAddress(run.endAddress))})</button></td><td class="col-comment"></td></tr>`);
+            out.push(`<tr class="listing-undef-run" role="row" data-run-start="${escape(run.startAddress)}"><td class="addr" role="gridcell" tabindex="-1">${addrSpan(run.startAddress)}</td><td class="col-bytes" role="gridcell" tabindex="-1"></td><td class="col-mnemonic" role="gridcell" tabindex="-1">${run.uninitialized ? '??' : 'db'}</td><td class="col-operands" role="gridcell" tabindex="-1"><button type="button" class="expand-run-btn" tabindex="-1" aria-expanded="false" data-expand-run="${escape(run.startAddress)}">${run.byteLength} ${run.uninitialized ? 'uninitialized' : 'undefined'} bytes (${escape(displayAddress(run.startAddress))}..${escape(displayAddress(run.endAddress))})</button></td><td class="col-comment" role="gridcell" tabindex="-1"></td></tr>`);
             for (const member of run.units) {
                 out.push(renderUnit(member, true));
             }
@@ -181,11 +181,12 @@ ${programViewStyles}
     </details>
   </div>
 </div>
-<p id="filter-status" role="status" aria-live="polite" hidden></p>
+<p id="filter-status" class="sr-filter-status" role="status" aria-live="polite" aria-atomic="true"></p>
+<p id="live-status" class="sr-status" role="status" aria-live="polite" aria-atomic="true"></p>
 <div class="table-wrap" id="listing-wrap">
-  <table class="listing-table">
-    <thead><tr><th scope="col">Address</th><th scope="col" class="col-bytes">Bytes</th><th scope="col" class="col-mnemonic">Mnemonic</th><th scope="col" class="col-operands">Operands</th><th scope="col" class="col-comment">Comments</th></tr></thead>
-    <tbody id="listing-body">${renderListingRowsHtml(payload.window.collapsedItems, payload.selectedAddress)}</tbody>
+  <table class="listing-table" role="grid" aria-label="Program listing">
+    <thead role="rowgroup"><tr role="row"><th scope="col" role="columnheader">Address</th><th scope="col" role="columnheader" class="col-bytes">Bytes</th><th scope="col" role="columnheader" class="col-mnemonic">Mnemonic</th><th scope="col" role="columnheader" class="col-operands">Operands</th><th scope="col" role="columnheader" class="col-comment">Comments</th></tr></thead>
+    <tbody id="listing-body" role="rowgroup">${renderListingRowsHtml(payload.window.collapsedItems, payload.selectedAddress)}</tbody>
   </table>
 </div>
 <div class="no-results" hidden><span>No matching rows.</span><button type="button" id="clear-filter" class="icon-button" aria-label="Clear filter" title="Clear filter">${callIcon('close')}</button></div>
@@ -262,6 +263,8 @@ const persist = () => {
   });
 };
 ${webviewShortcutScript}
+const statusBus = new LiveStatusBus();
+let listingGrid = null;
 
 const unitRows = () => [...tbody.querySelectorAll('tr.listing-unit-row')];
 const findUnitRow = addr => addr ? unitRows().find(r => r.dataset.address?.toLowerCase() === addr.toLowerCase()) : undefined;
@@ -319,12 +322,20 @@ const updateSelectionTools = () => {
 
 const selectRow = (row, notify = true, scroll = true) => {
   if (!row) return;
-  for (const r of tbody.querySelectorAll('tr.selected')) r.classList.remove('selected');
-  row.classList.add('selected');
+  if (listingGrid) {
+    listingGrid.setSelectedRow(row);
+  } else {
+    for (const r of unitRows()) {
+      const isMatch = r === row;
+      r.classList.toggle('selected', isMatch);
+      r.setAttribute('aria-selected', isMatch ? 'true' : 'false');
+    }
+  }
   selected = row.dataset.address || '';
   selectedEntry = row.dataset.entry || '';
   selectedKind = row.dataset.kind || 'instruction';
   selectedLength = Number(row.dataset.byteLength) || 1;
+  listingGrid?.refresh(selected);
   if (addressInput) addressInput.value = /^ram:[0-9a-f]+$/i.test(selected) ? selected.slice(4) : selected;
   if (scroll) row.scrollIntoView({ block: 'nearest' });
   updateSelectionTools();
@@ -352,20 +363,27 @@ const applyFilter = () => {
     aux.hidden = !!q || (aux.classList.contains('listing-undef-run') && !optCollapse.checked);
   }
   const empty = document.querySelector('.no-results');
-  const status = document.getElementById('filter-status');
   const wrapTable = wrap.querySelector('table');
   if (wrapTable) wrapTable.hidden = !!q && visible === 0;
   empty.hidden = !q || visible > 0;
-  status.hidden = !q;
-  status.classList.toggle('sr-filter-status', !!q && visible === 0);
-  status.textContent = q ? (visible ? visible + ' of ' + rows.length + ' displayed rows match.' : 'No displayed rows match this filter.') : '';
+  listingGrid?.refresh(selected);
+  statusBus.updateFilter({
+    query: q,
+    activeText: visible + ' of ' + rows.length + ' displayed rows match.',
+    emptyText: 'No displayed rows match this filter.',
+    resetText: 'Filter cleared. Showing all ' + rows.length + ' displayed rows.',
+    showVisual: visible > 0,
+  });
   updateSelectionTools();
 };
 
 const bindTableInteractions = () => {
+  listingGrid?.syncStructure();
   for (const row of unitRows()) {
-    if (selected && row.dataset.address?.toLowerCase() === selected.toLowerCase()) {
-      row.classList.add('selected');
+    const isMatch = Boolean(selected && row.dataset.address?.toLowerCase() === selected.toLowerCase());
+    row.classList.toggle('selected', isMatch);
+    row.setAttribute('aria-selected', isMatch ? 'true' : 'false');
+    if (isMatch) {
       selectedEntry = row.dataset.entry || '';
       selectedKind = row.dataset.kind || 'instruction';
       selectedLength = Number(row.dataset.byteLength) || 1;
@@ -378,78 +396,60 @@ const bindTableInteractions = () => {
 const focusListingFallback = () => {
   const selRow = findUnitRow(selected);
   if (selRow && !selRow.hidden) {
-    selRow.focus({ preventScroll: true });
+    listingGrid?.focusRow(selRow, { preventScroll: true });
     return;
   }
   const firstVisible = unitRows().find(r => !r.hidden);
   if (firstVisible) {
     firstVisible.scrollIntoView({ block: 'nearest' });
-    firstVisible.focus({ preventScroll: true });
+    listingGrid?.focusRow(firstVisible, { preventScroll: true });
     return;
   }
   search?.focus({ preventScroll: true });
 };
 
-tbody.addEventListener('click', event => {
-  const jumpBtn = event.target.closest('[data-jump]');
-  if (jumpBtn) {
-    event.stopPropagation();
-    vscode.postMessage({ action: 'goto', address: jumpBtn.dataset.jump });
-    return;
-  }
-  const expandBtn = event.target.closest('[data-expand-run]');
-  if (expandBtn) {
-    event.stopPropagation();
-    const runRow = expandBtn.closest('tr');
-    optCollapse.checked = false;
-    applyViewClasses();
-    applyFilter();
-    let firstRow = findUnitRow(expandBtn.dataset.expandRun);
-    if (!firstRow || firstRow.hidden) {
-      let next = runRow?.nextElementSibling;
-      while (next && (!next.classList.contains('listing-unit-row') || next.hidden)) {
-        next = next.nextElementSibling;
+listingGrid = new TableGridController(wrap.querySelector('table'), {
+  isSelectableRow: r => r.classList.contains('listing-unit-row'),
+  initialKey: selected,
+  onActionClick: (event, target) => {
+    const jumpBtn = target.closest('[data-jump]');
+    if (jumpBtn) {
+      event.stopPropagation();
+      vscode.postMessage({ action: 'goto', address: jumpBtn.dataset.jump });
+      return true;
+    }
+    const expandBtn = target.closest('[data-expand-run]');
+    if (expandBtn) {
+      event.stopPropagation();
+      const runRow = expandBtn.closest('tr');
+      optCollapse.checked = false;
+      applyViewClasses();
+      applyFilter();
+      let firstRow = findUnitRow(expandBtn.dataset.expandRun);
+      if (!firstRow || firstRow.hidden) {
+        let next = runRow?.nextElementSibling;
+        while (next && (!next.classList.contains('listing-unit-row') || next.hidden)) {
+          next = next.nextElementSibling;
+        }
+        firstRow = next || unitRows().find(r => !r.hidden);
       }
-      firstRow = next || unitRows().find(r => !r.hidden);
+      if (firstRow) {
+        selectRow(firstRow, true, true);
+        listingGrid.focusRow(firstRow, { preventScroll: true });
+      } else {
+        persist();
+      }
+      return true;
     }
-    if (firstRow) {
-      firstRow.focus({ preventScroll: true });
-      selectRow(firstRow, true, true);
-    } else {
-      persist();
-    }
-    return;
-  }
-  const row = event.target.closest('tr.listing-unit-row');
-  if (row) selectRow(row, true, false);
-});
-
-tbody.addEventListener('dblclick', event => {
-  if (event.target.closest('[data-jump],[data-expand-run]')) return;
-  const row = event.target.closest('tr.listing-unit-row');
-  if (!row) return;
-  selectRow(row, false, false);
-  const jump = row.dataset.jumpPrimary;
-  if (jump) vscode.postMessage({ action: 'goto', address: jump });
-  else if (primaryAction) vscode.postMessage({ action: primaryAction, address: selected, entry: selectedEntry, kind: selectedKind });
-});
-
-tbody.addEventListener('keydown', event => {
-  if (event.target.closest('[data-jump],[data-expand-run],button')) return;
-  const row = event.target.closest('tr.listing-unit-row');
-  if (!row) return;
-  const visible = unitRows().filter(r => !r.hidden);
-  const idx = visible.indexOf(row);
-  if (event.key === 'ArrowDown' && idx + 1 < visible.length) { event.preventDefault(); visible[idx + 1].focus(); selectRow(visible[idx + 1], true, true); }
-  else if (event.key === 'ArrowUp' && idx > 0) { event.preventDefault(); visible[idx - 1].focus(); selectRow(visible[idx - 1], true, true); }
-  else if (event.key === 'Home' && visible.length) { event.preventDefault(); visible[0].focus(); selectRow(visible[0], true, true); }
-  else if (event.key === 'End' && visible.length) { event.preventDefault(); visible[visible.length - 1].focus(); selectRow(visible[visible.length - 1], true, true); }
-  else if (event.key === 'Enter') {
-    event.preventDefault();
+    return false;
+  },
+  onSelect: (row, notify, scroll) => selectRow(row, notify, scroll),
+  onActivate: row => {
+    selectRow(row, false, false);
     const jump = row.dataset.jumpPrimary;
     if (jump) vscode.postMessage({ action: 'goto', address: jump });
     else if (primaryAction) vscode.postMessage({ action: primaryAction, address: selected, entry: selectedEntry, kind: selectedKind });
-  }
+  },
 });
 
 document.addEventListener('click', event => {
@@ -459,11 +459,13 @@ document.addEventListener('click', event => {
     if (['navBack', 'navForward', 'refresh', 'loadBefore', 'loadAfter', 'toggleSync', 'openHexBeside'].includes(act)) {
       vscode.postMessage({ action: act });
     } else if (act === 'copyAddress' && selected) {
+      const short = /^ram:[0-9a-f]+$/i.test(selected) ? selected.slice(4) : selected;
+      statusBus.announce('Copied address ' + short);
       vscode.postMessage({ action: 'copyAddress', address: selected });
     } else if (selected) {
       vscode.postMessage({ action: act, address: selected, entry: selectedEntry, kind: selectedKind });
     }
-    if (more && more.contains(btn)) { more.open = false; moreSummary.focus({ preventScroll: true }); }
+    if (more && more.contains(btn) && act !== 'copyAddress') { more.open = false; moreSummary.focus({ preventScroll: true }); }
     pageOptions.open = false;
     return;
   }
@@ -506,6 +508,8 @@ window.addEventListener('message', event => {
   if (msg.action === 'highlight') {
     const row = findUnitRow(msg.address);
     if (row) selectRow(row, false, true);
+  } else if (msg.action === 'status' && msg.message) {
+    statusBus.announce(msg.message, false);
   } else if (msg.action === 'syncState') {
     state.syncEnabled = !!msg.syncEnabled;
     syncToggle.setAttribute('aria-pressed', String(state.syncEnabled));
@@ -561,6 +565,7 @@ window.addEventListener('message', event => {
 });
 
 bindTableInteractions();
+window.addEventListener('resize', () => listingGrid?.refresh(selected), { passive: true });
 requestAnimationFrame(() => {
   const initialRow = findUnitRow(selected);
   if (initialRow && !samePage) initialRow.scrollIntoView({ block: 'center' });

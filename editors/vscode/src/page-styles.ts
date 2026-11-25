@@ -37,6 +37,7 @@ input:disabled,select:disabled,textarea:disabled{opacity:.6;cursor:default}
 input:read-only{color:var(--vscode-descriptionForeground)}
 textarea{min-height:88px;resize:vertical}
 :focus-visible{outline:2px solid var(--vscode-focusBorder);outline-offset:2px}
+[role="grid"] :is(td,th)[role="gridcell"]:focus-visible,[role="grid"] th[role="rowheader"]:focus-visible{outline:2px solid var(--vscode-focusBorder);outline-offset:-2px;position:relative;z-index:1}
 input:focus,select:focus,textarea:focus{outline:1px solid var(--vscode-focusBorder);outline-offset:0}
 .table-wrap{max-width:100%;overflow:auto;border:1px solid var(--vscode-panel-border);border-radius:2px}
 table{width:100%;border-collapse:collapse;text-align:left;font-size:inherit;font-variant-numeric:tabular-nums}
@@ -79,6 +80,7 @@ input[type=checkbox]{width:auto;margin:0;accent-color:var(--vscode-checkbox-sele
 .error{color:var(--vscode-errorForeground);white-space:pre-wrap;overflow-wrap:anywhere}
 .success{color:var(--vscode-testing-iconPassed)}
 #error:empty,#status:empty{display:none}
+body #filter-status.sr-filter-status,.sr-filter-status,.sr-status{position:absolute;width:1px;height:1px;padding:0;margin:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
 .empty{padding:20px 0;color:var(--vscode-descriptionForeground)}
 @media(max-width:640px){main{padding:16px}h1{font-size:20px}dl>div{grid-template-columns:1fr;gap:2px}.toolbar{gap:6px}.form-grid{gap:12px}.editable,.editable input{min-width:0}}
 `;

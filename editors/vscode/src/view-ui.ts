@@ -193,7 +193,7 @@ export const viewStyles = `
 .browser-page td{padding:8px 10px;line-height:1.55;font-size:12px}
 .browser-page td.addr{font-family:var(--vscode-editor-font-family,monospace);font-size:11px;font-variant-numeric:tabular-nums;white-space:nowrap;overflow-wrap:normal}
 .browser-page tbody tr.selected{background:var(--vscode-list-inactiveSelectionBackground);color:var(--vscode-list-inactiveSelectionForeground,var(--vscode-foreground))}
-.browser-page tbody tr.selected:focus{background:var(--vscode-list-activeSelectionBackground);color:var(--vscode-list-activeSelectionForeground,var(--vscode-foreground))}
+.browser-page tbody tr.selected:is(:focus,:focus-within){background:var(--vscode-list-activeSelectionBackground);color:var(--vscode-list-activeSelectionForeground,var(--vscode-foreground))}
 .browser-page tr:focus-visible{outline:1px solid var(--vscode-focusBorder);outline-offset:-1px}
 .browser-page .table-empty{margin:0;padding:12px 0;color:var(--vscode-descriptionForeground);font-size:12px}
 .browser-page .no-results{display:flex;align-items:center;gap:12px;margin:12px 0;padding:8px 0;color:var(--vscode-descriptionForeground);font-size:12px}
@@ -342,15 +342,428 @@ window.addEventListener('message',event=>{
   if(msg.action==='singleKeyShortcuts'){setSingleKeyShortcuts(typeof msg.singleKeyShortcuts==='boolean'?msg.singleKeyShortcuts:msg.enabled)}
 });
 syncShortcutHints();
+const isGridElementVisible=el=>{
+  if(!el||el.hidden||el.closest('[hidden]')){return false}
+  const closed=el.closest('details:not([open])');
+  if(closed&&closed.querySelector(':scope > summary')!==el){return false}
+  if(typeof el.checkVisibility==='function'){return el.checkVisibility({checkVisibilityCSS:true})}
+  const style=getComputedStyle(el);
+  return style.display!=='none'&&style.visibility!=='hidden';
+};
+class LiveStatusBus{
+  constructor(filterId='filter-status',liveId='live-status'){
+    this.filterEl=document.getElementById(filterId);
+    this.liveEl=document.getElementById(liveId);
+    this.hadFilter=false;
+    this.lastText='';
+    this.lastAt=0;
+    for(const el of [this.filterEl,this.liveEl]){
+      if(!el){continue}
+      el.hidden=false;
+      el.removeAttribute('hidden');
+      el.setAttribute('role','status');
+      el.setAttribute('aria-live','polite');
+      el.setAttribute('aria-atomic','true');
+    }
+    if(this.filterEl){this.filterEl.classList.add('sr-filter-status')}
+    if(this.liveEl){this.liveEl.classList.add('sr-status')}
+    window.addEventListener('message',event=>{
+      const msg=event.data||{};
+      if(msg.action==='status'&&typeof msg.message==='string'&&msg.message){this.announce(msg.message,false)}
+    });
+  }
+  updateFilter({query='',activeText='',emptyText='',resetText='',showVisual=false}){
+    if(!this.filterEl){return}
+    this.filterEl.hidden=false;
+    this.filterEl.removeAttribute('hidden');
+    if(query){
+      this.hadFilter=true;
+      this.filterEl.classList.toggle('sr-filter-status',!showVisual);
+      const next=showVisual?activeText:(emptyText||activeText);
+      if(this.filterEl.textContent!==next){this.filterEl.textContent=next}
+      return;
+    }
+    this.filterEl.classList.add('sr-filter-status');
+    if(this.hadFilter){
+      this.hadFilter=false;
+      const text=resetText||'Filter cleared.';
+      this.filterEl.textContent=this.filterEl.textContent===text?text+'\u00a0':text;
+    }
+  }
+  announce(message,fromUserGesture=true){
+    const target=this.liveEl||this.filterEl;
+    if(!target||!message){return}
+    target.hidden=false;
+    target.removeAttribute('hidden');
+    const clean=String(message).trim();
+    const now=performance.now();
+    if(!fromUserGesture&&clean===this.lastText&&now-this.lastAt<600){return}
+    this.lastText=clean;
+    this.lastAt=now;
+    target.textContent=target.textContent===clean?clean+'\u00a0':clean;
+  }
+}
+class TableGridController{
+  constructor(table,options={}){
+    this.table=table;
+    this.tbody=table?.querySelector('tbody')||null;
+    this.mode=options.mode==='cell'?'cell':'row';
+    this.options=options;
+    this.activeStop=null;
+    this.preferredCol=0;
+    if(this.table&&this.tbody){
+      this.syncStructure();
+      this.bind();
+      this.refresh(options.initialKey);
+    }
+  }
+  isSelectableRow(row){
+    if(!row||row.parentElement!==this.tbody){return false}
+    return this.options.isSelectableRow?Boolean(this.options.isSelectableRow(row)):Boolean(row.dataset.address||row.dataset.entry);
+  }
+  rowMatchesKey(row,key){
+    if(!row||!key){return false}
+    if(this.options.matchRow){return Boolean(this.options.matchRow(row,key))}
+    const norm=String(key).toLowerCase();
+    return (row.dataset.address||'').toLowerCase()===norm||(row.dataset.entry||'').toLowerCase()===norm;
+  }
+  syncStructure(){
+    if(!this.table||!this.tbody){return}
+    this.table.setAttribute('role','grid');
+    if(!this.table.getAttribute('aria-label')&&!this.table.getAttribute('aria-labelledby')){
+      const heading=this.table.closest('section')?.querySelector('h2,h3')?.textContent?.trim()||document.querySelector('h1')?.textContent?.trim()||'Data grid';
+      this.table.setAttribute('aria-label',heading);
+    }
+    for(const group of this.table.querySelectorAll(':scope > thead,:scope > tbody')){group.setAttribute('role','rowgroup')}
+    for(const headRow of this.table.querySelectorAll(':scope > thead > tr')){
+      headRow.setAttribute('role','row');
+      headRow.removeAttribute('tabindex');
+      for(const th of headRow.children){if(th.tagName==='TH'){th.setAttribute('role','columnheader')}}
+    }
+    for(const row of this.tbody.children){
+      if(row.tagName!=='TR'){continue}
+      row.setAttribute('role','row');
+      row.removeAttribute('tabindex');
+      if(this.mode==='row'){
+        if(this.isSelectableRow(row)){row.setAttribute('aria-selected',row.classList.contains('selected')?'true':'false')}
+        else{row.removeAttribute('aria-selected')}
+      }
+      for(const cell of row.children){
+        if(cell.tagName==='TH'){cell.setAttribute('role','rowheader')}
+        else if(cell.tagName==='TD'){cell.setAttribute('role','gridcell');if(this.mode==='row'){cell.tabIndex=-1}}
+      }
+      if(this.mode==='row'){
+        for(const btn of row.querySelectorAll('button:not(:disabled)')){btn.tabIndex=-1}
+      }
+    }
+  }
+  getCellDescriptors(row){
+    if(!row||!isGridElementVisible(row)){return []}
+    const out=[];
+    let htmlCol=0;
+    for(const cell of row.children){
+      if(cell.tagName!=='TD'&&cell.tagName!=='TH'){continue}
+      const span=Math.max(1,cell.colSpan||1);
+      const colStart=htmlCol,colEnd=htmlCol+span-1;
+      htmlCol+=span;
+      if(!isGridElementVisible(cell)){continue}
+      out.push({cell,colStart,colEnd});
+    }
+    return out;
+  }
+  getRowStops(row){
+    const stops=[];
+    for(const desc of this.getCellDescriptors(row)){
+      stops.push({el:desc.cell,cell:desc.cell,row,colStart:desc.colStart,colEnd:desc.colEnd,isAction:false});
+      for(const btn of desc.cell.querySelectorAll('button:not(:disabled)')){
+        if(isGridElementVisible(btn)){stops.push({el:btn,cell:desc.cell,row,colStart:desc.colStart,colEnd:desc.colEnd,isAction:true})}
+      }
+    }
+    return stops;
+  }
+  pickCellStopForCol(row,targetCol){
+    const descriptors=this.getCellDescriptors(row);
+    if(!descriptors.length){return null}
+    const exact=descriptors.find(d=>d.colStart<=targetCol&&targetCol<=d.colEnd);
+    if(exact){return {el:exact.cell,colStart:exact.colStart}}
+    let best=descriptors[0],bestDist=Math.min(Math.abs(best.colStart-targetCol),Math.abs(best.colEnd-targetCol));
+    for(let i=1;i<descriptors.length;i++){
+      const d=descriptors[i],dist=Math.min(Math.abs(d.colStart-targetCol),Math.abs(d.colEnd-targetCol));
+      if(dist<bestDist){best=d;bestDist=dist}
+    }
+    return {el:best.cell,colStart:best.colStart};
+  }
+  applyRovingStop(el){
+    if(!this.tbody){return null}
+    for(const prev of this.tbody.querySelectorAll('[tabindex="0"]')){if(prev!==el){prev.tabIndex=-1}}
+    if(el){el.tabIndex=0;this.activeStop=el}else{this.activeStop=null}
+    return this.activeStop;
+  }
+  refresh(preferredKey){
+    if(!this.table||!this.tbody){return null}
+    const prevFocused=document.activeElement;
+    const focusWasInside=Boolean(prevFocused&&this.tbody.contains(prevFocused));
+    if(!isGridElementVisible(this.table)){return this.applyRovingStop(null)}
+    if(this.mode==='cell'){
+      const sel=this.options.cellSelector||'td[data-address]';
+      const cells=[...this.tbody.querySelectorAll(sel)];
+      if(!cells.length){return this.applyRovingStop(null)}
+      const visibleCells=cells.filter(c=>isGridElementVisible(c));
+      if(!visibleCells.length){return this.applyRovingStop(null)}
+      const matchCell=this.options.matchCell||((c,k)=>(c.dataset.address||'').toLowerCase()===String(k||'').toLowerCase());
+      let target=preferredKey?visibleCells.find(c=>matchCell(c,preferredKey)):null;
+      if(!target&&this.activeStop&&visibleCells.includes(this.activeStop)){target=this.activeStop}
+      if(!target){target=visibleCells[0]}
+      for(const c of cells){c.tabIndex=c===target?0:-1}
+      this.activeStop=target;
+      if(focusWasInside&&!isGridElementVisible(prevFocused)){target.focus({preventScroll:true})}
+      return target;
+    }
+    if(!preferredKey&&this.activeStop&&this.tbody.contains(this.activeStop)&&isGridElementVisible(this.activeStop)){
+      return this.applyRovingStop(this.activeStop);
+    }
+    const rows=[...this.tbody.children].filter(r=>r.tagName==='TR');
+    let targetRow=preferredKey?rows.find(r=>this.rowMatchesKey(r,preferredKey)&&isGridElementVisible(r))||null:null;
+    if(targetRow&&this.activeStop&&targetRow.contains(this.activeStop)&&isGridElementVisible(this.activeStop)){
+      return this.applyRovingStop(this.activeStop);
+    }
+    if(!targetRow&&this.activeStop&&this.tbody.contains(this.activeStop)&&isGridElementVisible(this.activeStop)){
+      return this.applyRovingStop(this.activeStop);
+    }
+    if(!targetRow){
+      targetRow=rows.find(r=>r.classList.contains('selected')&&isGridElementVisible(r))
+        ||rows.find(r=>this.isSelectableRow(r)&&isGridElementVisible(r))
+        ||rows.find(r=>isGridElementVisible(r))
+        ||null;
+    }
+    if(!targetRow){return this.applyRovingStop(null)}
+    const picked=this.pickCellStopForCol(targetRow,this.preferredCol);
+    const stop=this.applyRovingStop(picked?picked.el:null);
+    if(stop&&focusWasInside&&!isGridElementVisible(prevFocused)){stop.focus({preventScroll:true})}
+    return stop;
+  }
+  clearSelection(){
+    if(!this.tbody){return}
+    if(this.mode==='cell'){
+      const sel=this.options.cellSelector||'td[data-address]';
+      for(const el of this.tbody.querySelectorAll('.is-selected,.selected')){el.classList.remove('is-selected','selected')}
+      for(const cell of this.tbody.querySelectorAll(sel)){cell.setAttribute('aria-selected','false')}
+      return;
+    }
+    for(const row of this.tbody.children){
+      if(row.tagName!=='TR'){continue}
+      row.classList.remove('selected');
+      if(this.isSelectableRow(row)){row.setAttribute('aria-selected','false')}
+    }
+  }
+  setSelectedRow(targetRow){
+    if(!this.tbody||this.mode==='cell'){return}
+    for(const row of this.tbody.children){
+      if(row.tagName!=='TR'){continue}
+      const isMatch=row===targetRow&&this.isSelectableRow(row);
+      row.classList.toggle('selected',isMatch);
+      if(this.isSelectableRow(row)){row.setAttribute('aria-selected',isMatch?'true':'false')}
+    }
+  }
+  focusRow(row,focusOpts={preventScroll:true}){
+    if(!row||!isGridElementVisible(row)){return null}
+    const picked=this.pickCellStopForCol(row,this.preferredCol);
+    if(!picked){return null}
+    this.applyRovingStop(picked.el);
+    picked.el.focus(focusOpts);
+    return picked.el;
+  }
+  focusActive(focusOpts={preventScroll:true}){
+    const stop=(this.activeStop&&this.tbody?.contains(this.activeStop)&&isGridElementVisible(this.activeStop))?this.activeStop:this.refresh();
+    if(stop){stop.focus(focusOpts)}
+    return stop;
+  }
+  findAdjacentVisibleRow(startRow,delta){
+    let cur=delta>0?startRow?.nextElementSibling:startRow?.previousElementSibling;
+    while(cur){
+      if(cur.tagName==='TR'&&isGridElementVisible(cur)&&this.getCellDescriptors(cur).length>0){return cur}
+      cur=delta>0?cur.nextElementSibling:cur.previousElementSibling;
+    }
+    return null;
+  }
+  findBoundaryVisibleRow(first){
+    if(!this.tbody){return null}
+    let cur=first?this.tbody.firstElementChild:this.tbody.lastElementChild;
+    while(cur){
+      if(cur.tagName==='TR'&&isGridElementVisible(cur)&&this.getCellDescriptors(cur).length>0){return cur}
+      cur=first?cur.nextElementSibling:cur.previousElementSibling;
+    }
+    return null;
+  }
+  bind(){
+    this.tbody.addEventListener('focusin',event=>{
+      const target=event.target;
+      if(!(target instanceof HTMLElement)||!this.tbody.contains(target)){return}
+      if(this.mode==='cell'){
+        const sel=this.options.cellSelector||'td[data-address]';
+        const cell=target.closest(sel);
+        if(cell&&isGridElementVisible(cell)){this.applyRovingStop(cell)}
+        return;
+      }
+      const row=target.closest('tr');
+      if(!row||row.parentElement!==this.tbody){return}
+      const stops=this.getRowStops(row);
+      const found=stops.find(s=>s.el===target)||stops.find(s=>s.cell===target.closest('td,th'));
+      if(found){this.applyRovingStop(found.el)}
+    });
+    if(this.mode==='cell'){
+      this.tbody.addEventListener('keydown',event=>{
+        if(event.altKey){return}
+        const sel=this.options.cellSelector||'td[data-address]';
+        const cells=[...this.tbody.querySelectorAll(sel)].filter(c=>isGridElementVisible(c));
+        if(!cells.length){return}
+        const target=event.target instanceof Element?event.target:null;
+        const cell=target?.closest(sel);
+        const matchCell=this.options.matchCell||((c,k)=>(c.dataset.address||'').toLowerCase()===String(k||'').toLowerCase());
+        const prefKey=this.options.getSelectedKey?.()||'';
+        const curIdx=cell?cells.indexOf(cell):cells.findIndex(c=>matchCell(c,prefKey));
+        const activeCell=curIdx>=0?cells[curIdx]:cells[0];
+        let nextCell=null;
+        if(event.key==='ArrowRight'&&!event.ctrlKey&&!event.metaKey){
+          nextCell=cells[Math.min(cells.length-1,curIdx<0?0:curIdx+1)];
+        }else if(event.key==='ArrowLeft'&&!event.ctrlKey&&!event.metaKey){
+          nextCell=cells[Math.max(0,curIdx<0?0:curIdx-1)];
+        }else if((event.key==='ArrowDown'||event.key==='ArrowUp')&&!event.ctrlKey&&!event.metaKey){
+          const curRow=activeCell.closest('tr');
+          const nextRow=this.findAdjacentVisibleRow(curRow,event.key==='ArrowDown'?1:-1);
+          if(nextRow){
+            const colIndex=activeCell.cellIndex;
+            const rowCells=[...nextRow.querySelectorAll(sel)].filter(c=>isGridElementVisible(c));
+            nextCell=rowCells.find(c=>c.cellIndex===colIndex)||(event.key==='ArrowDown'?rowCells[0]:rowCells[rowCells.length-1]);
+          }else{
+            nextCell=event.key==='ArrowDown'?cells[cells.length-1]:cells[0];
+          }
+        }else if(event.key==='Home'){
+          if(event.ctrlKey||event.metaKey){nextCell=cells[0]}
+          else{const rowCells=[...(activeCell.closest('tr')?.querySelectorAll(sel)||[])].filter(c=>isGridElementVisible(c));nextCell=rowCells[0]||cells[0]}
+        }else if(event.key==='End'){
+          if(event.ctrlKey||event.metaKey){nextCell=cells[cells.length-1]}
+          else{const rowCells=[...(activeCell.closest('tr')?.querySelectorAll(sel)||[])].filter(c=>isGridElementVisible(c));nextCell=rowCells[rowCells.length-1]||cells[cells.length-1]}
+        }else if(event.key===' '&&cell){
+          event.preventDefault();this.options.onSelectCell?.(cell,event);return;
+        }else if(event.key==='Enter'){
+          event.preventDefault();this.options.onActivateCell?.(activeCell,event);return;
+        }
+        if(nextCell){
+          event.preventDefault();
+          this.applyRovingStop(nextCell);
+          this.options.onNavigateCell?.(nextCell,event);
+          nextCell.focus({preventScroll:true});
+        }
+      });
+      return;
+    }
+    this.tbody.addEventListener('click',event=>{
+      const target=event.target instanceof Element?event.target:null;
+      if(!target){return}
+      if(this.options.onActionClick&&this.options.onActionClick(event,target)){return}
+      if(target.closest('button,a,input,select,textarea,summary')){return}
+      const cell=target.closest('td,th'),row=target.closest('tr');
+      if(!row||row.parentElement!==this.tbody){return}
+      if(cell&&row.contains(cell)&&isGridElementVisible(cell)){
+        const desc=this.getCellDescriptors(row).find(d=>d.cell===cell);
+        if(desc){this.preferredCol=desc.colStart}
+        this.applyRovingStop(cell);
+        if(document.activeElement!==cell){cell.focus({preventScroll:true})}
+      }
+      if(this.isSelectableRow(row)){this.options.onSelect?.(row,true,false)}
+    });
+    this.tbody.addEventListener('dblclick',event=>{
+      const target=event.target instanceof Element?event.target:null;
+      if(!target||target.closest('button,a,input,select,textarea,summary')){return}
+      const row=target.closest('tr');
+      if(!row||row.parentElement!==this.tbody||!this.isSelectableRow(row)){return}
+      this.options.onActivate?.(row,event);
+    });
+    this.tbody.addEventListener('keydown',event=>{
+      if(event.altKey){return}
+      const target=event.target instanceof Element?event.target:null;
+      const curRow=target?.closest('tr');
+      if(!curRow||curRow.parentElement!==this.tbody){return}
+      const key=event.key;
+      if(key==='ArrowRight'||key==='ArrowLeft'){
+        if(event.ctrlKey||event.metaKey){return}
+        const stops=this.getRowStops(curRow);
+        if(!stops.length){return}
+        event.preventDefault();
+        let idx=stops.findIndex(s=>s.el===document.activeElement);
+        if(idx<0){idx=stops.findIndex(s=>s.cell===target.closest('td,th'))}
+        const nextIdx=key==='ArrowRight'?Math.min(stops.length-1,idx<0?0:idx+1):Math.max(0,idx<0?0:idx-1);
+        const next=stops[nextIdx];
+        this.preferredCol=next.colStart;
+        this.applyRovingStop(next.el);
+        next.el.focus({preventScroll:true});
+        next.el.scrollIntoView({block:'nearest',inline:'nearest'});
+        if(this.isSelectableRow(curRow)&&!curRow.classList.contains('selected')){this.options.onSelect?.(curRow,true,false)}
+        return;
+      }
+      if(key==='ArrowDown'||key==='ArrowUp'){
+        if(event.ctrlKey||event.metaKey){return}
+        event.preventDefault();
+        const nextRow=this.findAdjacentVisibleRow(curRow,key==='ArrowDown'?1:-1);
+        if(!nextRow){return}
+        const picked=this.pickCellStopForCol(nextRow,this.preferredCol);
+        if(!picked){return}
+        this.applyRovingStop(picked.el);
+        picked.el.focus({preventScroll:true});
+        nextRow.scrollIntoView({block:'nearest'});
+        if(this.isSelectableRow(nextRow)&&!nextRow.classList.contains('selected')){this.options.onSelect?.(nextRow,true,false)}
+        return;
+      }
+      if(key==='Home'||key==='End'){
+        event.preventDefault();
+        const toStart=key==='Home';
+        if(event.ctrlKey||event.metaKey){
+          const boundRow=this.findBoundaryVisibleRow(toStart);
+          if(!boundRow){return}
+          const stops=this.getRowStops(boundRow);
+          if(!stops.length){return}
+          const dest=toStart?stops[0]:stops[stops.length-1];
+          this.preferredCol=dest.colStart;
+          this.applyRovingStop(dest.el);
+          dest.el.focus({preventScroll:true});
+          boundRow.scrollIntoView({block:'nearest',inline:'nearest'});
+          if(this.isSelectableRow(boundRow)&&!boundRow.classList.contains('selected')){this.options.onSelect?.(boundRow,true,false)}
+          return;
+        }
+        const stops=this.getRowStops(curRow);
+        if(!stops.length){return}
+        const dest=toStart?stops[0]:stops[stops.length-1];
+        this.preferredCol=dest.colStart;
+        this.applyRovingStop(dest.el);
+        dest.el.focus({preventScroll:true});
+        dest.el.scrollIntoView({block:'nearest',inline:'nearest'});
+        if(this.isSelectableRow(curRow)&&!curRow.classList.contains('selected')){this.options.onSelect?.(curRow,true,false)}
+        return;
+      }
+      if(target?.closest('button,a,input,select,textarea,summary')){return}
+      if(key===' '){
+        if(this.isSelectableRow(curRow)){event.preventDefault();this.options.onSelect?.(curRow,true,false)}
+        return;
+      }
+      if(key==='Enter'){
+        const expandBtn=curRow.querySelector('.expand-run-btn');
+        if(expandBtn&&isGridElementVisible(expandBtn)){event.preventDefault();expandBtn.click();return}
+        if(this.isSelectableRow(curRow)){event.preventDefault();this.options.onActivate?.(curRow,event)}
+      }
+    });
+  }
+}
+window.LiveStatusBus=LiveStatusBus;
+window.TableGridController=TableGridController;
 `;
 
-/** Client-side script for filterable browser tables and keyboard row navigation. */
+/** Client-side script for filterable browser tables and composite grid navigation. */
 export const browserViewScript = String.raw`
     (()=>{
       if(!document.body.classList.contains('browser-page')){return}
-      for(const table of document.querySelectorAll('.table-wrap')){table.addEventListener('scroll',schedulePersist,{passive:true});if(!table.querySelector('tbody tr')){table.hidden=true;const next=table.nextElementSibling;const counted=/\(0\)\s*$/.test(table.closest('section')?.querySelector('h2')?.textContent||'');if(!counted&&!next?.classList.contains('empty')){const empty=document.createElement('p');empty.className='table-empty';empty.hidden=!!search.value;empty.setAttribute('role','status');empty.textContent='No entries.';table.after(empty)}}}
+      for(const table of document.querySelectorAll('.table-wrap')){table.addEventListener('scroll',schedulePersist,{passive:true});if(!table.querySelector('tbody tr')){table.hidden=true;const next=table.nextElementSibling;const counted=/\(0\)\s*$/.test(table.closest('section')?.querySelector('h2')?.textContent||'');if(!counted&&!next?.classList.contains('empty')){const empty=document.createElement('p');empty.className='table-empty';empty.hidden=!!search.value;empty.textContent='No entries.';table.after(empty)}}}
       document.getElementById('clear-filter').addEventListener('click',()=>{search.value='';filter();persist();search.focus()});
-      for(const row of selectable){row.addEventListener('keydown',event=>{if(!['ArrowDown','ArrowUp','Home','End'].includes(event.key)){return}const rows=[...row.closest('tbody').querySelectorAll('tr[data-address]:not([hidden]),tr[data-entry]:not([hidden])')],index=rows.indexOf(row),next=event.key==='Home'?0:event.key==='End'?rows.length-1:Math.max(0,Math.min(rows.length-1,index+(event.key==='ArrowDown'?1:-1)));event.preventDefault();rows[next]?.focus();rows[next]?.scrollIntoView({block:'nearest'})})}
       more?.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();more.open=false;moreSummary.focus();return}if(!['ArrowDown','ArrowUp','ArrowLeft','ArrowRight','Home','End'].includes(event.key)){return}event.preventDefault();more.open=true;const buttons=[...more.querySelectorAll('button:not(:disabled)')],index=buttons.indexOf(document.activeElement),next=event.key==='Home'?0:event.key==='End'?buttons.length-1:(event.key==='ArrowDown'||event.key==='ArrowRight')?(index+1)%buttons.length:(index<=0?buttons.length-1:index-1);buttons[next]?.focus()});
     })();
 `;

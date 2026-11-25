@@ -47,9 +47,9 @@ export interface HexViewPayload {
 export function renderHexColHeadersHtml(bytesPerRow: number): string {
     const byteHeaders = Array.from({ length: bytesPerRow }, (_, i) => {
         const gap = i > 0 && i % 8 === 0 ? ' is-gap' : '';
-        return `<th scope="col" class="hx-col${gap}">${i.toString(16).padStart(2, '0').toUpperCase()}</th>`;
+        return `<th scope="col" role="columnheader" class="hx-col${gap}">${i.toString(16).padStart(2, '0').toUpperCase()}</th>`;
     }).join('');
-    return `<th scope="col" class="addr">Address</th>${byteHeaders}<th scope="col" class="hex-ascii-head">ASCII</th>`;
+    return `<th scope="col" role="columnheader" class="addr">Address</th>${byteHeaders}<th scope="col" role="columnheader" class="hex-ascii-head">ASCII</th>`;
 }
 
 /** Render hex and ASCII table rows for one fetched {@link HexChunk}. */
@@ -102,7 +102,7 @@ export function renderHexRowsHtml(chunk: HexChunk, selectedAddress: string, sele
         const bytesHtml = row.cells.map((cell, idx) => {
             const gapClass = idx > 0 && idx % 8 === 0 ? ' is-gap' : '';
             if (!cell.inBlock || !cell.address) {
-                return `<td class="hb is-pad${gapClass}" aria-disabled="true" aria-label="Out of block"></td>`;
+                return `<td class="hb is-pad${gapClass}" role="gridcell" tabindex="-1" aria-disabled="true" aria-label="Out of block"></td>`;
             }
             const isSel = isInSelectedRange(cell.address);
             if (isSel) {
@@ -119,7 +119,7 @@ export function renderHexRowsHtml(chunk: HexChunk, selectedAddress: string, sele
                 ? `?? uninitialized at ${cell.address}${symbolSuffix}`
                 : `${byteStr} at ${cell.address}${symbolSuffix}`;
             const title = `${cell.address}${cell.symbol ? ` · ${cell.symbol}` : ''}${cell.value === null ? ' (uninitialized)' : ''}`;
-            return `<td class="hb${gapClass}${nullClass}${isSel ? ' is-selected' : ''}" data-address="${escape(cell.address)}" data-byte="${cell.value === null ? '' : cell.value}" title="${escape(title)}" aria-label="${escape(ariaLabel)}" aria-selected="${isSel ? 'true' : 'false'}" tabindex="${isFocusStop ? '0' : '-1'}">${byteStr}</td>`;
+            return `<td class="hb${gapClass}${nullClass}${isSel ? ' is-selected' : ''}" role="gridcell" data-address="${escape(cell.address)}" data-byte="${cell.value === null ? '' : cell.value}" title="${escape(title)}" aria-label="${escape(ariaLabel)}" aria-selected="${isSel ? 'true' : 'false'}" tabindex="${isFocusStop ? '0' : '-1'}">${byteStr}</td>`;
         }).join('');
 
         const asciiHtml = row.cells.map(cell => {
@@ -133,7 +133,7 @@ export function renderHexRowsHtml(chunk: HexChunk, selectedAddress: string, sele
 
         const rowAddr = row.firstInBlockAddress || row.rowAddress;
         const firstByte = row.cells.find(c => c.inBlock)?.address || rowAddr;
-        return `<tr class="hex-row${rowHasSel ? ' selected' : ''}" data-address="${escape(firstByte)}" data-kind="bytes" data-sel-len="${selectionLength}"><th scope="row" class="addr">${addrSpan(row.rowAddress)}</th>${bytesHtml}<td class="hex-ascii" aria-readonly="true">${asciiHtml}</td></tr>`;
+        return `<tr class="hex-row${rowHasSel ? ' selected' : ''}" role="row" data-address="${escape(firstByte)}" data-kind="bytes" data-sel-len="${selectionLength}"><th scope="row" role="rowheader" class="addr">${addrSpan(row.rowAddress)}</th>${bytesHtml}<td class="hex-ascii" role="gridcell" tabindex="-1" aria-readonly="true">${asciiHtml}</td></tr>`;
     }).join('');
 }
 
@@ -172,9 +172,9 @@ function renderMemoryMapHtml(blocks: MemoryBlockInfo[]): string {
     const rowsHtml = blocks.map(block => {
         const perms = permissionsLabel(block);
         const initText = block.initialized ? 'Yes' : 'No';
-        return `<tr data-address="${escape(block.start)}" data-kind="block" data-label="${escape(block.name)}" tabindex="0"><td>${escape(block.name)}</td><td class="addr">${addrSpan(block.start)}</td><td class="addr">${addrSpan(block.end)}</td><td>${escape(block.length.toString(10))}</td><td>${escape(perms)}</td><td>${escape(initText)}</td></tr>`;
+        return `<tr role="row" data-address="${escape(block.start)}" data-kind="block" data-label="${escape(block.name)}" aria-selected="false"><td role="gridcell" tabindex="-1">${escape(block.name)}</td><td class="addr" role="gridcell" tabindex="-1">${addrSpan(block.start)}</td><td class="addr" role="gridcell" tabindex="-1">${addrSpan(block.end)}</td><td role="gridcell" tabindex="-1">${escape(block.length.toString(10))}</td><td role="gridcell" tabindex="-1">${escape(perms)}</td><td role="gridcell" tabindex="-1">${escape(initText)}</td></tr>`;
     }).join('');
-    return `<details class="memory-map"><summary>Memory map (${blocks.length} blocks)</summary><div class="table-wrap"><table><thead><tr><th scope="col">Block</th><th scope="col">Start</th><th scope="col">End</th><th scope="col">Length</th><th scope="col">Permissions</th><th scope="col">Initialized</th></tr></thead><tbody>${rowsHtml}</tbody></table></div></details>`;
+    return `<details class="memory-map"><summary>Memory map (${blocks.length} blocks)</summary><div class="table-wrap"><table class="memory-map-table" role="grid" aria-label="Memory map"><thead role="rowgroup"><tr role="row"><th scope="col" role="columnheader">Block</th><th scope="col" role="columnheader">Start</th><th scope="col" role="columnheader">End</th><th scope="col" role="columnheader">Length</th><th scope="col" role="columnheader">Permissions</th><th scope="col" role="columnheader">Initialized</th></tr></thead><tbody role="rowgroup">${rowsHtml}</tbody></table></div></details>`;
 }
 
 /** Render the complete HTML webview document for the Memory and Bytes panel. */
@@ -237,13 +237,14 @@ ${programViewStyles}
     </details>
   </div>
 </div>
-<p id="filter-status" role="status" aria-live="polite" hidden></p>
+<p id="filter-status" class="sr-filter-status" role="status" aria-live="polite" aria-atomic="true"></p>
+<p id="live-status" class="sr-status" role="status" aria-live="polite" aria-atomic="true"></p>
 <div class="hex-workspace">
   <section class="hex-main" aria-label="Memory bytes at ${escape(payload.cursorAddress)}">
     <div class="table-wrap hex-grid-wrap" id="hex-wrap">
       <table class="hex-table" role="grid" aria-multiselectable="true" aria-label="Hexadecimal bytes">
-        <thead><tr id="hex-cols-head">${colHeaders}</tr></thead>
-        <tbody id="hex-body">${renderHexRowsHtml(payload.chunk, payload.cursorAddress, payload.selectionLength)}</tbody>
+        <thead role="rowgroup"><tr id="hex-cols-head" role="row">${colHeaders}</tr></thead>
+        <tbody id="hex-body" role="rowgroup">${renderHexRowsHtml(payload.chunk, payload.cursorAddress, payload.selectionLength)}</tbody>
       </table>
     </div>
   </section>
@@ -327,19 +328,6 @@ const sameAddr = (a, b) => {
   const pa = parseAddr(a), pb = parseAddr(b);
   if (pa && pb) return pa.space === pb.space && pa.offset === pb.offset;
   return String(a || '').toLowerCase() === String(b || '').toLowerCase();
-};
-const syncRovingTabindex = (preferredAddr = selected) => {
-  const cells = allByteCells();
-  if (!cells.length) return null;
-  const visibleCells = cells.filter(c => !c.closest('tr')?.hidden);
-  let target = preferredAddr ? visibleCells.find(c => sameAddr(c.dataset.address, preferredAddr)) : null;
-  if (!target) {
-    target = visibleCells[0] || (preferredAddr ? cells.find(c => sameAddr(c.dataset.address, preferredAddr)) : null) || cells[0];
-  }
-  for (const c of cells) {
-    c.tabIndex = c === target ? 0 : -1;
-  }
-  return target;
 };
 
 const decodeLocalInspector = (startAddr, len) => {
@@ -437,6 +425,9 @@ const persist = () => {
   });
 };
 ${webviewShortcutScript}
+const statusBus = new LiveStatusBus();
+let hexGrid = null;
+let mapGrid = null;
 
 const updateSelectionTools = () => {
   const label = document.getElementById('selection-label');
@@ -484,12 +475,36 @@ const updateSelectionTools = () => {
   more.hidden = !extra.length;
 };
 
+const selectBlockRow = row => {
+  if (!row) return;
+  hexGrid?.clearSelection();
+  for (const el of hexBody.querySelectorAll('.ha.is-selected')) el.classList.remove('is-selected');
+  if (mapGrid) {
+    mapGrid.setSelectedRow(row);
+  } else if (memoryMap) {
+    for (const r of memoryMap.querySelectorAll('tbody tr[data-address]')) {
+      const isMatch = r === row;
+      r.classList.toggle('selected', isMatch);
+      r.setAttribute('aria-selected', isMatch ? 'true' : 'false');
+    }
+  }
+  selected = row.dataset.address || '';
+  selectedKind = 'block';
+  selectionLength = 1;
+  hexGrid?.refresh('');
+  mapGrid?.refresh(selected);
+  if (addressInput) addressInput.value = shortAddr(selected);
+  updateSelectionTools();
+  persist();
+};
+
 const highlightRange = (startAddr, len = 1, notify = true, scroll = true) => {
   const start = parseAddr(startAddr);
   if (!start) return;
   const clampedLen = Math.max(1, len);
   const endOffset = start.offset + BigInt(clampedLen) - 1n;
-  for (const el of document.querySelectorAll('.hb.is-selected,.ha.is-selected,tr.selected')) {
+  mapGrid?.clearSelection();
+  for (const el of hexBody.querySelectorAll('.hb.is-selected,.ha.is-selected,tr.selected')) {
     el.classList.remove('is-selected', 'selected');
   }
   const byteCells = allByteCells();
@@ -519,7 +534,8 @@ const highlightRange = (startAddr, len = 1, notify = true, scroll = true) => {
   selected = startAddr;
   selectionLength = clampedLen;
   selectedKind = 'bytes';
-  syncRovingTabindex(startAddr);
+  hexGrid?.refresh(startAddr);
+  mapGrid?.refresh('');
   if (addressInput) addressInput.value = shortAddr(startAddr);
   if (firstMatchedRow && scroll) firstMatchedRow.scrollIntoView({ block: 'nearest' });
   renderInspector(startAddr, selectionLength);
@@ -550,7 +566,7 @@ const applyFilter = () => {
   const hasGridMatch = gridRows.some(r => !r.hidden);
   hexMain.hidden = !!q && !hasGridMatch;
   if (hexWorkspace) hexWorkspace.hidden = !!q && !hasGridMatch;
-  syncRovingTabindex(selected);
+  hexGrid?.refresh(selectedKind === 'bytes' ? selected : '');
 
   for (const r of mapRows) {
     const hit = !q || r.textContent.toLowerCase().includes(q);
@@ -559,17 +575,51 @@ const applyFilter = () => {
   }
   const mapTableWrap = memoryMap?.querySelector('.table-wrap');
   if (mapTableWrap) mapTableWrap.hidden = !mapRows.length || (!!q && !mapRows.some(r => !r.hidden));
+  mapGrid?.refresh(selectedKind === 'block' ? selected : '');
 
   const collapsedMatches = !!q && !hasGridMatch && !memoryMap?.open && mapRows.some(r => !r.hidden);
   const empty = document.querySelector('.no-results');
-  const status = document.getElementById('filter-status');
   empty.hidden = !q || visible > 0;
   empty.querySelector('span').textContent = collapsedMatches ? 'Matches in collapsed memory map.' : 'No matching rows.';
-  status.hidden = !q;
-  status.classList.toggle('sr-filter-status', !!q && visible === 0);
-  status.textContent = !q ? '' : visible ? visible + ' of ' + total + ' displayed rows match.' : collapsedMatches ? 'Matches in collapsed memory map.' : 'No displayed rows match this filter.';
+  statusBus.updateFilter({
+    query: q,
+    activeText: visible + ' of ' + total + ' displayed rows match.',
+    emptyText: collapsedMatches ? 'Matches in collapsed memory map.' : 'No displayed rows match this filter.',
+    resetText: 'Filter cleared. Showing all ' + total + ' displayed rows.',
+    showVisual: visible > 0,
+  });
   updateSelectionTools();
 };
+
+hexGrid = new TableGridController(hexWrap.querySelector('table'), {
+  mode: 'cell',
+  cellSelector: '.hb[data-address]',
+  initialKey: selected,
+  matchCell: (c, k) => sameAddr(c.dataset.address, k),
+  getSelectedKey: () => selectedKind === 'bytes' ? selected : '',
+  onNavigateCell: nextCell => {
+    const addr = nextCell.dataset.address;
+    anchorAddress = addr;
+    highlightRange(addr, 1, true, true);
+  },
+  onSelectCell: cell => {
+    const addr = cell.dataset.address;
+    anchorAddress = addr;
+    highlightRange(addr, 1, true, false);
+  },
+  onActivateCell: () => {
+    if (selected) vscode.postMessage({ action: 'listing', address: selected, kind: 'bytes' });
+  },
+});
+
+mapGrid = memoryMap ? new TableGridController(memoryMap.querySelector('table'), {
+  isSelectableRow: r => Boolean(r.dataset.address),
+  onSelect: row => selectBlockRow(row),
+  onActivate: row => {
+    selectBlockRow(row);
+    if (row.dataset.address) vscode.postMessage({ action: 'goto', address: row.dataset.address });
+  },
+}) : null;
 
 hexBody.addEventListener('click', event => {
   const cell = event.target.closest('.hb[data-address]');
@@ -581,7 +631,7 @@ hexBody.addEventListener('click', event => {
         const lo = a.offset <= b.offset ? anchorAddress : addr;
         const len = Number((a.offset <= b.offset ? b.offset - a.offset : a.offset - b.offset) + 1n);
         highlightRange(lo, Math.min(len, 64), true, false);
-        syncRovingTabindex(addr);
+        hexGrid.refresh(addr);
         cell.focus({ preventScroll: true });
         return;
       }
@@ -613,48 +663,6 @@ hexBody.addEventListener('dblclick', event => {
   }
 });
 
-hexBody.addEventListener('keydown', event => {
-  const cell = event.target.closest('.hb[data-address]');
-  const cells = allByteCells().filter(c => !c.closest('tr')?.hidden);
-  if (!cells.length) return;
-  const curIdx = cell ? cells.indexOf(cell) : cells.findIndex(c => sameAddr(c.dataset.address, selected));
-  const activeCell = curIdx >= 0 ? cells[curIdx] : cells[0];
-  let nextCell = null;
-  if (event.key === 'ArrowRight') {
-    nextCell = cells[Math.min(cells.length - 1, curIdx < 0 ? 0 : curIdx + 1)];
-  } else if (event.key === 'ArrowLeft') {
-    nextCell = cells[Math.max(0, curIdx < 0 ? 0 : curIdx - 1)];
-  } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-    const visibleRows = [...hexBody.querySelectorAll('tr.hex-row:not([hidden])')];
-    const curRow = activeCell.closest('tr');
-    const rowIdx = curRow ? visibleRows.indexOf(curRow) : -1;
-    const nextRowIdx = rowIdx + (event.key === 'ArrowDown' ? 1 : -1);
-    if (nextRowIdx >= 0 && nextRowIdx < visibleRows.length) {
-      const colIndex = activeCell.cellIndex;
-      const rowByteCells = [...visibleRows[nextRowIdx].querySelectorAll('.hb[data-address]')];
-      nextCell = rowByteCells.find(c => c.cellIndex === colIndex)
-        || (event.key === 'ArrowDown' ? rowByteCells[0] : rowByteCells[rowByteCells.length - 1]);
-    } else {
-      nextCell = event.key === 'ArrowDown' ? cells[cells.length - 1] : cells[0];
-    }
-  } else if (event.key === 'Home') {
-    nextCell = cells[0];
-  } else if (event.key === 'End') {
-    nextCell = cells[cells.length - 1];
-  } else if (event.key === 'Enter' && selected) {
-    event.preventDefault();
-    vscode.postMessage({ action: 'listing', address: selected, kind: 'bytes' });
-    return;
-  }
-  if (nextCell) {
-    event.preventDefault();
-    const targetAddr = nextCell.dataset.address;
-    anchorAddress = targetAddr;
-    highlightRange(targetAddr, 1, true, true);
-    nextCell.focus({ preventScroll: true });
-  }
-});
-
 inspectorEl.addEventListener('click', event => {
   const endianBtn = event.target.closest('[data-toggle-endian]');
   if (endianBtn) {
@@ -671,24 +679,11 @@ inspectorEl.addEventListener('click', event => {
   if (jumpBtn) vscode.postMessage({ action: 'goto', address: jumpBtn.dataset.jump });
 });
 
-memoryMap?.querySelector('tbody')?.addEventListener('click', event => {
-  const row = event.target.closest('tr[data-address]');
-  if (!row) return;
-  for (const el of document.querySelectorAll('.hb.is-selected,.ha.is-selected,tr.selected')) el.classList.remove('is-selected', 'selected');
-  for (const el of allByteCells()) el.setAttribute('aria-selected', 'false');
-  row.classList.add('selected');
-  selected = row.dataset.address || '';
-  selectedKind = 'block';
-  selectionLength = 1;
-  syncRovingTabindex('');
-  updateSelectionTools();
+memoryMap?.addEventListener('toggle', () => {
+  applyFilter();
+  mapGrid?.refresh(selectedKind === 'block' ? selected : '');
   persist();
 });
-memoryMap?.querySelector('tbody')?.addEventListener('dblclick', event => {
-  const row = event.target.closest('tr[data-address]');
-  if (row?.dataset.address) vscode.postMessage({ action: 'goto', address: row.dataset.address });
-});
-memoryMap?.addEventListener('toggle', () => { applyFilter(); persist(); });
 
 document.addEventListener('click', event => {
   const btn = event.target.closest('button[data-action]');
@@ -697,11 +692,12 @@ document.addEventListener('click', event => {
     if (['navBack', 'navForward', 'refresh', 'loadBefore', 'loadAfter', 'toggleSync', 'openListingBeside'].includes(act)) {
       vscode.postMessage({ action: act });
     } else if (act === 'copyAddress' && selected) {
+      statusBus.announce('Copied address ' + shortAddr(selected));
       vscode.postMessage({ action: 'copyAddress', address: selected });
     } else if (selected) {
       vscode.postMessage({ action: act, address: selected, kind: selectedKind });
     }
-    if (more && more.contains(btn)) { more.open = false; moreSummary.focus({ preventScroll: true }); }
+    if (more && more.contains(btn) && act !== 'copyAddress') { more.open = false; moreSummary.focus({ preventScroll: true }); }
     pageOptions.open = false;
     return;
   }
@@ -756,6 +752,8 @@ window.addEventListener('message', event => {
   const msg = event.data || {};
   if (msg.action === 'highlight') {
     highlightRange(msg.address, msg.length || 1, false, true);
+  } else if (msg.action === 'status' && msg.message) {
+    statusBus.announce(msg.message, false);
   } else if (msg.action === 'syncState') {
     state.syncEnabled = !!msg.syncEnabled;
     syncToggle.setAttribute('aria-pressed', String(state.syncEnabled));
@@ -783,16 +781,21 @@ window.addEventListener('message', event => {
     if (msg.scopeNote) scopeNote.textContent = msg.scopeNote;
     if (blockSelect && msg.currentBlockStart) blockSelect.value = msg.currentBlockStart;
     if (msg.sectionLabel) hexMain.setAttribute('aria-label', msg.sectionLabel);
+    hexGrid.syncStructure();
     applyFilter();
     highlightRange(nextSelected, msg.length || 1, false, true);
     if (focusWasInGrid || (hadFocusedElement && (!document.activeElement || document.activeElement === document.body))) {
-      syncRovingTabindex(nextSelected)?.focus({ preventScroll: true });
+      hexGrid.refresh(nextSelected)?.focus({ preventScroll: true });
     }
   }
 });
 
 applyFilter();
 highlightRange(selected, selectionLength, false, !samePage);
+window.addEventListener('resize', () => {
+  hexGrid?.refresh(selectedKind === 'bytes' ? selected : '');
+  mapGrid?.refresh(selectedKind === 'block' ? selected : '');
+}, { passive: true });
 requestAnimationFrame(() => {
   persist();
   document.body.dataset.viewReady = 'true';

@@ -33,8 +33,8 @@ const addressCell = (cell: unknown): string => {
     const full = String(cell ?? ''), shown = displayAddress(full);
     return shown === full ? escapeHtml(full) : `<span title="${escapeHtml(full)}">${escapeHtml(shown)}</span>`;
 };
-/** Render an interactive data table for a workbench browser panel. */
-export const table = (headers: string[], rows: Row[]): string => `<div class="table-wrap"><table><thead><tr>${headers.map(h => `<th scope="col">${escapeHtml(h)}</th>`).join('')}</tr></thead><tbody>${rows.map(row => `<tr${targetAttributes(row)}${row.address || row.entry ? ' tabindex="0"' : ''}>${row.cells.map((cell, index) => `<td${addrHeaders.has(headers[index]) ? ' class="addr"' : ''}>${row.detail && index === row.cells.length - 1 ? `<span class="cell-main">${escapeHtml(cell)}</span><span class="cell-detail">${escapeHtml(row.detail)}</span>` : addressCell(cell)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+/** Render an interactive composite ARIA grid table for a workbench browser panel. */
+export const table = (headers: string[], rows: Row[], label = 'Results'): string => `<div class="table-wrap"><table role="grid" aria-label="${escapeHtml(label)}"><thead role="rowgroup"><tr role="row">${headers.map(h => `<th scope="col" role="columnheader">${escapeHtml(h)}</th>`).join('')}</tr></thead><tbody role="rowgroup">${rows.map(row => { const sel = Boolean(row.address || row.entry); return `<tr role="row"${targetAttributes(row)}${sel ? ' aria-selected="false"' : ''}>${row.cells.map((cell, index) => `<td role="gridcell" tabindex="-1"${addrHeaders.has(headers[index]) ? ' class="addr"' : ''}>${row.detail && index === row.cells.length - 1 ? `<span class="cell-main">${escapeHtml(cell)}</span><span class="cell-detail">${escapeHtml(row.detail)}</span>` : addressCell(cell)}</td>`).join('')}</tr>`; }).join('')}</tbody></table></div>`;
 /** Configuration options for rendering a workbench webview page. */
 export interface PageOptions { title: string; subtitle: string; body: string; address?: string; next?: boolean; previous?: boolean; scope?: string; scopeSummary?: string; actions?: boolean; graph?: boolean; controlFlow?: boolean; callGraph?: boolean; viewKind?: string; callView?: 'graph' | 'columns'; callTools?: string; callName?: string; callBack?: boolean; singleKeyShortcuts?: boolean; state?: unknown }
 /** Render one Codicon glyph from a hexadecimal code point string. */
@@ -92,7 +92,7 @@ export function page(options: PageOptions): string {
     ${browser ? viewStyles : ''}
     </style></head><body${flow ? ` class="flow-page${options.callGraph ? ' call-page' : cfg ? ' cfg-page' : ''}"` : ' class="browser-page"'} data-view-kind="${escapeHtml(options.viewKind || '')}"><main>${options.callGraph ? `<div class="call-topbar" role="group" aria-label="Call graph tools"><button class="call-icon-button" data-action="callGraphBack" aria-label="Back" title="Back" ${options.callBack ? '' : 'disabled'}>${icon('ea9b')}</button><h1 class="call-function-title" title="${escapeHtml(options.callName)}"><button id="call-function-picker" data-action="pickCallGraphFunction" aria-label="Choose function: ${escapeHtml(options.callName)}" title="${escapeHtml(options.callName)} · Choose function">${callIcon('function')}<span class="call-function-name">${escapeHtml(options.callName)}</span>${callIcon('down')}</button></h1><div class="call-search" hidden><input id="search" class="search" aria-label="Find functions" placeholder="Find functions…"></div><div class="call-view-switch" role="group" aria-label="Call graph presentation"><button id="call-view-graph" data-call-view="graph" aria-label="Graph view" title="Graph view" aria-pressed="${options.callView !== 'columns'}">${callIcon('graph')}<span>Graph</span></button><button id="call-view-columns" data-call-view="columns" aria-label="Column view" title="Column view" aria-pressed="${options.callView === 'columns'}">${callIcon('columns')}<span>Columns</span></button></div><button id="call-search-toggle" class="call-icon-button" aria-label="Find functions" aria-expanded="false" title="${escapeHtml(searchShortcutTitle('Find functions', singleKeyShortcuts))}">${icon('ea6d')}</button>${options.callView !== 'columns' ? `<button id="graph-fit" class="call-icon-button" aria-label="Fit graph" title="${escapeHtml(fitGraphTitle(singleKeyShortcuts))}">${callIcon('fit')}</button>` : ''}<details id="call-menu"><summary aria-label="Graph options" title="Graph options">${icon('ea7c')}</summary><div class="call-menu-content">${options.callTools || ''}</div></details></div>${options.callView !== 'columns' ? `<div class="call-zoom" role="group" aria-label="Zoom"><button id="graph-zoom-out" aria-label="Zoom out">${icon('eb3b')}</button><button id="graph-zoom" aria-label="Actual size" title="Actual size (100%)">100%</button><button id="graph-zoom-in" aria-label="Zoom in">${icon('ea60')}</button></div>` : ''}` : cfg ? controlFlowToolbar(options.title, options.subtitle, options.body.includes('data-control-flow'), singleKeyShortcuts) : browserTools}
 
-    <p id="filter-status" role="status" aria-live="polite" hidden></p>${options.scope && !browser ? `<p class="scope">${escapeHtml(options.scope)}</p>` : ''}${options.body}${browser ? '<div class="no-results" hidden><span>No matching rows.</span><button type="button" id="clear-filter" class="icon-button" aria-label="Clear filter" title="Clear filter">' + callIcon('close') + '</button></div>' : ''}${options.next || options.previous ? `<div class="pagination"><button class="icon-button" data-action="previous" aria-label="Previous page" title="Previous page" ${!options.previous ? 'disabled' : ''}>${callIcon('left')}</button><button class="icon-button" data-action="next" aria-label="Next page" title="Next page" ${!options.next ? 'disabled' : ''}>${callIcon('right')}</button></div>` : ''}</main><script nonce="${nonce}">
+    <p id="filter-status" class="sr-filter-status" role="status" aria-live="polite" aria-atomic="true"></p><p id="live-status" class="sr-status" role="status" aria-live="polite" aria-atomic="true"></p>${options.scope && !browser ? `<p class="scope">${escapeHtml(options.scope)}</p>` : ''}${options.body}${browser ? '<div class="no-results" hidden><span>No matching rows.</span><button type="button" id="clear-filter" class="icon-button" aria-label="Clear filter" title="Clear filter">' + callIcon('close') + '</button></div>' : ''}${options.next || options.previous ? `<div class="pagination"><button class="icon-button" data-action="previous" aria-label="Previous page" title="Previous page" ${!options.previous ? 'disabled' : ''}>${callIcon('left')}</button><button class="icon-button" data-action="next" aria-label="Next page" title="Next page" ${!options.next ? 'disabled' : ''}>${callIcon('right')}</button></div>` : ''}</main><script nonce="${nonce}">
     const vscode=acquireVsCodeApi();const previous=vscode.getState()||{};const state=${JSON.stringify(initialState).replace(/</g, '\\u003c')};
     const samePage=previous.md5===state.md5&&previous.kind===state.kind&&previous.address===state.address${flow ? '&&previous.entry===state.entry' : ''};
     let selected=samePage?previous.selected||state.selected||'':state.selected||'';let entry=samePage?previous.selectedEntry||'':state.selectedEntry||'';
@@ -108,10 +108,12 @@ export function page(options: PageOptions): string {
     const persist=()=>{if(persistFrame){cancelAnimationFrame(persistFrame);persistFrame=0}vscode.setState({...state,selected,selectedEntry:entry,selectedKind,selectedLabel,filter:search.value,addressDraft:addressInput?.value,mapOpen:memoryMap?.open,listingDetails:listingDetails?.checked,extraColumns:extraColumns?.checked,branchAnchor,callDetails:document.querySelector('.call-details')?.open??(samePage?previous.callDetails:undefined),callOverview:document.querySelector('.call-overview')?.open??(samePage?previous.callOverview:undefined),cfgOverview:document.querySelector('.cfg-overview')?.open,cfgOverviewPosition,cfgOverviewDismissed,cfgActiveEdge:document.querySelector('.cfg-edge.is-active')?.dataset.edgeKey,tableScroll:[...document.querySelectorAll('.table-wrap')].map(table=>({top:table.scrollTop,left:table.scrollLeft})),scrollX:window.scrollX,scrollY:window.scrollY,focusId:branchAnchor?.focusId||document.activeElement?.id,columnUi,graphViewport:graphViewport?.snapshot()||(samePage?previous.graphViewport:undefined)})};
     const schedulePersist=()=>{if(!persistFrame){persistFrame=requestAnimationFrame(()=>{persistFrame=0;persist()})}};
     ${webviewShortcutScript}
-    memoryMap?.addEventListener('toggle',persist);
+    const statusBus=new LiveStatusBus();let tableGrids=[];const refreshGrids=key=>tableGrids.forEach(grid=>grid.refresh(key));
+    memoryMap?.addEventListener('toggle',()=>{refreshGrids(selected||entry);persist()});
     ${flow ? controlFlowScript : ''}
-    listingDetails?.addEventListener('change',()=>{document.querySelector('.listing').classList.toggle('show-details',listingDetails.checked);persist()});
-    extraColumns?.addEventListener('change',()=>{document.body.classList.toggle('show-extra-columns',extraColumns.checked);persist()});
+    listingDetails?.addEventListener('change',()=>{document.querySelector('.listing').classList.toggle('show-details',listingDetails.checked);refreshGrids(selected||entry);persist()});
+    extraColumns?.addEventListener('change',()=>{document.body.classList.toggle('show-extra-columns',extraColumns.checked);refreshGrids(selected||entry);persist()});
+    window.addEventListener('resize',()=>refreshGrids(selected||entry),{passive:true});
     const pageOptions=document.getElementById('page-options');document.addEventListener('click',event=>{if(pageOptions&&(!pageOptions.contains(event.target)||event.target.closest('button'))){pageOptions.open=false}});document.addEventListener('keydown',event=>{if(event.key==='Escape'&&pageOptions?.open){pageOptions.open=false;pageOptions.querySelector('summary').focus()}});
     const target=()=>{
       const fn=entry||(!selected?state.entry||'':'');const address=selected||state.address||fn||'';
@@ -153,18 +155,44 @@ export function page(options: PageOptions): string {
       more.hidden=!extra.length;moreSummary.title='More actions'+(current.label?' for '+current.label:at?' at '+at:'');moreSummary.setAttribute('aria-label',moreSummary.title);
       if(active){const restore=document.getElementById('action-'+active);if(restore){restore.focus({preventScroll:true})}}
     };selectionTools();
-    document.addEventListener('click',event=>{const button=event.target.closest('button[data-action]');if(button&&!button.disabled){send(button.dataset.action);if(more){const returnFocus=more.open&&more.contains(button);more.open=false;if(returnFocus){moreSummary.focus({preventScroll:true})}}}else if(more&&!more.contains(event.target)){more.open=false}});
-    document.addEventListener('keydown',event=>{if(event.key==='Escape'&&more?.open){event.preventDefault();more.open=false;moreSummary.focus()}});
+    document.addEventListener('click',event=>{const button=event.target.closest('button[data-action]');if(button&&!button.disabled){const act=button.dataset.action;if(act==='copyAddress'){const at=target().address;if(at){const short=/^ram:[0-9a-f]+$/i.test(at)?at.slice(4):at;statusBus.announce('Copied address '+short)}}send(act);if(more&&act!=='copyAddress'){const returnFocus=more.open&&more.contains(button);more.open=false;if(returnFocus){moreSummary.focus({preventScroll:true})}}}else if(more&&!more.contains(event.target)){more.open=false}});
+    document.addEventListener('keydown',event=>{if(event.key==='Escape'&&more?.open){event.preventDefault();more.open=false;moreSummary.focus();return}if(event.key==='Escape'&&!pageOptions?.open&&document.body.classList.contains('browser-page')&&search.value){event.preventDefault();search.value='';filter();persist()}});
     document.getElementById('goto')?.addEventListener('submit',event=>{event.preventDefault();send('goto',{address:document.getElementById('address').value})});
-    selectable.forEach(row=>{
-      if((selected&&row.dataset.address===selected)||(!selected&&entry&&row.dataset.entry===entry)){row.classList.add('selected')}
-      const pick=(notify=true)=>{document.querySelectorAll('.selected').forEach(item=>item.classList.remove('selected'));row.classList.add('selected');selected=row.dataset.address||'';entry=row.dataset.entry||'';selectedKind=row.dataset.kind||'';selectedLabel=row.dataset.label||'';graphViewport?.select([row],false);selectionTools();persist();if(notify){send('select')}};
-      row.addEventListener('click',event=>{if(!event.target.closest('.call-node-controls,.cfg-node-controls')){pick()}});row.addEventListener('dblclick',event=>{if(event.target.closest('.call-node-controls,.cfg-node-controls')){return}pick(false);if(primaryAction){send(state.kind==='callGraph'?'focusCallGraph':primaryAction)}});row.addEventListener('keydown',event=>{if(event.target.closest('.call-node-controls,.cfg-node-controls')){return}if(event.key==='Enter'){event.preventDefault();pick();if(primaryAction){send(state.kind==='callGraph'?'focusCallGraph':primaryAction)}}else if(event.key===' '){event.preventDefault();pick()}});
-    });
+    const syncRowSelection=activeRow=>{
+      for(const item of selectable){
+        const isMatch=item===activeRow;
+        item.classList.toggle('selected',isMatch);
+        if(item.tagName==='TR'){item.setAttribute('aria-selected',isMatch?'true':'false')}
+      }
+    };
+    const initialMatch=selectable.find(row=>(selected&&row.dataset.address===selected)||(!selected&&entry&&row.dataset.entry===entry))||null;
+    syncRowSelection(initialMatch);
+    const pickItem=(row,notify=true)=>{
+      if(!row){return}
+      syncRowSelection(row);
+      selected=row.dataset.address||'';
+      entry=row.dataset.entry||'';
+      selectedKind=row.dataset.kind||'';
+      selectedLabel=row.dataset.label||'';
+      graphViewport?.select([row],false);
+      selectionTools();
+      persist();
+      if(notify){send('select')}
+    };
+    for(const node of selectable.filter(item=>item.tagName!=='TR')){
+      node.addEventListener('click',event=>{if(!event.target.closest('.call-node-controls,.cfg-node-controls')){pickItem(node)}});
+      node.addEventListener('dblclick',event=>{if(event.target.closest('.call-node-controls,.cfg-node-controls')){return}pickItem(node,false);if(primaryAction){send(state.kind==='callGraph'?'focusCallGraph':primaryAction)}});
+      node.addEventListener('keydown',event=>{if(event.target.closest('.call-node-controls,.cfg-node-controls')){return}if(event.key==='Enter'){event.preventDefault();pickItem(node);if(primaryAction){send(state.kind==='callGraph'?'focusCallGraph':primaryAction)}}else if(event.key===' '){event.preventDefault();pickItem(node)}});
+    }
+    tableGrids=[...document.querySelectorAll('table[role="grid"]')].map(gridEl=>new TableGridController(gridEl,{
+      initialKey:selected||entry,
+      onSelect:(row,notify)=>pickItem(row,notify),
+      onActivate:row=>{pickItem(row,false);if(primaryAction){send(state.kind==='callGraph'?'focusCallGraph':primaryAction)}}
+    }));
     const filter=()=>{
       if(document.querySelector('[data-call-columns]')){return}
-      const query=search.value.toLowerCase(),rows=[...document.querySelectorAll('tbody tr')],browserPage=document.body.classList.contains('browser-page');let visible=0,total=0;
-      for(const row of rows){row.hidden=!row.textContent.toLowerCase().includes(query);if(!browserPage||!row.closest('details:not([open])')){total++;if(!row.hidden){visible++}}}
+      const query=search.value.trim().toLowerCase(),rows=[...document.querySelectorAll('tbody tr')],browserPage=document.body.classList.contains('browser-page');let visible=0,total=0;
+      for(const row of rows){row.hidden=!!query&&!row.textContent.toLowerCase().includes(query);if(!browserPage||!row.closest('details:not([open])')){total++;if(!row.hidden){visible++}}}
       const nodes=[...document.querySelectorAll('.graph-node')];let matched=0;
       for(const node of nodes){const match=!!query&&(node.textContent.toLowerCase().includes(query)||(node.dataset.address||'').toLowerCase().includes(query));node.classList.toggle('search-match',match);node.classList.toggle('search-muted',!!query&&!match);if(match){matched++}}
       if(browserPage){
@@ -175,14 +203,18 @@ export function page(options: PageOptions): string {
         }
         selectionTools();for(const message of document.querySelectorAll('.table-empty,.empty'))message.hidden=!!query;
       }
-      const status=document.getElementById('filter-status'),empty=document.querySelector('.no-results');
+      refreshGrids(selected||entry);
+      const empty=document.querySelector('.no-results');
       const collapsedMatches=browserPage&&!!query&&rows.some(row=>!row.hidden&&row.closest('.memory-map:not([open])'));
-      if(empty){empty.hidden=!query||visible>0;empty.querySelector('span').textContent=collapsedMatches?'Matches in collapsed memory map.':'No matching rows.'}status.hidden=!query;status.classList.toggle('sr-filter-status',!!empty&&!!query&&!visible);
-      status.textContent=nodes.length?matched+' of '+nodes.length+' nodes match'+(total?'; '+visible+' of '+total+' rows match.':'.'):visible?visible+' of '+total+' displayed rows match.':collapsedMatches?'Matches in collapsed memory map.':'No displayed rows match this filter.';
+      if(empty){empty.hidden=!query||visible>0;empty.querySelector('span').textContent=collapsedMatches?'Matches in collapsed memory map.':'No matching rows.'}
+      const activeText=nodes.length?matched+' of '+nodes.length+' nodes match'+(total?'; '+visible+' of '+total+' rows match.':'.'):visible+' of '+total+' displayed rows match.';
+      const emptyText=nodes.length?activeText:collapsedMatches?'Matches in collapsed memory map.':'No displayed rows match this filter.';
+      const resetText=nodes.length?'Filter cleared. Showing all '+nodes.length+' nodes.':'Filter cleared. Showing all '+total+' displayed rows.';
+      statusBus.updateFilter({query,activeText,emptyText,resetText,showVisual:nodes.length>0||!empty||visible>0});
     };
     search.addEventListener('input',()=>{filter();persist()});memoryMap?.addEventListener('toggle',filter);addressInput?.addEventListener('input',persist);filter();
     window.addEventListener('scroll',schedulePersist,{passive:true});document.addEventListener('focusin',persist);
-    window.addEventListener('message',event=>{if(event.data.action==='highlight'){document.querySelectorAll('.selected').forEach(item=>item.classList.remove('selected'));const addresses=event.data.addresses||[event.data.address];const rows=selectable.filter(item=>addresses.includes(item.dataset.address));rows.forEach(row=>row.classList.add('selected'));graphViewport?.select(rows,true);const row=rows[0];if(row){if(!graphViewport){row.scrollIntoView({block:'nearest'})}selected=row.dataset.address||'';entry=row.dataset.entry||'';selectedKind=row.dataset.kind||'';selectedLabel=row.dataset.label||'';selectionTools();persist()}}});
+    window.addEventListener('message',event=>{if(event.data?.action==='status'&&event.data.message){statusBus.announce(event.data.message,false);return}if(event.data?.action==='highlight'){const addresses=event.data.addresses||[event.data.address];const rows=selectable.filter(item=>addresses.includes(item.dataset.address));const primaryRow=rows[0]||null;for(const item of selectable){const isHit=item.tagName==='TR'?item===primaryRow:rows.includes(item);item.classList.toggle('selected',isHit);if(item.tagName==='TR'){item.setAttribute('aria-selected',isHit?'true':'false')}}graphViewport?.select(rows,true);if(primaryRow){if(!graphViewport){primaryRow.scrollIntoView({block:'nearest'})}selected=primaryRow.dataset.address||'';entry=primaryRow.dataset.entry||'';selectedKind=primaryRow.dataset.kind||'';selectedLabel=primaryRow.dataset.label||'';refreshGrids(selected||entry);selectionTools();persist()}}});
     ${browser ? browserViewScript : ''}
     ${options.callGraph ? callViewScript + callGraphScript + callColumnsScript : cfg ? controlFlowUiScript : ''}
     requestAnimationFrame(()=>{if(state.analysisUri){send('ready')}if(samePage){[...document.querySelectorAll('.table-wrap')].forEach((table,index)=>{table.scrollTop=previous.tableScroll?.[index]?.top||0;table.scrollLeft=previous.tableScroll?.[index]?.left||0});window.scrollTo(previous.scrollX||0,previous.scrollY||0);if(previous.focusId){document.getElementById(previous.focusId)?.focus({preventScroll:true})}}persist();document.body.dataset.viewReady='true'});
