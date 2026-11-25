@@ -1,7 +1,7 @@
 // Copyright 2026 ByteLand Technology Limited
 // SPDX-License-Identifier: MIT
 
-import type { ELK } from 'elkjs/lib/elk.bundled.js';
+import type { ELK, ElkNode } from 'elkjs/lib/elk.bundled.js';
 
 /** Cached lazy-loaded ELK graph layout engine instance. */
 let engine: Promise<ELK> | undefined;
@@ -12,6 +12,118 @@ export interface LayoutPoint {
     x: number;
     /** Vertical position in pixels. */
     y: number;
+}
+
+/** Measured border-box dimensions of one rendered HTML graph card. */
+export interface MeasuredSize {
+    /** Card width in unscaled CSS pixels. */
+    width: number;
+    /** Card height in unscaled CSS pixels. */
+    height: number;
+}
+
+/** Input node box passed to the layered ELK layout helper. */
+export interface LayoutNodeInput {
+    /** Stable graph node identifier. */
+    id: string;
+    /** Estimated fallback card width in CSS pixels. */
+    width: number;
+    /** Estimated fallback card height in CSS pixels. */
+    height: number;
+}
+
+/** Input directed edge passed to the layered ELK layout helper. */
+export interface LayoutEdgeInput {
+    /** Stable edge identifier within the current graph. */
+    id: string;
+    /** Source node identifier. */
+    from: string;
+    /** Target node identifier. */
+    to: string;
+}
+
+/** Positioned graph card box returned by the ELK layout engine. */
+export interface PlacedLayoutNode {
+    /** Stable graph node identifier. */
+    id: string;
+    /** Horizontal card coordinate in graph pixels. */
+    x: number;
+    /** Vertical card coordinate in graph pixels. */
+    y: number;
+    /** Final card width used during layout. */
+    width: number;
+    /** Final card height used during layout. */
+    height: number;
+}
+
+/** Routed orthogonal graph edge returned by the ELK layout engine. */
+export interface PlacedLayoutEdge {
+    /** Stable edge identifier within the current graph. */
+    id: string;
+    /** Source node identifier. */
+    from: string;
+    /** Target node identifier. */
+    to: string;
+    /** Orthogonal polyline points from source port to target port. */
+    points: LayoutPoint[];
+    /** Rounded SVG path string built from `points`. */
+    path: string;
+}
+
+/** Complete layered graph layout output for webview updates. */
+export interface GraphLayoutResult {
+    /** Total graph width in pixels. */
+    width: number;
+    /** Total graph height in pixels. */
+    height: number;
+    /** Positioned node card coordinates and dimensions. */
+    nodes: PlacedLayoutNode[];
+    /** Routed orthogonal edges and SVG path strings. */
+    edges: PlacedLayoutEdge[];
+}
+
+/** Clamp one raw dimension value to a safe positive integer pixel size. */
+function clampDimension(value: unknown, fallback: number): number {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric) || numeric <= 0) {
+        return Math.max(24, Math.ceil(fallback));
+    }
+    return Math.max(24, Math.min(4096, Math.ceil(numeric)));
+}
+
+/** Parse a webview `measureGraph` payload into a validated map of node dimensions. */
+export function parseMeasuredSizes(raw: unknown): Map<string, MeasuredSize> {
+    const sizes = new Map<string, MeasuredSize>();
+    if (!raw || typeof raw !== 'object') {
+        return sizes;
+    }
+    if (Array.isArray(raw)) {
+        for (const item of raw) {
+            if (!item || typeof item !== 'object') {
+                continue;
+            }
+            const record = item as Record<string, unknown>;
+            const id = typeof record.id === 'string' ? record.id : '';
+            const width = Number(record.width);
+            const height = Number(record.height);
+            if (id && Number.isFinite(width) && width > 0 && Number.isFinite(height) && height > 0) {
+                sizes.set(id, { width: clampDimension(width, 24), height: clampDimension(height, 24) });
+            }
+        }
+        return sizes;
+    }
+    for (const [id, entry] of Object.entries(raw as Record<string, unknown>)) {
+        if (!id || !entry || typeof entry !== 'object') {
+            continue;
+        }
+        const box = entry as Record<string, unknown>;
+        const width = Number(box.width);
+        const height = Number(box.height);
+        if (Number.isFinite(width) && width > 0 && Number.isFinite(height) && height > 0) {
+            sizes.set(id, { width: clampDimension(width, 24), height: clampDimension(height, 24) });
+        }
+    }
+    return sizes;
 }
 
 /** Format one finite coordinate number for SVG paths without `-0`. */
@@ -118,13 +230,75 @@ export function roundedOrthogonalPath(points: { x: number; y: number }[], radius
 export const layoutEngine = (): Promise<ELK> => engine ||= import('elkjs/lib/elk.bundled.js')
     .then(({ default: Engine }) => new Engine({ algorithms: ['layered'] }));
 
-/** Format polyline points as a space-separated `x,y` attribute string. */
-export function encodeLayoutPoints(points: { x: number; y: number }[]): string {
-    return points
-        .filter(point => Number.isFinite(point.x) && Number.isFinite(point.y))
-        .map(point => `${formatCoord(point.x)},${formatCoord(point.y)}`)
-        .join(' ');
+/** Input specification for running a layered orthogonal ELK graph layout. */
+export interface LayeredGraphInput {
+    /** Root ELK graph identifier. */
+    id: string;
+    /** Input nodes with fallback width and height estimates. */
+    nodes: LayoutNodeInput[];
+    /** Input directed edges between node identifiers. */
+    edges: LayoutEdgeInput[];
+    /** Additional ELK layout options merged into the orthogonal layered defaults. */
+    layoutOptions?: Record<string, string>;
+    /** Optional measured card dimensions reported by the webview. */
+    measured?: ReadonlyMap<string, MeasuredSize>;
 }
 
-/** Client-side script with path helpers that update SVG edges after text scaling. */
-export const graphPathScript = `${formatCoord.toString()}\n${isForwardCollinear.toString()}\n${roundedOrthogonalPath.toString()}`;
+/** Run ELK layered orthogonal layout from estimated or measured HTML card dimensions. */
+export async function layoutLayeredGraph(input: LayeredGraphInput): Promise<GraphLayoutResult> {
+    const sized = input.nodes.map(node => {
+        const box = input.measured?.get(node.id);
+        return {
+            id: node.id,
+            width: clampDimension(box?.width, node.width),
+            height: clampDimension(box?.height, node.height),
+        };
+    });
+    const ids = new Set(sized.map(node => node.id));
+    const validEdges = input.edges.filter(edge => ids.has(edge.from) && ids.has(edge.to));
+    const model: ElkNode = {
+        id: input.id,
+        layoutOptions: {
+            'elk.algorithm': 'layered',
+            'elk.direction': 'DOWN',
+            'elk.edgeRouting': 'ORTHOGONAL',
+            ...input.layoutOptions,
+        },
+        children: sized.map(node => ({ id: node.id, width: node.width, height: node.height })),
+        edges: validEdges.map(edge => ({ id: edge.id, sources: [edge.from], targets: [edge.to] })),
+    };
+    const result = await (await layoutEngine()).layout(model);
+    const placed = new Map((result.children || []).map(node => [node.id, node]));
+    const routed = new Map((result.edges || []).map(edge => [edge.id, edge]));
+    const nodes: PlacedLayoutNode[] = sized.map(node => {
+        const box = placed.get(node.id);
+        return {
+            id: node.id,
+            x: Math.round(box?.x ?? 0),
+            y: Math.round(box?.y ?? 0),
+            width: node.width,
+            height: node.height,
+        };
+    });
+    const edges: PlacedLayoutEdge[] = validEdges.map(edge => {
+        const elkEdge = routed.get(edge.id);
+        const points = (elkEdge?.sections || []).flatMap(section => [
+            section.startPoint,
+            ...(section.bendPoints || []),
+            section.endPoint,
+        ]);
+        return {
+            id: edge.id,
+            from: edge.from,
+            to: edge.to,
+            points,
+            path: roundedOrthogonalPath(points, 8),
+        };
+    });
+    return {
+        width: Math.max(1, Math.ceil(result.width || 1)),
+        height: Math.max(1, Math.ceil(result.height || 1)),
+        nodes,
+        edges,
+    };
+}
