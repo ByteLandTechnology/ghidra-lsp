@@ -7,6 +7,8 @@
 mod assist;
 /// Highlights, inlay hints, code lenses, folding ranges, and document links.
 mod decorations;
+/// Standalone read-only MCP fetch helpers.
+mod fetch;
 /// Incoming and outgoing call hierarchy builders.
 mod hierarchy;
 /// Symbol resolution, definitions, and cross-reference lookups.
@@ -14,18 +16,27 @@ mod navigation;
 /// Scoped rename preview, origin save persistence, and document refresh.
 mod rename;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use anyhow::{Context, Result, ensure};
-use serde_json::{Value, json};
+use serde_json::Value;
+use tokio::sync::Mutex;
 use tower_lsp_server::ls_types::Uri;
 
-use crate::backend::{McpBackend, list_all};
-use crate::document::{
-  Document, Symbol, Token, align, canonical_virtual_uri, data_type_name, extract_label_address,
-  is_label_token, resolve, resolve_locals, same_address, virtual_uri,
+pub(crate) use assist::{
+  completion, fetch_signature_help, fetch_type_definition, goto_type_definition,
 };
+pub(crate) use fetch::{
+  GeneratedFunction, fetch_function_document, fetch_snapshot_text, fetch_symbols,
+  verify_session_ready,
+};
+pub(crate) use hierarchy::{incoming_calls, outgoing_calls, prepare_call_hierarchy};
+pub(crate) use navigation::{goto_definition, references, symbol_location};
+pub(crate) use rename::refresh_document;
+
+use crate::backend::McpBackend;
+use crate::document::{Document, Symbol, canonical_virtual_uri, data_type_name, same_address};
 
 /// Finds a function symbol by address first and by name or qualified name second.
 fn find_function_symbol<'a>(
@@ -73,9 +84,20 @@ pub(crate) struct Refresh {
   pub(crate) version: Option<i32>,
 }
 
+/// Uninstalled client editor buffer state recorded while `did_open` awaits `ghidra-mcp`.
+#[derive(Clone)]
+pub(crate) struct OpenBuffer {
+  /// Lowercase 32-character MD5 session hash parsed from the virtual URI.
+  pub(crate) md5: String,
+  /// Latest LSP document version received from `didOpen` or `didChange`.
+  pub(crate) version: i32,
+  /// Latest full text received from `didOpen` or `didChange`.
+  pub(crate) text: String,
+}
+
 /// Manages active Ghidra sessions, opened virtual buffers, and cached analysis state.
 pub(crate) struct Engine {
-  /// Connected MCP child-process backend.
+  /// Connected MCP child-process backend used by serialized write and refresh paths.
   pub(crate) backend: Arc<McpBackend>,
   /// Currently selected 32-character lowercase MD5 session hash.
   pub(crate) active: Option<String>,
@@ -91,6 +113,10 @@ pub(crate) struct Engine {
   pub(crate) functions: HashMap<(String, String), Value>,
   /// Cached local variable and parameter metadata keyed by synthetic symbol ID.
   local_details: HashMap<String, Value>,
+  /// Monotonic per-session generation counter incremented on write, refresh, or close.
+  generations: HashMap<String, u64>,
+  /// Client buffer state captured while an initial `did_open` fetch is in flight.
+  open_buffers: HashMap<Uri, OpenBuffer>,
 }
 
 impl Engine {
@@ -105,6 +131,8 @@ impl Engine {
       refresh_allowed: HashMap::new(),
       functions: HashMap::new(),
       local_details: HashMap::new(),
+      generations: HashMap::new(),
+      open_buffers: HashMap::new(),
     }
   }
 
@@ -116,24 +144,96 @@ impl Engine {
       .context("Select a Ghidra session first")
   }
 
-  /// Fetches and caches all symbols for session `md5`.
-  pub(crate) async fn symbols(&mut self, md5: &str) -> Result<Vec<Symbol>> {
-    if let Some(symbols) = self.symbols.get(md5) {
-      return Ok(symbols.clone());
+  /// Returns the current cache generation counter for session `md5`.
+  pub(crate) fn generation(&self, md5: &str) -> u64 {
+    self
+      .generations
+      .get(&md5.to_ascii_lowercase())
+      .copied()
+      .unwrap_or(0)
+  }
+
+  /// Increments the cache generation counter for session `md5` to reject stale reads.
+  pub(crate) fn bump_generation(&mut self, md5: &str) -> u64 {
+    let entry = self
+      .generations
+      .entry(md5.to_ascii_lowercase())
+      .or_insert(0);
+    *entry = entry.wrapping_add(1);
+    *entry
+  }
+
+  /// Stores `symbols` for `md5` when `generation` matches the current session counter.
+  pub(crate) fn store_symbols(&mut self, md5: &str, generation: u64, symbols: Vec<Symbol>) {
+    let key = md5.to_ascii_lowercase();
+    if self.generation(&key) == generation {
+      self.symbols.insert(key, symbols);
     }
-    let items = list_all(
-      self.backend.as_ref(),
-      "symbol",
-      md5,
-      json!({"page": {"limit": 1000}, "scan": {"timeout_ms": 60000}}),
-    )
-    .await?;
-    let symbols = items
-      .into_iter()
-      .map(serde_json::from_value)
-      .collect::<std::result::Result<Vec<Symbol>, _>>()?;
-    self.symbols.insert(md5.into(), symbols.clone());
-    Ok(symbols)
+  }
+
+  /// Records an in-flight `did_open` client buffer unless a newer version is already stored.
+  pub(crate) fn record_open_buffer(&mut self, uri: &Uri, md5: &str, version: i32, text: String) {
+    let canon = canonical_virtual_uri(uri);
+    match self.open_buffers.get_mut(&canon) {
+      Some(existing) if version < existing.version => {}
+      Some(existing) => {
+        existing.version = version;
+        existing.text = text;
+      }
+      None => {
+        self.open_buffers.insert(
+          canon,
+          OpenBuffer {
+            md5: md5.to_ascii_lowercase(),
+            version,
+            text,
+          },
+        );
+      }
+    }
+  }
+
+  /// Applies a `did_change` update to an in-flight `did_open` buffer when `version` is monotonic.
+  pub(crate) fn update_open_buffer(&mut self, uri: &Uri, version: i32, text: String) -> bool {
+    let canon = canonical_virtual_uri(uri);
+    let Some(existing) = self.open_buffers.get_mut(&canon) else {
+      return false;
+    };
+    if version >= existing.version {
+      existing.version = version;
+      existing.text = text;
+    }
+    true
+  }
+
+  /// Takes any pending `did_open` buffer entry recorded for `uri`.
+  pub(crate) fn take_open_buffer(&mut self, uri: &Uri) -> Option<OpenBuffer> {
+    let canon = canonical_virtual_uri(uri);
+    self.open_buffers.remove(&canon)
+  }
+
+  /// Removes all in-flight `did_open` buffer entries belonging to session `md5`.
+  pub(super) fn clear_open_buffers_for_session(&mut self, md5: &str) {
+    let key = md5.to_ascii_lowercase();
+    self.open_buffers.retain(|_, buf| buf.md5 != key);
+  }
+
+  /// Drops all cached parameter and local variable details for `(md5, entry)`.
+  pub(super) fn clear_local_details_for_entry(&mut self, md5: &str, entry: &str) {
+    let param_prefix = format!("Parameter:{md5}:{entry}:");
+    let local_prefix = format!("Local:{md5}:{entry}:");
+    self
+      .local_details
+      .retain(|k, _| !k.starts_with(&param_prefix) && !k.starts_with(&local_prefix));
+  }
+
+  /// Drops all cached parameter and local variable details for session `md5`.
+  pub(super) fn clear_local_details_for_session(&mut self, md5: &str) {
+    let local_prefix = format!("Local:{md5}:");
+    let parameter_prefix = format!("Parameter:{md5}:");
+    self
+      .local_details
+      .retain(|id, _| !id.starts_with(&local_prefix) && !id.starts_with(&parameter_prefix));
   }
 
   /// Returns cached parameter or local variable detail for `symbol` when present.
@@ -144,373 +244,98 @@ impl Engine {
       .flatten()
   }
 
-  /// Verifies that session `md5` is ready and marks it as active.
-  pub(crate) async fn select(&mut self, md5: &str) -> Result<()> {
-    ensure!(
-      md5.len() == 32 && md5.bytes().all(|b| b.is_ascii_hexdigit()),
-      "invalid session MD5"
-    );
-    let result = self
-      .backend
-      .call("session", "get", Some(md5), json!({}))
-      .await?;
-    let status = result
-      .pointer("/session/status")
-      .or_else(|| result.get("status"))
-      .and_then(Value::as_str);
-    ensure!(status == Some("ready"), "session is not ready: {result}");
-    self.active = Some(md5.to_lowercase());
-    Ok(())
-  }
-
-  /// Decompiles `entry` in session `md5`, aligns GUI spans and comments, and resolves symbols.
-  async fn generate(&mut self, md5: &str, entry: &str) -> Result<Document> {
-    self.generate_inner(md5, entry, None).await
-  }
-
-  /// Decompiles `entry` and drops cached symbols if `previous_base` differs from the new code.
-  pub(super) async fn generate_inner(
-    &mut self,
-    md5: &str,
-    entry: &str,
-    previous_base: Option<&str>,
-  ) -> Result<Document> {
-    let params = json!({
-      "selector": {"entry": entry},
-      "scan": {"timeout_ms": 30000},
-      "format": "document",
-      "include_comments": true,
-    });
-    let text =
-      match self
-        .backend
-        .call("decompilation", "get", Some(md5), params)
-        .await
-      {
-        Ok(value) => value,
-        Err(error) if legacy_format_error(&error) => self
-          .backend
-          .call(
-            "decompilation",
-            "get",
-            Some(md5),
-            json!({"selector": {"entry": entry}, "scan": {"timeout_ms": 30000}, "format": "text"}),
-          )
-          .await?,
-        Err(error) => return Err(error),
-      };
-    ensure!(
-      text.get("completed").and_then(Value::as_bool) == Some(true),
-      "decompilation incomplete: {text}"
-    );
-    let code = text
-      .get("c")
-      .and_then(Value::as_str)
-      .context("decompilation lacks C text")?
-      .to_owned();
-    let canonical = text
-      .get("entry")
-      .and_then(Value::as_str)
-      .unwrap_or(entry)
-      .to_owned();
-    let uri = virtual_uri(md5, "function", &canonical)?;
-    let mut doc = Document {
-      uri,
-      md5: md5.into(),
-      entry: Some(canonical),
-      base: code.clone(),
-      current: code.clone(),
-      saved: code,
-      version: None,
-      spans: vec![],
-      warning: None,
-    };
-    let native = text.get("lines").filter(|value| value.is_array());
-    if let Some(lines) = native {
-      match crate::gui::spans(&doc.base, lines) {
-        Ok(spans) => doc.spans = spans,
-        Err(error) => doc.warning = Some(format!("Native GUI layout unavailable: {error:#}")),
-      }
-    } else {
-      doc.warning = Some(
-        "Upgrade ghidra-mcp for native GUI layout and comments. Cursor locations and full comment display are unavailable."
-          .into(),
-      );
-    }
-    if let Some(warnings) = text.get("warnings").and_then(Value::as_array) {
-      for warning in warnings
-        .iter()
-        .filter_map(Value::as_str)
-        .filter(|s| !s.is_empty())
-      {
-        append_warning(&mut doc, warning);
-      }
-    }
-    let comment_err = if native.is_some() {
-      crate::comments::include(&mut doc, &text).err()
-    } else {
-      None
-    };
-    // Clear stale symbol caches before semantic resolution when refreshed C text changed.
-    if previous_base.is_some_and(|old| old != doc.base) {
-      self.symbols.remove(md5);
-    }
-    let function = self
-      .backend
-      .call(
-        "function",
-        "get",
-        Some(md5),
-        json!({"selector": {"entry": doc.entry}}),
-      )
-      .await;
-    let semantic = async {
-      let symbols = self.symbols(md5).await?;
-      let mut spans = if native.is_some() {
-        ensure!(!doc.spans.is_empty(), "native GUI layout is unavailable");
-        doc.spans.clone()
-      } else {
-        let tokens = self
-          .backend
-          .call(
-            "decompilation",
-            "get",
-            Some(md5),
-            json!({"selector": {"entry": entry}, "scan": {"timeout_ms": 30000}, "format": "tokens"}),
-          )
-          .await?;
-        ensure!(
-          tokens.get("completed").and_then(Value::as_bool) == Some(true),
-          "token decompilation incomplete"
-        );
-        let tokens: Vec<Token> =
-          serde_json::from_value(tokens.get("tokens").context("missing tokens")?.clone())?;
-        align(&doc.base, tokens)?
-      };
-      let function = function
-        .as_ref()
-        .map_err(|error| anyhow::anyhow!("{error:#}"))?;
-      let locals: HashSet<String> = ["parameters", "local_variables"]
-        .iter()
-        .flat_map(|key| {
-          function
-            .get(key)
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-        })
-        .filter_map(|v| v.get("name").and_then(Value::as_str).map(str::to_owned))
-        .collect();
-      resolve(&mut spans, &symbols, &locals);
-      let mut local_symbols = vec![];
-      let entry_str = doc.entry.as_deref().unwrap_or(entry);
-      let param_prefix = format!("Parameter:{md5}:{entry_str}:");
-      let local_prefix = format!("Local:{md5}:{entry_str}:");
-      self
-        .local_details
-        .retain(|k, _| !k.starts_with(&param_prefix) && !k.starts_with(&local_prefix));
-      for (key, kind) in [("parameters", "Parameter"), ("local_variables", "Local")] {
-        for variable in function
-          .get(key)
-          .and_then(Value::as_array)
-          .into_iter()
-          .flatten()
-        {
-          let Some(name) = variable.get("name").and_then(Value::as_str) else {
-            continue;
-          };
-          if name.is_empty() {
-            continue;
-          }
-          let identity = if kind == "Parameter" {
-            let Some(ordinal) = variable.get("ordinal").and_then(Value::as_u64) else {
-              continue;
-            };
-            json!({"ordinal": ordinal})
-          } else if let Some(storage) = variable.get("storage").filter(|s| !s.is_null()) {
-            json!({"storage": storage, "name": name})
-          } else {
-            json!({"name": name})
-          };
-          let id = format!(
-            "{kind}:{md5}:{}:{identity}",
-            doc.entry.as_deref().unwrap_or(entry)
-          );
-          let mut detail = variable.clone();
-          detail["entry"] = json!(doc.entry.as_deref().unwrap_or(entry));
-          detail["kind"] = json!(kind);
-          self.local_details.insert(id.clone(), detail);
-          local_symbols.push(Symbol {
-            demangled_name: None,
-            id,
-            name: name.into(),
-            address: doc.entry.clone().unwrap_or_else(|| entry.into()),
-            namespace: String::new(),
-            kind: kind.into(),
-          });
-        }
-      }
-      for span in &mut spans {
-        if !matches!(span.token.kind.as_str(), "variable" | "parameter") {
-          continue;
-        }
-        let Some(native) = &mut span.symbol else {
-          continue;
-        };
-        if !native.local() {
-          continue;
-        }
-        let kind = if native.kind == "Parameter" || span.token.kind == "parameter" {
-          "Parameter"
-        } else {
-          "Local"
-        };
-        let prefix = format!("{kind}:{md5}:{entry_str}:");
-        let scoped_id = if native.id.starts_with(&prefix) {
-          native.id.clone()
-        } else {
-          format!("{prefix}symbol={}", native.id)
-        };
-        if !self.local_details.contains_key(&scoped_id) {
-          let target_name = if native.name.is_empty() {
-            span.token.text.as_str()
-          } else {
-            native.name.as_str()
-          };
-          if let Some(matched) = local_symbols
-            .iter()
-            .find(|sym| sym.kind == kind && sym.name == target_name)
-            .and_then(|sym| self.local_details.get(&sym.id).cloned())
-          {
-            self.local_details.insert(scoped_id.clone(), matched);
-          }
-        }
-        if native.name.is_empty() {
-          native.name = span.token.text.clone();
-        }
-        native.id = scoped_id;
-        native.address = entry_str.to_owned();
-        native.namespace = String::new();
-        native.kind = kind.into();
-      }
-      resolve_locals(&mut spans, &local_symbols);
-      for span in &mut spans {
-        if span.symbol.is_none() && matches!(span.token.kind.as_str(), "variable" | "parameter") {
-          let entry_str = doc.entry.as_deref().unwrap_or(entry);
-          let kind = if span.token.kind == "parameter" {
-            "Parameter"
-          } else {
-            "Local"
-          };
-          span.symbol = Some(Symbol {
-            demangled_name: None,
-            id: format!("{kind}:{md5}:{entry_str}:name={}", span.token.text),
-            name: span.token.text.clone(),
-            address: entry_str.to_owned(),
-            namespace: String::new(),
-            kind: kind.into(),
-          });
-        } else if span.symbol.is_none()
-          && (span.token.kind == "label"
-            || is_label_token(&span.token.text, span.start, span.end, &doc.base))
-        {
-          let entry_str = doc.entry.as_deref().unwrap_or(entry);
-          let addr = span
-            .token
-            .address
-            .as_deref()
-            .map(str::to_string)
-            .or_else(|| extract_label_address(&span.token.text))
-            .unwrap_or_else(|| entry_str.to_owned());
-          span.symbol = Some(Symbol {
-            demangled_name: None,
-            id: format!("Label:{md5}:{addr}"),
-            name: span.token.text.clone(),
-            address: addr,
-            namespace: String::new(),
-            kind: "Label".into(),
-          });
-        }
-      }
-      let body_start = spans
-        .iter()
-        .find(|span| span.token.kind != "comment" && span.token.text == "{")
-        .map_or(doc.base.len(), |span| span.start);
-      if let Some(decl_span) = spans
-        .iter_mut()
-        .find(|s| s.token.kind == "function" && s.start < body_start)
-        && decl_span.symbol.is_none()
-      {
-        let entry_addr = doc.entry.as_deref().unwrap_or(entry);
-        if let Some(sym) = find_function_symbol(&symbols, Some(entry_addr), &decl_span.token.text) {
-          decl_span.symbol = Some(sym.clone());
-        } else {
-          decl_span.symbol = Some(Symbol {
-            demangled_name: None,
-            id: format!("Function:{md5}:{entry_addr}"),
-            name: decl_span.token.text.clone(),
-            address: entry_addr.to_owned(),
-            namespace: String::new(),
-            kind: "Function".into(),
-          });
-        }
-      }
-      self.functions.insert(
-        (
-          md5.into(),
-          doc.entry.clone().unwrap_or_else(|| entry.into()),
-        ),
-        function.clone(),
-      );
-      Ok::<_, anyhow::Error>(spans)
-    }
-    .await;
-    match semantic {
-      Ok(spans) => doc.spans = spans,
-      Err(e) => append_warning(&mut doc, &format!("Navigation disabled: {e:#}")),
-    }
-    if let Some(error) = comment_err {
-      append_warning(&mut doc, &format!("Ghidra comments unavailable: {error:#}"));
-    }
-    Ok(doc)
-  }
-
-  /// Opens an already cached function document or generates and installs it.
-  pub(crate) async fn open(&mut self, md5: &str, entry: &str) -> Result<Uri> {
-    ensure!(
-      md5.len() == 32 && md5.bytes().all(|b| b.is_ascii_hexdigit()),
-      "invalid session MD5"
-    );
+  /// Finds an already opened function document matching `(md5, entry)`.
+  pub(crate) fn find_function_doc(&self, md5: &str, entry: &str) -> Option<&Document> {
     let md5 = md5.to_ascii_lowercase();
     let decoded_entry = percent_encoding::percent_decode_str(entry)
       .decode_utf8()
       .unwrap_or(std::borrow::Cow::Borrowed(entry));
-    if let Some(doc) = self.docs.values().find(|d| {
+    self.docs.values().find(|d| {
       d.md5 == md5
         && d.entry.as_deref().is_some_and(|e| {
           e == entry || e == decoded_entry.as_ref() || same_address(e, &decoded_entry)
         })
-    }) {
-      return Ok(doc.uri.clone());
-    }
-    let doc = self.generate(&md5, &decoded_entry).await?;
-    self.install(doc)
+    })
   }
 
-  /// Stores `doc` under its canonical URI while preserving client version and unsaved text.
+  /// Applies symbol, local variable, and function caches from `generated` without installing `doc`.
+  pub(super) fn apply_generated_caches(&mut self, generated: &mut GeneratedFunction) {
+    if generated.clear_symbols {
+      self.symbols.remove(&generated.md5);
+    }
+    if let Some(symbols) = generated.fetched_symbols.take() {
+      self.symbols.insert(generated.md5.clone(), symbols);
+    }
+    if let Some(entry_str) = generated.local_entry.take() {
+      self.clear_local_details_for_entry(&generated.md5, &entry_str);
+      self
+        .local_details
+        .extend(std::mem::take(&mut generated.local_details));
+    }
+    if let Some((entry_key, function)) = generated.cached_function.take() {
+      self
+        .functions
+        .insert((generated.md5.clone(), entry_key), function);
+    }
+  }
+
+  /// Commits `generated` into caches and installs its document when `generation` still matches.
+  pub(crate) fn commit_generated(
+    &mut self,
+    generation: u64,
+    mut generated: GeneratedFunction,
+  ) -> Result<Option<Uri>> {
+    if self.generation(&generated.md5) != generation {
+      return Ok(None);
+    }
+    self.apply_generated_caches(&mut generated);
+    let uri = self.install(generated.doc)?;
+    Ok(Some(uri))
+  }
+
+  /// Decompiles `entry` in session `md5` while holding `&mut Engine` during serialized refresh.
+  pub(super) async fn generate(&mut self, md5: &str, entry: &str) -> Result<Document> {
+    let cached_symbols = self.symbols.get(md5).cloned();
+    let mut generated =
+      fetch_function_document(self.backend.as_ref(), md5, entry, None, cached_symbols).await?;
+    self.apply_generated_caches(&mut generated);
+    Ok(generated.doc)
+  }
+
+  /// Stores `doc` under its canonical URI while preserving newer client versions and edits.
   pub(crate) fn install(&mut self, mut doc: Document) -> Result<Uri> {
     doc.uri = canonical_virtual_uri(&doc.uri);
     let uri = doc.uri.clone();
-    if doc.version.is_none()
-      && let Some(old) = self.docs.get(&uri)
-      && old.version.is_some()
+    if let Some(buf) = self.open_buffers.remove(&uri)
+      && doc.version.is_none_or(|new_ver| buf.version >= new_ver)
     {
-      doc.version = old.version;
-      if !old.clean() {
-        doc.current = old.current.clone();
-      }
-      if old.saved != old.base {
-        doc.saved = old.saved.clone();
+      doc.version = Some(buf.version);
+      doc.current = buf.text;
+    }
+    if let Some(old) = self.docs.get(&uri) {
+      match (doc.version, old.version) {
+        (None, Some(old_ver)) => {
+          doc.version = Some(old_ver);
+          if !old.clean() {
+            doc.current = old.current.clone();
+          }
+          if old.saved != old.base {
+            doc.saved = old.saved.clone();
+          }
+        }
+        (Some(new_ver), Some(old_ver)) if old_ver > new_ver => {
+          doc.version = Some(old_ver);
+          doc.current = old.current.clone();
+          if old.saved != old.base {
+            doc.saved = old.saved.clone();
+          }
+        }
+        (_, Some(_)) => {
+          if old.saved != old.base {
+            doc.saved = old.saved.clone();
+          }
+        }
+        (_, None) => {}
       }
     }
     self.docs.insert(uri.clone(), doc);
@@ -520,6 +345,7 @@ impl Engine {
   /// Removes clean document `uri` when no uncommitted local edits or rename previews remain.
   pub(crate) fn close_document(&mut self, uri: &Uri) {
     let canon = canonical_virtual_uri(uri);
+    self.open_buffers.remove(&canon);
     let keep = self.docs.get(&canon).is_some_and(|doc| {
       !doc.clean()
         || self
@@ -532,99 +358,206 @@ impl Engine {
       self.refresh_allowed.remove(&canon);
     }
   }
+}
 
-  /// Builds synthetic read-only snapshot text for `type`, `symbol`, or `references` URIs.
-  pub(crate) async fn snapshot_text(&self, md5: &str, kind: &str, id: &str) -> Result<String> {
-    if kind == "type" {
-      let path = id.strip_suffix(".md").unwrap_or(id);
-      let type_data = if path.starts_with('/') {
-        self
-          .backend
-          .call(
-            "data_type",
-            "get",
-            Some(md5),
-            json!({"selector": {"path": path}}),
-          )
-          .await?
-      } else {
-        let types = list_all(
-          self.backend.as_ref(),
-          "data_type",
-          md5,
-          json!({"filter": {"query": path}, "page": {"limit": 1000}}),
-        )
-        .await?;
-        let candidate = types.into_iter().find(|v| {
-          v.get("name").and_then(Value::as_str) == Some(path)
-            || v.get("path").and_then(Value::as_str) == Some(path)
-        });
-        let full_path = if let Some(cand) = &candidate {
-          cand.get("path").and_then(Value::as_str).unwrap_or(path)
-        } else {
-          path
-        };
-        let lookup_path = if full_path.starts_with('/') {
-          full_path.to_owned()
-        } else {
-          format!("/{full_path}")
-        };
-        self
-          .backend
-          .call(
-            "data_type",
-            "get",
-            Some(md5),
-            json!({"selector": {"path": lookup_path}}),
-          )
-          .await?
-      };
-      return Ok(format_type_markdown(&type_data));
+/// Returns cached symbols for `md5` or fetches them without holding `engine` across MCP I/O.
+pub(crate) async fn ensure_symbols(
+  engine: &Mutex<Engine>,
+  backend: &McpBackend,
+  md5: &str,
+) -> Result<Vec<Symbol>> {
+  let key = md5.to_ascii_lowercase();
+  let generation = {
+    let e = engine.lock().await;
+    if let Some(symbols) = e.symbols.get(&key) {
+      return Ok(symbols.clone());
     }
-    let symbol: Symbol = serde_json::from_value(
-      self
-        .backend
-        .call("symbol", "get", Some(md5), json!({"selector": {"id": id}}))
-        .await?,
-    )?;
-    if kind == "symbol" {
-      return Ok(format!(
-        "// {}\n// Address: {}\n// Kind: {}\n",
-        symbol.display_name(),
-        symbol.address,
-        symbol.kind
-      ));
+    e.generation(&key)
+  };
+  let symbols = fetch_symbols(backend, &key).await?;
+  {
+    let mut e = engine.lock().await;
+    e.store_symbols(&key, generation, symbols.clone());
+  }
+  Ok(symbols)
+}
+
+/// Verifies that session `md5` is ready without holding `engine` and marks it active.
+pub(crate) async fn select_session(
+  engine: &Mutex<Engine>,
+  backend: &McpBackend,
+  md5: &str,
+) -> Result<()> {
+  ensure!(
+    md5.len() == 32 && md5.bytes().all(|b| b.is_ascii_hexdigit()),
+    "invalid session MD5"
+  );
+  let key = md5.to_ascii_lowercase();
+  let generation = engine.lock().await.generation(&key);
+  verify_session_ready(backend, &key).await?;
+  let mut e = engine.lock().await;
+  ensure!(
+    e.generation(&key) == generation,
+    "session state changed while selecting session; retry"
+  );
+  e.active = Some(key);
+  Ok(())
+}
+
+/// Opens a cached function document or fetches and installs it without holding `engine` across I/O.
+pub(crate) async fn open_function(
+  engine: &Mutex<Engine>,
+  backend: &McpBackend,
+  md5: &str,
+  entry: &str,
+) -> Result<(Uri, Document)> {
+  ensure!(
+    md5.len() == 32 && md5.bytes().all(|b| b.is_ascii_hexdigit()),
+    "invalid session MD5"
+  );
+  let md5 = md5.to_ascii_lowercase();
+  let decoded_entry = percent_encoding::percent_decode_str(entry)
+    .decode_utf8()
+    .unwrap_or(std::borrow::Cow::Borrowed(entry))
+    .into_owned();
+  let (cached_symbols, generation) = {
+    let e = engine.lock().await;
+    if let Some(doc) = e.find_function_doc(&md5, &decoded_entry) {
+      return Ok((doc.uri.clone(), doc.clone()));
     }
-    let refs = list_all(
-      self.backend.as_ref(),
-      "reference",
-      md5,
-      json!({"filter": {"direction": "to", "to": symbol.address}, "page": {"limit": 1000}}),
-    )
-    .await?;
-    let mut code = format!(
-      "// References to {} at {}\n",
-      symbol.display_name(),
-      symbol.address
-    );
-    for reference in refs {
-      code.push_str(&format!(
-        "// {} -> {} ({})\n",
-        reference
-          .get("from")
-          .and_then(Value::as_str)
-          .context("reference lacks from address")?,
-        reference
-          .get("to")
-          .and_then(Value::as_str)
-          .unwrap_or(&symbol.address),
-        reference
-          .get("type")
-          .and_then(Value::as_str)
-          .unwrap_or("reference")
-      ));
+    (e.symbols.get(&md5).cloned(), e.generation(&md5))
+  };
+  let generated =
+    fetch_function_document(backend, &md5, &decoded_entry, None, cached_symbols).await?;
+  let fallback = generated.doc.clone();
+  let mut e = engine.lock().await;
+  if let Some(uri) = e.commit_generated(generation, generated)?
+    && let Some(doc) = e.docs.get(&uri)
+  {
+    return Ok((uri, doc.clone()));
+  }
+  if let Some(doc) = e.find_function_doc(&md5, &decoded_entry) {
+    return Ok((doc.uri.clone(), doc.clone()));
+  }
+  let uri = canonical_virtual_uri(&fallback.uri);
+  Ok((uri, fallback))
+}
+
+/// Opens or updates virtual document `uri` on `didOpen` without holding `engine` across MCP I/O.
+pub(crate) async fn did_open_document(
+  engine: &Mutex<Engine>,
+  backend: &McpBackend,
+  uri: &Uri,
+  version: i32,
+  text: String,
+) {
+  let canon = canonical_virtual_uri(uri);
+  let fetch_plan = {
+    let mut e = engine.lock().await;
+    if let Some(doc) = e.docs.get_mut(&canon) {
+      if doc.version.is_none_or(|old_ver| version >= old_ver) {
+        doc.current = text;
+        doc.version = Some(version);
+      }
+      return;
     }
-    Ok(code)
+    let Ok(parsed) = url::Url::parse(canon.as_str()) else {
+      return;
+    };
+    if parsed.scheme() != "ghidra" {
+      return;
+    }
+    let Some(md5_str) = parsed.host_str() else {
+      return;
+    };
+    let path = parsed.path().strip_prefix('/').unwrap_or(parsed.path());
+    let Some((kind_str, raw_key)) = path.split_once('/') else {
+      return;
+    };
+    let Ok(decoded) = percent_encoding::percent_decode_str(raw_key).decode_utf8() else {
+      return;
+    };
+    let md5 = md5_str.to_ascii_lowercase();
+    let kind = kind_str.to_owned();
+    let key = decoded.into_owned();
+    if kind == "function"
+      && let Some(existing_uri) = e.find_function_doc(&md5, &key).map(|d| d.uri.clone())
+    {
+      if let Some(doc) = e.docs.get_mut(&existing_uri)
+        && doc.version.is_none_or(|old_ver| version >= old_ver)
+      {
+        doc.current = text;
+        doc.version = Some(version);
+      }
+      return;
+    }
+    if !matches!(kind.as_str(), "function" | "symbol" | "references" | "type") {
+      return;
+    }
+    e.record_open_buffer(&canon, &md5, version, text);
+    let cached_symbols = (kind == "function")
+      .then(|| e.symbols.get(&md5).cloned())
+      .flatten();
+    let generation = e.generation(&md5);
+    (md5, kind, key, cached_symbols, generation)
+  };
+
+  let (md5, kind, key, cached_symbols, generation) = fetch_plan;
+  if kind == "function" {
+    let Ok(mut generated) =
+      fetch_function_document(backend, &md5, &key, None, cached_symbols).await
+    else {
+      engine.lock().await.take_open_buffer(&canon);
+      return;
+    };
+    let mut e = engine.lock().await;
+    let buf = e.take_open_buffer(&canon);
+    let gen_uri = canonical_virtual_uri(&generated.doc.uri);
+    if e.generation(&md5) != generation {
+      return;
+    }
+    if let Some(buf) = buf {
+      generated.doc.version = Some(buf.version);
+      generated.doc.current = buf.text;
+      let _ = e.commit_generated(generation, generated);
+    } else if e.docs.contains_key(&gen_uri) {
+      let _ = e.commit_generated(generation, generated);
+    }
+  } else {
+    let Ok(snap_text) = fetch_snapshot_text(backend, &md5, &kind, &key).await else {
+      engine.lock().await.take_open_buffer(&canon);
+      return;
+    };
+    let mut e = engine.lock().await;
+    let buf = e.take_open_buffer(&canon);
+    if e.generation(&md5) != generation {
+      return;
+    }
+    if let Some(buf) = buf {
+      let _ = e.install(Document {
+        uri: canon,
+        md5,
+        entry: None,
+        base: snap_text.clone(),
+        current: buf.text,
+        saved: snap_text,
+        version: Some(buf.version),
+        spans: vec![],
+        warning: None,
+      });
+    } else if e.docs.contains_key(&canon) {
+      let _ = e.install(Document {
+        uri: canon,
+        md5,
+        entry: None,
+        base: snap_text.clone(),
+        current: snap_text.clone(),
+        saved: snap_text,
+        version: None,
+        spans: vec![],
+        warning: None,
+      });
+    }
   }
 }
 

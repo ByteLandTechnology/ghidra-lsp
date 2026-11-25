@@ -84,7 +84,7 @@ impl Server {
       .and_then(Value::as_str)
       .context("text is required")?;
     let expected = arg.get("expected").and_then(Value::as_str);
-    let e = self.engine.lock().await;
+    let mut e = self.engine.lock().await;
     Self::ensure_program_clean(&e, &md5)?;
     let prepared =
       crate::mutations::prepare_comment_mutation(backend, &md5, address, kind, text, expected)
@@ -101,6 +101,7 @@ impl Server {
         "persisted": false,
       }));
     }
+    e.bump_generation(&md5);
     let result = crate::mutations::execute_comment_mutation(backend, &md5, &prepared).await?;
     self.commit_and_refresh(e, backend, &md5, None).await?;
     Ok(json!({
@@ -132,7 +133,7 @@ impl Server {
       .filter(|v| v.is_object())
       .context("original function snapshot is required")?;
     let payload = arg.get("payload").filter(|v| v.is_object()).unwrap_or(arg);
-    let e = self.engine.lock().await;
+    let mut e = self.engine.lock().await;
     Self::ensure_program_clean(&e, &md5)?;
     let ops = if command == "ghidra.saveFunctionPrototype" {
       crate::mutations::prepare_function_prototype_ops(backend, &md5, entry, original, payload)
@@ -140,6 +141,7 @@ impl Server {
     } else {
       crate::mutations::prepare_variables_ops(backend, &md5, entry, original, payload).await?
     };
+    e.bump_generation(&md5);
     let result = crate::mutations::execute_ops(backend, &md5, &ops).await?;
     self.commit_and_refresh(e, backend, &md5, None).await?;
     Ok(json!({
@@ -177,6 +179,7 @@ impl Server {
       return Ok(crate::types_doc::noop_type_save(&md5, path, text, current));
     };
     workbench::allow_write(domain, operation, &parameters)?;
+    e.bump_generation(&md5);
     let (tool, tool_operation) = workbench::mcp_operation(domain, operation);
     let result = backend
       .call(tool, &tool_operation, Some(&md5), parameters)

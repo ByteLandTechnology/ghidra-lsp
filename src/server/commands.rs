@@ -14,7 +14,23 @@ use crate::backend::{McpBackend, list_all};
 use crate::document::{
   Document, SHOW_TEMPLATE_ARGUMENTS, canonical_virtual_uri, matches_text, same_address,
 };
+use crate::engine::{
+  ensure_symbols, fetch_snapshot_text, fetch_type_definition, open_function, select_session,
+  symbol_location,
+};
 use crate::workbench;
+
+/// Formats a virtual [`Document`] response payload for `ghidra.document`.
+fn document_response(doc: &Document, use_current: bool) -> Value {
+  let text = if use_current { &doc.current } else { &doc.base };
+  json!({
+    "uri": doc.uri,
+    "text": text,
+    "md5": doc.md5,
+    "entry": doc.entry,
+    "warning": doc.warning,
+  })
+}
 
 impl Server {
   /// Dispatches one `workspace/executeCommand` call for session, function, document, or location actions.
@@ -32,7 +48,7 @@ impl Server {
           .and_then(Value::as_str)
           .context("md5 is required")?
           .to_ascii_lowercase();
-        self.engine.lock().await.select(&md5).await?;
+        select_session(&self.engine, backend, &md5).await?;
         Ok(json!({"md5": md5}))
       }
       "ghidra.functions" => {
@@ -57,7 +73,7 @@ impl Server {
           .get("entry")
           .and_then(Value::as_str)
           .context("entry is required")?;
-        let uri = self.engine.lock().await.open(&md5, entry).await?;
+        let (uri, _) = open_function(&self.engine, backend, &md5, entry).await?;
         self.report(&uri).await;
         Ok(json!({"uri": uri}))
       }
@@ -67,15 +83,12 @@ impl Server {
           .get("id")
           .and_then(Value::as_str)
           .context("symbol id is required")?;
-        let mut e = self.engine.lock().await;
-        let symbol = e
-          .symbols(&md5)
+        let symbol = ensure_symbols(&self.engine, backend, &md5)
           .await?
           .into_iter()
           .find(|s| s.id == id)
           .context("symbol no longer exists")?;
-        let location = e.symbol_location(&md5, &symbol).await?;
-        drop(e);
+        let location = symbol_location(&self.engine, backend, &md5, &symbol).await?;
         self.changed(&md5).await;
         Ok(json!({"uri": location.uri}))
       }
@@ -86,59 +99,64 @@ impl Server {
           .context("uri is required")?
           .parse()?;
         let uri = canonical_virtual_uri(&raw_uri);
-        let mut e = self.engine.lock().await;
-        let mut doc_uri = uri.clone();
-        if !e.docs.contains_key(&uri) {
-          let parsed = url::Url::parse(uri.as_str())?;
-          ensure!(parsed.scheme() == "ghidra", "expected a ghidra URI");
-          let md5 = parsed.host_str().context("missing session")?;
-          let path = parsed.path().strip_prefix('/').unwrap_or(parsed.path());
-          let (kind, raw_key) = path
-            .split_once('/')
-            .context("invalid virtual document path")?;
-          let key = percent_encoding::percent_decode_str(raw_key).decode_utf8()?;
-          if kind == "function" {
-            doc_uri = e.open(md5, &key).await?;
-          } else if matches!(kind, "symbol" | "references" | "type") {
-            let text = e.snapshot_text(md5, kind, &key).await?;
-            doc_uri = e.install(Document {
-              uri: uri.clone(),
-              md5: md5.into(),
-              entry: None,
-              base: text.clone(),
-              current: text.clone(),
-              saved: text,
-              version: None,
-              spans: vec![],
-              warning: None,
-            })?;
-          } else {
-            bail!("Open this symbol through Ghidra first");
+        let include_pending = arg.get("includePending").and_then(Value::as_bool) == Some(true);
+        {
+          let e = self.engine.lock().await;
+          if let Some(doc) = e.docs.get(&uri) {
+            let use_current = include_pending
+              && e
+                .pending
+                .get(&doc.md5)
+                .and_then(|plan| plan.expected.get(&doc.uri))
+                .is_some_and(|expected| matches_text(&doc.current, expected));
+            return Ok(document_response(doc, use_current));
           }
         }
-        let doc = e
-          .docs
-          .get(&doc_uri)
-          .or_else(|| e.docs.get(&uri))
-          .context("Unknown virtual document")?;
-        let text = if arg.get("includePending").and_then(Value::as_bool) == Some(true)
-          && e
-            .pending
-            .get(&doc.md5)
-            .and_then(|plan| plan.expected.get(&doc.uri))
-            .is_some_and(|expected| matches_text(&doc.current, expected))
-        {
-          &doc.current
+        let parsed = url::Url::parse(uri.as_str())?;
+        ensure!(parsed.scheme() == "ghidra", "expected a ghidra URI");
+        let md5 = parsed.host_str().context("missing session")?;
+        let path = parsed.path().strip_prefix('/').unwrap_or(parsed.path());
+        let (kind, raw_key) = path
+          .split_once('/')
+          .context("invalid virtual document path")?;
+        let key = percent_encoding::percent_decode_str(raw_key).decode_utf8()?;
+        let (doc_uri, fallback_doc) = if kind == "function" {
+          open_function(&self.engine, backend, md5, &key).await?
+        } else if matches!(kind, "symbol" | "references" | "type") {
+          let generation = self.engine.lock().await.generation(md5);
+          let text = fetch_snapshot_text(backend, md5, kind, &key).await?;
+          let snapshot = Document {
+            uri: uri.clone(),
+            md5: md5.to_ascii_lowercase(),
+            entry: None,
+            base: text.clone(),
+            current: text.clone(),
+            saved: text,
+            version: None,
+            spans: vec![],
+            warning: None,
+          };
+          let mut e = self.engine.lock().await;
+          let installed_uri = if e.generation(md5) == generation {
+            e.install(snapshot.clone())?
+          } else {
+            uri.clone()
+          };
+          (installed_uri, snapshot)
         } else {
-          &doc.base
+          bail!("Open this symbol through Ghidra first");
         };
-        Ok(json!({
-          "uri": doc.uri,
-          "text": text,
-          "md5": doc.md5,
-          "entry": doc.entry,
-          "warning": doc.warning,
-        }))
+        let e = self.engine.lock().await;
+        if let Some(doc) = e.docs.get(&doc_uri).or_else(|| e.docs.get(&uri)) {
+          let use_current = include_pending
+            && e
+              .pending
+              .get(&doc.md5)
+              .and_then(|plan| plan.expected.get(&doc.uri))
+              .is_some_and(|expected| matches_text(&doc.current, expected));
+          return Ok(document_response(doc, use_current));
+        }
+        Ok(document_response(&fallback_doc, false))
       }
       "ghidra.configure" => {
         if let Some(value) = arg.get("templateArguments").and_then(Value::as_str) {
@@ -223,9 +241,7 @@ impl Server {
           .get("address")
           .and_then(Value::as_str)
           .unwrap_or(address_text);
-        let mut e = self.engine.lock().await;
-        let uri = e.open(&md5, entry).await?;
-        let doc = &e.docs[&uri];
+        let (uri, doc) = open_function(&self.engine, backend, &md5, entry).await?;
         ensure!(
           doc.clean(),
           "Save or discard the pending edit before revealing an assembly address in decompilation"
@@ -259,14 +275,21 @@ impl Server {
             .cloned()
             .context("position is required")?,
         )?;
-        let mut e = self.engine.lock().await;
-        let md5 = e
-          .docs
-          .get(&uri)
-          .context("Unknown virtual document")?
-          .md5
-          .clone();
-        match e.type_definition(&uri, p).await? {
+        let (md5, snapshot) = {
+          let e = self.engine.lock().await;
+          let md5 = e
+            .docs
+            .get(&uri)
+            .context("Unknown virtual document")?
+            .md5
+            .clone();
+          let snapshot = e.prepare_type_definition(&uri, p)?;
+          (md5, snapshot)
+        };
+        let Some(snapshot) = snapshot else {
+          return Ok(Value::Null);
+        };
+        match fetch_type_definition(backend, snapshot).await? {
           Some(data_type) => Ok(json!({"md5": md5, "type": data_type})),
           None => Ok(Value::Null),
         }

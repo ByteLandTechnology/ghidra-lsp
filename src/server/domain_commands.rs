@@ -12,6 +12,7 @@ use tower_lsp_server::ls_types::Uri;
 use super::{OpenProgress, ProgramAnalysis, Server, job_id};
 use crate::backend::{McpBackend, list_all};
 use crate::document::{canonical_virtual_uri, matches_text};
+use crate::engine::{refresh_document, select_session};
 use crate::workbench;
 
 impl Server {
@@ -49,7 +50,7 @@ impl Server {
       "ghidra.mutate" => self.handle_mutate(&arg, backend).await,
       "ghidra.renameState" => self.handle_rename_state(&arg).await,
       "ghidra.saveDocument" => self.handle_save_document(&arg).await,
-      "ghidra.refreshDocument" => self.handle_refresh_document(&arg).await,
+      "ghidra.refreshDocument" => self.handle_refresh_document(&arg, backend).await,
       "ghidra.program" | "ghidra.symbols" | "ghidra.types" | "ghidra.type" => {
         self.handle_catalog_command(command, &arg, backend).await
       }
@@ -219,6 +220,8 @@ impl Server {
       let mut e = self.engine.lock().await;
       // Preserve in-flight rename previews started while analysis ran in the background.
       let changes = if e.pending.contains_key(&progress.md5) {
+        e.bump_generation(&progress.md5);
+        e.symbols.remove(&progress.md5);
         vec![]
       } else {
         e.refresh_session(&progress.md5, None).await?
@@ -271,9 +274,14 @@ impl Server {
         .await
         .context("Analysis completed, but project persistence failed")?;
       self.view_cache.invalidate(&md5).await;
+      {
+        let mut e = self.engine.lock().await;
+        e.bump_generation(&md5);
+        e.symbols.remove(&md5);
+      }
       analysis = self.program_analysis(&md5).await?;
     }
-    self.engine.lock().await.select(&md5).await?;
+    select_session(&self.engine, backend, &md5).await?;
     Ok(json!({"md5": md5, "analyzed": analysis.analyzed, "analysisRunning": analysis.running}))
   }
 
@@ -350,8 +358,9 @@ impl Server {
     let md5 = self.scoped_md5(arg).await?;
     let (domain, operation, parameters) = workbench::operation(arg)?;
     workbench::allow_write(domain, operation, &parameters)?;
-    let e = self.engine.lock().await;
+    let mut e = self.engine.lock().await;
     Self::ensure_program_clean(&e, &md5)?;
+    e.bump_generation(&md5);
     let (tool, tool_operation) = workbench::mcp_operation(domain, operation);
     let result = backend
       .call(tool, &tool_operation, Some(&md5), parameters)
@@ -470,20 +479,15 @@ impl Server {
   }
 
   /// Regenerates one clean virtual document and pushes updated buffer text if changed.
-  async fn handle_refresh_document(&self, arg: &Value) -> Result<Value> {
+  async fn handle_refresh_document(&self, arg: &Value, backend: &McpBackend) -> Result<Value> {
     let raw_uri: Uri = arg
       .get("uri")
       .and_then(Value::as_str)
       .context("uri is required")?
       .parse()?;
     let uri = canonical_virtual_uri(&raw_uri);
-    let mut e = self.engine.lock().await;
-    let changes = e.refresh_document(&uri).await?;
+    let (changes, md5, text) = refresh_document(&self.engine, backend, &uri).await?;
     let changed = !changes.is_empty();
-    let doc = e.docs.get(&uri).context("Unknown virtual document")?;
-    let md5 = doc.md5.clone();
-    let text = doc.base.clone();
-    drop(e);
     self.apply_refresh(changes).await?;
     self.report(&uri).await;
     if changed {

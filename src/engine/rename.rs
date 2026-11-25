@@ -7,12 +7,14 @@ use std::collections::HashMap;
 
 use anyhow::{Context, Result, bail, ensure};
 use serde_json::{Value, json};
+use tokio::sync::Mutex;
 use tower_lsp_server::ls_types::{
   DocumentChanges, OneOf, OptionalVersionedTextDocumentIdentifier, Position, TextDocumentEdit,
   TextEdit, Uri, WorkspaceEdit,
 };
 
-use super::{Engine, Pending, Refresh};
+use super::{Engine, Pending, Refresh, fetch_function_document, fetch_snapshot_text};
+use crate::backend::McpBackend;
 use crate::document::{
   Document, Span, Symbol, apply_edits, canonical_virtual_uri, matches_text, position, same_address,
   valid_name,
@@ -21,15 +23,15 @@ use crate::document::{
 impl Engine {
   /// Drops every view, rename plan, and semantic cache belonging to closed session `md5`.
   pub(crate) fn forget_session(&mut self, md5: &str) {
+    let md5 = md5.to_ascii_lowercase();
+    let md5 = md5.as_str();
+    self.bump_generation(md5);
+    self.clear_open_buffers_for_session(md5);
     self.docs.retain(|_, d| d.md5 != md5);
     self.pending.remove(md5);
     self.symbols.remove(md5);
     self.functions.retain(|(session, _), _| session != md5);
-    let local_prefix = format!("Local:{md5}:");
-    let parameter_prefix = format!("Parameter:{md5}:");
-    self
-      .local_details
-      .retain(|id, _| !id.starts_with(&local_prefix) && !id.starts_with(&parameter_prefix));
+    self.clear_local_details_for_session(md5);
     self.refresh_allowed.retain(|uri, _| {
       url::Url::parse(uri.as_str())
         .ok()
@@ -291,6 +293,7 @@ impl Engine {
     }
 
     let (domain, selector, current_name) = self.resolve_rename_target(&md5, &pending).await?;
+    self.bump_generation(&md5);
     if !pending.patched && current_name == pending.symbol.name {
       // Mark uncertain write outcomes before sending so retries re-check backend identity first.
       if let Some(p) = self.pending.get_mut(&md5) {
@@ -559,6 +562,7 @@ impl Engine {
       committed.is_some() || !self.pending.contains_key(md5),
       "Save or discard the pending rename before refreshing"
     );
+    self.bump_generation(md5);
     self.symbols.remove(md5);
     let documents: Vec<_> = self
       .docs
@@ -587,9 +591,9 @@ impl Engine {
     Ok(changes)
   }
 
-  /// Refreshes clean read-only `symbol`, `references`, and `type` snapshots in session `md5`.
-  async fn refresh_snapshots(&mut self, md5: &str) {
-    let snapshots: Vec<_> = self
+  /// Collects clean read-only `symbol`, `references`, and `type` snapshot keys in session `md5`.
+  fn collect_clean_snapshots(&self, md5: &str) -> Vec<(Uri, String, String)> {
+    self
       .docs
       .values()
       .filter(|doc| doc.md5 == md5 && doc.entry.is_none() && doc.clean())
@@ -606,24 +610,29 @@ impl Engine {
           .into_owned();
         Some((doc.uri.clone(), kind, id))
       })
-      .collect();
+      .collect()
+  }
+
+  /// Applies fetched snapshot text and optional warning to clean snapshot document `uri`.
+  fn apply_snapshot_update(&mut self, uri: &Uri, text: String, warning: Option<String>) {
+    if let Some(doc) = self.docs.get_mut(uri)
+      && doc.clean()
+    {
+      doc.base = text.clone();
+      doc.current = text.clone();
+      doc.saved = text;
+      doc.warning = warning;
+    }
+  }
+
+  /// Refreshes clean read-only `symbol`, `references`, and `type` snapshots in session `md5`.
+  async fn refresh_snapshots(&mut self, md5: &str) {
+    let snapshots = self.collect_clean_snapshots(md5);
+    let backend = self.backend.clone();
     for (uri, kind, id) in snapshots {
-      let (text, warning) = match self.snapshot_text(md5, &kind, &id).await {
-        Ok(text) => (text, None),
-        Err(error) => {
-          let warning = format!("This {kind} is unavailable in the current analysis: {error:#}");
-          (
-            format!("// {}\n", warning.replace('\n', "\n// ")),
-            Some(warning),
-          )
-        }
-      };
-      if let Some(doc) = self.docs.get_mut(&uri) {
-        doc.base = text.clone();
-        doc.current = text.clone();
-        doc.saved = text;
-        doc.warning = warning;
-      }
+      let (text, warning) =
+        format_snapshot_result(&kind, fetch_snapshot_text(&backend, md5, &kind, &id).await);
+      self.apply_snapshot_update(&uri, text, warning);
     }
   }
 
@@ -653,30 +662,6 @@ impl Engine {
     }
     self.docs.insert(uri, new);
     change
-  }
-
-  /// Regenerates a single clean function document `uri` when no rename is pending.
-  pub(crate) async fn refresh_document(&mut self, uri: &Uri) -> Result<Vec<Refresh>> {
-    let canon = canonical_virtual_uri(uri);
-    let uri = &canon;
-    let old = self
-      .docs
-      .get(uri)
-      .context("Unknown virtual document")?
-      .clone();
-    if !old.clean() || self.pending.contains_key(&old.md5) {
-      return Ok(vec![]);
-    }
-    let Some(entry) = old.entry.as_deref() else {
-      return Ok(vec![]);
-    };
-    let new = self
-      .generate_inner(&old.md5, entry, Some(&old.base))
-      .await?;
-    if old.base != new.base {
-      self.refresh_snapshots(&old.md5).await;
-    }
-    Ok(self.replace_generated(old, new).into_iter().collect())
   }
 
   /// Reverts an unpatched pending rename across affected session documents.
@@ -761,4 +746,89 @@ fn pick_label_item(items: &[Value], pending: &Pending) -> Option<(String, String
         .to_owned();
       Some((id, cur))
     })
+}
+
+/// Converts a snapshot fetch result into comment-formatted fallback text and diagnostic warning.
+fn format_snapshot_result(kind: &str, result: Result<String>) -> (String, Option<String>) {
+  match result {
+    Ok(text) => (text, None),
+    Err(error) => {
+      let warning = format!("This {kind} is unavailable in the current analysis: {error:#}");
+      (
+        format!("// {}\n", warning.replace('\n', "\n// ")),
+        Some(warning),
+      )
+    }
+  }
+}
+
+/// Regenerates a single clean function document without holding `engine` across MCP I/O.
+pub(crate) async fn refresh_document(
+  engine: &Mutex<Engine>,
+  backend: &McpBackend,
+  uri: &Uri,
+) -> Result<(Vec<Refresh>, String, String)> {
+  let canon = canonical_virtual_uri(uri);
+  let (md5, old_base, entry, cached_symbols, generation) = {
+    let e = engine.lock().await;
+    let old = e.docs.get(&canon).context("Unknown virtual document")?;
+    if !old.clean() || e.pending.contains_key(&old.md5) {
+      return Ok((vec![], old.md5.clone(), old.base.clone()));
+    }
+    let Some(entry) = old.entry.clone() else {
+      return Ok((vec![], old.md5.clone(), old.base.clone()));
+    };
+    let md5 = old.md5.clone();
+    (
+      md5.clone(),
+      old.base.clone(),
+      entry,
+      e.symbols.get(&md5).cloned(),
+      e.generation(&md5),
+    )
+  };
+  let mut generated =
+    fetch_function_document(backend, &md5, &entry, Some(&old_base), cached_symbols).await?;
+  let base_changed = old_base != generated.doc.base;
+  let snapshot_updates = if base_changed {
+    let snapshots = {
+      let e = engine.lock().await;
+      if e.generation(&md5) == generation {
+        e.collect_clean_snapshots(&md5)
+      } else {
+        vec![]
+      }
+    };
+    let mut updates = Vec::with_capacity(snapshots.len());
+    for (snap_uri, kind, id) in snapshots {
+      let (text, warning) =
+        format_snapshot_result(&kind, fetch_snapshot_text(backend, &md5, &kind, &id).await);
+      updates.push((snap_uri, text, warning));
+    }
+    updates
+  } else {
+    vec![]
+  };
+  let mut e = engine.lock().await;
+  let current = e
+    .docs
+    .get(&canon)
+    .context("Unknown virtual document")?
+    .clone();
+  if e.generation(&md5) != generation || !current.clean() || e.pending.contains_key(&md5) {
+    return Ok((vec![], current.md5, current.base));
+  }
+  if base_changed {
+    e.bump_generation(&md5);
+  }
+  e.apply_generated_caches(&mut generated);
+  for (snap_uri, text, warning) in snapshot_updates {
+    e.apply_snapshot_update(&snap_uri, text, warning);
+  }
+  let text = generated.doc.base.clone();
+  let changes = e
+    .replace_generated(current, generated.doc)
+    .into_iter()
+    .collect();
+  Ok((changes, md5, text))
 }

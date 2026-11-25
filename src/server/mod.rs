@@ -23,7 +23,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result, bail, ensure};
 use serde_json::{Value, json};
-use tokio::sync::{Mutex, MutexGuard};
+use tokio::sync::{Mutex, MutexGuard, RwLock};
 use tower_lsp_server::ls_types::{
   Diagnostic, DiagnosticSeverity, DocumentChanges, ExecuteCommandParams, OneOf,
   OptionalVersionedTextDocumentIdentifier, Position, Range, TextDocumentEdit, TextEdit, Uri,
@@ -153,7 +153,9 @@ impl OpenProgress {
 pub(crate) struct Server {
   /// Connected LSP client used for progress and diagnostic notifications.
   client: Client,
-  /// Active engine holding backend state, session selection, and opened buffers.
+  /// Shared MCP backend handle swapped on `initialize` and cloned without locking `engine`.
+  backend: RwLock<Arc<McpBackend>>,
+  /// Active engine holding session selection, caches, and opened virtual buffers.
   engine: Mutex<Engine>,
   /// Shared cache of program metadata and call-graph lookups.
   pub(super) view_cache: crate::views::ViewCache,
@@ -172,9 +174,11 @@ pub(crate) struct Server {
 impl Server {
   /// Creates a new LSP server instance with `client` and initial `config`.
   pub(crate) fn new(client: Client, config: Config) -> Self {
+    let backend = Arc::new(McpBackend::new(config.clone()));
     Self {
       client,
-      engine: Mutex::new(Engine::new(Arc::new(McpBackend::new(config.clone())))),
+      backend: RwLock::new(backend.clone()),
+      engine: Mutex::new(Engine::new(backend)),
       view_cache: crate::views::ViewCache::new(),
       default_config: config,
       lazy_symbols: AtomicBool::new(false),
@@ -184,9 +188,14 @@ impl Server {
     }
   }
 
+  /// Clones the active [`McpBackend`] handle without acquiring `self.engine`.
+  pub(super) async fn backend(&self) -> Arc<McpBackend> {
+    self.backend.read().await.clone()
+  }
+
   /// Queries `analysis.get` for `md5` and normalizes completion flags.
   async fn program_analysis(&self, md5: &str) -> Result<ProgramAnalysis> {
-    let backend = self.engine.lock().await.backend.clone();
+    let backend = self.backend().await;
     let status = backend
       .call("analysis", "get", Some(md5), json!({}))
       .await?;
@@ -228,6 +237,7 @@ impl Server {
     md5: &str,
     already_saved_result: Option<&Value>,
   ) -> Result<()> {
+    e.bump_generation(md5);
     let persisted = if let Some(result) = already_saved_result {
       workbench::confirm_saved(result)
     } else {
@@ -339,7 +349,7 @@ impl Server {
     else {
       bail!("backend did not return a job ID: {job}");
     };
-    let backend = self.engine.lock().await.backend.clone();
+    let backend = self.backend().await;
     let deadline = tokio::time::Instant::now() + Duration::from_secs(600);
     loop {
       let state = backend
@@ -378,7 +388,7 @@ impl Server {
       );
       (Some(self.scoped_md5(arg).await?), json!({}))
     };
-    let backend = self.engine.lock().await.backend.clone();
+    let backend = self.backend().await;
     let opened = backend
       .call("session", "open", md5.as_deref(), parameters)
       .await?;
@@ -399,7 +409,7 @@ impl Server {
   /// Dispatches one `workspace/executeCommand` invocation.
   async fn command(&self, params: ExecuteCommandParams) -> Result<Value> {
     let arg = params.arguments.first().cloned().unwrap_or(json!({}));
-    let backend = self.engine.lock().await.backend.clone();
+    let backend = self.backend().await;
     match params.command.as_str() {
       "ghidra.sessions"
       | "ghidra.selectSession"

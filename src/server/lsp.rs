@@ -36,9 +36,13 @@ use tower_lsp_server::{LanguageServer, jsonrpc};
 use super::{COMMANDS, Server, format_storage, rpc};
 use crate::backend::{Config, McpBackend};
 use crate::document::{
-  Document, SHOW_TEMPLATE_ARGUMENTS, canonical_virtual_uri, data_type_name, matches_text, offset,
+  SHOW_TEMPLATE_ARGUMENTS, canonical_virtual_uri, data_type_name, matches_text, offset,
 };
-use crate::engine::Engine;
+use crate::engine::{
+  Engine, completion, did_open_document, fetch_signature_help, fetch_type_definition,
+  goto_definition, goto_type_definition, incoming_calls, outgoing_calls, prepare_call_hierarchy,
+  references,
+};
 use crate::workbench;
 
 impl LanguageServer for Server {
@@ -79,7 +83,9 @@ impl LanguageServer for Server {
         config[key] = value.clone();
       }
       let config: Config = serde_json::from_value(config).map_err(rpc)?;
-      *self.engine.lock().await = Engine::new(Arc::new(McpBackend::new(config)));
+      let backend = Arc::new(McpBackend::new(config));
+      *self.backend.write().await = backend.clone();
+      *self.engine.lock().await = Engine::new(backend);
       self.view_cache.invalidate_all().await;
     }
     Ok(InitializeResult {
@@ -177,51 +183,35 @@ impl LanguageServer for Server {
   async fn did_open(&self, params: DidOpenTextDocumentParams) {
     let item = params.text_document;
     let uri = canonical_virtual_uri(&item.uri);
-    let mut e = self.engine.lock().await;
-    if !e.docs.contains_key(&uri)
-      && let Ok(parsed) = url::Url::parse(uri.as_str())
-      && parsed.scheme() == "ghidra"
-      && let Some(md5) = parsed.host_str()
-    {
-      let path = parsed.path().strip_prefix('/').unwrap_or(parsed.path());
-      if let Some((kind, raw_key)) = path.split_once('/')
-        && let Ok(key) = percent_encoding::percent_decode_str(raw_key).decode_utf8()
-      {
-        if kind == "function" {
-          let _ = e.open(md5, &key).await;
-        } else if matches!(kind, "symbol" | "references" | "type")
-          && let Ok(text) = e.snapshot_text(md5, kind, &key).await
-        {
-          let _ = e.install(Document {
-            uri: uri.clone(),
-            md5: md5.into(),
-            entry: None,
-            base: text.clone(),
-            current: text.clone(),
-            saved: text,
-            version: None,
-            spans: vec![],
-            warning: None,
-          });
-        }
-      }
-    }
-    if let Some(doc) = e.docs.get_mut(&uri) {
-      doc.current = item.text;
-      doc.version = Some(item.version);
-    }
-    drop(e);
+    let backend = self.backend().await;
+    did_open_document(
+      &self.engine,
+      backend.as_ref(),
+      &uri,
+      item.version,
+      item.text,
+    )
+    .await;
     self.report(&uri).await;
   }
 
   async fn did_change(&self, params: DidChangeTextDocumentParams) {
     let uri = canonical_virtual_uri(&params.text_document.uri);
-    if let Some(doc) = self.engine.lock().await.docs.get_mut(&uri)
-      && let Some(change) = params.content_changes.into_iter().last()
-      && change.range.is_none()
-    {
-      doc.current = change.text;
-      doc.version = Some(params.text_document.version);
+    let Some(change) = params.content_changes.into_iter().last() else {
+      return;
+    };
+    if change.range.is_some() {
+      return;
+    }
+    let version = params.text_document.version;
+    let mut e = self.engine.lock().await;
+    if let Some(doc) = e.docs.get_mut(&uri) {
+      if doc.version.is_none_or(|old_ver| version >= old_ver) {
+        doc.current = change.text;
+        doc.version = Some(version);
+      }
+    } else {
+      e.update_open_buffer(&uri, version, change.text);
     }
   }
 
@@ -280,19 +270,25 @@ impl LanguageServer for Server {
   async fn hover(&self, params: HoverParams) -> jsonrpc::Result<Option<Hover>> {
     let p = params.text_document_position_params;
     let uri = canonical_virtual_uri(&p.text_document.uri);
-    let target = {
+    let backend = self.backend().await;
+    let (target, type_snapshot) = {
       let e = self.engine.lock().await;
-      e.target(&uri, p.position).ok().map(|(md5, symbol, range)| {
+      let target = e.target(&uri, p.position).ok().map(|(md5, symbol, range)| {
         let local = e.local_detail(&symbol);
         let cached_fn = e
           .functions
           .get(&(md5.clone(), symbol.address.clone()))
           .cloned();
-        let backend = e.backend.clone();
-        (md5, symbol, range, local, cached_fn, backend)
-      })
+        (md5, symbol, range, local, cached_fn)
+      });
+      let type_snapshot = if target.is_none() {
+        e.prepare_type_definition(&uri, p.position).ok().flatten()
+      } else {
+        None
+      };
+      (target, type_snapshot)
     };
-    if let Some((md5, symbol, range, local, cached_fn, backend)) = target {
+    if let Some((md5, symbol, range, local, cached_fn)) = target {
       let detail = if let Some(local) = local {
         let dtype = local
           .get("data_type")
@@ -415,33 +411,33 @@ impl LanguageServer for Server {
       }));
     }
 
-    let mut e = self.engine.lock().await;
-    if let Ok(Some(type_data)) = e.type_definition(&uri, p.position).await {
-      let doc = e.docs.get(&uri);
-      let range = doc.and_then(|d| d.span_at(p.position).map(|s| d.range(s)));
-      let name = type_data
-        .get("name")
-        .and_then(Value::as_str)
-        .unwrap_or("Type");
-      let kind = type_data
-        .get("kind")
-        .and_then(Value::as_str)
-        .unwrap_or("type");
-      let path = type_data.get("path").and_then(Value::as_str).unwrap_or("");
-      let length = type_data
-        .get("length")
-        .or_else(|| type_data.get("size"))
-        .and_then(Value::as_u64)
-        .map(|s| format!("{s} bytes (`0x{s:x}`)"))
-        .unwrap_or_else(|| "variable/unknown".into());
-      let value = format!("```c\n{kind} {name}\n```\n- **Path**: `{path}`\n- **Size**: {length}");
-      return Ok(Some(Hover {
-        contents: HoverContents::Markup(MarkupContent {
-          kind: MarkupKind::Markdown,
-          value,
-        }),
-        range,
-      }));
+    if let Some(snapshot) = type_snapshot {
+      let range = Some(snapshot.range);
+      if let Ok(Some(type_data)) = fetch_type_definition(backend.as_ref(), snapshot).await {
+        let name = type_data
+          .get("name")
+          .and_then(Value::as_str)
+          .unwrap_or("Type");
+        let kind = type_data
+          .get("kind")
+          .and_then(Value::as_str)
+          .unwrap_or("type");
+        let path = type_data.get("path").and_then(Value::as_str).unwrap_or("");
+        let length = type_data
+          .get("length")
+          .or_else(|| type_data.get("size"))
+          .and_then(Value::as_u64)
+          .map(|s| format!("{s} bytes (`0x{s:x}`)"))
+          .unwrap_or_else(|| "variable/unknown".into());
+        let value = format!("```c\n{kind} {name}\n```\n- **Path**: `{path}`\n- **Size**: {length}");
+        return Ok(Some(Hover {
+          contents: HoverContents::Markup(MarkupContent {
+            kind: MarkupKind::Markdown,
+            value,
+          }),
+          range,
+        }));
+      }
     }
     Ok(None)
   }
@@ -452,11 +448,8 @@ impl LanguageServer for Server {
   ) -> jsonrpc::Result<Option<CompletionResponse>> {
     let p = params.text_document_position;
     let uri = canonical_virtual_uri(&p.text_document.uri);
-    let items = self
-      .engine
-      .lock()
-      .await
-      .completion(&uri, p.position)
+    let backend = self.backend().await;
+    let items = completion(&self.engine, backend.as_ref(), &uri, p.position)
       .await
       .map_err(rpc)?;
     Ok(Some(CompletionResponse::Array(items)))
@@ -605,13 +598,17 @@ impl LanguageServer for Server {
   ) -> jsonrpc::Result<Option<SignatureHelp>> {
     let p = params.text_document_position_params;
     let uri = canonical_virtual_uri(&p.text_document.uri);
-    self
+    let target = self
       .engine
       .lock()
       .await
-      .signature_help(&uri, p.position)
-      .await
-      .map_err(rpc)
+      .prepare_signature_help(&uri, p.position)
+      .map_err(rpc)?;
+    let Some(target) = target else {
+      return Ok(None);
+    };
+    let backend = self.backend().await;
+    Ok(fetch_signature_help(backend.as_ref(), target).await)
   }
 
   async fn goto_definition(
@@ -620,9 +617,10 @@ impl LanguageServer for Server {
   ) -> jsonrpc::Result<Option<GotoDefinitionResponse>> {
     let p = params.text_document_position_params;
     let uri = canonical_virtual_uri(&p.text_document.uri);
-    let mut e = self.engine.lock().await;
-    let location = e.goto_definition(&uri, p.position).await.map_err(rpc)?;
-    drop(e);
+    let backend = self.backend().await;
+    let location = goto_definition(&self.engine, backend.as_ref(), &uri, p.position)
+      .await
+      .map_err(rpc)?;
     if let Some(loc) = &location
       && loc.uri.as_str().contains("/symbol/")
       && let Ok(parsed) = url::Url::parse(loc.uri.as_str())
@@ -653,12 +651,10 @@ impl LanguageServer for Server {
   ) -> jsonrpc::Result<Option<GotoDefinitionResponse>> {
     let p = params.text_document_position_params;
     let uri = canonical_virtual_uri(&p.text_document.uri);
-    let mut e = self.engine.lock().await;
-    let location = e
-      .goto_type_definition(&uri, p.position)
+    let backend = self.backend().await;
+    let location = goto_type_definition(&self.engine, backend.as_ref(), &uri, p.position)
       .await
       .map_err(rpc)?;
-    drop(e);
     if let Some(loc) = &location
       && let Ok(parsed) = url::Url::parse(loc.uri.as_str())
       && let Some(md5) = parsed.host_str()
@@ -671,15 +667,23 @@ impl LanguageServer for Server {
   async fn references(&self, params: ReferenceParams) -> jsonrpc::Result<Option<Vec<Location>>> {
     let p = params.text_document_position;
     let uri = canonical_virtual_uri(&p.text_document.uri);
-    let mut e = self.engine.lock().await;
-    let Ok((md5, symbol, _)) = e.target(&uri, p.position) else {
-      return Ok(None);
+    let (md5, symbol) = {
+      let e = self.engine.lock().await;
+      let Ok((md5, symbol, _)) = e.target(&uri, p.position) else {
+        return Ok(None);
+      };
+      (md5, symbol)
     };
-    let locations = e
-      .references(&md5, &symbol, params.context.include_declaration)
-      .await
-      .map_err(rpc)?;
-    drop(e);
+    let backend = self.backend().await;
+    let locations = references(
+      &self.engine,
+      backend.as_ref(),
+      &md5,
+      &symbol,
+      params.context.include_declaration,
+    )
+    .await
+    .map_err(rpc)?;
     if locations
       .iter()
       .any(|location| location.uri.as_str().contains("/references/"))
@@ -757,8 +761,8 @@ impl LanguageServer for Server {
   ) -> jsonrpc::Result<Option<Vec<CallHierarchyItem>>> {
     let p = params.text_document_position_params;
     let uri = canonical_virtual_uri(&p.text_document.uri);
-    let mut e = self.engine.lock().await;
-    e.prepare_call_hierarchy(&uri, p.position)
+    let backend = self.backend().await;
+    prepare_call_hierarchy(&self.engine, backend.as_ref(), &uri, p.position)
       .await
       .map_err(rpc)
   }
@@ -767,16 +771,20 @@ impl LanguageServer for Server {
     &self,
     params: CallHierarchyIncomingCallsParams,
   ) -> jsonrpc::Result<Option<Vec<CallHierarchyIncomingCall>>> {
-    let mut e = self.engine.lock().await;
-    e.incoming_calls(&params.item).await.map_err(rpc)
+    let backend = self.backend().await;
+    incoming_calls(&self.engine, backend.as_ref(), &params.item)
+      .await
+      .map_err(rpc)
   }
 
   async fn outgoing_calls(
     &self,
     params: CallHierarchyOutgoingCallsParams,
   ) -> jsonrpc::Result<Option<Vec<CallHierarchyOutgoingCall>>> {
-    let mut e = self.engine.lock().await;
-    e.outgoing_calls(&params.item).await.map_err(rpc)
+    let backend = self.backend().await;
+    outgoing_calls(&self.engine, backend.as_ref(), &params.item)
+      .await
+      .map_err(rpc)
   }
 
   async fn code_lens(&self, params: CodeLensParams) -> jsonrpc::Result<Option<Vec<CodeLens>>> {
