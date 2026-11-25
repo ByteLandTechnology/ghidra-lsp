@@ -71,8 +71,8 @@ impl Server {
         let symbol = e
           .symbols(&md5)
           .await?
-          .into_iter()
-          .find(|s| s.id == id)
+          .by_id(id)
+          .cloned()
           .context("symbol no longer exists")?;
         let location = e.symbol_location(&md5, &symbol).await?;
         drop(e);
