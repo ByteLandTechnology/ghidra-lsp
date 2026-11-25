@@ -669,8 +669,8 @@ export async function activate(extension: vscode.ExtensionContext): Promise<void
                 const skipBrowser = (refreshedSeq.get(md5) ?? -1) >= seq;
                 void Promise.all([
                     ...(skipBrowser ? [] : [browser.refresh(md5)]),
-                    workbench.refresh(md5),
-                    graphView.refresh(md5),
+                    workbench.refresh(md5, { silent: true }),
+                    graphView.refresh(md5, { silent: true }),
                     renames.refresh(md5),
                 ]).catch(log);
             }, 150));
@@ -739,7 +739,7 @@ export async function activate(extension: vscode.ExtensionContext): Promise<void
                 programVersions.set(md5, version);
                 activeUnchanged = program.modified_at !== undefined && previous !== undefined && previous === version;
                 if (previous !== version) {
-                    await Promise.all([browser.refresh(md5), workbench.refresh(md5)]);
+                    await Promise.all([browser.refresh(md5), workbench.refresh(md5, { silent: true }), graphView.refresh(md5, { silent: true })]);
                 }
             }
             for (const document of new Set(vscode.window.visibleTextEditors.map(editor => editor.document))) {

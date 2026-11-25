@@ -135,53 +135,64 @@ body.vscode-dark .call-page .node-branch:hover,body.vscode-dark .call-page .node
 
 /** Runs after the common selection handlers; all browsing controls use the panel's owning program. */
 export const callGraphScript = String.raw`
+    let callGraphCleanup,mountCallGraphUi;
     (()=>{
-      const canvas=document.querySelector('[data-call-graph]');if(!canvas||!graphViewport){return}
-      const root=canvas.querySelector('.is-root');
-      for(const button of canvas.querySelectorAll('.node-decompile')){button.addEventListener('click',event=>{event.stopPropagation();const node=button.closest('.call-node');send('decompile',{entry:node.dataset.entry,address:node.dataset.entry,kind:'function',label:node.dataset.label})});button.addEventListener('dblclick',event=>event.stopPropagation());button.addEventListener('keydown',event=>event.stopPropagation())}
-
-      const centerCurrent=()=>graphViewport.center(Number(root.dataset.x)+Number(root.dataset.width)/2,Number(root.dataset.y)+Number(root.dataset.height)/2);
-      document.getElementById('call-center').addEventListener('click',centerCurrent);
-      for(const button of canvas.querySelectorAll('.node-branch')){button.addEventListener('click',event=>{event.stopPropagation();const node=button.closest('.call-node'),view=graphViewport.snapshot();branchAnchor={entry:node.dataset.entry,x:(Number(node.dataset.x)+Number(node.dataset.width)/2)*view.scale+view.x,y:(Number(node.dataset.y)+Number(node.dataset.height)/2)*view.scale+view.y,focusId:button.id};button.disabled=true;persist();send('callGraphToggle',{entry:node.dataset.entry,address:node.dataset.entry,direction:button.dataset.direction,graphRoot:state.entry})});button.addEventListener('dblclick',event=>event.stopPropagation());button.addEventListener('keydown',event=>event.stopPropagation())}
-      const details=document.querySelector('.call-details');details.open=samePage&&previous.callDetails===true;details.hidden=!details.open;details.addEventListener('toggle',()=>{details.hidden=!details.open;persist()});
-      const overview=canvas.querySelector('.call-overview'),map=overview.querySelector('svg'),windowRect=map.querySelector('#call-overview-window');
-      overview.open=previous.callOverview===true;overview.hidden=!overview.open;overview.addEventListener('toggle',()=>{overview.hidden=!overview.open;if(graphViewport.snapshot().fitted){graphViewport.fit()}persist()});
-      const update=()=>{const view=graphViewport.snapshot(),box=map.viewBox.baseVal;const left=Math.max(0,Math.min(box.width,-view.x/view.scale)),top=Math.max(0,Math.min(box.height,-view.y/view.scale)),right=Math.max(left,Math.min(box.width,(canvas.clientWidth-view.x)/view.scale)),bottom=Math.max(top,Math.min(box.height,(canvas.clientHeight-view.y)/view.scale));const w=Math.min(box.width,Math.max(4,right-left)),h=Math.min(box.height,Math.max(4,bottom-top)),wx=Math.max(0,Math.min(box.width-w,left)),wy=Math.max(0,Math.min(box.height-h,top));windowRect.setAttribute('x',wx);windowRect.setAttribute('y',wy);windowRect.setAttribute('width',w);windowRect.setAttribute('height',h)};
-      canvas.addEventListener('graph-viewport',update);
-      let overviewPointer;
-      const moveOverview=event=>{const matrix=map.getScreenCTM();if(!matrix){return}const point=map.createSVGPoint();point.x=event.clientX;point.y=event.clientY;const graph=point.matrixTransform(matrix.inverse());graphViewport.center(graph.x,graph.y)};
-      map.addEventListener('pointerdown',event=>{if(event.button!==0){return}event.preventDefault();event.stopPropagation();overviewPointer=event.pointerId;map.setPointerCapture(event.pointerId);map.focus({preventScroll:true});moveOverview(event)});
-      map.addEventListener('pointermove',event=>{if(event.pointerId===overviewPointer){moveOverview(event)}});
-      const endOverview=()=>{overviewPointer=undefined};map.addEventListener('pointerup',endOverview);map.addEventListener('pointercancel',endOverview);map.addEventListener('lostpointercapture',endOverview);
-      map.addEventListener('keydown',event=>{const direction={ArrowLeft:[-50,0],ArrowRight:[50,0],ArrowUp:[0,-50],ArrowDown:[0,50]}[event.key];if(!direction){return}event.preventDefault();event.stopPropagation();const view=graphViewport.snapshot();graphViewport.center((canvas.clientWidth/2-view.x+direction[0])/view.scale,(canvas.clientHeight/2-view.y+direction[1])/view.scale)});
-      let canvasWidth=canvas.clientWidth;
-      new ResizeObserver(()=>{const width=canvas.clientWidth;if(width!==canvasWidth&&width<640&&graphViewport.snapshot().scale<.65){document.getElementById('graph-zoom').click();document.getElementById('call-center').click()}canvasWidth=width}).observe(canvas);
-      const menu=document.getElementById('call-menu'),summary=menu.querySelector('summary');
-      const nodes=[...canvas.querySelectorAll('.call-node')],edges=[...canvas.querySelectorAll('.call-edge')];
-      let tracedNode,activeEdge,hoveredEdge;
-      const paintTrace=()=>{canvas.classList.toggle('is-tracing',!!(tracedNode||activeEdge||hoveredEdge));for(const edge of edges){edge.classList.toggle('is-hovered',edge===hoveredEdge||!!tracedNode&&(edge.dataset.from===tracedNode.dataset.node||edge.dataset.to===tracedNode.dataset.node));edge.classList.toggle('is-active',edge===activeEdge);edge.setAttribute('aria-pressed',String(edge===activeEdge))}const relation=hoveredEdge||activeEdge;for(const node of nodes){node.classList.toggle('edge-endpoint',!!relation&&(node.dataset.node===relation.dataset.from||node.dataset.node===relation.dataset.to))}};
-      const trace=node=>{tracedNode=node;paintTrace()};
-      const activateEdge=edge=>{activeEdge=edge;tracedNode=undefined;paintTrace()};
-      for(const node of nodes){node.addEventListener('pointerenter',()=>trace(node));node.addEventListener('pointerleave',()=>trace(document.activeElement?.closest('.call-node')));node.addEventListener('focus',()=>trace(node));node.addEventListener('blur',()=>trace(undefined));node.addEventListener('click',()=>{activeEdge=undefined;paintTrace()})}
-      for(const edge of edges){edge.addEventListener('pointerdown',event=>{if(event.button===0){event.stopPropagation()}});edge.addEventListener('pointerenter',()=>{hoveredEdge=edge;tracedNode=undefined;paintTrace()});edge.addEventListener('pointerleave',()=>{hoveredEdge=document.activeElement===edge?edge:undefined;paintTrace()});edge.addEventListener('focus',()=>{hoveredEdge=edge;tracedNode=undefined;paintTrace()});edge.addEventListener('blur',()=>{hoveredEdge=undefined;paintTrace()});edge.addEventListener('click',event=>{event.stopPropagation();activateEdge(edge)});edge.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();activateEdge(edge)}})}
-      canvas.addEventListener('click',event=>{if(event.target.closest('.call-node,.call-edge,.call-overview,.call-depth-controls,.call-function-actions')){return}activeEdge=undefined;paintTrace()});
-      canvas.addEventListener('keydown',event=>{if(event.key==='Escape'&&activeEdge){event.preventDefault();event.stopPropagation();activeEdge=undefined;hoveredEdge=undefined;tracedNode=undefined;paintTrace();canvas.focus({preventScroll:true})}});
-      canvas.addEventListener('pointerleave',()=>trace(document.activeElement?.closest('.call-node')));
-      menu.addEventListener('keydown',event=>{if(event.target===summary&&['ArrowDown','ArrowUp'].includes(event.key)){menu.open=true}if(event.target.matches('select,input')||!['ArrowDown','ArrowUp','ArrowLeft','ArrowRight','Home','End'].includes(event.key)){return}const items=[...menu.querySelectorAll('button:not(:disabled),select,summary')].filter(item=>!item.closest('[hidden]')&&item!==summary&&[...menu.querySelectorAll('details:not([open])')].every(details=>!details.contains(item)||details.querySelector(':scope > summary')===item));if(!items.length){return}event.preventDefault();const index=items.indexOf(document.activeElement),next=event.key==='Home'?0:event.key==='End'?items.length-1:(event.key==='ArrowDown'||event.key==='ArrowRight')?(index+1)%items.length:(index<0?items.length-1:(index-1+items.length)%items.length);items[next].focus()});
-      menu.addEventListener('focusout',()=>requestAnimationFrame(()=>{if(menu.open&&!menu.contains(document.activeElement)){menu.open=false}}));
-
-      const bindPanel=(id,panel)=>{const button=document.getElementById(id);const sync=()=>button.setAttribute('aria-pressed',String(panel.open));sync();panel.addEventListener('toggle',sync);button.addEventListener('click',()=>{panel.hidden=false;panel.open=!panel.open;menu.open=false;(menu.contains(button)?summary:button).focus()})};
-      bindPanel('call-menu-overview',overview);bindPanel('call-details-toggle',details);
-      const searchToggle=document.getElementById('call-search-toggle'),searchHost=search.closest('.call-search');
-      const openSearch=()=>{searchHost.hidden=false;searchToggle.setAttribute('aria-expanded','true');search.focus();search.select()};
-      const closeSearch=()=>{searchHost.hidden=true;searchToggle.setAttribute('aria-expanded','false');searchToggle.focus()};
-      searchToggle.addEventListener('click',()=>{searchHost.hidden=!searchHost.hidden;searchToggle.setAttribute('aria-expanded',String(!searchHost.hidden));if(!searchHost.hidden){search.focus()}else{searchToggle.focus()}});
-      search.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();search.value='';search.dispatchEvent(new Event('input'));closeSearch()}});
-      if(search.value){searchHost.hidden=false;searchToggle.setAttribute('aria-expanded','true')}
-      document.addEventListener('click',event=>{if(menu.open&&(!menu.contains(event.target)||event.target.closest('button[data-action]'))){menu.open=false}});
-      document.addEventListener('keydown',event=>{if(event.key==='Escape'&&menu.open){event.preventDefault();menu.open=false;summary.focus()}else if(isModShortcut(event,'f')||(event.key==='/'&&canUseSingleKeyShortcut(event))){event.preventDefault();menu.open=false;openSearch()}});
-      document.getElementById('call-center').addEventListener('click',()=>{menu.open=false});
-      document.addEventListener('contextmenu',event=>{if(event.target.closest('.call-node')){event.preventDefault();event.target.closest('.call-node').dispatchEvent(new MouseEvent('click',{bubbles:true}));event.target.closest('.call-node').querySelector('.node-decompile')?.focus()}});
-      update();
+      const menu=document.getElementById('call-menu'),summary=menu?.querySelector('summary');
+      const searchToggle=document.getElementById('call-search-toggle'),searchHost=search?.closest('.call-search');
+      const openSearch=()=>{if(!searchHost||!searchToggle){return}searchHost.hidden=false;searchToggle.setAttribute('aria-expanded','true');search.focus();search.select()};
+      const closeSearch=()=>{if(!searchHost||!searchToggle){return}searchHost.hidden=true;searchToggle.setAttribute('aria-expanded','false');searchToggle.focus()};
+      if(searchToggle&&!searchToggle.dataset.callSearchBound){
+        searchToggle.dataset.callSearchBound='true';
+        searchToggle.addEventListener('click',()=>{if(searchHost.hidden){openSearch()}else{closeSearch()}});
+        search.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();search.value='';search.dispatchEvent(new Event('input'));closeSearch()}else if(event.key==='Enter'&&document.querySelector('[data-call-columns]')){event.preventDefault();document.querySelector('[data-call-columns] .call-column-row:not([hidden]) .call-column-pick:not(:disabled)')?.focus()}});
+        if(search.value){searchHost.hidden=false;searchToggle.setAttribute('aria-expanded','true')}
+      }
+      if(menu&&!menu.dataset.callMenuBound){
+        menu.dataset.callMenuBound='true';
+        menu.addEventListener('keydown',event=>{if(event.target===summary&&['ArrowDown','ArrowUp'].includes(event.key)){menu.open=true}if(event.target.matches('select,input')||!['ArrowDown','ArrowUp','ArrowLeft','ArrowRight','Home','End'].includes(event.key)){return}const items=[...menu.querySelectorAll('button:not(:disabled),select,summary')].filter(item=>!item.closest('[hidden]')&&item!==summary&&[...menu.querySelectorAll('details:not([open])')].every(details=>!details.contains(item)||details.querySelector(':scope > summary')===item));if(!items.length){return}event.preventDefault();const index=items.indexOf(document.activeElement),next=event.key==='Home'?0:event.key==='End'?items.length-1:(event.key==='ArrowDown'||event.key==='ArrowRight')?(index+1)%items.length:(index<0?items.length-1:(index-1+items.length)%items.length);items[next].focus()});
+        menu.addEventListener('focusout',()=>requestAnimationFrame(()=>{if(menu.open&&!menu.contains(document.activeElement)){menu.open=false}}));
+        document.addEventListener('click',event=>{if(!menu.open){return}const actionBtn=event.target.closest('button[data-action],#call-center,#call-column-home');if(!menu.contains(event.target)||actionBtn){const restore=Boolean(actionBtn&&menu.contains(document.activeElement));menu.open=false;if(restore){summary?.focus({preventScroll:true})}}});
+        document.addEventListener('keydown',event=>{if(event.key==='Escape'&&menu.open){event.preventDefault();menu.open=false;summary?.focus()}else if(isModShortcut(event,'f')||(event.key==='/'&&canUseSingleKeyShortcut(event))){event.preventDefault();menu.open=false;openSearch()}});
+        document.addEventListener('contextmenu',event=>{const node=event.target.closest('.call-node');if(node){event.preventDefault();node.dispatchEvent(new MouseEvent('click',{bubbles:true}));node.querySelector('.node-decompile')?.focus()}});
+      }
+      mountCallGraphUi=(preserveState=false,savedPanels={})=>{
+        callGraphCleanup?.();callGraphCleanup=undefined;
+        const canvas=document.querySelector('[data-call-graph]');if(!canvas||!graphViewport){return}
+        const root=canvas.querySelector('.is-root');
+        for(const button of canvas.querySelectorAll('.node-decompile')){button.addEventListener('click',event=>{event.stopPropagation();const node=button.closest('.call-node');send('decompile',{entry:node.dataset.entry,address:node.dataset.entry,kind:'function',label:node.dataset.label})});button.addEventListener('dblclick',event=>event.stopPropagation());button.addEventListener('keydown',event=>event.stopPropagation())}
+        const centerCurrent=()=>{if(root){graphViewport.center(Number(root.dataset.x)+Number(root.dataset.width)/2,Number(root.dataset.y)+Number(root.dataset.height)/2)}};
+        const centerBtn=document.getElementById('call-center');if(centerBtn&&!centerBtn.dataset.callBound){centerBtn.dataset.callBound='true';centerBtn.addEventListener('click',centerCurrent)}
+        for(const button of canvas.querySelectorAll('.node-branch')){button.addEventListener('click',event=>{event.stopPropagation();const node=button.closest('.call-node'),view=graphViewport.snapshot();branchAnchor={entry:node.dataset.entry,nodeId:node.id,direction:button.dataset.direction,x:(Number(node.dataset.x)+Number(node.dataset.width)/2)*view.scale+view.x,y:(Number(node.dataset.y)+Number(node.dataset.height)/2)*view.scale+view.y,focusId:button.id};setBusyState(true);persist();send('callGraphToggle',{entry:node.dataset.entry,address:node.dataset.entry,direction:button.dataset.direction,graphRoot:state.entry})});button.addEventListener('dblclick',event=>event.stopPropagation());button.addEventListener('keydown',event=>event.stopPropagation())}
+        const details=document.querySelector('.call-details');
+        if(details){details.open=preserveState?savedPanels.callDetails===true:(samePage&&previous.callDetails===true);details.hidden=!details.open;details.addEventListener('toggle',()=>{details.hidden=!details.open;persist()})}
+        const overview=canvas.querySelector('.call-overview'),map=overview.querySelector('svg'),windowRect=map.querySelector('#call-overview-window');
+        overview.open=preserveState?savedPanels.callOverview===true:(previous.callOverview===true);overview.hidden=!overview.open;overview.addEventListener('toggle',()=>{overview.hidden=!overview.open;if(graphViewport.snapshot().fitted){graphViewport.fit()}persist()});
+        const update=()=>{const view=graphViewport.snapshot(),box=map.viewBox.baseVal;const left=Math.max(0,Math.min(box.width,-view.x/view.scale)),top=Math.max(0,Math.min(box.height,-view.y/view.scale)),right=Math.max(left,Math.min(box.width,(canvas.clientWidth-view.x)/view.scale)),bottom=Math.max(top,Math.min(box.height,(canvas.clientHeight-view.y)/view.scale));const w=Math.min(box.width,Math.max(4,right-left)),h=Math.min(box.height,Math.max(4,bottom-top)),wx=Math.max(0,Math.min(box.width-w,left)),wy=Math.max(0,Math.min(box.height-h,top));windowRect.setAttribute('x',wx);windowRect.setAttribute('y',wy);windowRect.setAttribute('width',w);windowRect.setAttribute('height',h)};
+        canvas.addEventListener('graph-viewport',update);
+        let overviewPointer;
+        const moveOverview=event=>{const matrix=map.getScreenCTM();if(!matrix){return}const point=map.createSVGPoint();point.x=event.clientX;point.y=event.clientY;const graph=point.matrixTransform(matrix.inverse());graphViewport.center(graph.x,graph.y)};
+        map.addEventListener('pointerdown',event=>{if(event.button!==0){return}event.preventDefault();event.stopPropagation();overviewPointer=event.pointerId;map.setPointerCapture(event.pointerId);map.focus({preventScroll:true});moveOverview(event)});
+        map.addEventListener('pointermove',event=>{if(event.pointerId===overviewPointer){moveOverview(event)}});
+        const endOverview=()=>{overviewPointer=undefined};map.addEventListener('pointerup',endOverview);map.addEventListener('pointercancel',endOverview);map.addEventListener('lostpointercapture',endOverview);
+        map.addEventListener('keydown',event=>{const direction={ArrowLeft:[-50,0],ArrowRight:[50,0],ArrowUp:[0,-50],ArrowDown:[0,50]}[event.key];if(!direction){return}event.preventDefault();event.stopPropagation();const view=graphViewport.snapshot();graphViewport.center((canvas.clientWidth/2-view.x+direction[0])/view.scale,(canvas.clientHeight/2-view.y+direction[1])/view.scale)});
+        let canvasWidth=canvas.clientWidth;
+        const resizeObserver=new ResizeObserver(()=>{const width=canvas.clientWidth;if(width!==canvasWidth&&width<640&&graphViewport.snapshot().scale<.65){document.getElementById('graph-zoom')?.click();document.getElementById('call-center')?.click()}canvasWidth=width});
+        resizeObserver.observe(canvas);
+        callGraphCleanup=()=>resizeObserver.disconnect();
+        const nodes=[...canvas.querySelectorAll('.call-node')],edges=[...canvas.querySelectorAll('.call-edge')];
+        let tracedNode,activeEdge,hoveredEdge;
+        const paintTrace=()=>{canvas.classList.toggle('is-tracing',!!(tracedNode||activeEdge||hoveredEdge));for(const edge of edges){edge.classList.toggle('is-hovered',edge===hoveredEdge||!!tracedNode&&(edge.dataset.from===tracedNode.dataset.node||edge.dataset.to===tracedNode.dataset.node));edge.classList.toggle('is-active',edge===activeEdge);edge.setAttribute('aria-pressed',String(edge===activeEdge))}const relation=hoveredEdge||activeEdge;for(const node of nodes){node.classList.toggle('edge-endpoint',!!relation&&(node.dataset.node===relation.dataset.from||node.dataset.node===relation.dataset.to))}};
+        const trace=node=>{tracedNode=node;paintTrace()};
+        const activateEdge=edge=>{activeEdge=edge;tracedNode=undefined;paintTrace()};
+        for(const node of nodes){node.addEventListener('pointerenter',()=>trace(node));node.addEventListener('pointerleave',()=>trace(document.activeElement?.closest('.call-node')));node.addEventListener('focus',()=>trace(node));node.addEventListener('blur',()=>trace(undefined));node.addEventListener('click',()=>{activeEdge=undefined;paintTrace()})}
+        for(const edge of edges){edge.addEventListener('pointerdown',event=>{if(event.button===0){event.stopPropagation()}});edge.addEventListener('pointerenter',()=>{hoveredEdge=edge;tracedNode=undefined;paintTrace()});edge.addEventListener('pointerleave',()=>{hoveredEdge=document.activeElement===edge?edge:undefined;paintTrace()});edge.addEventListener('focus',()=>{hoveredEdge=edge;tracedNode=undefined;paintTrace()});edge.addEventListener('blur',()=>{hoveredEdge=undefined;paintTrace()});edge.addEventListener('click',event=>{event.stopPropagation();activateEdge(edge)});edge.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();activateEdge(edge)}})}
+        canvas.addEventListener('click',event=>{if(event.target.closest('.call-node,.call-edge,.call-overview,.call-depth-controls,.call-function-actions')){return}activeEdge=undefined;paintTrace()});
+        canvas.addEventListener('keydown',event=>{if(event.key==='Escape'&&activeEdge){event.preventDefault();event.stopPropagation();activeEdge=undefined;hoveredEdge=undefined;tracedNode=undefined;paintTrace();canvas.focus({preventScroll:true})}});
+        canvas.addEventListener('pointerleave',()=>trace(document.activeElement?.closest('.call-node')));
+        const bindPanel=(id,panel)=>{const button=document.getElementById(id);if(!button||!panel){return}const sync=()=>button.setAttribute('aria-pressed',String(panel.open));sync();panel.addEventListener('toggle',sync);if(!button.dataset.callBound){button.dataset.callBound='true';button.addEventListener('click',()=>{panel.hidden=false;panel.open=!panel.open;if(menu){menu.open=false}(menu?.contains(button)?summary:button)?.focus()})}};
+        bindPanel('call-menu-overview',overview);bindPanel('call-details-toggle',details);
+        update();
+      };
+      mountCallGraphUi(false);
     })();
 `;

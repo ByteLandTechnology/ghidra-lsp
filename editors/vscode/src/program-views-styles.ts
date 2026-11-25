@@ -22,12 +22,14 @@ export const programViewStyles = `
 .program-view.has-selection main{padding-bottom:68px}
 .program-view.has-selection .table-wrap{padding-bottom:52px;scroll-padding-bottom:56px}
 .program-view .pv-toolbar{display:flex;align-items:center;flex-wrap:nowrap;gap:4px;margin:0 0 8px;min-height:30px;min-width:0}
+.program-view .pv-toolbar:has(#goto-error:not(:empty)){align-items:flex-start}
 .program-view .pv-toolbar .icon-button{width:28px;min-width:28px;height:28px;padding:5px}
 .program-view .pv-nav{display:flex;align-items:center;gap:2px;flex-shrink:0}
 .program-view .pv-step{display:inline-flex;align-items:center;gap:2px}
 .program-view .pv-step[hidden]{display:none}
 .program-view .pv-divider{width:1px;height:16px;margin:0 2px;background:var(--vscode-panel-border);flex-shrink:0}
 .program-view #goto{display:flex;align-items:center;gap:3px;flex:0 1 156px;min-width:104px}
+.program-view #goto:has(#goto-error:not(:empty)){flex-basis:228px}
 .program-view #address{flex:1;width:0;min-width:72px;height:28px;padding:3px 7px;font-size:12px;font-family:var(--vscode-editor-font-family,monospace);font-variant-numeric:tabular-nums}
 .program-view #goto button{width:28px;min-width:28px;height:28px;min-height:0;padding:5px}
 .program-view .browser-search{flex:1 1 110px;max-width:260px;min-width:88px}

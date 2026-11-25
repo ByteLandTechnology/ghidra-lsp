@@ -78,7 +78,18 @@ input[type=checkbox]{width:auto;margin:0;accent-color:var(--vscode-checkbox-sele
 .hex{font:13px/1.6 var(--vscode-editor-font-family,monospace);white-space:pre-wrap;overflow-wrap:anywhere}
 .error{color:var(--vscode-errorForeground);white-space:pre-wrap;overflow-wrap:anywhere}
 .success{color:var(--vscode-testing-iconPassed)}
-#error:empty,#status:empty{display:none}
+#status:empty{display:none}
+.sr-status,#error:empty,#goto-error:empty{position:absolute;width:1px;height:1px;padding:0;margin:0;border:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+#error:not(:empty){padding:8px 12px;margin:8px 0;border-left:2px solid var(--vscode-inputValidation-errorBorder,var(--vscode-errorForeground));background:color-mix(in srgb,var(--vscode-errorForeground) 6%,var(--vscode-editor-background));font-size:12px}
+.flow-page #error:not(:empty){flex-shrink:0;margin:8px 16px 0;position:relative;z-index:3}
+#goto{flex-wrap:wrap}
+#address[aria-invalid="true"]{border-color:var(--vscode-inputValidation-errorBorder,var(--vscode-errorForeground));outline-color:var(--vscode-inputValidation-errorBorder,var(--vscode-errorForeground))}
+#goto-error:not(:empty){flex:1 0 100%;display:block;margin:3px 0 0;padding:4px 8px;border-left:2px solid var(--vscode-inputValidation-errorBorder,var(--vscode-errorForeground));background:color-mix(in srgb,var(--vscode-errorForeground) 6%,var(--vscode-editor-background));font-size:11px;line-height:1.35}
+body.is-busy::before{content:'';position:fixed;z-index:20;top:0;left:0;width:30%;height:2px;background:var(--vscode-progressBar-background,var(--vscode-focusBorder));opacity:0;animation:webview-busy-in 0s linear 150ms forwards,webview-busy 1.2s cubic-bezier(.4,0,.2,1) 150ms infinite}
+@keyframes webview-busy-in{to{opacity:1}}
+@keyframes webview-busy{from{transform:translateX(-100%)}to{transform:translateX(340%)}}
+@media(prefers-reduced-motion:reduce){body.is-busy::before{width:100%;opacity:.6;animation:none}}
+@media(forced-colors:active){#error:not(:empty),#goto-error:not(:empty){background:Canvas;color:CanvasText;border:1px solid Mark}#address[aria-invalid="true"]{border-color:Mark;outline-color:Mark}body.is-busy::before{background:Highlight}}
 .empty{padding:20px 0;color:var(--vscode-descriptionForeground)}
 @media(max-width:640px){main{padding:16px}h1{font-size:20px}dl>div{grid-template-columns:1fr;gap:2px}.toolbar{gap:6px}.form-grid{gap:12px}.editable,.editable input{min-width:0}}
 `;

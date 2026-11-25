@@ -76,6 +76,14 @@ export interface HistoryPoint {
     blockStart?: string;
 }
 
+/** Options controlling scroll retention and goto focus behavior on partial updates. */
+export interface ProgramRenderOptions {
+    /** Keep the current scroll offset instead of scrolling to the selected item. */
+    preserveScroll?: boolean;
+    /** True when the update was triggered by submitting the `#goto` form. */
+    fromGoto?: boolean;
+}
+
 /** Extended panel state shared between {@link Workbench} and {@link ProgramViewsController}. */
 export interface ProgramPanelState {
     kind: string;
@@ -85,6 +93,7 @@ export interface ProgramPanelState {
     selected?: string;
     displayAddress?: string;
     panel: vscode.WebviewPanel;
+    mounted?: boolean;
     // Extended full-view state
     syncEnabled?: boolean;
     pvHistory?: HistoryPoint[];
@@ -211,7 +220,12 @@ export class ProgramViewsController {
     }
 
     /** Fetch and render a full HTML page or incremental row update for a Listing panel. */
-    async renderListing(state: ProgramPanelState, mode: 'full' | 'partial' = 'full', direction?: 'before' | 'after'): Promise<void> {
+    async renderListing(
+        state: ProgramPanelState,
+        mode: 'full' | 'partial' = 'full',
+        direction?: 'before' | 'after',
+        options?: ProgramRenderOptions,
+    ): Promise<void> {
         const meta = await this.getMetadata(state.md5);
         if (state.syncEnabled === undefined) { state.syncEnabled = this.defaultSyncEnabled(); }
         if (!state.address) {
@@ -317,7 +331,7 @@ export class ProgramViewsController {
             : displayAddress(state.address);
         const totalUnitsLabel = `${windowModel.units.length} code units · ${blockLabel}`;
 
-        if (mode === 'partial') {
+        if (mode === 'partial' && state.mounted) {
             await state.panel.webview.postMessage({
                 action: 'windowData',
                 rowsHtml: renderListingRowsHtml(windowModel.collapsedItems, selectedAddr),
@@ -331,7 +345,9 @@ export class ProgramViewsController {
                 scopeNote: totalUnitsLabel,
                 currentBlockStart: windowModel.block?.start || '',
                 anchorAddress,
-                scrollToSelected: !direction,
+                scrollToSelected: !direction && !options?.preserveScroll,
+                preserveScroll: Boolean(options?.preserveScroll),
+                fromGoto: Boolean(options?.fromGoto),
             });
             return;
         }
@@ -353,11 +369,16 @@ export class ProgramViewsController {
             singleKeyShortcuts: this.singleKeyShortcutsEnabled(),
             totalUnitsLabel,
         };
+        state.mounted = true;
         state.panel.webview.html = renderProgramListingPage(payload);
     }
 
     /** Fetch and render a full HTML page or incremental chunk update for a Memory Hex panel. */
-    async renderHex(state: ProgramPanelState, mode: 'full' | 'partial' = 'full'): Promise<void> {
+    async renderHex(
+        state: ProgramPanelState,
+        mode: 'full' | 'partial' = 'full',
+        options?: ProgramRenderOptions,
+    ): Promise<void> {
         const meta = await this.getMetadata(state.md5);
         if (state.syncEnabled === undefined) { state.syncEnabled = this.defaultSyncEnabled(); }
         if (!state.address) {
@@ -414,7 +435,7 @@ export class ProgramViewsController {
             if (cell?.symbol) { cursorSymbol = cell.symbol; break; }
         }
 
-        if (mode === 'partial') {
+        if (mode === 'partial' && state.mounted) {
             await state.panel.webview.postMessage({
                 action: 'chunkData',
                 chunkStart: chunk.start,
@@ -429,6 +450,8 @@ export class ProgramViewsController {
                 scopeNote: scopeText,
                 currentBlockStart: chunkBlock.start,
                 sectionLabel: `Memory bytes at ${selectedAddr}`,
+                preserveScroll: Boolean(options?.preserveScroll),
+                fromGoto: Boolean(options?.fromGoto),
             });
             await state.panel.webview.postMessage({
                 action: 'inspectorData',
@@ -462,6 +485,7 @@ export class ProgramViewsController {
             bytesPerRow,
             initialInspector: inspectorEntries,
         };
+        state.mounted = true;
         state.panel.webview.html = renderProgramHexPage(payload);
     }
 
@@ -537,17 +561,17 @@ export class ProgramViewsController {
     }
 
     /** Navigate a Listing or Hex panel to `rawTarget` and synchronize peer panels. */
-    async navigateTo(state: ProgramPanelState, rawTarget: string, pushHistory = true): Promise<void> {
+    async navigateTo(state: ProgramPanelState, rawTarget: string, pushHistory = true, fromGoto = false): Promise<void> {
         const resolved = await this.prepareNavigation(state, rawTarget, pushHistory);
 
         if (state.kind === 'listing') {
-            await this.renderListing(state, state.pvListingWindow ? 'partial' : 'full');
+            await this.renderListing(state, state.mounted && state.pvListingWindow ? 'partial' : 'full', undefined, { fromGoto });
         } else if (state.kind === 'memory') {
-            if (state.pvChunk && addressInRange(resolved, state.pvChunk.start, state.pvChunk.end)) {
+            if (state.mounted && state.pvChunk && addressInRange(resolved, state.pvChunk.start, state.pvChunk.end)) {
                 state.selected = resolved;
-                await state.panel.webview.postMessage({ action: 'highlight', address: resolved, length: 1 });
+                await state.panel.webview.postMessage({ action: 'highlight', address: resolved, length: 1, fromGoto });
             } else {
-                await this.renderHex(state, state.pvChunk ? 'partial' : 'full');
+                await this.renderHex(state, state.mounted && state.pvChunk ? 'partial' : 'full', { fromGoto });
             }
         }
         await this.broadcastCursorSync(state, resolved, 1);
@@ -574,15 +598,17 @@ export class ProgramViewsController {
         if (action === 'refresh') {
             this.invalidate(state.md5);
             if (state.kind === 'listing') {
-                await this.renderListing(state, 'full');
+                state.address = state.pvWindowStart || state.displayAddress || state.address;
+                state.cursor = undefined;
+                await this.renderListing(state, state.mounted && state.pvListingWindow ? 'partial' : 'full', undefined, { preserveScroll: true });
             } else {
-                await this.renderHex(state, 'full');
+                await this.renderHex(state, state.mounted && state.pvChunk ? 'partial' : 'full', { preserveScroll: true });
             }
             return true;
         }
         if (action === 'navBack') {
             const prev = state.pvHistory?.pop();
-            if (!prev) { return true; }
+            if (!prev) { await state.panel.webview.postMessage({ action: 'busyDone' }); return true; }
             const cur = state.selected || state.address;
             if (cur) { state.pvFuture = [...(state.pvFuture || []), { address: cur }].slice(-50); }
             state.address = prev.address;
@@ -597,7 +623,7 @@ export class ProgramViewsController {
         }
         if (action === 'navForward') {
             const next = state.pvFuture?.pop();
-            if (!next) { return true; }
+            if (!next) { await state.panel.webview.postMessage({ action: 'busyDone' }); return true; }
             const cur = state.selected || state.address;
             if (cur) { state.pvHistory = [...(state.pvHistory || []), { address: cur }].slice(-50); }
             state.address = next.address;
@@ -620,7 +646,11 @@ export class ProgramViewsController {
                     state.address = prevStart;
                     state.selected = prevStart;
                     await this.renderHex(state, 'partial');
+                } else {
+                    await state.panel.webview.postMessage({ action: 'busyDone' });
                 }
+            } else {
+                await state.panel.webview.postMessage({ action: 'busyDone' });
             }
             return true;
         }
@@ -634,13 +664,17 @@ export class ProgramViewsController {
                     state.address = nextStart;
                     state.selected = nextStart;
                     await this.renderHex(state, 'partial');
+                } else {
+                    await state.panel.webview.postMessage({ action: 'busyDone' });
                 }
+            } else {
+                await state.panel.webview.postMessage({ action: 'busyDone' });
             }
             return true;
         }
         if (action === 'goto' && address) {
             const push = message.pushHistory !== false;
-            await this.navigateTo(state, address, push);
+            await this.navigateTo(state, address, push, message.fromGoto !== false);
             return true;
         }
         if (action === 'setHexOptions' && state.kind === 'memory') {
@@ -654,6 +688,8 @@ export class ProgramViewsController {
                 await this.renderHex(state, 'partial');
             } else if (endianChanged) {
                 await this.updateInspector(state);
+            } else {
+                await state.panel.webview.postMessage({ action: 'busyDone' });
             }
             return true;
         }

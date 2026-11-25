@@ -61,6 +61,15 @@ export const iconButton = (icon: keyof typeof callIcons, label: string, action: 
 export function actionsMenu(contents: string, id = 'inspector-more'): string {
     return `<details class="inspector-menu" id="${escape(id)}" data-action-menu><summary aria-label="More actions" title="More actions">${callIcon('more')}</summary><div class="inspector-menu-content" role="group" aria-label="More actions">${contents}</div></details>`;
 }
+/** Format a deterministic DOM element identifier from a prefix and raw token. */
+export function domId(prefix: string, value: unknown): string {
+    const slug = String(value ?? '').replace(/[^A-Za-z0-9-]/g, ch => `_${ch.charCodeAt(0).toString(16)}_`);
+    return `${prefix}-${slug || 'empty'}`;
+}
+/** Render shared assertive error alert and polite busy status live regions. */
+export const liveRegionsHtml = (busy = false, error = ''): string => `<p id="error" class="error" role="alert">${escape(error)}</p><p id="busy-status" class="sr-status" role="status">${busy ? 'Loading' : ''}</p>`;
+/** Render a Go to address form with an inline assertive error region. */
+export const gotoFormHtml = (value: string, label: string, placeholder: string): string => `<form id="goto" novalidate><input id="address" aria-label="${escape(label)}" value="${escape(value)}" placeholder="${escape(placeholder)}"><button id="goto-submit" type="submit" aria-label="Go to address" title="Go to address">${callIcon('right')}</button><span id="goto-error" class="goto-error error" role="alert"></span></form>`;
 /** Formats addresses, offsets, storage locations, and raw identifiers as code. */
 export const code = (value: unknown): string => {
     const full = text(value), shown = displayAddress(full);
@@ -94,7 +103,7 @@ export function page(title: string, eyebrow: string, subtitle: unknown, body: st
     ${pageStyles}
     ${iconFontStyles}
     ${viewStyles}
-    </style></head><body class="${form ? 'edit-page' : 'inspector-page'}${extras.busy ? ' is-busy' : ''}" data-view-kind="${escape(kind)}"${extras.busy ? ' aria-busy="true"' : ''}><main><header><div class="inspector-title"><div><div class="eyebrow">${escape(eyebrow)}</div><h1 tabindex="-1"${extras.titleHint ? ` title="${escape(extras.titleHint)}"` : ''}>${extras.titleHtml ?? breakable(title)}</h1>${subtitle ? `<p class="subtitle" title="${escape(subtitle)}">${subtitleMarkup}</p>` : ''}</div></div>${extras.nav || actions ? `<div class="inspector-tools">${extras.nav ? `<nav class="inspector-nav" aria-label="Inspector history">${extras.nav}</nav>` : ''}${actions ? `<div class="inspector-actions" role="group" aria-label="${escape(eyebrow)} actions">${actions}</div>` : ''}</div>` : ''}</header><p id="error" class="error" role="alert">${escape(extras.error ?? '')}</p><p id="busy-status" class="sr-status" role="status">${extras.busy ? 'Loading' : ''}</p>${body}</main><script nonce="${nonce}">
+    </style></head><body class="${form ? 'edit-page' : 'inspector-page'}${extras.busy ? ' is-busy' : ''}" data-view-kind="${escape(kind)}"${extras.busy ? ' aria-busy="true"' : ''}><main><header><div class="inspector-title"><div><div class="eyebrow">${escape(eyebrow)}</div><h1 tabindex="-1"${extras.titleHint ? ` title="${escape(extras.titleHint)}"` : ''}>${extras.titleHtml ?? breakable(title)}</h1>${subtitle ? `<p class="subtitle" title="${escape(subtitle)}">${subtitleMarkup}</p>` : ''}</div></div>${extras.nav || actions ? `<div class="inspector-tools">${extras.nav ? `<nav class="inspector-nav" aria-label="Inspector history">${extras.nav}</nav>` : ''}${actions ? `<div class="inspector-actions" role="group" aria-label="${escape(eyebrow)} actions">${actions}</div>` : ''}</div>` : ''}</header>${liveRegionsHtml(extras.busy, extras.error ?? '')}${body}</main><script nonce="${nonce}">
     const vscode=acquireVsCodeApi();
     const inspectorState=${stateJson},inspectorPrevious=vscode.getState()||{};
     const inspectorSame=!!inspectorState.kind&&['kind','md5','path','entry','id'].every(key=>inspectorState[key]===inspectorPrevious[key]);

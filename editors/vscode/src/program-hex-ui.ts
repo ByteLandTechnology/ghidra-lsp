@@ -13,7 +13,7 @@ import { displayAddress } from './names';
 import { pageStyles } from './page-styles';
 import { addrSpan, programViewStyles } from './program-views-styles';
 import { viewStyles, webviewShortcutScript } from './view-ui';
-import { escape } from './web';
+import { domId, escape, gotoFormHtml, liveRegionsHtml } from './web';
 
 /** Short byte-order identifier used by the Data Inspector pill toggle. */
 export type InspectorEndian = 'le' | 'be';
@@ -41,6 +41,8 @@ export interface HexViewPayload {
     singleKeyShortcuts?: boolean;
     bytesPerRow: 8 | 16;
     initialInspector: DataInspectorEntry[];
+    busy?: boolean;
+    error?: string;
 }
 
 /** Render the column header cells for an 8-byte or 16-byte hex layout. */
@@ -61,39 +63,22 @@ export function renderHexRowsHtml(chunk: HexChunk, selectedAddress: string, sele
 
     const matchesSelectedStart = (addr: string): boolean => {
         const parsed = parseAddress(addr);
-        if (selStart && parsed) {
-            return parsed.space.toLowerCase() === selStart.space.toLowerCase() && parsed.offset === selStart.offset;
-        }
-        return addr.toLowerCase() === selStartHex;
+        return selStart && parsed ? parsed.space.toLowerCase() === selStart.space.toLowerCase() && parsed.offset === selStart.offset : addr.toLowerCase() === selStartHex;
     };
 
     const isInSelectedRange = (addr: string): boolean => {
         const parsed = parseAddress(addr);
-        if (selStart && parsed) {
-            return parsed.space.toLowerCase() === selStart.space.toLowerCase()
-                && parsed.offset >= selStart.offset
-                && parsed.offset <= selEndOffset;
-        }
-        return addr.toLowerCase() === selStartHex;
+        return selStart && parsed ? parsed.space.toLowerCase() === selStart.space.toLowerCase() && parsed.offset >= selStart.offset && parsed.offset <= selEndOffset : addr.toLowerCase() === selStartHex;
     };
 
     let focusStopAddress = '';
     for (const row of chunk.rows) {
         for (const cell of row.cells) {
-            if (!cell.inBlock || !cell.address) {
-                continue;
-            }
-            if (!focusStopAddress) {
-                focusStopAddress = cell.address;
-            }
-            if (matchesSelectedStart(cell.address)) {
-                focusStopAddress = cell.address;
-                break;
-            }
+            if (!cell.inBlock || !cell.address) { continue; }
+            if (!focusStopAddress) { focusStopAddress = cell.address; }
+            if (matchesSelectedStart(cell.address)) { focusStopAddress = cell.address; break; }
         }
-        if (focusStopAddress && matchesSelectedStart(focusStopAddress)) {
-            break;
-        }
+        if (focusStopAddress && matchesSelectedStart(focusStopAddress)) { break; }
     }
 
     let focusAssigned = false;
@@ -119,7 +104,7 @@ export function renderHexRowsHtml(chunk: HexChunk, selectedAddress: string, sele
                 ? `?? uninitialized at ${cell.address}${symbolSuffix}`
                 : `${byteStr} at ${cell.address}${symbolSuffix}`;
             const title = `${cell.address}${cell.symbol ? ` · ${cell.symbol}` : ''}${cell.value === null ? ' (uninitialized)' : ''}`;
-            return `<td class="hb${gapClass}${nullClass}${isSel ? ' is-selected' : ''}" data-address="${escape(cell.address)}" data-byte="${cell.value === null ? '' : cell.value}" title="${escape(title)}" aria-label="${escape(ariaLabel)}" aria-selected="${isSel ? 'true' : 'false'}" tabindex="${isFocusStop ? '0' : '-1'}">${byteStr}</td>`;
+            return `<td id="${domId('byte', cell.address)}" class="hb${gapClass}${nullClass}${isSel ? ' is-selected' : ''}" data-address="${escape(cell.address)}" data-byte="${cell.value === null ? '' : cell.value}" title="${escape(title)}" aria-label="${escape(ariaLabel)}" aria-selected="${isSel ? 'true' : 'false'}" tabindex="${isFocusStop ? '0' : '-1'}">${byteStr}</td>`;
         }).join('');
 
         const asciiHtml = row.cells.map(cell => {
@@ -133,7 +118,7 @@ export function renderHexRowsHtml(chunk: HexChunk, selectedAddress: string, sele
 
         const rowAddr = row.firstInBlockAddress || row.rowAddress;
         const firstByte = row.cells.find(c => c.inBlock)?.address || rowAddr;
-        return `<tr class="hex-row${rowHasSel ? ' selected' : ''}" data-address="${escape(firstByte)}" data-kind="bytes" data-sel-len="${selectionLength}"><th scope="row" class="addr">${addrSpan(row.rowAddress)}</th>${bytesHtml}<td class="hex-ascii" aria-readonly="true">${asciiHtml}</td></tr>`;
+        return `<tr id="${domId('hex-row', row.rowAddress)}" class="hex-row${rowHasSel ? ' selected' : ''}" data-address="${escape(firstByte)}" data-kind="bytes" data-sel-len="${selectionLength}"><th scope="row" class="addr">${addrSpan(row.rowAddress)}</th>${bytesHtml}<td class="hex-ascii" aria-readonly="true">${asciiHtml}</td></tr>`;
     }).join('');
 }
 
@@ -172,7 +157,7 @@ function renderMemoryMapHtml(blocks: MemoryBlockInfo[]): string {
     const rowsHtml = blocks.map(block => {
         const perms = permissionsLabel(block);
         const initText = block.initialized ? 'Yes' : 'No';
-        return `<tr data-address="${escape(block.start)}" data-kind="block" data-label="${escape(block.name)}" tabindex="0"><td>${escape(block.name)}</td><td class="addr">${addrSpan(block.start)}</td><td class="addr">${addrSpan(block.end)}</td><td>${escape(block.length.toString(10))}</td><td>${escape(perms)}</td><td>${escape(initText)}</td></tr>`;
+        return `<tr id="${domId('block-row', block.start)}" data-address="${escape(block.start)}" data-kind="block" data-label="${escape(block.name)}" tabindex="0"><td>${escape(block.name)}</td><td class="addr">${addrSpan(block.start)}</td><td class="addr">${addrSpan(block.end)}</td><td>${escape(block.length.toString(10))}</td><td>${escape(perms)}</td><td>${escape(initText)}</td></tr>`;
     }).join('');
     return `<details class="memory-map"><summary>Memory map (${blocks.length} blocks)</summary><div class="table-wrap"><table><thead><tr><th scope="col">Block</th><th scope="col">Start</th><th scope="col">End</th><th scope="col">Length</th><th scope="col">Permissions</th><th scope="col">Initialized</th></tr></thead><tbody>${rowsHtml}</tbody></table></div></details>`;
 }
@@ -209,24 +194,24 @@ ${pageStyles}
 ${iconFontStyles}
 ${viewStyles}
 ${programViewStyles}
-</style></head><body class="browser-page program-view" data-view-kind="memory"><main>
+</style></head><body class="browser-page program-view${payload.busy ? ' is-busy' : ''}" data-view-kind="memory"${payload.busy ? ' aria-busy="true"' : ''}><main>
 <h1 class="page-context">${escape(payload.title)}</h1>
 <div class="toolbar pv-toolbar" role="group" aria-label="Hex navigation">
   <div class="pv-nav" role="group" aria-label="History and window">
-    <button type="button" class="icon-button" data-action="navBack" aria-label="Back" title="Back (Alt+Left)"${payload.canBack ? '' : ' disabled'}>${callIcon('back')}</button>
-    <button type="button" class="icon-button" data-action="navForward" aria-label="Forward" title="Forward (Alt+Right)"${payload.canForward ? '' : ' disabled'}>${callIcon('forward')}</button>
+    <button type="button" id="nav-back" class="icon-button" data-action="navBack" aria-label="Back" title="Back (Alt+Left)"${payload.canBack ? '' : ' disabled'}>${callIcon('back')}</button>
+    <button type="button" id="nav-forward" class="icon-button" data-action="navForward" aria-label="Forward" title="Forward (Alt+Right)"${payload.canForward ? '' : ' disabled'}>${callIcon('forward')}</button>
     <span class="pv-step" id="pv-step"${payload.hasMoreBefore || payload.hasMoreAfter ? '' : ' hidden'}><span class="pv-divider" aria-hidden="true"></span><button type="button" id="pager-before" class="icon-button" data-action="loadBefore" aria-label="Previous window" title="Previous window"${payload.hasMoreBefore ? '' : ' disabled'}>${callIcon('up')}</button><button type="button" id="pager-after" class="icon-button" data-action="loadAfter" aria-label="Next window" title="Next window"${payload.hasMoreAfter ? '' : ' disabled'}>${callIcon('down')}</button></span>
   </div>
-  <form id="goto"><input id="address" aria-label="Address" value="${escape(displayAddress(payload.cursorAddress))}" placeholder="Address or +offset…"><button type="submit" aria-label="Go to address" title="Go to address">${callIcon('right')}</button></form>
+  ${gotoFormHtml(displayAddress(payload.cursorAddress), 'Address', 'Address or +offset…')}
   <div class="browser-search">${callIcon('search')}<input class="search" id="search" aria-label="Filter displayed rows" placeholder="Filter hex, ASCII, or block…"></div>
   <div class="pv-tools" role="group" aria-label="Hex tools">
     <button type="button" id="sync-toggle" class="icon-button" data-action="toggleSync" aria-pressed="${payload.syncEnabled}" aria-label="Sync cursor with other Ghidra views" title="Sync cursor with other Ghidra views">${callIcon('link')}</button>
-    <button type="button" class="icon-button" data-action="openListingBeside" aria-label="Open Program Listing beside" title="Open Program Listing beside">${callIcon('listing')}</button>
+    <button type="button" id="open-listing-beside" class="icon-button" data-action="openListingBeside" aria-label="Open Program Listing beside" title="Open Program Listing beside">${callIcon('listing')}</button>
     <details id="page-options" class="page-options">
       <summary aria-label="View options" title="View options">${callIcon('more')}</summary>
       <div class="page-options-content">
         <div class="page-options-actions" role="group" aria-label="Page actions">
-          <button type="button" class="icon-button" data-action="refresh" aria-label="Refresh" title="Refresh">${callIcon('refresh')}</button>
+          <button type="button" id="page-refresh" class="icon-button" data-action="refresh" aria-label="Refresh" title="Refresh">${callIcon('refresh')}</button>
         </div>
         ${blockOptions ? `<label class="pv-option-row">Memory block<select id="block-select" aria-label="Memory block">${blockOptions}</select></label>` : ''}
         <label class="pv-option-row">Byte order<select id="hex-endian" aria-label="Byte order"><option value="little"${payload.endian === 'little' ? ' selected' : ''}>Little-endian</option><option value="big"${payload.endian === 'big' ? ' selected' : ''}>Big-endian</option></select></label>
@@ -237,6 +222,7 @@ ${programViewStyles}
     </details>
   </div>
 </div>
+${liveRegionsHtml(Boolean(payload.busy), payload.error ?? '')}
 <p id="filter-status" role="status" aria-live="polite" hidden></p>
 <div class="hex-workspace">
   <section class="hex-main" aria-label="Memory bytes at ${escape(payload.cursorAddress)}">
@@ -389,6 +375,9 @@ const decodeLocalInspector = (startAddr, len) => {
 };
 
 const applyInspector = (startAddr, metaText, rows) => {
+  const activeInInsp = inspectorEl.contains(document.activeElement) ? document.activeElement : null;
+  const hadEndianFocus = !!activeInInsp?.hasAttribute('data-toggle-endian');
+  const prevInspJump = activeInInsp?.dataset?.jump || '';
   const mode = toInspectorEndian(state.endian);
   const label = mode === 'be' ? 'Big Endian' : 'Little Endian';
   const head = document.createElement('div'); head.className = 'hex-inspector-head';
@@ -415,6 +404,10 @@ const applyInspector = (startAddr, metaText, rows) => {
     div.append(dt, dd); dl.append(div);
   }
   inspectorEl.replaceChildren(head, meta, ...(rows.length ? [dl] : []));
+  if (activeInInsp) {
+    const restored = hadEndianFocus ? pill : (prevInspJump && inspectorEl.querySelector('[data-jump="' + CSS.escape(prevInspJump) + '"]')) || pill;
+    restored?.focus({ preventScroll: true });
+  }
 };
 
 const renderInspector = (startAddr, len) => {
@@ -438,15 +431,23 @@ const persist = () => {
 };
 ${webviewShortcutScript}
 
+const focusHexFallback = () => {
+  const cell = syncRovingTabindex(selected);
+  if (cell && !cell.closest('tr')?.hidden && !hexMain.hidden) { cell.focus({ preventScroll: true }); return; }
+  search?.focus({ preventScroll: true });
+};
+
 const updateSelectionTools = () => {
   const label = document.getElementById('selection-label');
   const bar = label.closest('.selection-tools');
+  const activeEl = document.activeElement;
+  const focusedAction = bar.contains(activeEl) ? (activeEl.dataset?.action || (activeEl === moreSummary ? '__more__' : '')) : '';
   const activeHex = hexBody.querySelector('.hb.is-selected') || hexBody.querySelector('tr.selected');
   const activeMap = memoryMap?.querySelector('tr.selected');
   const visible = (!!activeHex && !activeHex.closest('tr')?.hidden && !hexMain.hidden) || (!!activeMap && !activeMap.hidden && memoryMap?.open);
   bar.hidden = !visible;
   document.body.classList.toggle('has-selection', visible);
-  if (!visible) return;
+  if (!visible) { if (focusedAction) focusHexFallback(); return; }
 
   const isBlock = selectedKind === 'block' || (!!activeMap && !activeHex);
   const curBlock = findBlockFor(selected);
@@ -482,9 +483,13 @@ const updateSelectionTools = () => {
     }));
   }
   more.hidden = !extra.length;
+  if (focusedAction) {
+    const restored = focusedAction === '__more__' ? (!more.hidden ? moreSummary : null) : bar.querySelector('[data-action="' + focusedAction + '"]');
+    (restored || bar.querySelector('#selection-primary button') || (!more.hidden ? moreSummary : null))?.focus({ preventScroll: true });
+  }
 };
 
-const highlightRange = (startAddr, len = 1, notify = true, scroll = true) => {
+const highlightRange = (startAddr, len = 1, notify = true, scroll = true, forceAddress = notify) => {
   const start = parseAddr(startAddr);
   if (!start) return;
   const clampedLen = Math.max(1, len);
@@ -520,7 +525,7 @@ const highlightRange = (startAddr, len = 1, notify = true, scroll = true) => {
   selectionLength = clampedLen;
   selectedKind = 'bytes';
   syncRovingTabindex(startAddr);
-  if (addressInput) addressInput.value = shortAddr(startAddr);
+  setSyncedAddressValue(shortAddr(startAddr), forceAddress);
   if (firstMatchedRow && scroll) firstMatchedRow.scrollIntoView({ block: 'nearest' });
   renderInspector(startAddr, selectionLength);
   updateSelectionTools();
@@ -668,7 +673,7 @@ inspectorEl.addEventListener('click', event => {
     return;
   }
   const jumpBtn = event.target.closest('[data-jump]');
-  if (jumpBtn) vscode.postMessage({ action: 'goto', address: jumpBtn.dataset.jump });
+  if (jumpBtn) { setBusyState(true); vscode.postMessage({ action: 'goto', address: jumpBtn.dataset.jump, fromGoto: false }); }
 });
 
 memoryMap?.querySelector('tbody')?.addEventListener('click', event => {
@@ -686,7 +691,7 @@ memoryMap?.querySelector('tbody')?.addEventListener('click', event => {
 });
 memoryMap?.querySelector('tbody')?.addEventListener('dblclick', event => {
   const row = event.target.closest('tr[data-address]');
-  if (row?.dataset.address) vscode.postMessage({ action: 'goto', address: row.dataset.address });
+  if (row?.dataset.address) { setBusyState(true); vscode.postMessage({ action: 'goto', address: row.dataset.address, fromGoto: false }); }
 });
 memoryMap?.addEventListener('toggle', () => { applyFilter(); persist(); });
 
@@ -694,6 +699,7 @@ document.addEventListener('click', event => {
   const btn = event.target.closest('button[data-action]');
   if (btn && !btn.disabled) {
     const act = btn.dataset.action;
+    if (['navBack', 'navForward', 'refresh', 'loadBefore', 'loadAfter'].includes(act)) setBusyState(true);
     if (['navBack', 'navForward', 'refresh', 'loadBefore', 'loadAfter', 'toggleSync', 'openListingBeside'].includes(act)) {
       vscode.postMessage({ action: act });
     } else if (act === 'copyAddress' && selected) {
@@ -702,20 +708,24 @@ document.addEventListener('click', event => {
       vscode.postMessage({ action: act, address: selected, kind: selectedKind });
     }
     if (more && more.contains(btn)) { more.open = false; moreSummary.focus({ preventScroll: true }); }
+    const restoreOpts = pageOptions.open && pageOptions.contains(btn);
     pageOptions.open = false;
+    if (restoreOpts) pageOptions.querySelector('summary')?.focus({ preventScroll: true });
     return;
   }
   if (pageOptions.open && !pageOptions.contains(event.target)) pageOptions.open = false;
   if (more.open && !more.contains(event.target)) more.open = false;
 });
 
-document.getElementById('goto').addEventListener('submit', event => {
-  event.preventDefault();
-  const val = addressInput.value.trim();
-  if (val) vscode.postMessage({ action: 'goto', address: val });
-});
+bindGotoForm(val => vscode.postMessage({ action: 'goto', address: val, fromGoto: true }), persist);
 blockSelect?.addEventListener('change', () => {
-  if (blockSelect.value) { pageOptions.open = false; vscode.postMessage({ action: 'goto', address: blockSelect.value, pushHistory: true }); }
+  if (blockSelect.value) {
+    const restoreOpts = pageOptions.open && pageOptions.contains(blockSelect);
+    pageOptions.open = false;
+    if (restoreOpts) pageOptions.querySelector('summary')?.focus({ preventScroll: true });
+    setBusyState(true);
+    vscode.postMessage({ action: 'goto', address: blockSelect.value, pushHistory: true, fromGoto: false });
+  }
 });
 search.addEventListener('input', () => { applyFilter(); persist(); });
 document.getElementById('clear-filter').addEventListener('click', () => { search.value = ''; applyFilter(); persist(); search.focus(); });
@@ -729,6 +739,7 @@ widthSelect?.addEventListener('change', () => {
   const w = Number(widthSelect.value) === 8 ? 8 : 16;
   state.bytesPerRow = w;
   persist();
+  setBusyState(true);
   vscode.postMessage({ action: 'setHexOptions', bytesPerRow: w });
 });
 showInspectorChk?.addEventListener('change', () => {
@@ -738,8 +749,8 @@ showInspectorChk?.addEventListener('change', () => {
 
 document.addEventListener('keydown', event => {
   if (event.altKey && !event.ctrlKey && !event.metaKey) {
-    if (event.key === 'ArrowLeft') { event.preventDefault(); vscode.postMessage({ action: 'navBack' }); return; }
-    if (event.key === 'ArrowRight') { event.preventDefault(); vscode.postMessage({ action: 'navForward' }); return; }
+    if (event.key === 'ArrowLeft') { event.preventDefault(); if (!document.getElementById('nav-back')?.disabled) { setBusyState(true); vscode.postMessage({ action: 'navBack' }); } return; }
+    if (event.key === 'ArrowRight') { event.preventDefault(); if (!document.getElementById('nav-forward')?.disabled) { setBusyState(true); vscode.postMessage({ action: 'navForward' }); } return; }
   }
   if (isModShortcut(event, 'f')) { event.preventDefault(); search.focus(); search.select(); return; }
   if (isModShortcut(event, 'g')) { event.preventDefault(); addressInput.focus(); addressInput.select(); return; }
@@ -755,11 +766,14 @@ document.addEventListener('keydown', event => {
 window.addEventListener('message', event => {
   const msg = event.data || {};
   if (msg.action === 'highlight') {
-    highlightRange(msg.address, msg.length || 1, false, true);
+    setViewError('');
+    highlightRange(msg.address, msg.length || 1, false, true, Boolean(msg.fromGoto));
+    if (msg.fromGoto) addressInput?.focus({ preventScroll: true });
   } else if (msg.action === 'syncState') {
     state.syncEnabled = !!msg.syncEnabled;
     syncToggle.setAttribute('aria-pressed', String(state.syncEnabled));
   } else if (msg.action === 'inspectorData' && Array.isArray(msg.entries)) {
+    setBusyState(false);
     const addr = msg.address || selected;
     if (addr === selected) {
       const len = msg.length || selectionLength || 1;
@@ -768,15 +782,21 @@ window.addEventListener('message', event => {
       applyInspector(addr, metaText, msg.entries);
     }
   } else if (msg.action === 'chunkData') {
+    setViewError('');
+    const prevScrollTop = hexWrap.scrollTop;
     const prevActive = document.activeElement;
+    const prevCellAddr = prevActive?.closest?.('.hb[data-address]')?.dataset?.address || '';
     const focusWasInGrid = !!prevActive && hexBody.contains(prevActive);
     const hadFocusedElement = !!prevActive && prevActive !== document.body && prevActive !== document.documentElement;
+    const navBack = document.querySelector('[data-action="navBack"]');
+    const navForward = document.querySelector('[data-action="navForward"]');
+    const focusedNavBtn = [navBack, navForward, pagerBefore, pagerAfter].filter(Boolean).find(btn => btn === prevActive);
     const nextSelected = msg.selectedAddress || selected;
     state.address = msg.chunkStart;
     hexBody.innerHTML = msg.rowsHtml;
     if (msg.colsHtml) document.getElementById('hex-cols-head').innerHTML = msg.colsHtml;
-    if (typeof msg.canBack === 'boolean') document.querySelector('[data-action="navBack"]').disabled = !msg.canBack;
-    if (typeof msg.canForward === 'boolean') document.querySelector('[data-action="navForward"]').disabled = !msg.canForward;
+    if (typeof msg.canBack === 'boolean' && navBack) navBack.disabled = !msg.canBack;
+    if (typeof msg.canForward === 'boolean' && navForward) navForward.disabled = !msg.canForward;
     if (pvStep) pvStep.hidden = !msg.hasMoreBefore && !msg.hasMoreAfter;
     pagerBefore.disabled = !msg.hasMoreBefore;
     pagerAfter.disabled = !msg.hasMoreAfter;
@@ -784,10 +804,23 @@ window.addEventListener('message', event => {
     if (blockSelect && msg.currentBlockStart) blockSelect.value = msg.currentBlockStart;
     if (msg.sectionLabel) hexMain.setAttribute('aria-label', msg.sectionLabel);
     applyFilter();
-    highlightRange(nextSelected, msg.length || 1, false, true);
-    if (focusWasInGrid || (hadFocusedElement && (!document.activeElement || document.activeElement === document.body))) {
-      syncRovingTabindex(nextSelected)?.focus({ preventScroll: true });
+    highlightRange(nextSelected, msg.length || 1, false, !msg.preserveScroll, Boolean(msg.fromGoto));
+    if (msg.preserveScroll) hexWrap.scrollTop = prevScrollTop;
+    if (msg.fromGoto && addressInput) {
+      addressInput.focus({ preventScroll: true });
+    } else if (focusedNavBtn && (focusedNavBtn.disabled || focusedNavBtn.closest('[hidden]'))) {
+      const siblings = focusedNavBtn === pagerBefore ? [pagerAfter, navBack, navForward]
+        : focusedNavBtn === pagerAfter ? [pagerBefore, navBack, navForward]
+          : focusedNavBtn === navBack ? [navForward, pagerBefore, pagerAfter] : [navBack, pagerBefore, pagerAfter];
+      const nextBtn = siblings.find(btn => btn && !btn.disabled && !btn.closest('[hidden]'));
+      if (nextBtn) nextBtn.focus({ preventScroll: true });
+      else focusHexFallback();
+    } else if (focusWasInGrid) {
+      (syncRovingTabindex(prevCellAddr || nextSelected) || search)?.focus({ preventScroll: true });
+    } else if (hadFocusedElement && (!document.activeElement || document.activeElement === document.body)) {
+      focusHexFallback();
     }
+    persist();
   }
 });
 
