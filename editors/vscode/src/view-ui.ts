@@ -38,22 +38,22 @@ export const viewStyles = `
 /* Hallmark · data type editor · the definition is the work surface. */
 .inspector-page[data-view-kind="type-editor"] main{max-width:1060px;margin:0;padding:16px 22px 32px}
 .inspector-page[data-view-kind="type-editor"] main>header{align-items:flex-start;gap:16px;padding-bottom:12px;margin-bottom:16px;border-bottom:1px solid var(--vscode-panel-border)}
-.inspector-page[data-view-kind="type-editor"] main>header .subtitle{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;margin:6px 0 0;font-size:12px;color:var(--vscode-descriptionForeground)}
+.inspector-page[data-view-kind="type-editor"] main>header .subtitle{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;margin:6px 0 0;font-size:12px;color:var(--ghidra-muted)}
 .inspector-page[data-view-kind="type-editor"] .type-kind-badge{display:inline-flex;align-items:center;padding:1px 7px;border-radius:4px;font:600 11px/1.45 var(--vscode-editor-font-family,monospace);text-transform:lowercase;background:color-mix(in srgb,var(--vscode-focusBorder) 16%,var(--vscode-editor-background));border:1px solid color-mix(in srgb,var(--vscode-focusBorder) 38%,transparent);color:var(--vscode-foreground);white-space:nowrap}
-.inspector-page[data-view-kind="type-editor"] .type-kind-badge.is-readonly{background:color-mix(in srgb,var(--vscode-descriptionForeground) 12%,var(--vscode-editor-background));border-color:var(--vscode-panel-border);color:var(--vscode-descriptionForeground)}
-.inspector-page[data-view-kind="type-editor"] .type-meta-path{color:var(--vscode-descriptionForeground)}
+.inspector-page[data-view-kind="type-editor"] .type-kind-badge.is-readonly{background:color-mix(in srgb,var(--vscode-descriptionForeground) 8%,var(--vscode-editor-background));border-color:var(--vscode-panel-border);color:var(--ghidra-muted)}
+.inspector-page[data-view-kind="type-editor"] .type-meta-path{color:var(--ghidra-muted)}
 .inspector-page[data-view-kind="type-editor"] .type-meta-sep{opacity:.55;user-select:none}
 .inspector-page[data-view-kind="type-editor"] .type-meta-stat{font-variant-numeric:tabular-nums;white-space:nowrap}
 .inspector-page[data-view-kind="type-editor"] .type-actions{display:inline-flex;align-items:center;gap:8px;flex-shrink:0}
 .inspector-page[data-view-kind="type-editor"] .type-validation:not([hidden]){margin:8px 0 12px;padding:8px 12px;border-left:1px solid var(--vscode-errorForeground);color:var(--vscode-errorForeground);background:color-mix(in srgb,var(--vscode-errorForeground) 6%,var(--vscode-editor-background))}
-.inspector-page[data-view-kind="type-editor"] .type-status{display:inline-flex;align-items:center;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:500;color:var(--vscode-descriptionForeground);background:var(--vscode-sideBar-background,var(--vscode-editor-background));border:1px solid var(--vscode-panel-border);white-space:nowrap}
+.inspector-page[data-view-kind="type-editor"] .type-status{display:inline-flex;align-items:center;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:500;color:var(--ghidra-muted);background:var(--vscode-sideBar-background,var(--vscode-editor-background));border:1px solid var(--vscode-panel-border);white-space:nowrap}
 .inspector-page[data-view-kind="type-editor"] .type-status:empty{display:none}
-.inspector-page[data-view-kind="type-editor"] .type-status[data-state="dirty"]{color:var(--vscode-editorWarning-foreground,#cca700);border-color:color-mix(in srgb,var(--vscode-editorWarning-foreground,#cca700) 45%,transparent)}
-.inspector-page[data-view-kind="type-editor"] .type-status[data-state="saving"]{color:var(--vscode-focusBorder);border-color:color-mix(in srgb,var(--vscode-focusBorder) 45%,transparent)}
+.inspector-page[data-view-kind="type-editor"] .type-status[data-state="dirty"]{color:var(--ghidra-warning);border-color:color-mix(in srgb,var(--ghidra-warning) 45%,transparent)}
+.inspector-page[data-view-kind="type-editor"] .type-status[data-state="saving"]{color:var(--ghidra-accent);border-color:color-mix(in srgb,var(--ghidra-accent) 45%,transparent)}
 .inspector-page[data-view-kind="type-editor"] .type-actions [data-open-jsonc]{display:inline-flex;align-items:center;gap:6px;min-height:28px;padding:4px 10px;border:1px solid var(--vscode-panel-border);border-radius:6px;background:var(--vscode-button-secondaryBackground,var(--vscode-input-background));color:var(--vscode-button-secondaryForeground,var(--vscode-foreground));font-size:12px;font-weight:500;cursor:pointer;white-space:nowrap}
-.inspector-page[data-view-kind="type-editor"] .type-actions [data-open-jsonc]:hover:enabled{background:var(--vscode-button-secondaryHoverBackground,var(--vscode-list-hoverBackground));border-color:var(--vscode-focusBorder)}
+.inspector-page[data-view-kind="type-editor"] .type-actions [data-open-jsonc]:hover:enabled{background:var(--vscode-button-secondaryHoverBackground,var(--vscode-list-hoverBackground));border-color:var(--ghidra-focus)}
 .inspector-page[data-view-kind="type-editor"] .type-actions [data-open-jsonc] .call-icon{font-size:14px}
-.inspector-page[data-view-kind="type-editor"] .type-icon{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;min-height:0;padding:6px;border:0;background:transparent;color:var(--vscode-descriptionForeground);border-radius:3px}
+.inspector-page[data-view-kind="type-editor"] .type-icon{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;min-height:0;padding:6px;border:0;background:transparent;color:var(--ghidra-muted);border-radius:3px}
 .inspector-page[data-view-kind="type-editor"] .type-icon:hover{background:var(--vscode-toolbar-hoverBackground,var(--vscode-list-hoverBackground));color:var(--vscode-foreground)}
 .inspector-page[data-view-kind="type-editor"] .type-list{margin:0 0 20px;padding-top:12px}
 .inspector-page[data-view-kind="type-editor"] .type-list:first-of-type{border-top:0;padding-top:0}
@@ -68,10 +68,11 @@ export const viewStyles = `
 .inspector-page[data-view-kind="type-editor"] th[aria-sort="descending"] .type-sort span::after{content:'↓'}
 .inspector-page[data-view-kind="type-editor"] .type-table td{padding:3px 4px;vertical-align:middle}
 .inspector-page[data-view-kind="type-editor"] .type-table tbody tr:hover:not([data-new]){background:var(--vscode-list-hoverBackground,var(--vscode-editor-background))}
-.inspector-page[data-view-kind="type-editor"] .type-table tbody tr:focus-within:not([data-new]){background:color-mix(in srgb,var(--vscode-focusBorder) 14%,var(--vscode-list-inactiveSelectionBackground,var(--vscode-editor-background)));box-shadow:inset 2px 0 var(--vscode-focusBorder),inset 0 0 0 1px color-mix(in srgb,var(--vscode-focusBorder) 48%,transparent)}
+.inspector-page[data-view-kind="type-editor"] .type-table tbody tr:focus-within:not([data-new]){background:color-mix(in srgb,var(--vscode-focusBorder) 8%,var(--vscode-editor-background));box-shadow:inset 2px 0 var(--ghidra-focus),inset 0 0 0 1px color-mix(in srgb,var(--ghidra-focus) 48%,transparent)}
+.inspector-page[data-view-kind="type-editor"] .type-table tbody tr:focus-within:not([data-new]) input:not(:focus){color:var(--vscode-editor-foreground,var(--vscode-foreground))}
 .inspector-page[data-view-kind="type-editor"] .type-table input{width:100%;height:32px;min-width:0;border:1px solid transparent;border-radius:2px;background:transparent;cursor:text}
 .inspector-page[data-view-kind="type-editor"] .type-table input:hover{background:var(--vscode-input-background);border-color:var(--vscode-input-border,transparent)}
-.inspector-page[data-view-kind="type-editor"] .type-table input:focus{background:var(--vscode-input-background);outline:2px solid var(--vscode-focusBorder);outline-offset:-2px}
+.inspector-page[data-view-kind="type-editor"] .type-table input:focus{background:var(--vscode-input-background);outline:2px solid var(--ghidra-focus);outline-offset:-2px}
 .inspector-page[data-view-kind="type-editor"] .type-table td[data-field="offset"] input,.inspector-page[data-view-kind="type-editor"] .type-table td[data-field="length"] input,.inspector-page[data-view-kind="type-editor"] .type-table td[data-field="value"] input{font-variant-numeric:tabular-nums}
 .inspector-page[data-view-kind="type-editor"] .type-table th[data-field="offset"]{width:88px}
 .inspector-page[data-view-kind="type-editor"] .type-table th[data-field="length"]{width:100px}
@@ -86,15 +87,15 @@ export const viewStyles = `
 .inspector-page[data-view-kind="type-editor"] .type-move:active{cursor:grabbing}
 .inspector-page[data-view-kind="type-editor"] .type-move svg{width:16px;height:16px;fill:currentColor}
 .inspector-page[data-view-kind="type-editor"] .type-table tr.is-dragging{opacity:.45}
-.inspector-page[data-view-kind="type-editor"] .type-table tr.type-drop-before{box-shadow:inset 0 2px var(--vscode-focusBorder)}
-.inspector-page[data-view-kind="type-editor"] .type-table tr.type-drop-after{box-shadow:inset 0 -2px var(--vscode-focusBorder)}
+.inspector-page[data-view-kind="type-editor"] .type-table tr.type-drop-before{box-shadow:inset 0 2px var(--ghidra-focus)}
+.inspector-page[data-view-kind="type-editor"] .type-table tr.type-drop-after{box-shadow:inset 0 -2px var(--ghidra-focus)}
 .inspector-page[data-view-kind="type-editor"] .type-table tr[data-new] td:not([data-field="name"])>*{visibility:hidden}
 .inspector-page[data-view-kind="type-editor"] .type-table tr[data-new] td[data-field="name"]{padding-top:6px}
-.inspector-page[data-view-kind="type-editor"] .type-table tr[data-new] td[data-field="name"] input{border:1px dashed color-mix(in srgb,var(--vscode-panel-border) 85%,var(--vscode-descriptionForeground));border-radius:6px;padding:0 10px;background:color-mix(in srgb,var(--vscode-editor-background) 70%,var(--vscode-sideBar-background,var(--vscode-editor-background)))}
-.inspector-page[data-view-kind="type-editor"] .type-table tr[data-new] td[data-field="name"] input:hover,.inspector-page[data-view-kind="type-editor"] .type-table tr[data-new] td[data-field="name"] input:focus{border-style:solid;border-color:var(--vscode-focusBorder);background:var(--vscode-input-background)}
-.inspector-page[data-view-kind="type-editor"] .type-table tr[data-new] input::placeholder{color:var(--vscode-descriptionForeground);opacity:1}
+.inspector-page[data-view-kind="type-editor"] .type-table tr[data-new] td[data-field="name"] input{border:1px dashed color-mix(in srgb,var(--vscode-panel-border) 85%,var(--ghidra-muted));border-radius:6px;padding:0 10px;background:color-mix(in srgb,var(--vscode-editor-background) 70%,var(--vscode-sideBar-background,var(--vscode-editor-background)))}
+.inspector-page[data-view-kind="type-editor"] .type-table tr[data-new] td[data-field="name"] input:hover,.inspector-page[data-view-kind="type-editor"] .type-table tr[data-new] td[data-field="name"] input:focus{border-style:solid;border-color:var(--ghidra-focus);background:var(--vscode-input-background)}
+.inspector-page[data-view-kind="type-editor"] .type-table tr[data-new] input::placeholder{color:var(--ghidra-placeholder);opacity:1}
 .inspector-page[data-view-kind="type-editor"] .type-raw pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.5 var(--vscode-editor-font-family,monospace)}
-.inspector-page[data-view-kind="type-editor"] .type-empty{margin:0;padding:12px 8px;color:var(--vscode-descriptionForeground);border-top:1px solid var(--vscode-panel-border)}
+.inspector-page[data-view-kind="type-editor"] .type-empty{margin:0;padding:12px 8px;color:var(--ghidra-muted);border-top:1px solid var(--vscode-panel-border)}
 .inspector-page .type-sr-only,.edit-page .type-sr-only{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .inspector-page[data-view-kind="type-editor"] .form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr));gap:12px}
 .inspector-page[data-view-kind="type-editor"] .form-grid label:not(.type-flag){display:flex;flex-direction:column;gap:4px;min-width:0}
@@ -136,7 +137,7 @@ export const viewStyles = `
 .inspector-page h2{font-size:13px;font-weight:600;margin-bottom:8px}
 .inspector-page section{margin:20px 0;padding-top:14px}
 .inspector-page[data-view-kind="function"] main>section:first-of-type,.inspector-page[data-view-kind="symbol"] main>section:first-of-type{border-top:0;margin-top:0;padding-top:0}
-.inspector-page[data-view-kind="type"] .type-meta{display:flex;flex-wrap:wrap;gap:8px 20px;color:var(--vscode-descriptionForeground)}
+.inspector-page[data-view-kind="type"] .type-meta{display:flex;flex-wrap:wrap;gap:8px 20px;color:var(--ghidra-muted)}
 .inspector-page[data-view-kind="type"] .type-meta>div{display:block;padding:0;border:0;font-size:12px}
 .inspector-page[data-view-kind="type"] .type-meta dt{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .inspector-page[data-view-kind="type"] .type-members{margin:16px 0 20px;padding:0;border:0}
@@ -165,7 +166,7 @@ export const viewStyles = `
 .edit-page .table-wrap{scrollbar-width:thin}
 .edit-page .success:not(:empty){font-size:12px;padding:10px 0}
 .edit-page .editable .editable-action-col{position:relative}
-.edit-page .row-remove{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;min-height:0;padding:6px;border:0;background:transparent;color:var(--vscode-descriptionForeground)}
+.edit-page .row-remove{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;min-height:0;padding:6px;border:0;background:transparent;color:var(--ghidra-muted)}
 .edit-page .row-remove:hover:enabled{background:var(--vscode-toolbar-hoverBackground,var(--vscode-list-hoverBackground));color:var(--vscode-foreground)}
 .browser-page main{max-width:1450px;margin:0;padding:20px 24px 32px}
 .browser-page h1{font-size:16px;line-height:1.4;margin:0 0 2px}
@@ -175,16 +176,16 @@ export const viewStyles = `
 .browser-page #address{width:100%;min-width:90px;height:32px;font-size:12px}
 .browser-page #goto button{width:32px;min-width:32px;height:32px;min-height:0;padding:6px}
 .browser-search{position:relative;display:flex;align-items:center;flex:1;min-width:0;max-width:520px}
-.browser-search>.call-icon{position:absolute;left:9px;pointer-events:none;color:var(--vscode-input-placeholderForeground,var(--vscode-descriptionForeground));font-size:14px}
+.browser-search>.call-icon{position:absolute;left:9px;pointer-events:none;color:var(--ghidra-placeholder);font-size:14px}
 .browser-page .browser-search input{width:100%;height:32px;padding-left:30px;min-width:0;max-width:none;font-size:12px}
-.browser-page .scope{font-size:11px;line-height:1.6;margin:10px 0 12px;color:var(--vscode-descriptionForeground)}
-.browser-page #filter-status{font-size:11px;margin:8px 0;color:var(--vscode-descriptionForeground)}
+.browser-page .scope{font-size:11px;line-height:1.6;margin:10px 0 12px;color:var(--ghidra-muted)}
+.browser-page #filter-status{font-size:11px;margin:8px 0;color:var(--ghidra-muted)}
 .browser-page #filter-status.sr-filter-status{position:absolute;width:1px;height:1px;padding:0;margin:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 html:has(body.browser-page.has-selection){scroll-padding-bottom:68px}
 .browser-page.has-selection main{padding-bottom:76px}
 .browser-page .selection-tools{position:fixed;z-index:4;left:50%;bottom:12px;transform:translateX(-50%);width:calc(100% - 32px);max-width:760px;box-shadow:0 3px 12px var(--vscode-widget-shadow);display:flex;align-items:center;flex-wrap:nowrap;gap:10px;padding:6px 10px;margin-bottom:0;border:1px solid var(--vscode-panel-border);border-radius:4px;background:var(--vscode-sideBar-background,var(--vscode-editor-background))}
 .browser-page .selection-tools[hidden]{display:none!important}
-.browser-page #selection-label{flex:1;min-width:0;margin:0;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.browser-page #selection-label{flex:1;min-width:0;margin:0;font-size:11px;color:var(--ghidra-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .browser-page .selection-buttons{gap:4px}
 .browser-page .selection-buttons button{display:inline-flex;align-items:center;gap:6px;min-height:30px;padding:5px 8px;font-size:12px;border-radius:3px}
 .browser-page .selection-buttons button.primary{color:var(--vscode-button-foreground,var(--vscode-foreground));background:var(--vscode-button-background,var(--vscode-editor-background))}
@@ -200,11 +201,12 @@ html:has(body.browser-page.has-selection){scroll-padding-bottom:68px}
 .browser-page th{position:sticky;top:0;z-index:1;background:var(--vscode-editor-background);font-size:11px;padding:8px 10px}
 .browser-page td{padding:8px 10px;line-height:1.55;font-size:12px}
 .browser-page td.addr{font-family:var(--vscode-editor-font-family,monospace);font-size:11px;font-variant-numeric:tabular-nums;white-space:nowrap;overflow-wrap:normal}
-.browser-page tbody tr.selected{background:var(--vscode-list-inactiveSelectionBackground);color:var(--vscode-list-inactiveSelectionForeground,var(--vscode-foreground))}
-.browser-page tbody tr.selected:focus{background:var(--vscode-list-activeSelectionBackground);color:var(--vscode-list-activeSelectionForeground,var(--vscode-foreground))}
-.browser-page tr:focus-visible{outline:1px solid var(--vscode-focusBorder);outline-offset:-1px}
-.browser-page .table-empty{margin:0;padding:12px 0;color:var(--vscode-descriptionForeground);font-size:12px}
-.browser-page .no-results{display:flex;align-items:center;gap:12px;margin:12px 0;padding:8px 0;color:var(--vscode-descriptionForeground);font-size:12px}
+.browser-page tbody tr.selected{background:var(--ghidra-selection-bg);color:var(--ghidra-selection-fg)}
+.browser-page tbody tr.selected:focus{background:var(--ghidra-active-selection-bg);color:var(--ghidra-active-selection-fg)}
+.browser-page tr:focus-visible{outline:2px solid var(--ghidra-focus);outline-offset:-2px}
+.browser-page tbody tr.selected:focus-visible{outline-color:var(--ghidra-active-selection-fg)}
+.browser-page .table-empty{margin:0;padding:12px 0;color:var(--ghidra-muted);font-size:12px}
+.browser-page .no-results{display:flex;align-items:center;gap:12px;margin:12px 0;padding:8px 0;color:var(--ghidra-muted);font-size:12px}
 .browser-page .no-results[hidden]{display:none}
 .browser-page .no-results button{min-height:28px;padding:2px 0;border:0;background:transparent;color:var(--vscode-textLink-foreground);font-size:12px}
 .browser-page .no-results button:hover:enabled{text-decoration:underline}
@@ -219,12 +221,12 @@ html:has(body.browser-page.has-selection){scroll-padding-bottom:68px}
 .browser-page .pagination{gap:6px;margin-top:12px}
 .browser-page .pagination button{display:flex;align-items:center;gap:6px;font-size:12px}
 .browser-page .empty{font-size:12px}
-.browser-page :is(button,summary,input,select):focus-visible,.inspector-page :is(button,summary,input,select):focus-visible,.edit-page :is(button,summary,input,select,textarea):focus-visible{outline:2px solid var(--vscode-focusBorder);outline-offset:2px}
+.browser-page :is(button,summary,input,select):focus-visible,.inspector-page :is(button,summary,input,select):focus-visible,.edit-page :is(button,summary,input,select,textarea):focus-visible{outline:2px solid var(--ghidra-focus);outline-offset:2px}
 .browser-page button,.inspector-page button,.edit-page button{transition:background-color 100ms ease,color 100ms ease}
 @media(prefers-reduced-motion:reduce){.browser-page *,.inspector-page *,.edit-page *{animation:none!important;transition:none!important}}
 @media(max-width:760px){.inspector-page header{position:relative;align-items:flex-start;flex-wrap:wrap;gap:14px}.inspector-page .inspector-title{flex:1 1 220px}.inspector-page .inspector-tools{margin-left:auto}}
 @media(max-width:640px){.inspector-page[data-view-kind="type"] .type-fields tbody tr{border-bottom:1px solid var(--vscode-panel-border)}.inspector-page[data-view-kind="type"] .type-fields tbody tr:last-child{border-bottom:0}.inspector-page[data-view-kind="type"] .type-fields tbody td{border:0}}
-@media(max-width:640px){.inspector-page .table-wrap table{min-width:0}.inspector-page main,.edit-page main{padding:18px 16px 28px}.inspector-page .inspector-actions{gap:4px}.inspector-page dl>div{grid-template-columns:105px minmax(0,1fr);gap:10px}.browser-page main{padding:14px 12px 24px}.browser-page.has-selection main{padding-bottom:72px}.browser-page .toolbar{gap:6px}.browser-page #goto{flex-basis:170px}.browser-page .selection-tools{width:calc(100% - 24px);gap:6px;padding:5px 8px}.browser-page[data-view-kind="strings"] th:nth-child(3),.browser-page[data-view-kind="strings"] td:nth-child(3){display:none}.browser-page[data-view-kind="strings"] .cell-detail{display:block;margin-top:4px;font:10px/1.4 var(--vscode-font-family);color:var(--vscode-descriptionForeground)}.browser-page[data-view-kind="strings"] table{min-width:0}.browser-page[data-view-kind="strings"] th:first-child{width:108px}.browser-page[data-view-kind="strings"] th:nth-child(2){width:64px}.browser-page[data-view-kind="strings"] th,.browser-page[data-view-kind="strings"] td{padding-left:7px;padding-right:7px}.browser-page .more-actions-button{margin-left:auto}.inspector-page .type-fields table{min-width:0;width:100%}.inspector-page .type-fields thead,.inspector-page .type-fields tbody{display:block}.inspector-page .type-fields tr{display:grid;grid-template-columns:54px 68px minmax(0,1fr) minmax(0,1fr)}.inspector-page .type-fields th,.inspector-page .type-fields td{min-width:0;padding:8px 4px;overflow-wrap:anywhere}.inspector-page[data-view-kind="type"] .type-fields th:nth-child(1),.inspector-page[data-view-kind="type"] .type-fields th:nth-child(2){width:auto}.inspector-page .type-fields th:nth-child(5){position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%)}.inspector-page .type-fields td:nth-child(5){grid-column:1/-1;padding:0 4px 8px;color:var(--vscode-descriptionForeground)}.inspector-page .type-fields td:nth-child(5):empty{display:none}.inspector-page .type-fields .link{white-space:normal;overflow-wrap:anywhere;text-align:left}.edit-page .form-grid{grid-template-columns:1fr}.edit-page .form-actions{flex-wrap:wrap}}
+@media(max-width:640px){.inspector-page .table-wrap table{min-width:0}.inspector-page main,.edit-page main{padding:18px 16px 28px}.inspector-page .inspector-actions{gap:4px}.inspector-page dl>div{grid-template-columns:105px minmax(0,1fr);gap:10px}.browser-page main{padding:14px 12px 24px}.browser-page.has-selection main{padding-bottom:72px}.browser-page .toolbar{gap:6px}.browser-page #goto{flex-basis:170px}.browser-page .selection-tools{width:calc(100% - 24px);gap:6px;padding:5px 8px}.browser-page[data-view-kind="strings"] th:nth-child(3),.browser-page[data-view-kind="strings"] td:nth-child(3){display:none}.browser-page[data-view-kind="strings"] .cell-detail{display:block;margin-top:4px;font:10px/1.4 var(--vscode-font-family);color:var(--ghidra-muted)}.browser-page[data-view-kind="strings"] tbody tr.selected .cell-detail{color:inherit}.browser-page[data-view-kind="strings"] table{min-width:0}.browser-page[data-view-kind="strings"] th:first-child{width:108px}.browser-page[data-view-kind="strings"] th:nth-child(2){width:64px}.browser-page[data-view-kind="strings"] th,.browser-page[data-view-kind="strings"] td{padding-left:7px;padding-right:7px}.browser-page .more-actions-button{margin-left:auto}.inspector-page .type-fields table{min-width:0;width:100%}.inspector-page .type-fields thead,.inspector-page .type-fields tbody{display:block}.inspector-page .type-fields tr{display:grid;grid-template-columns:54px 68px minmax(0,1fr) minmax(0,1fr)}.inspector-page .type-fields th,.inspector-page .type-fields td{min-width:0;padding:8px 4px;overflow-wrap:anywhere}.inspector-page[data-view-kind="type"] .type-fields th:nth-child(1),.inspector-page[data-view-kind="type"] .type-fields th:nth-child(2){width:auto}.inspector-page .type-fields th:nth-child(5){position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%)}.inspector-page .type-fields td:nth-child(5){grid-column:1/-1;padding:0 4px 8px;color:var(--ghidra-muted)}.inspector-page .type-fields td:nth-child(5):empty{display:none}.inspector-page .type-fields .link{white-space:normal;overflow-wrap:anywhere;text-align:left}.edit-page .form-grid{grid-template-columns:1fr}.edit-page .form-actions{flex-wrap:wrap}}
 /* Keep both address entry and filtering usable in narrow editor groups. */
 @media(max-width:440px){
 .browser-page .toolbar:not(.selection-tools){flex-wrap:wrap}
@@ -240,7 +242,7 @@ html:has(body.browser-page.has-selection){scroll-padding-bottom:68px}
 .page-options-button{flex:none}
 .page-options-content:popover-open{display:block;width:min(260px,calc(100vw - 16px));padding:8px}
 .page-options-content>button,.page-options-content>label{display:flex;align-items:center;gap:8px;width:100%;padding:7px;text-align:left;background:transparent;color:var(--vscode-foreground);border:0}
-.page-options-content>p{font-size:11px;color:var(--vscode-descriptionForeground);padding:0 7px;line-height:1.6}
+.page-options-content>p{font-size:11px;color:var(--ghidra-muted);padding:0 7px;line-height:1.6}
 .browser-page:not(.show-extra-columns)[data-view-kind="strings"] :is(th,td):nth-child(2),
 .browser-page:not(.show-extra-columns)[data-view-kind="strings"] :is(th,td):nth-child(3),
 .browser-page:not(.show-extra-columns)[data-view-kind="imports"] :is(th,td):nth-child(4),
@@ -277,13 +279,13 @@ html:has(body.browser-page.has-selection){scroll-padding-bottom:68px}
 .inspector-page .nowrap{white-space:nowrap}
 .inspector-page .inspector-nav .icon-button:disabled{opacity:.4}
 /* Second critique pass (2026-11-02): type links, grouping and details-on-demand storage. */
-.inspector-page .type-category{color:var(--vscode-descriptionForeground);font-size:11px;overflow-wrap:anywhere}
+.inspector-page .type-category{color:var(--ghidra-muted);font-size:11px;overflow-wrap:anywhere}
 .inspector-page .hex{font-size:inherit}
-.inspector-page .detail-heading{font-size:12px;font-weight:600;margin:16px 0 0;color:var(--vscode-descriptionForeground)}
+.inspector-page .detail-heading{font-size:12px;font-weight:600;margin:16px 0 0;color:var(--ghidra-muted)}
 .inspector-page main>details>:not(summary){margin-left:16px}
 .inspector-page main>details[open]{margin-bottom:28px}
 .inspector-page[data-view-kind="function"] main>.function-definition+section{margin-top:14px}.inspector-page[data-view-kind="function"] main>.function-definition+section>h2{margin-bottom:2px}
-.inspector-page .parameters .param-storage{display:none;color:var(--vscode-descriptionForeground)}
+.inspector-page .parameters .param-storage{display:none;color:var(--ghidra-muted)}
 .inspector-page:has(#function-details[open]) .parameters .param-storage{display:inline}
 .inspector-page .table-wrap:not(.type-fields) table{width:auto;min-width:min(100%,420px)}
 .inspector-page .table-wrap:not(.type-fields) :is(th,td):not(:last-child){padding-right:32px}

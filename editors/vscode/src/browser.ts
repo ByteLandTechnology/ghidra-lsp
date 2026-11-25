@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import * as vscode from 'vscode';
-import { symbolName, symbolTooltip, splitScope, displayTemplates, displayAddress } from './names';
+import { groupCountLabel, treeAccessibility } from './a11y';
+import { symbolName, symbolTooltip, fullSymbolName, splitScope, displayTemplates, displayAddress, templateCollisionBadges } from './names';
 import { Call } from './memory';
 import { Details } from './details';
 import { ProgramContext, viewDescription } from './context';
@@ -16,21 +17,30 @@ interface TypeInfo { name: string; path: string; category_path?: string; kind: s
 class Node extends vscode.TreeItem {
     /** Parent namespace or category folder node. */
     parent?: Node;
+    /** Stable uncollapsed segment key used to generate deterministic tree IDs. */
+    identity?: string;
+    /** Full uncollapsed C++ name or scope segment used for sibling collision badges. */
+    rawName?: string;
+    /** Role and action summary appended to `accessibilityInformation.label`. */
+    a11yDetail?: string;
     /** Construct one sidebar tree item with optional child nodes and Ghidra target metadata. */
     constructor(label: string, readonly children?: Node[], readonly md5?: string, readonly entry?: string, readonly path?: string, readonly symbolId?: string, readonly namespace?: string) {
         super(label, children ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None);
     }
 }
-/** Group symbol or function nodes into nested C++ namespace folder nodes. */
+/** Group symbol or function nodes into nested C++ namespace folder nodes with inline collision badges. */
 function namespaces(nodes: Node[]): Node[] {
     const roots: Node[] = [];
     for (const node of nodes) {
         let siblings = roots;
         for (const segment of splitScope(node.namespace || '').filter(part => part && part !== 'Global')) {
             // Folders keep the full segment as identity, so distinct instantiations never merge under one `Name<…>` label.
-            let folder = siblings.find(item => item.tooltip === segment && item.children);
+            let folder = siblings.find(item => item.rawName === segment && item.children);
             if (!folder) {
                 folder = new Node(displayTemplates(segment), []);
+                folder.identity = segment;
+                folder.rawName = segment;
+                folder.a11yDetail = 'namespace';
                 folder.tooltip = segment;
                 folder.iconPath = new vscode.ThemeIcon('symbol-namespace');
                 folder.contextValue = 'ghidra.namespace';
@@ -40,11 +50,43 @@ function namespaces(nodes: Node[]): Node[] {
         }
         siblings.push(node);
     }
-    const sort = (children: Node[]): void => {
-        children.sort((a, b) => Number(!!b.children) - Number(!!a.children) || String(a.label).localeCompare(String(b.label)));
-        for (const child of children) { if (child.children) { sort(child.children); } }
+    const finalize = (children: Node[]): void => {
+        const folders = children.filter(child => !!child.children);
+        const leaves = children.filter(child => !child.children);
+        const folderBadges = templateCollisionBadges(folders.map((folder, index) => ({
+            key: folder.identity || String(index),
+            label: String(folder.label),
+            full: folder.rawName || String(folder.label),
+        })));
+        for (let index = 0; index < folders.length; index++) {
+            const folder = folders[index];
+            const badge = folderBadges.get(folder.identity || String(index));
+            if (badge) { folder.description = badge; }
+        }
+        const leafBadges = templateCollisionBadges(leaves.map((leaf, index) => ({
+            key: leaf.id || String(index),
+            label: String(leaf.label),
+            full: leaf.rawName || String(leaf.label),
+        })));
+        for (let index = 0; index < leaves.length; index++) {
+            const leaf = leaves[index];
+            const badge = leafBadges.get(leaf.id || String(index));
+            if (badge) {
+                leaf.description = typeof leaf.description === 'string' && leaf.description
+                    ? `${badge} · ${leaf.description}`
+                    : badge;
+            }
+        }
+        for (const child of children) {
+            child.accessibilityInformation = treeAccessibility(child.label, child.description, child.a11yDetail);
+        }
+        children.sort((a, b) => Number(!!b.children) - Number(!!a.children)
+            || String(a.label).localeCompare(String(b.label))
+            || String(a.description || '').localeCompare(String(b.description || ''))
+            || String(a.identity || a.id || '').localeCompare(String(b.identity || b.id || '')));
+        for (const child of children) { if (child.children) { finalize(child.children); } }
     };
-    sort(roots);
+    finalize(roots);
     return roots;
 }
 /** In-memory tree data provider backing the Symbols and Data Types views. */
@@ -66,7 +108,7 @@ class Tree implements vscode.TreeDataProvider<Node> {
         const attach = (children: Node[], parent?: Node): void => {
             for (const node of children) {
                 node.parent = parent;
-                node.id ||= `${parent?.id || ''}/${encodeURIComponent(String(node.label))}`;
+                node.id ||= `${parent?.id || ''}/${encodeURIComponent(node.identity || String(node.label))}`;
                 if (node.children) { attach(node.children, node); }
             }
         };
@@ -118,8 +160,8 @@ export class ProgramBrowser implements vscode.Disposable {
     private readonly refreshing = new Map<string, Promise<void>>();
     /** Update symbol and type tree header descriptions with counts and program names. */
     private syncDescriptions(): void {
-        this.views[0].description = viewDescription(this.context, this.md5, this.loadedCounts?.[0]);
-        this.views[1].description = viewDescription(this.context, this.md5, this.loadedCounts?.[1]);
+        this.views[0].description = viewDescription(this.context, this.md5, this.loadedCounts?.[0], 'symbol');
+        this.views[1].description = viewDescription(this.context, this.md5, this.loadedCounts?.[1], 'type');
     }
     /** Create the Symbols and Data Types tree views and register browser commands. */
     constructor(private readonly call: Call, private readonly context: ProgramContext, private readonly refreshDocuments: (md5: string) => Promise<void> = async () => {}) {
@@ -245,11 +287,13 @@ export class ProgramBrowser implements vscode.Disposable {
             groups.set('Functions', functions.items.map(fn => {
                 const node = new Node(symbolName(fn), undefined, md5, fn.entry, undefined, undefined, fn.namespace);
                 node.id = `function:${md5}:${fn.entry}`;
+                node.rawName = fullSymbolName(fn);
                 node.description = fn.namespace && fn.namespace !== 'Global' ? `${displayTemplates(fn.namespace)} · ${displayAddress(fn.entry)}` : displayAddress(fn.entry);
                 node.tooltip = `${symbolTooltip(fn)}\n${fn.entry}`;
                 node.iconPath = new vscode.ThemeIcon('symbol-method');
                 node.contextValue = 'ghidra.function';
                 node.command = { command: 'ghidraLsp.browseFunction', title: 'Decompile function', arguments: [md5, fn.entry] };
+                node.a11yDetail = 'function, Decompile function';
                 return node;
             }));
             for (const symbol of symbols.items) {
@@ -257,32 +301,45 @@ export class ProgramBrowser implements vscode.Disposable {
                 const group = symbol.type;
                 const node = new Node(symbolName(symbol), undefined, md5, undefined, undefined, symbol.id, symbol.namespace);
                 node.id = `symbol:${md5}:${symbol.id}`;
-                node.description = symbol.namespace && symbol.namespace !== 'Global' ? `${symbol.namespace} · ${displayAddress(symbol.address)}` : displayAddress(symbol.address);
+                node.rawName = fullSymbolName(symbol);
+                node.description = symbol.namespace && symbol.namespace !== 'Global' ? `${displayTemplates(symbol.namespace)} · ${displayAddress(symbol.address)}` : displayAddress(symbol.address);
                 node.tooltip = `${symbolTooltip(symbol)}\n${symbol.type} · ${symbol.address}`;
                 node.iconPath = new vscode.ThemeIcon(group === 'Functions' ? 'symbol-method' : 'symbol-variable');
                 node.contextValue = 'ghidra.symbol';
                 // A symbol with a memory address opens where it lives: its function's pseudocode, else Listing.
                 // External and register symbols have no such location, so they keep the inspector.
-                node.command = isMemoryAddress(symbol.address)
+                const hasMemory = isMemoryAddress(symbol.address);
+                node.command = hasMemory
                     ? { command: 'ghidraLsp.browseAddress', title: 'Go to symbol', arguments: [md5, symbol.address] }
                     : { command: 'ghidraLsp.browseSymbol', title: 'Show symbol details', arguments: [md5, symbol.id] };
+                node.a11yDetail = `${symbol.type} symbol, ${hasMemory ? 'Go to symbol' : 'Show symbol details'}`;
                 const children = groups.get(group) || [];
                 children.push(node); groups.set(group, children);
             }
             this.symbols.update([...groups].sort(([a], [b]) => a === 'Functions' ? -1 : b === 'Functions' ? 1 : a.localeCompare(b))
                 .map(([name, children]) => {
                     const node = new Node(name, namespaces(children));
-                    node.description = String(children.length);
+                    node.id = `group:${md5}:${encodeURIComponent(name)}`;
+                    node.description = groupCountLabel(name, children.length);
                     node.tooltip = 'Counted in scanned address spaces only';
+                    node.accessibilityInformation = treeAccessibility(name, node.description, 'scanned address spaces');
                     if (name === 'Functions') { node.collapsibleState = vscode.TreeItemCollapsibleState.Expanded; }
                     return node;
                 }));
             const root = new Node('Types', []);
             for (const type of types.items) {
                 let parent = root;
+                let categoryPath = '';
                 for (const segment of (type.category_path || '/').split('/').filter(Boolean)) {
+                    categoryPath += `/${segment}`;
                     let folder = parent.children!.find(node => node.label === segment && node.children);
-                    if (!folder) { folder = new Node(segment, []); folder.iconPath = new vscode.ThemeIcon('folder'); parent.children!.push(folder); }
+                    if (!folder) {
+                        folder = new Node(segment, []);
+                        folder.id = `category:${md5}:${categoryPath}`;
+                        folder.iconPath = new vscode.ThemeIcon('folder');
+                        folder.accessibilityInformation = treeAccessibility(segment, 'category');
+                        parent.children!.push(folder);
+                    }
                     parent = folder;
                 }
                 const node = new Node(type.name, undefined, md5, undefined, type.path);
@@ -291,6 +348,7 @@ export class ProgramBrowser implements vscode.Disposable {
                 node.iconPath = new vscode.ThemeIcon('symbol-structure');
                 node.contextValue = 'ghidra.type';
                 node.command = { command: 'ghidraLsp.browseType', title: 'Open data type', arguments: [md5, type.path] };
+                node.accessibilityInformation = treeAccessibility(type.name, node.description, 'data type, Open data type');
                 parent.children!.push(node);
             }
             this.typeCount = types.items.length;
