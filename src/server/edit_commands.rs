@@ -8,6 +8,7 @@ use serde_json::{Value, json};
 
 use super::Server;
 use crate::backend::McpBackend;
+use crate::mcp_client;
 use crate::workbench;
 
 impl Server {
@@ -176,7 +177,7 @@ impl Server {
       drop(e);
       return Ok(crate::types_doc::noop_type_save(&md5, path, text, current));
     };
-    workbench::allow_write(domain, operation, &parameters)?;
+    mcp_client::allow_write(domain, operation, &parameters)?;
     let (tool, tool_operation) = workbench::mcp_operation(domain, operation);
     let result = backend
       .call(tool, &tool_operation, Some(&md5), parameters)

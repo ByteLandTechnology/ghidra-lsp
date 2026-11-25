@@ -13,8 +13,8 @@ use std::collections::HashMap;
 use anyhow::{Result, bail};
 use serde_json::{Value, json};
 
-use crate::address::paginate_operation;
 use crate::backend::McpBackend;
+use crate::mcp_client::{PagePolicy, next_cursor};
 use crate::views::symbol_display_name;
 
 pub(crate) use call_graph::{CallExpansion, CallGraphRequest, call_graph_with_cache};
@@ -100,15 +100,16 @@ pub(super) async fn resolve_entry(
   bail!("No function contains {address}. Use Listing or bytes to inspect this address.");
 }
 
-/// Runs one `BatchRequest` directly through `paginate_operation` or `McpBackend::call`.
+/// Runs one `BatchRequest` directly through `PagePolicy::STRICT` or `McpBackend::call`.
 async fn execute_single_request(
   backend: &McpBackend,
   md5: &str,
   req: &BatchRequest,
 ) -> Result<Value> {
   if req.all {
-    let items =
-      paginate_operation(backend, req.domain, req.operation, md5, req.params.clone()).await?;
+    let items = PagePolicy::STRICT
+      .collect_session(backend, req.domain, req.operation, md5, req.params.clone())
+      .await?;
     Ok(json!({ "items": items }))
   } else {
     backend
@@ -170,13 +171,7 @@ pub(super) async fn batch_query(
             seen.insert(id.to_owned());
             let has_error = entry.get("error").is_some_and(|e| !e.is_null());
             let result = entry.get("result").filter(|v| v.is_object());
-            let incomplete_page = result.is_some_and(|res| {
-              req.all
-                && res
-                  .get("next_cursor")
-                  .and_then(Value::as_str)
-                  .is_some_and(|c| !c.is_empty())
-            });
+            let incomplete_page = result.is_some_and(|res| req.all && next_cursor(res).is_some());
             if !has_error
               && !incomplete_page
               && let Some(res) = result

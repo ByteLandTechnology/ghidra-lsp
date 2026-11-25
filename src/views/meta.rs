@@ -3,8 +3,6 @@
 
 //! Cached program metadata loading and target symbol or address resolution.
 
-use std::collections::HashSet;
-
 use anyhow::{Context, Result, bail};
 use serde_json::{Value, json};
 
@@ -15,41 +13,7 @@ use crate::address::{
   parse_address, parse_memory_blocks, same_address,
 };
 use crate::backend::McpBackend;
-
-/// Follows any remaining `next_cursor` pages after an initial batch response page.
-async fn finish_paginated_list(
-  backend: &McpBackend,
-  domain: &str,
-  operation: &str,
-  md5: &str,
-  initial: Option<&Value>,
-  mut params: Value,
-) -> Result<Vec<Value>> {
-  let Some(first) = initial else {
-    return Ok(Vec::new());
-  };
-  let mut items = first
-    .get("items")
-    .and_then(Value::as_array)
-    .cloned()
-    .unwrap_or_default();
-  let mut cursor_opt = opt_nonempty_str(first.get("next_cursor"));
-  let mut seen = HashSet::new();
-  while let Some(cursor) = cursor_opt {
-    if !seen.insert(cursor.clone()) {
-      bail!("backend repeated a pagination cursor");
-    }
-    params["page"] = json!({ "cursor": cursor, "limit": 1000 });
-    let page = backend
-      .call(domain, operation, Some(md5), params.clone())
-      .await?;
-    if let Some(more) = page.get("items").and_then(Value::as_array) {
-      items.extend(more.iter().cloned());
-    }
-    cursor_opt = opt_nonempty_str(page.get("next_cursor"));
-  }
-  Ok(items)
-}
+use crate::mcp_client::{PagePolicy, PageRequest};
 
 /// Chooses the default initial view address from memory blocks, functions, or program bounds.
 fn pick_default_address(
@@ -127,33 +91,37 @@ pub(super) async fn get_or_load_meta(
     .cloned()
     .unwrap_or_else(|| json!({}));
 
-  let raw_blocks = finish_paginated_list(
-    backend,
-    "memory",
-    "block.list",
-    &md5_lower,
-    items_map.get("blocks"),
-    json!({ "page": { "limit": 1000 } }),
-  )
-  .await?;
-  let spaces = finish_paginated_list(
-    backend,
-    "address",
-    "space.list",
-    &md5_lower,
-    items_map.get("spaces"),
-    json!({ "page": { "limit": 1000 } }),
-  )
-  .await?;
-  let raw_fns = finish_paginated_list(
-    backend,
-    "function",
-    "list",
-    &md5_lower,
-    items_map.get("functions"),
-    fn_params,
-  )
-  .await?;
+  let raw_blocks = PagePolicy::LENIENT
+    .continue_from(
+      backend,
+      PageRequest::session(
+        "memory",
+        "block.list",
+        &md5_lower,
+        json!({ "page": { "limit": 1000 } }),
+      ),
+      items_map.get("blocks"),
+    )
+    .await?;
+  let spaces = PagePolicy::LENIENT
+    .continue_from(
+      backend,
+      PageRequest::session(
+        "address",
+        "space.list",
+        &md5_lower,
+        json!({ "page": { "limit": 1000 } }),
+      ),
+      items_map.get("spaces"),
+    )
+    .await?;
+  let raw_fns = PagePolicy::LENIENT
+    .continue_from(
+      backend,
+      PageRequest::session("function", "list", &md5_lower, fn_params),
+      items_map.get("functions"),
+    )
+    .await?;
 
   let blocks = parse_memory_blocks(&raw_blocks);
   let default_space_obj = spaces

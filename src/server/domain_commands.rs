@@ -12,6 +12,7 @@ use tower_lsp_server::ls_types::Uri;
 use super::{OpenProgress, ProgramAnalysis, Server, job_id};
 use crate::backend::{McpBackend, list_all};
 use crate::document::{canonical_virtual_uri, matches_text};
+use crate::mcp_client;
 use crate::workbench;
 
 impl Server {
@@ -349,7 +350,7 @@ impl Server {
   async fn handle_mutate(&self, arg: &Value, backend: &McpBackend) -> Result<Value> {
     let md5 = self.scoped_md5(arg).await?;
     let (domain, operation, parameters) = workbench::operation(arg)?;
-    workbench::allow_write(domain, operation, &parameters)?;
+    mcp_client::allow_write(domain, operation, &parameters)?;
     let e = self.engine.lock().await;
     Self::ensure_program_clean(&e, &md5)?;
     let (tool, tool_operation) = workbench::mcp_operation(domain, operation);

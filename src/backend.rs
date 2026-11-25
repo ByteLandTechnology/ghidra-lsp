@@ -3,7 +3,6 @@
 
 //! Model Context Protocol child-process transport for `ghidra-mcp`.
 
-use std::collections::HashSet;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
@@ -17,6 +16,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tokio::process::Command;
 use tokio::sync::Mutex;
+
+use crate::mcp_client::PagePolicy;
 
 /// Configuration for launching and communicating with the `ghidra-mcp` child process.
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -264,41 +265,7 @@ pub(crate) async fn list_all(
   md5: &str,
   params: Value,
 ) -> Result<Vec<Value>> {
-  list_operation(backend, domain, "list", md5, params).await
-}
-
-/// Fetches all pages from `operation` on `domain` for `md5` and rejects incomplete scans.
-pub(crate) async fn list_operation(
-  backend: &McpBackend,
-  domain: &str,
-  operation: &str,
-  md5: &str,
-  mut params: Value,
-) -> Result<Vec<Value>> {
-  let mut items = Vec::new();
-  let mut seen = HashSet::new();
-  loop {
-    let value = backend
-      .call(domain, operation, Some(md5), params.clone())
-      .await?;
-    items.extend(
-      value
-        .get("items")
-        .and_then(Value::as_array)
-        .context("list response lacks items")?
-        .iter()
-        .cloned(),
-    );
-    if let Some(cursor) = value.get("next_cursor").and_then(Value::as_str) {
-      if !seen.insert(cursor.to_owned()) {
-        bail!("backend repeated a pagination cursor");
-      }
-      params["page"] = json!({"cursor": cursor, "limit": 1000});
-    } else {
-      if value.pointer("/scan/complete").and_then(Value::as_bool) == Some(false) {
-        bail!("backend scan is incomplete; refresh after analysis finishes");
-      }
-      return Ok(items);
-    }
-  }
+  PagePolicy::STRICT
+    .collect_session(backend, domain, "list", md5, params)
+    .await
 }

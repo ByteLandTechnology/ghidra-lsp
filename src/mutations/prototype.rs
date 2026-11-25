@@ -11,6 +11,7 @@ use serde_json::{Value, json};
 use super::CONFLICT_FORM;
 use crate::address::{format_type_ref, parse_type_ref};
 use crate::backend::McpBackend;
+use crate::mcp_client;
 use crate::workbench;
 
 /// Formats the `data_type` field of a parameter or local variable JSON entry.
@@ -454,7 +455,7 @@ pub(crate) async fn execute_ops(backend: &McpBackend, md5: &str, ops: &[Value]) 
       .context("mutation method is required")?;
     let (domain, operation) = method.split_once('.').context("invalid mutation method")?;
     let arguments = op.get("arguments").cloned().unwrap_or_else(|| json!({}));
-    workbench::allow_write(domain, operation, &arguments)?;
+    mcp_client::allow_write(domain, operation, &arguments)?;
     let (tool, tool_op) = workbench::mcp_operation(domain, operation);
     let result = backend
       .call(tool, &tool_op, Some(md5), arguments)
@@ -481,7 +482,7 @@ pub(crate) async fn execute_ops(backend: &McpBackend, md5: &str, ops: &[Value]) 
     "transaction_mode": "all_or_none",
     "items": items,
   });
-  workbench::allow_write("batch", "execute", &batch_params)?;
+  mcp_client::allow_write("batch", "execute", &batch_params)?;
   let result = backend
     .call("batch", "execute", Some(md5), batch_params)
     .await

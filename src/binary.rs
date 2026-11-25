@@ -10,7 +10,8 @@ use md5::{Digest, Md5};
 use object::{Object, ObjectSegment};
 use serde_json::{Value, json};
 
-use crate::backend::{McpBackend, list_all, list_operation};
+use crate::backend::{McpBackend, list_all};
+use crate::mcp_client::PagePolicy;
 
 /// Loads import and export tables from the Ghidra program session, or falls back to local loader
 /// tables when connected to an older bridge that lacks `import.list` and `export.list`.
@@ -30,13 +31,18 @@ async fn session_interface(
   program: &Value,
 ) -> Result<Option<Value>> {
   let page = json!({"page": {"limit": 1000}});
-  let raw_imports = match list_operation(backend, "program", "import.list", md5, page.clone()).await
+  let raw_imports = match PagePolicy::STRICT
+    .collect_session(backend, "program", "import.list", md5, page.clone())
+    .await
   {
     Ok(items) => items,
     Err(error) if unsupported_operation(&error) => return Ok(None),
     Err(error) => return Err(error),
   };
-  let raw_exports = match list_operation(backend, "program", "export.list", md5, page).await {
+  let raw_exports = match PagePolicy::STRICT
+    .collect_session(backend, "program", "export.list", md5, page)
+    .await
+  {
     Ok(items) => items,
     Err(error) if unsupported_operation(&error) => return Ok(None),
     Err(error) => return Err(error),

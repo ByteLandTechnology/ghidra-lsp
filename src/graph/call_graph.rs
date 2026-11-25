@@ -10,8 +10,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use super::{canonical_call_id, format_function_label, resolve_entry};
-use crate::address::paginate_operation;
 use crate::backend::McpBackend;
+use crate::mcp_client::PagePolicy;
 use crate::views::ViewCache;
 
 /// Maximum number of function nodes included in a call-graph response.
@@ -464,22 +464,23 @@ pub(crate) async fn call_graph_with_cache(
     let records = if let Some(cached) = cached_records {
       cached
     } else {
-      let fetched = match paginate_operation(
-        backend,
-        "function",
-        "call.list",
-        req.md5,
-        json!({
-          "filter": {
-            "entry": item.source_entry,
-            "direction": item.direction.as_str(),
-          },
-          "page": {
-            "limit": 1000,
-          },
-        }),
-      )
-      .await
+      let fetched = match PagePolicy::STRICT
+        .collect_session(
+          backend,
+          "function",
+          "call.list",
+          req.md5,
+          json!({
+            "filter": {
+              "entry": item.source_entry,
+              "direction": item.direction.as_str(),
+            },
+            "page": {
+              "limit": 1000,
+            },
+          }),
+        )
+        .await
       {
         Ok(records) => records,
         Err(error) => {

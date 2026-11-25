@@ -19,6 +19,8 @@ mod engine;
 mod graph;
 /// Native Ghidra GUI layout validation.
 mod gui;
+/// Declarative MCP pagination and batch validation policies.
+mod mcp_client;
 /// Comment, function prototype, and variable mutation planning.
 mod mutations;
 /// Language Server Protocol state and handlers.

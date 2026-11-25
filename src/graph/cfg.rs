@@ -9,8 +9,9 @@ use anyhow::Result;
 use serde_json::{Value, json};
 
 use super::{BatchRequest, batch_query, format_function_label, resolve_entry};
-use crate::address::{display_address, paginate_operation, parse_address, same_address};
+use crate::address::{display_address, parse_address, same_address};
 use crate::backend::McpBackend;
+use crate::mcp_client::PagePolicy;
 
 /// Computes decoded byte length from a base64 string without storing decoded bytes.
 fn base64_byte_len(data: &str) -> usize {
@@ -476,14 +477,15 @@ pub(crate) async fn control_flow_graph(
     ));
   };
 
-  let raw_instructions = paginate_operation(
-    backend,
-    "listing",
-    "instruction.list",
-    md5,
-    json!({ "scan": { "range": { "start": start, "end": end }, "timeout_ms": 60000 } }),
-  )
-  .await?;
+  let raw_instructions = PagePolicy::STRICT
+    .collect_session(
+      backend,
+      "listing",
+      "instruction.list",
+      md5,
+      json!({ "scan": { "range": { "start": start, "end": end }, "timeout_ms": 60000 } }),
+    )
+    .await?;
   let instructions =
     filter_body_instructions(backend, md5, &entry, bounds, start, end, raw_instructions).await?;
   if instructions.is_empty() {
