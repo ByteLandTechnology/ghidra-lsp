@@ -3,6 +3,7 @@
 
 import { displayAddress } from './names';
 import * as vscode from 'vscode';
+import { stringEmptyAccessibility, stringErrorAccessibility, stringNodeAccessibility } from './a11y';
 import { Call } from './memory';
 import { ProgramContext, viewDescription } from './context';
 import { formatFriendlyError } from './error';
@@ -72,8 +73,8 @@ export class StringsView implements vscode.TreeDataProvider<vscode.TreeItem>, vs
 
     /** Return the VS Code tree item representation for `node`. */
     getTreeItem(node: vscode.TreeItem): vscode.TreeItem { return node; }
-    /** Return the current list of string or placeholder tree items. */
-    getChildren(): vscode.TreeItem[] { return this.nodes; }
+    /** Return the current list of string or placeholder tree items at the root level. */
+    getChildren(node?: vscode.TreeItem): vscode.TreeItem[] { return node ? [] : this.nodes; }
 
     /** Mark `md5` dirty and reload defined strings when the view is visible. */
     async refresh(md5?: string): Promise<void> {
@@ -98,6 +99,7 @@ export class StringsView implements vscode.TreeDataProvider<vscode.TreeItem>, vs
                     node.id = `string:${md5}:${item.address}`;
                     node.description = displayAddress(item.address);
                     node.tooltip = `${item.value}\n\n${item.address} · ${item.length} bytes · ${item.type}`;
+                    node.accessibilityInformation = stringNodeAccessibility(label, item);
                     node.iconPath = new vscode.ThemeIcon('symbol-string');
                     node.contextValue = 'ghidra.string';
                     // Keep ownership on the item for native context-menu commands as well.
@@ -110,18 +112,24 @@ export class StringsView implements vscode.TreeDataProvider<vscode.TreeItem>, vs
                 this.view.message = undefined;
                 if (!this.nodes.length) {
                     const empty = new vscode.TreeItem('No defined strings');
+                    empty.id = `strings:${md5}:empty`;
                     empty.iconPath = new vscode.ThemeIcon('info');
                     empty.tooltip = 'Ghidra has not defined any strings in the default address space. Analyze the program, then refresh this view.';
+                    empty.accessibilityInformation = stringEmptyAccessibility();
                     this.nodes = [empty];
                 }
                 this.dirty = false;
             } catch (error) {
                 if (generation !== this.generation) { return; }
+                const reason = formatFriendlyError(error);
                 this.count = undefined;
                 this.syncDescription();
-                this.view.message = `Could not load strings: ${formatFriendlyError(error)}`;
+                this.view.message = `Could not load strings: ${reason}`;
                 const retry = new vscode.TreeItem('Retry loading strings');
+                retry.id = `strings:${md5}:retry`;
                 retry.iconPath = new vscode.ThemeIcon('refresh');
+                retry.tooltip = `Could not load strings: ${reason}`;
+                retry.accessibilityInformation = stringErrorAccessibility(reason);
                 retry.command = { command: 'ghidraLsp.refreshStrings', title: 'Retry loading strings' };
                 this.nodes = [retry];
             }

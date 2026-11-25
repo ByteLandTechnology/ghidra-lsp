@@ -15,6 +15,7 @@ import { AnalysisTracker, isOpenSession, SessionsView } from './sessions';
 import { formatFriendlyError } from './error';
 import { ReadonlyRenames } from './rename';
 import { DocumentLabels } from './labels';
+import { analysisStatusAccessibility, programStatusAccessibility, statusNames } from './a11y';
 import { symbolName, setShowTemplateArguments, displayAddress } from './names';
 import { ReferenceViews, referenceScheme, referenceSource } from './references';
 import { showCodeActions } from './code-actions';
@@ -183,11 +184,15 @@ export async function activate(extension: vscode.ExtensionContext): Promise<void
     references = new ReferenceViews(call, labels, context, ensureLanguage);
     extension.subscriptions.push(references);
     const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 10);
+    status.name = statusNames.programOverview;
     status.command = 'ghidraLsp.programOverview';
     status.tooltip = 'Ghidra program overview';
+    status.accessibilityInformation = programStatusAccessibility('No active program');
     const analysisStatus = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 11);
+    analysisStatus.name = statusNames.analysisProgress;
     analysisStatus.command = 'ghidra.sessions.focus';
     analysisStatus.tooltip = 'Show Ghidra analysis progress';
+    analysisStatus.accessibilityInformation = analysisStatusAccessibility([]);
     extension.subscriptions.push(tracker.onDidChange(() => {
         const tasks = tracker.active;
         void vscode.commands.executeCommand('setContext', 'ghidra.hasWaitingAnalysis', tasks.some(task => task.cancellable));
@@ -197,6 +202,7 @@ export async function activate(extension: vscode.ExtensionContext): Promise<void
         const percentage = typeof task.percentage === 'number' ? ` ${Math.round(task.percentage)}%` : '';
         analysisStatus.text = tasks.length > 1 ? `$(sync~spin) Ghidra: ${tasks.length} analysis tasks`
             : `$(sync~spin) Ghidra: ${task.name} · ${stage}${percentage}`;
+        analysisStatus.accessibilityInformation = analysisStatusAccessibility(tasks);
         analysisStatus.show();
     }));
     const programVersions = new Map<string, string>();
@@ -206,7 +212,9 @@ export async function activate(extension: vscode.ExtensionContext): Promise<void
         const uri = vscode.window.activeTextEditor?.document.uri;
         const entry = uri?.scheme === 'ghidra' && uri.authority.toLowerCase() === md5 ? displayAddress(decodeURIComponent(uri.path.split('/').pop() || '')) : '';
         const address = listingViews.addressAt(vscode.window.activeTextEditor);
-        status.text = `$(file-binary) ${context.name(md5)}${entry ? ` · ${entry}` : ''}${address ? ` · ${plainAddress(address)}` : ''}`;
+        const plain = address ? plainAddress(address) : undefined;
+        status.text = `$(file-binary) ${context.name(md5)}${entry ? ` · ${entry}` : ''}${plain ? ` · ${plain}` : ''}`;
+        status.accessibilityInformation = programStatusAccessibility(context.name(md5), entry || undefined, plain);
         status.show();
     };
     function log(error: unknown): void { output.appendLine(String(error)); }

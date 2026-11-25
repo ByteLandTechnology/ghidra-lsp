@@ -2,6 +2,15 @@
 // SPDX-License-Identifier: MIT
 
 import * as vscode from 'vscode';
+import {
+    canonicalTreeSegment,
+    functionNodeAccessibility,
+    namespaceFolderAccessibility,
+    symbolGroupAccessibility,
+    symbolNodeAccessibility,
+    typeCategoryAccessibility,
+    typeNodeAccessibility,
+} from './a11y';
 import { symbolName, symbolTooltip, splitScope, displayTemplates, displayAddress } from './names';
 import { Call } from './memory';
 import { Details } from './details';
@@ -16,6 +25,8 @@ interface TypeInfo { name: string; path: string; category_path?: string; kind: s
 class Node extends vscode.TreeItem {
     /** Parent namespace or category folder node. */
     parent?: Node;
+    /** Canonical identity segment preserved when visual labels elide C++ template arguments. */
+    key?: string;
     /** Construct one sidebar tree item with optional child nodes and Ghidra target metadata. */
     constructor(label: string, readonly children?: Node[], readonly md5?: string, readonly entry?: string, readonly path?: string, readonly symbolId?: string, readonly namespace?: string) {
         super(label, children ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None);
@@ -24,25 +35,39 @@ class Node extends vscode.TreeItem {
 /** Group symbol or function nodes into nested C++ namespace folder nodes. */
 function namespaces(nodes: Node[]): Node[] {
     const roots: Node[] = [];
+    const scopes = new Map<Node, { segment: string; parentScope: string }>();
     for (const node of nodes) {
         let siblings = roots;
+        let parentScope = '';
         for (const segment of splitScope(node.namespace || '').filter(part => part && part !== 'Global')) {
+            const key = canonicalTreeSegment('namespace', segment);
             // Folders keep the full segment as identity, so distinct instantiations never merge under one `Name<…>` label.
-            let folder = siblings.find(item => item.tooltip === segment && item.children);
+            let folder = siblings.find(item => item.key === key && item.children);
             if (!folder) {
                 folder = new Node(displayTemplates(segment), []);
+                folder.key = key;
                 folder.tooltip = segment;
                 folder.iconPath = new vscode.ThemeIcon('symbol-namespace');
                 folder.contextValue = 'ghidra.namespace';
+                scopes.set(folder, { segment, parentScope });
                 siblings.push(folder);
             }
+            parentScope = parentScope ? `${parentScope}::${segment}` : segment;
             siblings = folder.children!;
         }
         siblings.push(node);
     }
     const sort = (children: Node[]): void => {
-        children.sort((a, b) => Number(!!b.children) - Number(!!a.children) || String(a.label).localeCompare(String(b.label)));
-        for (const child of children) { if (child.children) { sort(child.children); } }
+        children.sort((a, b) => Number(!!b.children) - Number(!!a.children)
+            || String(a.label).localeCompare(String(b.label))
+            || (a.key || a.id || '').localeCompare(b.key || b.id || ''));
+        for (const child of children) {
+            if (child.children) {
+                const scope = scopes.get(child);
+                if (scope) { child.accessibilityInformation = namespaceFolderAccessibility(scope.segment, scope.parentScope, child.children.length); }
+                sort(child.children);
+            }
+        }
     };
     sort(roots);
     return roots;
@@ -58,15 +83,19 @@ class Tree implements vscode.TreeDataProvider<Node> {
     /** Return the VS Code tree item representation for `node`. */
     getTreeItem(node: Node): vscode.TreeItem { return node; }
     /** Return the children of `node`, or top-level roots when `node` is omitted. */
-    getChildren(node?: Node): Node[] { return node?.children || this.roots; }
+    getChildren(node?: Node): Node[] { return node ? (node.children || []) : this.roots; }
     /** Return the parent folder node of `node` so `TreeView.reveal` can expand ancestors. */
     getParent(node: Node): Node | undefined { return node.parent; }
     /** Attach parent pointers, ensure unique node IDs, and refresh the tree view. */
     update(nodes: Node[]): void {
+        const used = new Map<string, number>();
         const attach = (children: Node[], parent?: Node): void => {
             for (const node of children) {
                 node.parent = parent;
-                node.id ||= `${parent?.id || ''}/${encodeURIComponent(String(node.label))}`;
+                const base = node.id || `${parent?.id || ''}/${node.key ?? encodeURIComponent(String(node.label))}`;
+                const count = (used.get(base) || 0) + 1;
+                used.set(base, count);
+                node.id = count === 1 ? base : `${base}#${count}`;
                 if (node.children) { attach(node.children, node); }
             }
         };
@@ -171,11 +200,12 @@ export class ProgramBrowser implements vscode.Disposable {
     private async revealActiveFunction(): Promise<void> {
         const uri = vscode.window.activeTextEditor?.document.uri;
         const view = this.views[0];
-        if (!view.visible || uri?.scheme !== 'ghidra' || uri.authority !== this.md5 || !uri.path.startsWith('/function/')) { return; }
+        const activeMd5 = uri?.authority.toLowerCase();
+        if (!view.visible || uri?.scheme !== 'ghidra' || !activeMd5 || activeMd5 !== this.md5?.toLowerCase() || !uri.path.startsWith('/function/')) { return; }
         const entry = decodeURIComponent(uri.path.slice('/function/'.length));
         const find = (nodes: Node[]): Node | undefined => {
             for (const node of nodes) {
-                if (node.md5 === uri.authority && node.entry === entry) { return node; }
+                if (node.md5?.toLowerCase() === activeMd5 && node.entry === entry) { return node; }
                 const child = node.children && find(node.children);
                 if (child) { return child; }
             }
@@ -247,6 +277,7 @@ export class ProgramBrowser implements vscode.Disposable {
                 node.id = `function:${md5}:${fn.entry}`;
                 node.description = fn.namespace && fn.namespace !== 'Global' ? `${displayTemplates(fn.namespace)} · ${displayAddress(fn.entry)}` : displayAddress(fn.entry);
                 node.tooltip = `${symbolTooltip(fn)}\n${fn.entry}`;
+                node.accessibilityInformation = functionNodeAccessibility(fn);
                 node.iconPath = new vscode.ThemeIcon('symbol-method');
                 node.contextValue = 'ghidra.function';
                 node.command = { command: 'ghidraLsp.browseFunction', title: 'Decompile function', arguments: [md5, fn.entry] };
@@ -259,6 +290,7 @@ export class ProgramBrowser implements vscode.Disposable {
                 node.id = `symbol:${md5}:${symbol.id}`;
                 node.description = symbol.namespace && symbol.namespace !== 'Global' ? `${symbol.namespace} · ${displayAddress(symbol.address)}` : displayAddress(symbol.address);
                 node.tooltip = `${symbolTooltip(symbol)}\n${symbol.type} · ${symbol.address}`;
+                node.accessibilityInformation = symbolNodeAccessibility(symbol);
                 node.iconPath = new vscode.ThemeIcon(group === 'Functions' ? 'symbol-method' : 'symbol-variable');
                 node.contextValue = 'ghidra.symbol';
                 // A symbol with a memory address opens where it lives: its function's pseudocode, else Listing.
@@ -272,26 +304,44 @@ export class ProgramBrowser implements vscode.Disposable {
             this.symbols.update([...groups].sort(([a], [b]) => a === 'Functions' ? -1 : b === 'Functions' ? 1 : a.localeCompare(b))
                 .map(([name, children]) => {
                     const node = new Node(name, namespaces(children));
+                    node.id = canonicalTreeSegment('group', `${md5}:${name}`);
                     node.description = String(children.length);
                     node.tooltip = 'Counted in scanned address spaces only';
+                    node.accessibilityInformation = symbolGroupAccessibility(name, children.length);
                     if (name === 'Functions') { node.collapsibleState = vscode.TreeItemCollapsibleState.Expanded; }
                     return node;
                 }));
             const root = new Node('Types', []);
+            const categories = new Map<Node, { segment: string; categoryPath: string }>();
             for (const type of types.items) {
                 let parent = root;
+                let categoryPath = '';
                 for (const segment of (type.category_path || '/').split('/').filter(Boolean)) {
-                    let folder = parent.children!.find(node => node.label === segment && node.children);
-                    if (!folder) { folder = new Node(segment, []); folder.iconPath = new vscode.ThemeIcon('folder'); parent.children!.push(folder); }
+                    categoryPath += `/${segment}`;
+                    const key = canonicalTreeSegment('category', segment);
+                    let folder = parent.children!.find(node => node.key === key && node.children);
+                    if (!folder) {
+                        folder = new Node(segment, []);
+                        folder.key = key;
+                        folder.id = canonicalTreeSegment('category', `${md5}:${categoryPath}`);
+                        folder.tooltip = categoryPath;
+                        folder.iconPath = new vscode.ThemeIcon('folder');
+                        categories.set(folder, { segment, categoryPath });
+                        parent.children!.push(folder);
+                    }
                     parent = folder;
                 }
                 const node = new Node(type.name, undefined, md5, undefined, type.path);
                 node.id = `type:${md5}:${type.path}`;
                 node.description = type.kind; node.tooltip = type.path;
+                node.accessibilityInformation = typeNodeAccessibility(type);
                 node.iconPath = new vscode.ThemeIcon('symbol-structure');
                 node.contextValue = 'ghidra.type';
                 node.command = { command: 'ghidraLsp.browseType', title: 'Open data type', arguments: [md5, type.path] };
                 parent.children!.push(node);
+            }
+            for (const [folder, meta] of categories) {
+                folder.accessibilityInformation = typeCategoryAccessibility(meta.segment, meta.categoryPath, folder.children!.length);
             }
             this.typeCount = types.items.length;
             this.types.update(root.children!);

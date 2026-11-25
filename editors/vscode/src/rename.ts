@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import * as vscode from 'vscode';
+import { renameStatusAccessibility, saveRenameShortcut, statusNames } from './a11y';
 import { Call, VirtualDocument } from './memory';
 import { formatFriendlyError } from './error';
 
@@ -45,7 +46,9 @@ export class ReadonlyRenames implements vscode.Disposable, vscode.FileDecoration
 
     /** Register document, editor, focus, and configuration listeners for rename previews. */
     constructor(private readonly call: Call, private readonly committed: (md5: string) => Promise<void>) {
+        this.status.name = statusNames.pendingRename;
         this.status.command = 'ghidraLsp.showPendingRename';
+        this.status.accessibilityInformation = renameStatusAccessibility([]);
         this.disposables = [this.status, this.decorations, vscode.window.registerFileDecorationProvider(this),
             vscode.workspace.onDidChangeTextDocument(event => {
                 if (event.contentChanges.length && this.functionUri(event.document.uri)) { this.schedule(event.document.uri.authority); }
@@ -106,8 +109,10 @@ export class ReadonlyRenames implements vscode.Disposable, vscode.FileDecoration
         void vscode.commands.executeCommand('setContext', 'ghidra.hasPendingRename', plans.length > 0);
         if (!plans.length) { this.status.hide(); return; }
         const plan = plans[plans.length - 1];
+        const shortcut = saveRenameShortcut();
         this.status.text = plans.length === 1 ? `$(edit) Ghidra: ${plan.newName} · pending` : `$(edit) Ghidra: ${plans.length} pending renames`;
-        this.status.tooltip = `${plan.oldName} → ${plan.newName}\nClick to return to the original view, then press Ctrl+S to save. Closing the view does not save; reloading the window discards pending previews.`;
+        this.status.tooltip = `${plan.oldName} → ${plan.newName}\nClick to return to the original view, then press ${shortcut} to save. Closing the view does not save; reloading the window discards pending previews.`;
+        this.status.accessibilityInformation = renameStatusAccessibility(plans);
         this.status.show();
     }
 

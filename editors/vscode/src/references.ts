@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import * as vscode from 'vscode';
+import { referenceStatusAccessibility, statusAccessibility, statusNames } from './a11y';
 import { ProgramContext } from './context';
 import { DocumentLabels, NamedResource, resourceLabels } from './labels';
 import { Call, VirtualDocument } from './memory';
@@ -58,7 +59,8 @@ export class ReferenceViews implements vscode.TextDocumentContentProvider, vscod
         private readonly context: ProgramContext,
         private readonly prepare: (document: vscode.TextDocument) => Promise<vscode.TextDocument>,
     ) {
-        this.status.name = 'Ghidra binary address references';
+        this.status.name = statusNames.addressReferences;
+        this.status.accessibilityInformation = statusAccessibility(statusNames.addressReferences);
         this.disposables = [this.changes, this.status, vscode.workspace.registerTextDocumentContentProvider(referenceScheme, this),
             context.onDidChange(() => this.updateStatus()),
             vscode.workspace.onDidOpenTextDocument(document => {
@@ -146,7 +148,7 @@ export class ReferenceViews implements vscode.TextDocumentContentProvider, vscod
         if (!md5 || !summary) { this.status.hide(); return; }
         this.status.text = `$(references) ${summary.count} address references`;
         this.status.tooltip = `${summary.name}${summary.address ? ` · ${summary.address}` : ''}\nThese binary references cannot be mapped precisely to decompiled text. Click to view their addresses and types.`;
-        this.status.accessibilityInformation = { label: `Ghidra: ${summary.count} binary address references, ${summary.name}`, role: 'button' };
+        this.status.accessibilityInformation = referenceStatusAccessibility(summary.count, summary.name, summary.address);
         this.status.command = { command: 'ghidraLsp.showAddressReferences', title: 'Show binary address references', arguments: [{ md5, address: summary.address }] };
         this.status.show();
     }
