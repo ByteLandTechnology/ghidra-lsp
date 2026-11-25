@@ -27,26 +27,17 @@ use tower_lsp_server::ls_types::Uri;
 
 use crate::backend::{McpBackend, list_all};
 use crate::document::{
-  Document, Symbol, Token, align, canonical_virtual_uri, data_type_name, extract_label_address,
-  is_label_token, resolve, resolve_locals, same_address, virtual_uri,
+  Document, Symbol, SymbolIndex, Token, align, canonical_virtual_uri, data_type_name,
+  extract_label_address, is_label_token, resolve, resolve_locals, same_address, virtual_uri,
 };
 
 /// Finds a function symbol by address first and by name or qualified name second.
 fn find_function_symbol<'a>(
-  symbols: &'a [Symbol],
+  symbols: &'a SymbolIndex,
   entry_or_addr: Option<&str>,
   name: &str,
 ) -> Option<&'a Symbol> {
-  if let Some(addr) = entry_or_addr
-    && let Some(sym) = symbols
-      .iter()
-      .find(|s| s.kind.eq_ignore_ascii_case("function") && same_address(&s.address, addr))
-  {
-    return Some(sym);
-  }
-  symbols
-    .iter()
-    .find(|s| s.kind.eq_ignore_ascii_case("function") && (s.name == name || s.qualified() == name))
+  symbols.find_function(entry_or_addr, name)
 }
 
 /// Planned symbol rename held in memory until the origin buffer saves to Ghidra.
@@ -87,8 +78,8 @@ pub(crate) struct Engine {
   pub(crate) docs: HashMap<Uri, Document>,
   /// Pending scoped rename plan keyed by lowercase session MD5.
   pub(crate) pending: HashMap<String, Pending>,
-  /// Cached symbol tables keyed by lowercase session MD5.
-  pub(crate) symbols: HashMap<String, Vec<Symbol>>,
+  /// Cached symbol indexes keyed by lowercase session MD5.
+  pub(crate) symbols: HashMap<String, Arc<SymbolIndex>>,
   /// Pre-accepted document text after a confirmed backend save, keyed by URI.
   pub(crate) refresh_allowed: HashMap<Uri, String>,
   /// Cached function JSON payloads indexed by session MD5 and entry address.
@@ -120,10 +111,10 @@ impl Engine {
       .context("Select a Ghidra session first")
   }
 
-  /// Fetches and caches all symbols for session `md5`.
-  pub(crate) async fn symbols(&mut self, md5: &str) -> Result<Vec<Symbol>> {
+  /// Fetches and caches the indexed symbol table for session `md5`.
+  pub(crate) async fn symbols(&mut self, md5: &str) -> Result<Arc<SymbolIndex>> {
     if let Some(symbols) = self.symbols.get(md5) {
-      return Ok(symbols.clone());
+      return Ok(Arc::clone(symbols));
     }
     let items = list_all(
       self.backend.as_ref(),
@@ -136,8 +127,9 @@ impl Engine {
       .into_iter()
       .map(serde_json::from_value)
       .collect::<std::result::Result<Vec<Symbol>, _>>()?;
-    self.symbols.insert(md5.into(), symbols.clone());
-    Ok(symbols)
+    let index = Arc::new(SymbolIndex::new(symbols));
+    self.symbols.insert(md5.into(), Arc::clone(&index));
+    Ok(index)
   }
 
   /// Returns cached parameter or local variable detail for `symbol` when present.
@@ -353,6 +345,58 @@ impl Engine {
             kind: kind.into(),
           });
         }
+      }
+      let mut local_ids: HashMap<(&str, &str), Option<&str>> =
+        HashMap::with_capacity(local_symbols.len());
+      for sym in &local_symbols {
+        local_ids
+          .entry((sym.kind.as_str(), sym.name.as_str()))
+          .and_modify(|slot| *slot = None)
+          .or_insert(Some(sym.id.as_str()));
+      }
+      for span in &mut spans {
+        if !matches!(span.token.kind.as_str(), "variable" | "parameter") {
+          continue;
+        }
+        let Some(native) = &mut span.symbol else {
+          continue;
+        };
+        if !native.local() {
+          continue;
+        }
+        let kind = if native.kind == "Parameter" || span.token.kind == "parameter" {
+          "Parameter"
+        } else {
+          "Local"
+        };
+        let prefix = format!("{kind}:{md5}:{entry_str}:");
+        let scoped_id = if native.id.starts_with(&prefix) {
+          native.id.clone()
+        } else {
+          format!("{prefix}symbol={}", native.id)
+        };
+        if !self.local_details.contains_key(&scoped_id) {
+          let target_name = if native.name.is_empty() {
+            span.token.text.as_str()
+          } else {
+            native.name.as_str()
+          };
+          if let Some(matched) = local_ids
+            .get(&(kind, target_name))
+            .copied()
+            .flatten()
+            .and_then(|id| self.local_details.get(id).cloned())
+          {
+            self.local_details.insert(scoped_id.clone(), matched);
+          }
+        }
+        if native.name.is_empty() {
+          native.name = span.token.text.clone();
+        }
+        native.id = scoped_id;
+        native.address = entry_str.to_owned();
+        native.namespace = String::new();
+        native.kind = kind.into();
       }
       resolve_locals(&mut spans, &local_symbols);
       for span in &mut spans {

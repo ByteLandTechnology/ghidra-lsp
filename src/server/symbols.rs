@@ -15,7 +15,9 @@ use tower_lsp_server::ls_types::{
 
 use super::{Server, rpc};
 use crate::backend::list_all;
-use crate::document::{Document, Symbol, canonical_virtual_uri, position, virtual_uri};
+use crate::document::{
+  Document, Symbol, canonical_virtual_uri, contains_case_insensitive, position, virtual_uri,
+};
 
 impl Server {
   /// Builds nested outline symbols for the opened decompilation buffer in `params`.
@@ -107,10 +109,17 @@ impl Server {
     let symbols = e.symbols(&md5).await.map_err(rpc)?;
     let mut result = vec![];
     let query = params.query.to_lowercase();
-    for symbol in symbols.into_iter().filter(|s| {
-      s.eligible()
-        && (s.full_name().to_lowercase().contains(&query)
-          || s.qualified().to_lowercase().contains(&query))
+    for (symbol, _) in symbols.iter_with_qualified().filter(|(s, qualified)| {
+      if !s.eligible() {
+        return false;
+      }
+      let full = s
+        .demangled_name
+        .as_deref()
+        .filter(|name| !name.is_empty())
+        .unwrap_or(qualified);
+      contains_case_insensitive(full, &query)
+        || (!std::ptr::eq(full, *qualified) && contains_case_insensitive(qualified, &query))
     }) {
       let sym_uri = virtual_uri(
         &md5,
@@ -148,7 +157,7 @@ impl Server {
         .or_else(|| Some(md5.clone()));
       result.push(WorkspaceSymbol {
         name: symbol.display_name(),
-        kind: kind(&symbol),
+        kind: kind(symbol),
         tags: None,
         location,
         container_name: container,
@@ -161,7 +170,7 @@ impl Server {
       backend.as_ref(),
       "data_type",
       &md5,
-      json!({"page": {"limit": 500}}),
+      json!({"page": {"limit": 1000}}),
     )
     .await
     {

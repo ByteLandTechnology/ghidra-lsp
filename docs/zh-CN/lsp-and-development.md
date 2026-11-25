@@ -70,7 +70,7 @@
 | `ghidra.types` | `{"md5?"}` | 分页列出全部程序数据类型及覆盖范围 |
 | `ghidra.type` | `{"md5?", "path"}` | 通过 `data_type.get` 读取单个原始数据类型定义 |
 | `ghidra.strings` | `{"md5?"}` | 查询程序内已定义字符串列表（`address::defined_strings`） |
-| `ghidra.binaryInterface` | `{"md5?"}` | 解析本地可执行文件的导入导出表（`binary::interface`）并校验 MD5 |
+| `ghidra.binaryInterface` | `{"md5?"}` | 从 Ghidra 会话（`import.list` / `export.list`）读取导入导出表，旧版桥接时回退至本地可执行文件解析（`binary::interface`） |
 | `ghidra.openFunction` | `{"md5?", "entry"}` | 反编译 `entry` 函数并返回规范 `ghidra://` URI |
 | `ghidra.openSymbol` | `{"md5?", "id"}` | 将符号 `id` 解析为所属函数或 `/symbol/` 快照 URI |
 | `ghidra.document` | `{"uri", "includePending?"}` | 获取或按需生成 `ghidra://` 虚拟文档正文与元数据 |
@@ -84,7 +84,7 @@
 | 命令 | 参数载荷 | 说明 |
 | --- | --- | --- |
 | `ghidra.resolveTarget` | `{"md5?", "input" \| "target", "currentAddress?"}` | 将地址、相对偏移（如 `-0x80`）或符号输入解析为规范目标地址 |
-| `ghidra.location` | `{"uri", "position" \| "address", "version?"}` | 将光标 UTF-16 `Position` 映射为原生 `CodeLocation`，或将 `code_unit_address` 反向映射为 `Position` |
+| `ghidra.location` | `{"uri", "position?" \| "address?", "version?"}` | 将光标 UTF-16 `Position` 映射为原生 `CodeLocation`，将 `code_unit_address` 反向映射为 `Position`，或在省略 `position` 与 `address` 时返回有序 UTF-16 跨度地址快照 |
 | `ghidra.reveal` | `{"md5?", "address"}` | 打开包含该地址的函数并返回对应 UTF-16 `Range` |
 | `ghidra.typeAtPosition` | `{"uri", "position"}` | 解析反编译 Token 光标处的数据类型元数据 |
 | `ghidra.listingWindow` | `{"md5?", "address?", "cursor?", "limit?", "showTemplateArguments?", "exactStart?"}` | 分页加载有界汇编清单窗口，包含未定义字节折叠与交叉引用汇总 |

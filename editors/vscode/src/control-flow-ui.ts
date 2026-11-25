@@ -2,19 +2,20 @@
 // SPDX-License-Identifier: MIT
 
 import { callIcon } from './call-graph-icons';
+import { fitGraphTitle, searchShortcutTitle } from './view-ui';
 import { escapeHtml } from './workbench-page';
 
 /** Render the top toolbar and zoom control bar for the control-flow graph view. */
-export function controlFlowToolbar(title: string, subtitle: string, active: boolean): string {
+export function controlFlowToolbar(title: string, subtitle: string, active: boolean, singleKeyShortcuts = true): string {
     const disabled = active ? '' : ' disabled';
-    return `<div class="cfg-topbar" role="group" aria-label="Control flow tools"><div class="cfg-heading"><div class="cfg-identity"><h1>${escapeHtml(title)}</h1><span class="cfg-function-name" title="${escapeHtml(subtitle)}">${escapeHtml(subtitle)}</span></div></div><div class="cfg-search" hidden><input id="search" class="search" aria-label="Find blocks" placeholder="Find blocks…"></div><button class="cfg-icon-button" id="cfg-search-toggle" aria-label="Find blocks" aria-expanded="false" title="Find blocks (/)"${disabled}>${callIcon('search')}</button><button class="cfg-icon-button" id="graph-fit" aria-label="Fit graph" title="Fit the entire graph (0)"${disabled}>${callIcon('fit')}</button><button class="cfg-icon-button" id="cfg-overview-toggle" aria-label="Toggle overview" aria-pressed="false" title="Show or hide overview"${disabled}>${callIcon('overview')}</button><button class="cfg-icon-button" data-action="refresh" aria-label="Refresh graph" title="Refresh graph">${callIcon('refresh')}</button></div><div class="cfg-zoom" role="group" aria-label="Zoom"><button id="graph-zoom-out" aria-label="Zoom out"${disabled}>${callIcon('minus')}</button><button id="graph-zoom" aria-label="Actual size" title="Actual size (100%)"${disabled}>100%</button><button id="graph-zoom-in" aria-label="Zoom in"${disabled}>${callIcon('plus')}</button></div>`;
+    return `<div class="cfg-topbar" role="group" aria-label="Control flow tools"><div class="cfg-heading"><div class="cfg-identity"><h1>${escapeHtml(title)}</h1><span class="cfg-function-name" title="${escapeHtml(subtitle)}">${escapeHtml(subtitle)}</span></div></div><div class="cfg-search" hidden><input id="search" class="search" aria-label="Find blocks" placeholder="Find blocks…"></div><button class="cfg-icon-button" id="cfg-search-toggle" aria-label="Find blocks" aria-expanded="false" title="${escapeHtml(searchShortcutTitle('Find blocks', singleKeyShortcuts))}"${disabled}>${callIcon('search')}</button><button class="cfg-icon-button" id="graph-fit" aria-label="Fit graph" title="${escapeHtml(fitGraphTitle(singleKeyShortcuts))}"${disabled}>${callIcon('fit')}</button><button class="cfg-icon-button" id="cfg-overview-toggle" aria-label="Toggle overview" aria-pressed="false" title="Show or hide overview"${disabled}>${callIcon('overview')}</button><button class="cfg-icon-button" data-action="refresh" aria-label="Refresh graph" title="Refresh graph">${callIcon('refresh')}</button></div><div class="cfg-zoom" role="group" aria-label="Zoom"><button id="graph-zoom-out" aria-label="Zoom out"${disabled}>${callIcon('minus')}</button><button id="graph-zoom" aria-label="Actual size" title="Actual size (100%)"${disabled}>100%</button><button id="graph-zoom-in" aria-label="Zoom in"${disabled}>${callIcon('plus')}</button></div>`;
 }
 
 /** CSS styles for the control-flow graph toolbar, edges, zoom widget, and overview map. */
 export const controlFlowUiStyles = `
 /* Hallmark · v2.0.0 · redesign: full · shape: app screen · genre: modern-minimal · theme: Console (dealt 3/3) · material: VS Code theme tokens · signature: control-flow trace */
 /* Hallmark · pre-emit critique: P4 H4 E4 S4 R5 V4 · weakest: hierarchy, distinguish the graph identity from its tools */
-.cfg-page{--cfg-ground:var(--vscode-editor-background);--cfg-surface:var(--vscode-sideBar-background,var(--vscode-editor-background));--cfg-ink:var(--vscode-foreground);--cfg-muted:var(--vscode-descriptionForeground);--cfg-rule:var(--vscode-panel-border);--cfg-focus:var(--vscode-focusBorder)}
+.cfg-page{--cfg-ground:var(--vscode-editor-background);--cfg-surface:var(--vscode-sideBar-background,var(--vscode-editor-background));--cfg-ink:var(--vscode-foreground);--cfg-muted:var(--ghidra-muted);--cfg-rule:var(--vscode-panel-border);--cfg-focus:var(--ghidra-focus)}
 .cfg-page main{padding:0;gap:0;position:relative}
 .flow-page .call-icon{font:16px call-icons;display:inline-block;line-height:1;vertical-align:middle}
 .cfg-topbar{display:flex;align-items:center;gap:4px;min-height:56px;padding:8px 14px;border-bottom:1px solid var(--cfg-rule);background:var(--cfg-ground);flex-shrink:0}
@@ -23,10 +24,10 @@ export const controlFlowUiStyles = `
 .cfg-function-name{font-size:11px;line-height:1.25;font-weight:400;color:var(--cfg-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .cfg-page .cfg-icon-button{display:flex;align-items:center;justify-content:center;flex-shrink:0;width:32px;height:32px;min-height:0;padding:6px;border:0;border-radius:6px;background:transparent;color:var(--vscode-foreground);cursor:pointer}
 .cfg-page button:hover{background:var(--vscode-toolbar-hoverBackground,var(--vscode-list-hoverBackground))}
-.cfg-page .cfg-topbar [aria-pressed="true"],.cfg-page .cfg-topbar [aria-expanded="true"]{background:var(--vscode-toolbar-activeBackground,var(--vscode-list-hoverBackground));color:var(--vscode-focusBorder)}
+.cfg-page .cfg-topbar [aria-pressed="true"],.cfg-page .cfg-topbar [aria-expanded="true"]{background:var(--ghidra-pressed-bg);color:var(--ghidra-accent);box-shadow:inset 0 0 0 1px var(--ghidra-focus)}
 .cfg-search{flex:0 1 230px;min-width:0}
 .cfg-page .cfg-search input{width:100%;height:32px;min-width:0;border-radius:6px}
-.cfg-page .flow-canvas:focus-visible{outline:1px solid var(--vscode-focusBorder);outline-offset:-1px}
+.cfg-page .flow-canvas:focus-visible{outline:2px solid var(--cfg-focus);outline-offset:-2px}
 .cfg-page .flow-canvas{position:relative;border:0;border-radius:0;background:var(--vscode-editor-background)}
 .cfg-page .scope{position:absolute;bottom:19px;left:16px;z-index:2;max-width:calc(100% - 180px);margin:0;padding:3px 6px;background:var(--vscode-editor-background);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none}
 .cfg-page #filter-status{position:absolute;top:60px;left:16px;z-index:2;padding:3px 6px;background:var(--vscode-editor-background);font-size:11px}
@@ -61,7 +62,7 @@ export const controlFlowUiStyles = `
 .cfg-overview rect{fill:var(--vscode-editorWidget-border,var(--vscode-descriptionForeground));stroke:none}
 .cfg-overview .cfg-map-selected{fill:var(--vscode-focusBorder)}
 .cfg-overview #cfg-overview-window{fill:var(--vscode-focusBorder);fill-opacity:.12;stroke:var(--vscode-focusBorder);stroke-width:1;vector-effect:non-scaling-stroke;pointer-events:none}
-.cfg-page .empty{margin:auto;padding:24px;color:var(--vscode-descriptionForeground)}
+.cfg-page .empty{margin:auto;padding:24px;color:var(--ghidra-muted)}
 .cfg-page button:focus-visible,.cfg-page summary:focus-visible,.cfg-page .cfg-overview-close:focus-visible,.cfg-page #cfg-overview-map:focus-visible{outline:2px solid var(--cfg-focus);outline-offset:-2px}.cfg-page button:disabled{opacity:.5;cursor:not-allowed}
 .cfg-page button,.cfg-page summary{transition:background-color 120ms ease,color 120ms ease}
 @media(prefers-reduced-motion:reduce){.cfg-page *{animation:none!important;transition:none!important}}
@@ -109,7 +110,7 @@ export const controlFlowUiScript = String.raw`
       let pointer;const move=event=>{const matrix=map.getScreenCTM();if(!matrix){return}const p=map.createSVGPoint();p.x=event.clientX;p.y=event.clientY;const target=p.matrixTransform(matrix.inverse());graphViewport.center(target.x,target.y)};
       map.addEventListener('pointerdown',event=>{if(event.button!==0){return}event.preventDefault();event.stopPropagation();pointer=event.pointerId;map.setPointerCapture(pointer);map.focus({preventScroll:true});move(event)});map.addEventListener('pointermove',event=>{if(pointer===event.pointerId){move(event)}});for(const event of ['pointerup','pointercancel','lostpointercapture']){map.addEventListener(event,()=>{pointer=undefined})}
       map.addEventListener('keydown',event=>{const delta={ArrowLeft:[-50,0],ArrowRight:[50,0],ArrowUp:[0,-50],ArrowDown:[0,50]}[event.key];if(delta){event.preventDefault();event.stopPropagation();const view=graphViewport.snapshot();graphViewport.center((canvas.clientWidth/2-view.x+delta[0])/view.scale,(canvas.clientHeight/2-view.y+delta[1])/view.scale)}});
-      document.addEventListener('keydown',event=>{if(((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='f')||event.key==='/'&&!event.target.closest('input,textarea')){event.preventDefault();openSearch()}});
+      document.addEventListener('keydown',event=>{if(isModShortcut(event,'f')||(event.key==='/'&&canUseSingleKeyShortcut(event))){event.preventDefault();openSearch()}});
       paint();updateMap();
     })();
 `;

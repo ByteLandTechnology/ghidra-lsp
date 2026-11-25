@@ -38,106 +38,26 @@ interface State {
     queue: Promise<void>;
 }
 
-/** Colors applied when drawing SVG pill badges inside the Markdown tab strip. */
-interface BadgePalette {
-    /** Pill fill color for the active comment kind. */
-    activeBg: string;
-    /** Pill border color for the active comment kind. */
-    activeBorder: string;
-    /** Pill label color for the active comment kind. */
-    activeFg: string;
-    /** Pill fill color for inactive comment kinds. */
-    inactiveBg: string;
-    /** Pill border color for inactive comment kinds. */
-    inactiveBorder: string;
-    /** Pill label color for inactive comment kinds. */
-    inactiveFg: string;
-    /** Indicator dot color marking a non-empty saved comment. */
-    dotColor: string;
-}
-
-/** Escape reserved XML characters before placing label text into an inline SVG pill. */
-function escapeXml(text: string): string {
-    return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
-
-/** Return the light or dark SVG badge palette matching the current VS Code color theme. */
-function badgePalette(): BadgePalette {
-    const kind = vscode.window.activeColorTheme.kind;
-    if (kind === vscode.ColorThemeKind.Light || kind === vscode.ColorThemeKind.HighContrastLight) {
-        return {
-            activeBg: '#005fb8',
-            activeBorder: '#005fb8',
-            activeFg: '#ffffff',
-            inactiveBg: '#ececec',
-            inactiveBorder: '#cecece',
-            inactiveFg: '#3b3b3b',
-            dotColor: '#1a7f37',
-        };
-    }
-    return {
-        activeBg: '#0078d4',
-        activeBorder: '#1f8ad2',
-        activeFg: '#ffffff',
-        inactiveBg: '#313131',
-        inactiveBorder: '#454545',
-        inactiveFg: '#cccccc',
-        dotColor: '#89d185',
-    };
-}
-
-/** Measure approximate text advance width in pixels for a proportional sans label. */
-function measureLabelWidth(text: string): number {
-    let width = 0;
-    for (const ch of text) {
-        if (ch === ' ' || ch === '(' || ch === ')' || ch === '*') {
-            width += 4.6;
-        } else if (ch >= 'a' && ch <= 'z') {
-            width += 6.3;
-        } else if (ch === 'I') {
-            width += 4.4;
-        } else if (ch === 'W' || ch === 'M') {
-            width += 9.2;
-        } else {
-            width += 7.5;
-        }
-    }
-    return Math.ceil(width);
-}
-
-/** Build one base64-encoded clickable SVG pill image for a comment category tab. */
-function badgeDataUri(kind: CommentKind, active: boolean, filled: boolean, dirty: boolean, palette: BadgePalette): string {
-    const baseLabel = kind === 'repeatable' ? 'REPEATABLE (ext)' : kind.toUpperCase();
-    const label = dirty ? `${baseLabel} *` : baseLabel;
-    const textWidth = measureLabelWidth(label);
-    const padX = 11;
-    const dotGap = filled ? 11 : 0;
-    const width = padX * 2 + dotGap + textWidth;
-    const bg = active ? palette.activeBg : palette.inactiveBg;
-    const border = active ? palette.activeBorder : palette.inactiveBorder;
-    const fg = active ? palette.activeFg : palette.inactiveFg;
-    const weight = active ? '700' : '600';
-    const dot = filled
-        ? `<circle cx="${padX + 3}" cy="12" r="3" fill="${active ? '#ffffff' : palette.dotColor}"/>`
-        : '';
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="24" viewBox="0 0 ${width} 24"><rect x="0.5" y="0.5" width="${width - 1}" height="23" rx="4" fill="${bg}" stroke="${border}" stroke-width="1"/>${dot}<text x="${padX + dotGap}" y="15.5" fill="${fg}" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="11.5" font-weight="${weight}">${escapeXml(label)}</text></svg>`;
-    return `data:image/svg+xml;base64,${Buffer.from(svg, 'utf8').toString('base64')}`;
-}
-
-/** Build trusted Markdown containing all five horizontal pill tabs as command links. */
+/** Build trusted Markdown that holds the five comment category command links. */
 function buildTabBarMarkdown(state: State, stateKey: string): vscode.MarkdownString {
-    const palette = badgePalette();
     const links = commentKinds.map(kind => {
-        const draft = state.comments.find(item => item.kind === kind)!;
-        const active = kind === state.selected;
-        const filled = draft.saved.trim() !== '';
-        const dirty = draft.body !== draft.saved;
-        const uri = badgeDataUri(kind, active, filled, dirty, palette);
+        const draft = state.comments.find(item => item.kind === kind);
+        const baseLabel = kind === 'repeatable' ? 'REPEATABLE (ext)' : kind.toUpperCase();
+        const states: string[] = [];
+        if (kind === state.selected) {
+            states.push('selected');
+        }
+        if (draft !== undefined && draft.saved.trim() !== '') {
+            states.push('saved');
+        }
+        if (draft !== undefined && draft.body !== draft.saved) {
+            states.push('unsaved');
+        }
+        const label = states.length > 0 ? `${baseLabel} (${states.join(', ')})` : baseLabel;
         const args = encodeURIComponent(JSON.stringify([stateKey, kind]));
-        const title = kind === 'repeatable' ? 'Switch to REPEATABLE (extension) comment' : `Switch to ${kind.toUpperCase()} comment`;
-        return `[![${kind.toUpperCase()}](${uri} "${title}")](command:ghidraLsp.selectCommentKind?${args})`;
+        return `[${label}](command:ghidraLsp.selectCommentKind?${args})`;
     });
-    const markdown = new vscode.MarkdownString(links.join(' '));
+    const markdown = new vscode.MarkdownString(links.join(' | '));
     markdown.isTrusted = { enabledCommands: ['ghidraLsp.selectCommentKind'] };
     return markdown;
 }
@@ -148,11 +68,11 @@ class TabStrip implements vscode.Comment {
     mode = vscode.CommentMode.Preview;
     /** Distinct context value so edit/save actions stay hidden on the tab strip row. */
     contextValue = 'ghidraCommentTabs';
-    /** Section header label rendered beside the horizontal pill tabs. */
+    /** Section header label shown beside the horizontal category links. */
     author: vscode.CommentAuthorInformation = { name: 'Comment type' };
     /** Optional status badge indicating uncertain persistence after a write failure. */
     label?: string;
-    /** Markdown body holding the horizontal clickable SVG category pills. */
+    /** Markdown body that holds the horizontal category command links. */
     body: vscode.MarkdownString;
     /** Construct the tab strip comment for the active thread state. */
     constructor(body: vscode.MarkdownString, uncertain: boolean) {
@@ -214,11 +134,6 @@ export class InlineComments implements vscode.Disposable {
                 try { await run(...args); } catch (error) { void vscode.window.showErrorMessage(formatFriendlyError(error)); }
             }));
         }
-        this.disposables.push(vscode.window.onDidChangeActiveColorTheme(() => {
-            for (const state of this.states.values()) {
-                if (!state.closed) { this.render(state); }
-            }
-        }));
         this.disposables.push(vscode.workspace.onDidChangeTextDocument(event => {
             const uri = event.document.uri.toString();
             if (!event.contentChanges.length || ![...this.states.values()].some(state => state.thread.uri.toString() === uri)) { return; }

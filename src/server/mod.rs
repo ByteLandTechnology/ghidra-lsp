@@ -405,6 +405,9 @@ impl Server {
   /// Dispatches one `workspace/executeCommand` invocation.
   async fn command(&self, params: ExecuteCommandParams) -> Result<Value> {
     let arg = params.arguments.first().cloned().unwrap_or(json!({}));
+    if params.command == "ghidra.location" {
+      return self.execute_location_command(arg).await;
+    }
     let backend = self.engine.lock().await.backend.clone();
     match params.command.as_str() {
       "ghidra.sessions"
@@ -414,7 +417,6 @@ impl Server {
       | "ghidra.openSymbol"
       | "ghidra.document"
       | "ghidra.configure"
-      | "ghidra.location"
       | "ghidra.reveal"
       | "ghidra.typeAtPosition" => {
         self

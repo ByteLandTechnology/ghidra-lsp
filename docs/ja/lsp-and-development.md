@@ -78,7 +78,7 @@
 | `ghidra.types` | `{ md5? }` | 全データ型をページング取得し、カバレッジ情報付きで返却 |
 | `ghidra.type` | `{ md5?, path }` | 指定 `path` の生データ型定義を取得 |
 | `ghidra.strings` | `{ md5? }` | `listing.data_unit.list` から定義済み文字列一覧を抽出 |
-| `ghidra.binaryInterface` | `{ md5? }` | 元バイナリの MD5 照合後、`object` クレートで PE / ELF / Mach-O の Import / Export 表を解析（2 GiB 上限） |
+| `ghidra.binaryInterface` | `{ md5? }` | Ghidra セッション（`import.list` / `export.list`）から Import / Export 表を取得（旧版ブリッジ時はローカル `object` 解析へフォールバック） |
 | `ghidra.openFunction` | `{ md5?, entry }` | 指定関数を逆コンパイルし、正規 `ghidra://` URI を返却 |
 | `ghidra.openSymbol` | `{ md5?, id }` | シンボル ID を解決して開く対象 URI を返却 |
 | `ghidra.document` | `{ uri, includePending? }` | 仮想ドキュメント（`function` / `symbol` / `references` / `type`）のテキストと警告を返却 |
@@ -90,7 +90,7 @@
 
 | コマンド名 | 主な入力パラメータ | 動作概要 |
 | --- | --- | --- |
-| `ghidra.location` | `{ uri, position?, address?, version? }` | カーソル UTF-16 位置 ↔ コードユニットアドレス／GUI 位置を相互変換 |
+| `ghidra.location` | `{ uri, position?, address?, version? }` | カーソル UTF-16 位置 ↔ コードユニットアドレス／GUI 位置を相互変換、または `position` と `address` 省略時に順序付き UTF-16 スパン位置スナップショットを返却 |
 | `ghidra.reveal` | `{ md5?, address }` | アドレスを所有する関数を開き、該当トークン範囲と一致精度（`exact`）を返却 |
 | `ghidra.resolveTarget` | `{ md5?, input, currentAddress? }` | 入力文字列（アドレス、オフセット式、シンボル名）をターゲットアドレスへ解決 |
 | `ghidra.typeAtPosition` | `{ uri, position }` | カーソル位置のシンボルまたはトークンに対応するデータ型定義を取得 |

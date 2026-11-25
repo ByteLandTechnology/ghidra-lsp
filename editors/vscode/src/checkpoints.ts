@@ -15,6 +15,7 @@ import { SessionsView } from './sessions';
 import { StringFiles } from './string-files';
 import { StringsView } from './strings-view';
 import { DataTypeFiles } from './type-files';
+import { ViewSets } from './views';
 import { Workbench } from './workbench';
 
 /** Summary item returned by `ghidra.checkpoints`. */
@@ -81,6 +82,8 @@ export interface CheckpointCommandDeps {
     workbench: Workbench;
     /** Control-flow graph custom editor controller. */
     graphView: ControlFlowView;
+    /** Coordinated decompiler and analysis selection controller. */
+    viewSets: ViewSets;
     /** Sessions sidebar view. */
     sessionsView: SessionsView;
     /** Cached live-refresh version strings per session MD5. */
@@ -118,6 +121,7 @@ async function refreshAllSessionViews(deps: CheckpointCommandDeps, md5: string):
     deps.stringFiles.refresh(normalized);
     deps.listingFiles.refresh(normalized);
     deps.byteFiles.refresh(normalized);
+    deps.viewSets.refresh(normalized);
     for (const document of vscode.workspace.textDocuments) {
         if (document.uri.scheme !== 'ghidra' || document.isClosed || document.isDirty) { continue; }
         if (document.uri.authority.toLowerCase() !== normalized || !document.uri.path.startsWith('/function/')) { continue; }
