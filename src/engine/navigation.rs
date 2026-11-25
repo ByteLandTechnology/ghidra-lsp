@@ -83,14 +83,7 @@ impl Engine {
       || is_label_token(&span.token.text, span.start, span.end, &doc.base);
     if is_label {
       if let Some(sym) = self.symbols.get(&doc.md5).and_then(|syms| {
-        syms.iter().find(|s| {
-          (s.name == span.token.text || s.qualified() == span.token.text)
-            || (span
-              .token
-              .address
-              .as_deref()
-              .is_some_and(|a| same_address(a, &s.address)))
-        })
+        syms.find_by_name_or_address(&span.token.text, span.token.address.as_deref())
       }) {
         return Ok((doc.md5.clone(), sym.clone(), doc.range(span)));
       }
@@ -116,14 +109,7 @@ impl Engine {
     }
     if matches!(span.token.kind.as_str(), "constant" | "global")
       && let Some(sym) = self.symbols.get(&doc.md5).and_then(|syms| {
-        syms.iter().find(|s| {
-          (s.name == span.token.text || s.qualified() == span.token.text)
-            || (span
-              .token
-              .address
-              .as_deref()
-              .is_some_and(|a| same_address(a, &s.address)))
-        })
+        syms.find_by_name_or_address(&span.token.text, span.token.address.as_deref())
       })
     {
       return Ok((doc.md5.clone(), sym.clone(), doc.range(span)));
@@ -190,16 +176,9 @@ impl Engine {
         .or_else(|| s.token.text.strip_prefix("FUN_").map(str::to_owned));
       let callee_addr = match callee_addr {
         Some(a) => Some(a),
-        None => {
-          let symbols = self.symbols(&md5).await.unwrap_or_default();
-          symbols
-            .into_iter()
-            .find(|sym| {
-              sym.kind.eq_ignore_ascii_case("function")
-                && (sym.name == s.token.text || sym.qualified() == s.token.text)
-            })
-            .map(|sym| sym.address)
-        }
+        None => self.symbols(&md5).await.ok().and_then(|symbols| {
+          find_function_symbol(&symbols, None, &s.token.text).map(|sym| sym.address.clone())
+        }),
       };
 
       if let Some(addr) = callee_addr {
@@ -240,14 +219,11 @@ impl Engine {
         if !sym.local() {
           return Ok(Some(self.symbol_location(&md5, sym).await?));
         }
-      } else if matches!(s.token.kind.as_str(), "global" | "label") {
-        let symbols = self.symbols(&md5).await.unwrap_or_default();
-        if let Some(sym) = symbols
-          .into_iter()
-          .find(|sym| sym.name == s.token.text || sym.qualified() == s.token.text)
-        {
-          return Ok(Some(self.symbol_location(&md5, &sym).await?));
-        }
+      } else if matches!(s.token.kind.as_str(), "global" | "label")
+        && let Ok(symbols) = self.symbols(&md5).await
+        && let Some(sym) = symbols.find_by_name(&s.token.text).cloned()
+      {
+        return Ok(Some(self.symbol_location(&md5, &sym).await?));
       }
     }
 
@@ -266,10 +242,7 @@ impl Engine {
       }
 
       let symbols = self.symbols(&md5).await?;
-      if let Some(sym) = symbols
-        .into_iter()
-        .find(|s| s.name == word || s.qualified() == word)
-      {
+      if let Some(sym) = symbols.find_by_name(&word).cloned() {
         return Ok(Some(self.symbol_location(&md5, &sym).await?));
       }
 

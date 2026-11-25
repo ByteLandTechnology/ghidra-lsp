@@ -2,7 +2,7 @@
   "name": "ghidra-lsp",
   "displayName": "Ghidra LSP",
   "description": "Browse and rename Ghidra symbols through ghidra-mcp",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "publisher": "byteland-app",
   "license": "MIT",
   "icon": "resources/icon.png",
@@ -465,11 +465,11 @@
             "show"
           ],
           "enumDescriptions": [
-            "Show C++ template argument lists as <…>; the full name stays in tooltips and hovers.",
+            "Show C++ template argument lists as <…>, with concise inline badges when sibling templates collide; the full name stays in tooltips and hovers.",
             "Show complete template argument lists."
           ],
           "default": "omit",
-          "description": "How demangled C++ names show template arguments."
+          "description": "How demangled C++ names show template arguments, with inline collision badges for collapsed sibling templates."
         },
         "ghidraLsp.views.syncCursor": {
           "type": "boolean",

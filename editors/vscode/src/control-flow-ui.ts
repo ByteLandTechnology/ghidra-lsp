@@ -15,7 +15,7 @@ export function controlFlowToolbar(title: string, subtitle: string, active: bool
 export const controlFlowUiStyles = `
 /* Hallmark · v2.0.0 · redesign: full · shape: app screen · genre: modern-minimal · theme: Console (dealt 3/3) · material: VS Code theme tokens · signature: control-flow trace */
 /* Hallmark · pre-emit critique: P4 H4 E4 S4 R5 V4 · weakest: hierarchy, distinguish the graph identity from its tools */
-.cfg-page{--cfg-ground:var(--vscode-editor-background);--cfg-surface:var(--vscode-sideBar-background,var(--vscode-editor-background));--cfg-ink:var(--vscode-foreground);--cfg-muted:var(--vscode-descriptionForeground);--cfg-rule:var(--vscode-panel-border);--cfg-focus:var(--vscode-focusBorder)}
+.cfg-page{--cfg-ground:var(--vscode-editor-background);--cfg-surface:var(--vscode-sideBar-background,var(--vscode-editor-background));--cfg-ink:var(--vscode-foreground);--cfg-muted:var(--ghidra-muted);--cfg-rule:var(--vscode-panel-border);--cfg-focus:var(--ghidra-focus)}
 .cfg-page main{padding:0;gap:0;position:relative}
 .flow-page .call-icon{font:16px call-icons;display:inline-block;line-height:1;vertical-align:middle}
 .cfg-topbar{display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px;min-height:48px;padding:8px 14px;border-bottom:1px solid var(--cfg-rule);background:var(--cfg-ground);flex-shrink:0}
@@ -24,10 +24,10 @@ export const controlFlowUiStyles = `
 .cfg-function-name{font-size:11px;line-height:1.25;font-weight:400;color:var(--cfg-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;max-width:100%}
 .cfg-page .cfg-icon-button{display:flex;align-items:center;justify-content:center;flex-shrink:0;width:32px;height:32px;min-width:24px;min-height:24px;padding:6px;border:0;border-radius:6px;background:transparent;color:var(--vscode-foreground);cursor:pointer}
 .cfg-page button:hover{background:var(--vscode-toolbar-hoverBackground,var(--vscode-list-hoverBackground))}
-.cfg-page .cfg-topbar [aria-pressed="true"],.cfg-page .cfg-topbar [aria-expanded="true"]{background:var(--vscode-toolbar-activeBackground,var(--vscode-list-hoverBackground));color:var(--vscode-focusBorder)}
+.cfg-page .cfg-topbar [aria-pressed="true"],.cfg-page .cfg-topbar [aria-expanded="true"]{background:var(--ghidra-pressed-bg);color:var(--ghidra-accent);box-shadow:inset 0 0 0 1px var(--ghidra-focus)}
 .cfg-search{flex:1 1 180px;min-width:0}
 .cfg-page .cfg-search input{width:100%;height:32px;min-width:0;border-radius:6px}
-.cfg-page .flow-canvas:focus-visible{outline:1px solid var(--vscode-focusBorder);outline-offset:-1px}
+.cfg-page .flow-canvas:focus-visible{outline:2px solid var(--cfg-focus);outline-offset:-2px}
 .cfg-page .flow-canvas{position:relative;border:0;border-radius:0;background:var(--vscode-editor-background)}
 .cfg-page .scope,.cfg-page #filter-status{background:var(--cfg-ground);border-bottom:1px solid var(--cfg-rule);font-size:11px}
 .cfg-page [hidden]{display:none!important}
@@ -62,7 +62,7 @@ export const controlFlowUiStyles = `
 .cfg-overview rect{fill:var(--vscode-editorWidget-border,var(--vscode-descriptionForeground));stroke:none}
 .cfg-overview .cfg-map-selected{fill:var(--vscode-focusBorder)}
 .cfg-overview #cfg-overview-window{fill:var(--vscode-focusBorder);fill-opacity:.12;stroke:var(--vscode-focusBorder);stroke-width:1;vector-effect:non-scaling-stroke;pointer-events:none}
-.cfg-page .empty{margin:auto;padding:24px;color:var(--vscode-descriptionForeground)}
+.cfg-page .empty{margin:auto;padding:24px;color:var(--ghidra-muted)}
 .cfg-page button:focus-visible,.cfg-page summary:focus-visible,.cfg-page .cfg-overview-close:focus-visible,.cfg-page #cfg-overview-map:focus-visible{outline:2px solid var(--cfg-focus);outline-offset:-2px}.cfg-page button:disabled{opacity:.5;cursor:not-allowed}
 .cfg-page button,.cfg-page summary{transition:background-color 120ms ease,color 120ms ease}
 @media(prefers-reduced-motion:reduce){.cfg-page *{animation:none!important;transition:none!important}}

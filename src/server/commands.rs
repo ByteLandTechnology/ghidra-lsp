@@ -71,8 +71,8 @@ impl Server {
         let symbol = e
           .symbols(&md5)
           .await?
-          .into_iter()
-          .find(|s| s.id == id)
+          .by_id(id)
+          .cloned()
           .context("symbol no longer exists")?;
         let location = e.symbol_location(&md5, &symbol).await?;
         drop(e);
@@ -146,61 +146,6 @@ impl Server {
         }
         Ok(json!({}))
       }
-      "ghidra.location" => {
-        let raw_uri: Uri = arg
-          .get("uri")
-          .and_then(Value::as_str)
-          .context("uri is required")?
-          .parse()?;
-        let uri = canonical_virtual_uri(&raw_uri);
-        let e = self.engine.lock().await;
-        let doc = e.docs.get(&uri).context("Unknown virtual document")?;
-        if let Some(version) = arg.get("version") {
-          ensure!(
-            *version == json!(doc.version),
-            "The decompiled document changed. Request Code Actions again before editing comments"
-          );
-        }
-        if let Some(address) = arg.get("address").and_then(Value::as_str) {
-          ensure!(
-            doc.clean(),
-            "Save or discard the pending edit before mapping a code selection"
-          );
-          ensure!(
-            doc.spans.iter().any(|span| span.location.is_some()),
-            "Upgrade ghidra-mcp for GUI cursor locations; this document has no native layout"
-          );
-          let span = doc.spans.iter().find(|span| {
-            span.token.kind != "comment"
-              && span
-                .location
-                .as_ref()
-                .and_then(|location| location.code_unit_address.as_deref())
-                .is_some_and(|unit| same_address(unit, address))
-          });
-          return Ok(json!({
-            "md5": doc.md5,
-            "entry": doc.entry,
-            "position": span.map(|span| doc.range(span).start),
-            "native": true,
-          }));
-        }
-        let p: Position = serde_json::from_value(
-          arg
-            .get("position")
-            .cloned()
-            .context("position is required")?,
-        )?;
-        let location = doc.code_location(p)?;
-        Ok(json!({
-          "md5": doc.md5,
-          "entry": doc.entry,
-          "address": location.map(|l| &l.address),
-          "code_unit_address": location.and_then(|l| l.code_unit_address.as_deref()),
-          "exact": location.is_some_and(|l| l.exact),
-          "native": doc.spans.iter().any(|s| s.location.is_some()),
-        }))
-      }
       "ghidra.reveal" => {
         let md5 = self.scoped_md5(&arg).await?;
         let address_text = arg
@@ -273,5 +218,71 @@ impl Server {
       }
       _ => bail!("Unknown command: {command}"),
     }
+  }
+
+  /// Maps a cursor position, maps an instruction address, or returns all UTF-16 location spans.
+  pub(super) async fn execute_location_command(&self, arg: Value) -> Result<Value> {
+    let raw_uri: Uri = arg
+      .get("uri")
+      .and_then(Value::as_str)
+      .context("uri is required")?
+      .parse()?;
+    let uri = canonical_virtual_uri(&raw_uri);
+    let e = self.engine.lock().await;
+    let doc = e.docs.get(&uri).context("Unknown virtual document")?;
+    if let Some(version) = arg.get("version") {
+      ensure!(
+        *version == json!(doc.version),
+        "The decompiled document changed. Request Code Actions again before editing comments"
+      );
+    }
+    if let Some(address) = arg.get("address").and_then(Value::as_str) {
+      ensure!(
+        doc.clean(),
+        "Save or discard the pending edit before mapping a code selection"
+      );
+      ensure!(
+        doc.spans.iter().any(|span| span.location.is_some()),
+        "Upgrade ghidra-mcp for GUI cursor locations; this document has no native layout"
+      );
+      let span = doc.spans.iter().find(|span| {
+        span.token.kind != "comment"
+          && span
+            .location
+            .as_ref()
+            .and_then(|location| location.code_unit_address.as_deref())
+            .is_some_and(|unit| same_address(unit, address))
+      });
+      return Ok(json!({
+        "md5": doc.md5,
+        "entry": doc.entry,
+        "position": span.map(|span| doc.range(span).start),
+        "native": true,
+      }));
+    }
+    if arg.get("address").is_none() && arg.get("position").is_none() {
+      let spans = doc.location_spans()?;
+      return Ok(json!({
+        "md5": doc.md5,
+        "entry": doc.entry,
+        "native": true,
+        "spans": spans,
+      }));
+    }
+    let p: Position = serde_json::from_value(
+      arg
+        .get("position")
+        .cloned()
+        .context("position is required")?,
+    )?;
+    let location = doc.code_location(p)?;
+    Ok(json!({
+      "md5": doc.md5,
+      "entry": doc.entry,
+      "address": location.map(|l| &l.address),
+      "code_unit_address": location.and_then(|l| l.code_unit_address.as_deref()),
+      "exact": location.is_some_and(|l| l.exact),
+      "native": doc.spans.iter().any(|s| s.location.is_some()),
+    }))
   }
 }
