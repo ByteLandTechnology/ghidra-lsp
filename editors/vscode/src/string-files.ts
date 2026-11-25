@@ -107,8 +107,9 @@ export class StringFiles implements vscode.TextDocumentContentProvider, vscode.C
                 operation: 'list',
                 params: { scan: { range: { start: address, end: address } }, page: { limit: 1 } },
             });
-            const first = listed.items?.[0];
-            if (first && typeof first.value === 'string') { return first.value; }
+            const value = listed.items?.[0]?.value;
+            if (typeof value !== 'string') { throw new Error(`No defined string at ${address}`); }
+            return value;
         } catch (error) {
             if (!unsupportedOperation(error)) { throw error; }
         }

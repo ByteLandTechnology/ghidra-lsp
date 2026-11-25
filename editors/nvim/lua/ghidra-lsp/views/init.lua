@@ -67,28 +67,61 @@ function M.show_address_xrefs(md5, addr)
     vim.cmd('copen')
 end
 
+--- Return true if an error message reports an unknown or unsupported server operation.
+local function unsupported_operation(err)
+    local text = tostring(err or ''):lower()
+    return text:find('unknown operation', 1, true) ~= nil
+        or text:find('unknown method', 1, true) ~= nil
+        or text:find('unknown_operation', 1, true) ~= nil
+        or text:find('unknown_method', 1, true) ~= nil
+        or text:find('method not found', 1, true) ~= nil
+        or text:find('unsupported operation', 1, true) ~= nil
+        or text:find('is not one of', 1, true) ~= nil
+        or text:find('unknown variant', 1, true) ~= nil
+end
+
 --- Open a read-only virtual buffer displaying a defined string at the given address.
 function M.open_string(md5, addr, initial_value)
     local text = type(initial_value) == 'string' and initial_value or nil
     if text == nil then
-        local ok, gv = pcall(client.exec_sync, 'ghidra.query', {
+        local ok_list, listed = pcall(client.exec_sync, 'ghidra.query', {
             md5 = md5,
-            domain = 'global_variable',
-            operation = 'get',
-            params = { selector = { address = addr } },
+            domain = 'string',
+            operation = 'list',
+            params = {
+                scan = { range = { start = addr, ['end'] = addr } },
+                page = { limit = 1 },
+            },
         })
-        if ok and type(gv) == 'table' then
-            text = tostring(gv.value or gv.representation or '')
-        else
-            local ok_str, sres = pcall(client.exec_sync, 'ghidra.strings', { md5 = md5 }, 60000)
-            if ok_str and type(sres) == 'table' and type(sres.items) == 'table' then
-                for _, item in ipairs(sres.items) do
-                    if type(item) == 'table' and (item.address == addr or format.same_address(item.address, addr)) then
-                        text = tostring(item.value or '')
-                        break
+        if ok_list then
+            local first = type(listed) == 'table' and type(listed.items) == 'table' and listed.items[1] or nil
+            if type(first) == 'table' and type(first.value) == 'string' then
+                text = first.value
+            else
+                error('No defined string at ' .. tostring(addr))
+            end
+        elseif unsupported_operation(listed) then
+            local ok, gv = pcall(client.exec_sync, 'ghidra.query', {
+                md5 = md5,
+                domain = 'global_variable',
+                operation = 'get',
+                params = { selector = { address = addr } },
+            })
+            if ok and type(gv) == 'table' and (type(gv.value) == 'string' or type(gv.representation) == 'string') then
+                text = type(gv.value) == 'string' and gv.value or gv.representation
+            else
+                local ok_str, sres = pcall(client.exec_sync, 'ghidra.strings', { md5 = md5 }, 60000)
+                if ok_str and type(sres) == 'table' and type(sres.items) == 'table' then
+                    for _, item in ipairs(sres.items) do
+                        if type(item) == 'table' and (item.address == addr or format.same_address(item.address, addr)) then
+                            text = type(item.value) == 'string' and item.value or ''
+                            break
+                        end
                     end
                 end
             end
+        else
+            error(listed)
         end
     end
     local lines = vim.split(tostring(text or ''), '\n', { plain = true })
