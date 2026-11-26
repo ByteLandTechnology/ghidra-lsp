@@ -81,7 +81,7 @@ Run `:checkhealth ghidra-lsp` at any time to inspect the Neovim version, `npm` a
 
 ## Complete `:Ghidra*` command reference
 
-`editors/nvim/plugin/ghidra-lsp.lua` registers all 25 user commands:
+`editors/nvim/plugin/ghidra-lsp.lua` registers all 28 user commands:
 
 | Command | Arguments | Action |
 | --- | --- | --- |
@@ -89,6 +89,9 @@ Run `:checkhealth ghidra-lsp` at any time to inspect the Neovim version, `npm` a
 | `:GhidraOpenBinary` | `[path]` | Open a binary (file completion); restores silently if analyzed, or prompts to analyze |
 | `:GhidraSelectSession` | `[md5]` | Pick or activate an open or saved Ghidra session |
 | `:GhidraCloseSession` | `[md5]` | Close the active or specified clean session |
+| `:GhidraCheckpoints` | `[md5]` | Browse and restore saved project checkpoints from the picker |
+| `:GhidraRestoreCheckpoint` | `[id\|name]` | Restore the newest checkpoint or a checkpoint selected with `<Tab>` completion |
+| `:GhidraResetSession` | `[analyze\|noanalyze]` | Reset the active session to a clean binary import and refresh all open buffers |
 | `:GhidraReanalyze` | — | Run or re-run auto-analysis on the active program |
 | `:GhidraOpenFunction` | `[entry\|name]` | Open a function by entry/name (supports `<Tab>` completion) or from the picker |
 | `:GhidraFunctions` | — | Open the searchable floating picker for program functions |

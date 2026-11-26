@@ -344,6 +344,57 @@ export class DataTypeFiles implements vscode.FileSystemProvider, vscode.Disposab
             if (uri.authority === md5 && this.hasTab(uri) && !this.document(uri)?.isDirty && !this.saving.has(key)) { await this.reload(uri); }
         }
     }
+    /** Return true when any open data type document belonging to `md5` has unsaved changes. */
+    hasDirtyEditors(md5: string): boolean {
+        const target = md5.toLowerCase();
+        return vscode.workspace.textDocuments.some(doc => doc.uri.scheme === typeScheme && doc.uri.authority.toLowerCase() === target && doc.isDirty);
+    }
+    /** Reconcile cached and open data type documents after checkpoint restore or session reset. */
+    async syncAfterSessionRestore(md5: string): Promise<void> {
+        const target = md5.toLowerCase();
+        for (const key of [...this.comparisons.keys()]) {
+            if (vscode.Uri.parse(key).authority.toLowerCase() === target) { this.comparisons.delete(key); }
+        }
+        const staleTabs: vscode.Tab[] = [];
+        for (const [key, previous] of [...this.entries]) {
+            const uri = vscode.Uri.parse(key);
+            if (uri.authority.toLowerCase() !== target || this.saving.has(key)) { continue; }
+            if (!this.hasTab(uri)) {
+                this.entries.delete(key);
+                this.diagnostics.delete(uri);
+                continue;
+            }
+            try {
+                const current = await this.fetchDocument(uri);
+                const text = current.text;
+                this.entries.set(key, {
+                    original: current.original,
+                    text,
+                    readonlyReason: current.readonlyReason,
+                    uncertain: false,
+                    requiresReadback: this.document(uri)?.getText() !== text,
+                    mtime: Math.max(Date.now(), (previous.mtime || 0) + 1),
+                });
+                this.diagnostics.delete(uri);
+                this.events.fire([{ type: vscode.FileChangeType.Changed, uri }]);
+            } catch {
+                this.entries.delete(key);
+                this.diagnostics.delete(uri);
+                for (const group of vscode.window.tabGroups.all) {
+                    for (const tab of group.tabs) {
+                        const matches = (tab.input instanceof vscode.TabInputText || tab.input instanceof vscode.TabInputCustom) && tab.input.uri.toString() === key
+                            || tab.input instanceof vscode.TabInputTextDiff && [tab.input.original.toString(), tab.input.modified.toString()].includes(key);
+                        if (matches) { staleTabs.push(tab); }
+                    }
+                }
+                this.events.fire([{ type: vscode.FileChangeType.Deleted, uri }]);
+            }
+        }
+        await this.persist();
+        if (staleTabs.length) {
+            await vscode.window.tabGroups.close(staleTabs, true);
+        }
+    }
     /** Open a diff view comparing the live Ghidra type against the local draft `uri`. */
     private async compare(uri: vscode.Uri): Promise<void> {
         const current = await this.fetchDocument(uri);

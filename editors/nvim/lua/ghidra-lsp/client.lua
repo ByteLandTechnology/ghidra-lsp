@@ -406,6 +406,7 @@ function M.start_client()
                                     pcall(function() require('ghidra-lsp.commands').overview(target_md5, true) end)
                                 elseif lower:find('^ghidra%-listing://' .. target_md5 .. '/')
                                     or lower:find('^ghidra%-memory://' .. target_md5 .. '/')
+                                    or lower:find('^ghidra%-string://' .. target_md5 .. '/')
                                     or lower:find('^ghidra%-cfg://' .. target_md5 .. '/')
                                     or lower:find('^ghidra%-callgraph://' .. target_md5 .. '/')
                                 then
