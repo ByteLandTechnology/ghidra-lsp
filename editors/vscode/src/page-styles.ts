@@ -85,9 +85,9 @@ input[type=checkbox]{width:auto;margin:0;accent-color:var(--vscode-checkbox-sele
 .hex{font:13px/1.6 var(--vscode-editor-font-family,monospace);white-space:pre-wrap;overflow-wrap:anywhere}
 .error{color:var(--vscode-errorForeground);white-space:pre-wrap;overflow-wrap:anywhere}
 .success{color:var(--ghidra-success)}
-.sr-status,.flow-page #filter-status.sr-filter-status,#error:empty,#status:empty,#goto-error:empty{position:absolute;width:1px;height:1px;padding:0;margin:0;border:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.sr-status,.flow-page #filter-status.sr-filter-status,#error:empty,#status:empty,#goto-error:empty{position:absolute;top:0;left:0;width:1px;height:1px;padding:0;margin:0;border:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 #error:not(:empty){padding:8px 12px;margin:8px 0;border-left:2px solid var(--vscode-inputValidation-errorBorder,var(--vscode-errorForeground));background:color-mix(in srgb,var(--vscode-errorForeground) 6%,var(--vscode-editor-background));font-size:12px}
-.flow-page #error:not(:empty){flex-shrink:0;margin:8px 16px 0;position:relative;z-index:3}
+.flow-page #error:not(:empty){margin:0;padding:6px 12px;border-bottom:1px solid var(--vscode-panel-border);position:relative;z-index:3}
 #goto{flex-wrap:wrap}
 #address[aria-invalid="true"]{border-color:var(--vscode-inputValidation-errorBorder,var(--vscode-errorForeground));outline-color:var(--vscode-inputValidation-errorBorder,var(--vscode-errorForeground))}
 #goto-error:not(:empty){flex:1 0 100%;display:block;margin:3px 0 0;padding:4px 8px;border-left:2px solid var(--vscode-inputValidation-errorBorder,var(--vscode-errorForeground));background:color-mix(in srgb,var(--vscode-errorForeground) 6%,var(--vscode-editor-background));font-size:11px;line-height:1.35}

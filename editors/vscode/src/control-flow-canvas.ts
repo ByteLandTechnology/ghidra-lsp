@@ -1,23 +1,29 @@
 // Copyright 2026 ByteLand Technology Limited
 // SPDX-License-Identifier: MIT
 
-/** Scoped to the CFG page; other workbench views keep their existing layout. */
+/** Shared styles for control-flow, call-graph, and call-column pages. */
 export const controlFlowStyles = `
 .flow-page{overflow:hidden;overflow:clip}
-.flow-page main{height:100vh;max-width:none;padding:10px 12px;display:flex;flex-direction:column;gap:8px}
-.flow-page header{display:flex;align-items:baseline;gap:12px;padding:0;margin:0;border:0;min-width:0}
-.flow-page h1{font-size:14px;line-height:1.5;margin:0;white-space:nowrap}
+.flow-page main{height:100vh;max-width:none;padding:0;margin:0;position:relative;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto auto auto minmax(0,1fr);gap:0}
+.flow-page .flow-topbar{grid-row:1;position:relative;z-index:4;display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;padding:8px 14px;min-width:0;border-bottom:1px solid var(--vscode-panel-border);background:var(--vscode-editor-background)}
+.flow-page .flow-topbar-primary{display:flex;align-items:center;gap:8px;flex:1 1 140px;min-width:min(140px,100%)}
+.flow-page .flow-topbar-controls,.flow-page .flow-topbar-actions{display:flex;align-items:center;flex-wrap:wrap;gap:4px;min-width:0;max-width:100%}
+.flow-page .flow-topbar-actions{margin-left:auto}
+.flow-page .flow-search{flex:1 0 100%;min-width:0}
+.flow-page .flow-search input{width:100%;min-width:0;max-width:none;min-height:28px;height:auto}
+.flow-page h1{font-size:14px;line-height:1.4;margin:0;min-width:0}
 .flow-page .subtitle{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.flow-page .toolbar{gap:5px;margin:0;flex-wrap:nowrap}
+.flow-page .toolbar{gap:5px;margin:0;flex-wrap:wrap}
 .flow-page .search{min-width:70px;flex:1;max-width:none}
 .flow-page button{white-space:nowrap;padding:3px 8px}
+.flow-page :is(.flow-topbar button,#call-menu>summary,.cfg-zoom button,.call-zoom button,.cfg-overview-close){min-width:24px;min-height:24px}
 .flow-page .zoom-step{min-width:28px;font-size:16px;padding:0 7px}
 .flow-page #graph-zoom{min-width:51px;font-variant-numeric:tabular-nums}
-.flow-page .scope{margin:0;font-size:11px;line-height:1.4}
-.flow-page #filter-status{margin:0;font-size:11px}
+.flow-page #filter-status,.flow-page .scope{margin:0;padding:4px 12px;font-size:11px;line-height:1.35;overflow-wrap:anywhere;border-bottom:1px solid var(--vscode-panel-border);background:var(--vscode-editor-background)}
 .flow-page .selection-tools{flex-wrap:wrap;padding-bottom:6px}
-.flow-page #page-body{display:flex;flex-direction:column;flex:1;min-height:0;min-width:0;width:100%}
-.flow-page .flow-canvas{position:relative;flex:1;min-height:120px;width:100%;overflow:hidden;overflow:clip;cursor:grab;touch-action:none;border-radius:3px;background:var(--vscode-sideBar-background,var(--vscode-editor-background))}
+.flow-page #page-body{grid-row:5;min-height:0;min-width:0;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr)}
+.flow-page .flow-canvas,.flow-page .call-columns{min-height:0;min-width:0}
+.flow-page .flow-canvas{position:relative;width:100%;height:100%;min-height:0;overflow:hidden;overflow:clip;cursor:grab;touch-action:none;border-radius:0;background:var(--vscode-sideBar-background,var(--vscode-editor-background))}
 .flow-canvas.panning,.flow-canvas.panning .graph-node{cursor:grabbing}
 .flow-canvas svg{display:block;width:100%;height:100%;overflow:hidden;user-select:none}
 .flow-canvas .graph-cards{position:absolute;inset:0;overflow:hidden;overflow:clip;pointer-events:none;z-index:1}
@@ -94,6 +100,14 @@ body.flow-page:is(.vscode-high-contrast,.vscode-high-contrast-light) .flow-canva
   .flow-canvas .cfg-edge-badge text{fill:var(--ghidra-selection-fg)!important}
   .flow-page .cfg-edge.is-active .cfg-edge-badge rect,.flow-page .cfg-edge.is-hovered .cfg-edge-badge rect,.flow-page .cfg-edge:focus-visible .cfg-edge-badge rect{stroke:var(--ghidra-active-border)}
 }
+@media(max-width:640px){
+  .flow-page .flow-topbar{padding:6px 8px;gap:4px 6px}
+  .flow-page #filter-status,.flow-page .scope,.flow-page #error:not(:empty){padding:3px 8px;font-size:11px}
+}
+@media(max-height:420px){
+  .flow-page .flow-topbar{padding:4px 8px;gap:3px 6px}
+  .flow-page #filter-status,.flow-page .scope,.flow-page #error:not(:empty){padding:2px 8px;font-size:10px;line-height:1.25;max-height:24px;overflow-y:auto}
+}
 `;
 
 /** Runs inside the existing nonce-protected page and uses its persisted view state. */
@@ -114,7 +128,7 @@ export const controlFlowScript = String.raw`
         const base={left:pad,top:pad,right:Math.max(pad+1,vw-pad),bottom:Math.max(pad+1,vh-pad)};
         let boxes=[base];
         for(const el of host.querySelectorAll('.cfg-zoom,.cfg-overview,.scope,.call-zoom,.call-overview,.call-details,#filter-status:not(.sr-filter-status),.cfg-search,.call-search,#error:not(:empty)')){
-          if(el.hidden||el.closest('[hidden]')){continue}
+          if(el.hidden||el.closest('[hidden]')||el.classList.contains('sr-filter-status')){continue}
           const r=el.getBoundingClientRect();if(r.width<=0||r.height<=0||r.right<=rect.left+1||r.left>=rect.right-1||r.bottom<=rect.top+1||r.top>=rect.bottom-1){continue}
           const gap=Math.min(8,pad),ox0=r.left-rect.left-gap,oy0=r.top-rect.top-gap,ox1=r.right-rect.left+gap,oy1=r.bottom-rect.top+gap,next=[];
           for(const b of boxes){

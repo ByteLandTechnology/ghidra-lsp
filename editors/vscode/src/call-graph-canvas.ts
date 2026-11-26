@@ -4,23 +4,23 @@
 /** Call graph uses the existing themed graph viewport, with function-focused controls. */
 export const callGraphStyles = `
 .call-page{padding:0}
-.call-page main{padding:0;gap:0;position:relative}
-.call-page .call-topbar{display:flex;align-items:center;gap:10px;min-height:56px;padding:10px 20px;border-bottom:1px solid var(--vscode-panel-border);flex-shrink:0}
+.call-page .call-topbar{min-height:48px}
+.call-page .call-topbar-primary{flex:1 1 160px;min-width:min(160px,100%)}
 .call-page .call-topbar h1{font-size:14px;letter-spacing:.01em;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin:0}
-.call-page .call-topbar .call-function-title{display:flex;align-items:center}
-.call-page .call-topbar #call-function-picker{display:flex;align-items:center;gap:8px;max-width:100%;min-width:0;padding:4px 6px;margin-left:-6px;border:0;border-radius:3px;color:inherit;font:inherit;letter-spacing:inherit;text-align:left}
-.call-function-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.call-function-title .call-icon:first-child{color:var(--ghidra-muted)}
-.call-function-title .call-icon:last-child{font-size:12px;color:var(--ghidra-muted)}
+.call-page .call-topbar .call-function-title{display:flex;align-items:center;min-width:0}
+.call-page .call-topbar #call-function-picker{display:flex;align-items:center;gap:6px;max-width:100%;min-width:24px;min-height:28px;height:auto;padding:4px 6px;border:0;border-radius:4px;background:transparent;color:inherit;font:inherit;letter-spacing:inherit;text-align:left;overflow:hidden}
+.call-function-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.call-function-title .call-icon:first-child{color:var(--ghidra-muted);flex-shrink:0}
+.call-function-title .call-icon:last-child{font-size:12px;color:var(--ghidra-muted);flex-shrink:0}
 .call-icon{font:16px call-icons;display:inline-block;line-height:1;vertical-align:middle}
-.call-page .call-icon-button,.call-page #call-menu>summary{width:32px;height:32px;padding:7px;border:0;background:transparent;text-align:center;cursor:pointer;flex-shrink:0}
-.call-page .call-topbar button{background:transparent;border:1px solid var(--vscode-panel-border);height:32px}
-.call-page .call-topbar .call-icon-button{border:0}
+.call-page .call-icon-button,.call-page #call-menu>summary{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;min-width:24px;min-height:24px;padding:6px;border:0;border-radius:4px;background:transparent;text-align:center;cursor:pointer;flex-shrink:0}
+.call-page .call-topbar button{background:transparent;border:0;min-height:28px;height:auto}
 .call-page button:hover,.call-page #call-menu>summary:hover{background:var(--vscode-toolbar-hoverBackground,var(--vscode-list-hoverBackground))}
 .call-page #call-menu{margin:0;border:0;padding:0;flex-shrink:0}
-.call-page #call-menu>summary{list-style:none;display:block;margin:0}
+.call-page #call-menu>summary,.call-page #call-menu[open]>summary{list-style:none;margin:0}
 .call-page #call-menu>summary::-webkit-details-marker{display:none}
-.call-menu-content{position:absolute;z-index:5;right:12px;top:52px;width:min(320px,calc(100vw - 24px));max-height:calc(100vh - 76px);overflow:auto;background:var(--vscode-menu-background,var(--vscode-editor-background));color:var(--vscode-menu-foreground,var(--vscode-foreground));border:1px solid var(--vscode-menu-border,var(--vscode-panel-border));box-shadow:0 4px 12px var(--vscode-widget-shadow);padding:8px;cursor:default}
+.call-menu-content{position:absolute;z-index:6;right:8px;top:calc(100% + 2px);width:min(304px,calc(100vw - 16px));max-height:max(96px,calc(100vh - 116px));overflow:auto;background:var(--vscode-menu-background,var(--vscode-editor-background));color:var(--vscode-menu-foreground,var(--vscode-foreground));border:1px solid var(--vscode-menu-border,var(--vscode-panel-border));box-shadow:0 4px 12px var(--vscode-widget-shadow);padding:8px;cursor:default}
+.call-page #call-menu:not([open]) .call-menu-content{display:none}
 .call-page #call-menu[open] .call-menu-content{animation:call-reveal 140ms cubic-bezier(.2,.8,.2,1)}
 .call-page .selection-tools{display:flex;flex-direction:column;gap:4px;margin:0;padding:4px 0 8px;border-bottom:1px solid var(--vscode-panel-border)}
 .call-page #selection-label{display:flex;flex-direction:column;font-size:12px;line-height:1.6;padding:2px 8px 8px;overflow-wrap:anywhere;color:var(--ghidra-muted)}
@@ -45,10 +45,9 @@ export const callGraphStyles = `
 .call-page .call-icon-row button,.call-page .selection-buttons button{width:32px;min-width:32px;justify-content:center;padding:6px}
 .call-page .call-icon-row [aria-pressed="true"]{color:var(--ghidra-accent);background:var(--ghidra-pressed-bg);box-shadow:inset 0 0 0 1px var(--ghidra-focus)}
 .call-divider{width:1px;align-self:stretch;margin:6px 3px;background:var(--vscode-panel-border)}
-.call-page .call-search{flex:0 1 240px;min-width:0}
-.call-page .call-search input{width:100%;height:32px;border-radius:3px}
+.call-page .call-search input{width:100%;min-height:30px;height:auto;border-radius:4px}
 .call-page .call-search:not([hidden]){animation:call-reveal 140ms cubic-bezier(.2,.8,.2,1)}
-.call-page .call-canvas{position:relative;min-height:160px;border:0;border-radius:0;background:var(--vscode-editor-background)}
+.call-page .call-canvas{position:relative;min-height:0;border:0;border-radius:0;background:var(--vscode-editor-background)}
 .call-canvas svg{overflow:visible}
 .call-node-controls{overflow:visible}
 .call-node .call-node-controls{opacity:0;pointer-events:none;transition:opacity 140ms ease}
@@ -80,14 +79,11 @@ export const callGraphStyles = `
 .call-canvas .call-edge .edge{pointer-events:none}
 .call-canvas .call-node.edge-endpoint .call-node-body{stroke:var(--ghidra-focus);stroke-width:2}
 .call-page .call-canvas:focus-visible{outline:2px solid var(--ghidra-focus);outline-offset:-3px}
-.call-page .call-zoom{position:absolute;z-index:2;bottom:16px;right:16px;display:flex;gap:0;border:1px solid var(--vscode-panel-border);border-radius:8px;background:var(--vscode-editor-background);box-shadow:0 2px 8px var(--vscode-widget-shadow);overflow:visible}
-.call-page .call-zoom button{height:32px;background:transparent;border:0;border-radius:0;min-width:32px}
-.call-page .call-zoom #graph-zoom{font-size:12px;border-inline:1px solid var(--vscode-panel-border);font-variant-numeric:tabular-nums;min-width:52px}
+.call-page .call-zoom{position:absolute;z-index:2;bottom:14px;right:14px;display:flex;gap:0;border:1px solid var(--vscode-panel-border);border-radius:8px;background:var(--vscode-editor-background);box-shadow:0 2px 8px var(--vscode-widget-shadow);overflow:visible}
+.call-page .call-zoom button{min-height:28px;height:auto;background:transparent;border:0;border-radius:0;min-width:30px;padding:4px 8px}
+.call-page .call-zoom #graph-zoom{font-size:12px;border-inline:1px solid var(--vscode-panel-border);font-variant-numeric:tabular-nums;min-width:50px}
 .call-page .call-zoom button:first-child{border-radius:7px 0 0 7px}
 .call-page .call-zoom button:last-child{border-radius:0 7px 7px 0}
-.call-page .scope,.call-page #filter-status{position:absolute;z-index:2;top:58px;left:20px;margin:0;font-size:11px;background:var(--vscode-editor-background)}
-.call-page:has([data-call-columns]) #filter-status{top:104px}
-.call-page .scope{top:80px;color:var(--ghidra-muted)}
 .call-page [hidden]{display:none!important}
 .call-canvas .call-node-body{fill:var(--vscode-editor-background);stroke:var(--vscode-editorWidget-border,var(--vscode-panel-border));stroke-width:1;vector-effect:non-scaling-stroke;transition:stroke-width 120ms ease}
 .call-canvas .is-root .call-node-body{fill:var(--ghidra-active-selection-bg);stroke:var(--ghidra-focus);stroke-width:2}
@@ -110,25 +106,25 @@ export const callGraphStyles = `
 .call-canvas .call-edge.is-active .edge,.call-canvas .call-edge:focus-visible .edge{stroke-width:3}
 .call-canvas .call-edge.is-hovered .edge{stroke-width:2.5}
 #call-arrow path{fill:var(--vscode-descriptionForeground);fill:context-stroke}
-.call-overview{margin:0;padding:0;position:absolute;right:16px;bottom:58px;width:176px;background:var(--vscode-editor-background);border:1px solid var(--vscode-editorWidget-border,var(--vscode-panel-border));border-radius:8px;box-shadow:0 2px 8px var(--vscode-widget-shadow);overflow:hidden;opacity:.95;cursor:default}
-.call-overview summary{display:flex;align-items:center;gap:6px;margin:0!important;padding:6px 8px;font-size:11px;font-weight:500;cursor:pointer;user-select:none;list-style:none}
+.call-overview{margin:0;padding:0;position:absolute;right:14px;bottom:52px;width:min(176px,calc(100% - 20px));max-height:calc(100% - 58px);background:var(--vscode-editor-background);border:1px solid var(--vscode-editorWidget-border,var(--vscode-panel-border));border-radius:8px;box-shadow:0 2px 8px var(--vscode-widget-shadow);overflow:hidden;opacity:.95;cursor:default}
+.call-overview summary{display:flex;align-items:center;gap:6px;min-height:28px;margin:0!important;padding:4px 8px;font-size:11px;font-weight:500;cursor:pointer;user-select:none;list-style:none}
 .call-overview summary::-webkit-details-marker{display:none}
-.call-overview summary .call-icon{font-size:13px}
+.call-overview summary>span:not(.call-icon){flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.call-overview summary .call-icon{font-size:13px;flex-shrink:0}
 .call-overview summary .call-icon:last-child{margin-left:auto}
 .call-canvas .call-overview svg{display:block;width:100%;height:110px;border-top:1px solid var(--vscode-panel-border);cursor:crosshair;background:var(--vscode-sideBar-background)}
 .call-overview path{fill:none;stroke:var(--vscode-descriptionForeground);stroke-width:2}
 .call-overview rect{fill:var(--vscode-editorWidget-border,var(--vscode-descriptionForeground));stroke:none}
 .call-overview .overview-root{fill:var(--vscode-focusBorder)}
 .call-overview #call-overview-window{fill:var(--vscode-focusBorder);fill-opacity:.12;stroke:var(--vscode-focusBorder);stroke-width:1;vector-effect:non-scaling-stroke;pointer-events:none}
-.call-page .call-details{position:absolute;z-index:3;bottom:58px;left:20px;right:20px;margin:0;padding:10px 14px;max-height:40vh;overflow:auto;font-size:12px;background:var(--vscode-editor-background);border:1px solid var(--vscode-panel-border)}
-.call-page .call-details summary{padding:5px 0;cursor:pointer}
+.call-page .call-details{position:absolute;z-index:3;bottom:52px;left:12px;right:12px;margin:0;padding:10px 14px;max-height:40vh;overflow:auto;font-size:12px;background:var(--vscode-editor-background);border:1px solid var(--vscode-panel-border)}
+.call-page .call-details summary{display:flex;align-items:center;min-height:28px;padding:4px 0;cursor:pointer}
 .call-page .call-details .table-wrap{max-height:190px;overflow:auto}
 .call-page .call-details th,.call-page .call-details td{padding:7px 10px;font-size:12px}
 .call-page button,.call-page summary{transition:background-color 120ms ease,color 120ms ease}
 @keyframes call-reveal{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:translateY(0)}}
 @media(prefers-reduced-motion:reduce){.call-page *{animation:none!important;transition:none!important}}
 .vscode-high-contrast .call-canvas .call-edge,.vscode-high-contrast-light .call-canvas .call-edge{opacity:1!important}
-@media(max-width:640px){.call-page .call-topbar{padding:8px 10px;gap:5px;min-height:48px}.call-page .call-topbar h1{font-size:13px}.call-page .call-search{position:absolute;z-index:4;top:52px;left:10px;right:10px;background:var(--vscode-editor-background)}.call-page .call-overview{width:120px;right:10px;bottom:54px}.call-page .call-overview svg{height:82px}.call-page .call-zoom{bottom:12px;right:10px}}
 
 @media(hover:none) and (pointer:coarse){.call-node.is-root .call-node-controls,.call-node.selected .call-node-controls{opacity:1;pointer-events:auto}}
 .call-page .call-icon-button,.call-page #call-menu>summary{display:inline-flex;align-items:center;justify-content:center}
@@ -199,7 +195,33 @@ body.call-page:is(.vscode-high-contrast,.vscode-high-contrast-light) :is(.call-t
   .call-page .call-topbar .call-icon-button[aria-expanded="true"],.call-page .call-topbar [aria-expanded="true"],.call-page .call-icon-row [aria-pressed="true"]{background:var(--ghidra-pressed-bg);color:var(--ghidra-selection-fg);border:2px solid var(--ghidra-active-border)}
   .call-page .call-menu-content,.call-page .call-zoom,.call-overview,.call-page .call-details{background:var(--ghidra-selection-bg);color:var(--ghidra-selection-fg);border-color:var(--ghidra-hv-border)}
 }
-@media(max-width:640px){.call-page .call-topbar{padding:8px 8px;gap:4px}}
+@media(max-width:640px){
+  .call-page .call-topbar{min-height:40px}
+  .call-page .call-topbar h1{font-size:13px}
+  .call-page .call-icon-button,.call-page #call-menu>summary{width:28px;height:28px;padding:4px}
+  .call-page .call-topbar .call-icon-button[aria-expanded="true"]{width:auto;min-width:28px;padding-inline:5px}
+  .call-page .call-search input{min-height:28px}
+  .call-page .call-overview{width:min(120px,calc(100% - 16px));right:8px;bottom:42px}
+  .call-page .call-overview svg{height:68px}
+  .call-page .call-zoom{bottom:8px;right:8px}
+  .call-page .call-zoom button{min-width:28px;min-height:28px;padding:3px 6px}
+}
+@media(max-height:420px){
+  .call-page .call-topbar{min-height:32px}
+  .call-page .call-topbar #call-function-picker{min-height:24px;padding:2px 5px}
+  .call-page .call-icon-button,.call-page #call-menu>summary{width:24px;height:24px;min-width:24px;min-height:24px;padding:2px}
+  .call-page .call-topbar .call-icon-button[aria-expanded="true"]{width:auto;min-width:24px;padding-inline:4px}
+  .call-page .call-topbar button{min-height:24px}
+  .call-page .call-search input{min-height:24px;padding:2px 6px}
+  .call-page .call-zoom{bottom:6px;right:6px}
+  .call-page .call-zoom button{min-width:24px;min-height:24px;padding:2px 5px}
+  .call-page .call-zoom #graph-zoom{min-width:42px;font-size:11px}
+  .call-page .call-overview{right:6px;bottom:34px;max-height:calc(100% - 40px)}
+  .call-page .call-overview[open]{display:flex;flex-direction:column}
+  .call-overview summary{min-height:24px;padding:2px 6px;flex-shrink:0}
+  .call-page .call-overview svg{flex:1 1 auto;min-height:24px;height:52px}
+  .call-page .call-details{bottom:34px;left:8px;right:8px;padding:6px 10px}
+}
 `;
 
 /** Runs after the common selection handlers; all browsing controls use the panel's owning program. */
