@@ -65,6 +65,7 @@ When `ghidraLsp.serverPath` (`"ghidra-lsp"`) and `ghidraLsp.mcpCommand` (`"ghidr
 
 - **Ghidra: Open Binary** / **Ghidra: Open Recent Program** / **Ghidra: Select Session** / **Ghidra: Switch to Session** / **Ghidra: Reopen Session**
 - **Ghidra: Refresh Sessions** / **Ghidra: Close Program** / **Ghidra: Reanalyze Program** / **Ghidra: Stop Waiting for Analysis** / **Ghidra: Program Overview** / **Ghidra: Install or Update Binaries**
+- **Ghidra: Undo Last Edit (Restore Previous Checkpoint)** / **Ghidra: Restore Project Checkpoint…** / **Ghidra: Reset Session (Clean Re-import)**
 
 ### Navigation and inspection
 

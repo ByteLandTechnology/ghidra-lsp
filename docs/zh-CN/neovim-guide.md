@@ -92,7 +92,7 @@ require('ghidra-lsp').setup({
 
 ---
 
-## 25 条用户命令参考（`editors/nvim/plugin/ghidra-lsp.lua`）
+## 28 条用户命令参考（`editors/nvim/plugin/ghidra-lsp.lua`）
 
 ### 会话与二进制管理
 
@@ -102,6 +102,9 @@ require('ghidra-lsp').setup({
 | `:GhidraOpenBinary` | `[path]` | 打开磁盘二进制文件（支持文件路径补全）。已分析则静默恢复，未分析时询问是否启动分析。 |
 | `:GhidraSelectSession` | `[md5]` | 列出并切换到活跃或历史保存的 Ghidra 会话。 |
 | `:GhidraCloseSession` | `[md5]` | 关闭当前或指定会话（若存在未保存的待决重命名会阻止关闭）。 |
+| `:GhidraCheckpoints` | `[md5]` | 打开检查点选择器浏览并恢复项目检查点。 |
+| `:GhidraRestoreCheckpoint` | `[id\|name]` | 恢复最新检查点或通过 `<Tab>` 补全选定的检查点并刷新全部缓冲区。 |
+| `:GhidraResetSession` | `[analyze\|noanalyze]` | 将当前会话重置为干净的重新导入状态（可选自动分析）并刷新全部缓冲区。 |
 | `:GhidraReanalyze` | — | 对当前激活程序触发重新分析。 |
 | `:GhidraOverview` | — | 打开程序概览只读快照窗口（`ghidra-overview://<md5>`）。 |
 
