@@ -80,50 +80,53 @@ local function unsupported_operation(err)
         or text:find('unknown variant', 1, true) ~= nil
 end
 
---- Open a read-only virtual buffer displaying a defined string at the given address.
-function M.open_string(md5, addr, initial_value)
-    local text = type(initial_value) == 'string' and initial_value or nil
-    if text == nil then
-        local ok_list, listed = pcall(client.exec_sync, 'ghidra.query', {
-            md5 = md5,
-            domain = 'string',
-            operation = 'list',
-            params = {
-                scan = { range = { start = addr, ['end'] = addr } },
-                page = { limit = 1 },
-            },
-        })
-        if ok_list then
-            local first = type(listed) == 'table' and type(listed.items) == 'table' and listed.items[1] or nil
-            if type(first) == 'table' and type(first.value) == 'string' then
-                text = first.value
-            else
-                error('No defined string at ' .. tostring(addr))
-            end
-        elseif unsupported_operation(listed) then
-            local ok, gv = pcall(client.exec_sync, 'ghidra.query', {
-                md5 = md5,
-                domain = 'global_variable',
-                operation = 'get',
-                params = { selector = { address = addr } },
-            })
-            if ok and type(gv) == 'table' and (type(gv.value) == 'string' or type(gv.representation) == 'string') then
-                text = type(gv.value) == 'string' and gv.value or gv.representation
-            else
-                local ok_str, sres = pcall(client.exec_sync, 'ghidra.strings', { md5 = md5 }, 60000)
-                if ok_str and type(sres) == 'table' and type(sres.items) == 'table' then
-                    for _, item in ipairs(sres.items) do
-                        if type(item) == 'table' and (item.address == addr or format.same_address(item.address, addr)) then
-                            text = type(item.value) == 'string' and item.value or ''
-                            break
-                        end
-                    end
+--- Read decoded string text at an address from `string.list`, or from older servers.
+local function read_string_text(md5, addr)
+    local ok_list, listed = pcall(client.exec_sync, 'ghidra.query', {
+        md5 = md5,
+        domain = 'string',
+        operation = 'list',
+        params = {
+            scan = { range = { start = addr, ['end'] = addr } },
+            page = { limit = 1 },
+        },
+    })
+    if ok_list then
+        local first = type(listed) == 'table' and type(listed.items) == 'table' and listed.items[1] or nil
+        if type(first) == 'table' and type(first.value) == 'string' then
+            return first.value
+        end
+        error('No defined string at ' .. tostring(addr))
+    end
+    if not unsupported_operation(listed) then
+        error(listed)
+    end
+    local ok, gv = pcall(client.exec_sync, 'ghidra.query', {
+        md5 = md5,
+        domain = 'global_variable',
+        operation = 'get',
+        params = { selector = { address = addr } },
+    })
+    if ok and type(gv) == 'table' and (type(gv.value) == 'string' or type(gv.representation) == 'string') then
+        return type(gv.value) == 'string' and gv.value or gv.representation
+    end
+    local ok_str, sres = pcall(client.exec_sync, 'ghidra.strings', { md5 = md5 }, 60000)
+    if ok_str and type(sres) == 'table' and type(sres.items) == 'table' then
+        for _, item in ipairs(sres.items) do
+            if type(item) == 'table' and (item.address == addr or format.same_address(item.address, addr)) then
+                if type(item.value) == 'string' then
+                    return item.value
                 end
+                break
             end
-        else
-            error(listed)
         end
     end
+    error('No defined string at ' .. tostring(addr))
+end
+
+--- Open a read-only virtual buffer displaying a defined string at the given address.
+function M.open_string(md5, addr, initial_value)
+    local text = type(initial_value) == 'string' and initial_value or read_string_text(md5, addr)
     local lines = vim.split(tostring(text or ''), '\n', { plain = true })
     local buf_name = string.format('ghidra-string://%s/string/%s', md5, format.url_encode(addr))
     local buf = common.open_split_buffer(buf_name, 'ghidra-string://' .. md5 .. '/', true)
@@ -167,7 +170,7 @@ function M.strings(arg)
     end)
 end
 
---- Re-render a Listing, Memory, CFG, or Call Graph buffer in place.
+--- Update a Listing, Memory, String, CFG, or Call Graph buffer in place.
 function M.refresh_buffer(buf)
     if buf == 0 then
         buf = vim.api.nvim_get_current_buf()
@@ -208,16 +211,8 @@ function M.refresh_buffer(buf)
     if s_md5 and s_addr then
         local md5 = s_md5:lower()
         local addr = format.url_decode(s_addr)
-        local text = ''
-        local ok, gv = pcall(client.exec_sync, 'ghidra.query', {
-            md5 = md5,
-            domain = 'global_variable',
-            operation = 'get',
-            params = { selector = { address = addr } },
-        })
-        if ok and type(gv) == 'table' then
-            text = tostring(gv.value or gv.representation or '')
-        end
+        local ok_txt, fetched = pcall(read_string_text, md5, addr)
+        local text = ok_txt and fetched or ''
         common.set_readonly_lines(buf, vim.split(text, '\n', { plain = true }), 'text')
         return
     end
