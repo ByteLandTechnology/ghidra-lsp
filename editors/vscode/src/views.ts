@@ -81,6 +81,8 @@ export class ViewSets implements vscode.Disposable {
     }
     /** Build the map key for a program MD5 and function entry pair. */
     private key(md5: string, entry: string): string { return `${md5}:${entry}`; }
+    /** Invalidate cached pseudocode span snapshots for `md5` after program refresh or restore. */
+    refresh(md5: string): void { this.sourceSelection.invalidate(md5); }
     /** Serialize editor selections into a comparable signature string. */
     private signature(selections: readonly vscode.Selection[]): string {
         return selections.map(s => `${s.anchor.line}:${s.anchor.character}-${s.active.line}:${s.active.character}`).join(',');

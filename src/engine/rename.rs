@@ -300,6 +300,7 @@ impl Engine {
     let backend = self.backend();
     let (domain, selector, current_name) = self.resolve_rename_target(md5, &pending).await?;
     if !pending.patched && current_name == pending.symbol.name {
+      self.record_rename_checkpoint(md5, &pending).await?;
       // Mark uncertain write outcomes and evict cached symbols before sending the write.
       {
         let mut state = self.write_state();

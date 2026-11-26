@@ -5,6 +5,8 @@
 
 /// Completion, signature help, and type-definition lookups.
 mod assist;
+/// Pre-edit checkpoint helpers and post-restore session document regeneration.
+mod checkpoints;
 /// Highlights, inlay hints, code lenses, folding ranges, and document links.
 mod decorations;
 /// Incoming and outgoing call hierarchy builders.
@@ -19,6 +21,8 @@ mod rename;
 mod singleflight;
 /// Synchronous in-memory document, symbol, pending-rename, and epoch state.
 mod state;
+
+pub(crate) use checkpoints::{record_checkpoint, unsupported_session_operation};
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard};

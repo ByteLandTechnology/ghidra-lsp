@@ -101,6 +101,16 @@ impl Server {
         "persisted": false,
       }));
     }
+    crate::engine::record_checkpoint(
+      backend,
+      &md5,
+      &format!(
+        "Before {} comment edit at {}",
+        prepared.kind,
+        crate::address::display_address(&prepared.address)
+      ),
+    )
+    .await?;
     self.engine.invalidate_symbols(&md5);
     let call_result = crate::mutations::execute_comment_mutation(backend, &md5, &prepared).await;
     self.engine.invalidate_symbols(&md5);
@@ -145,6 +155,20 @@ impl Server {
     } else {
       crate::mutations::prepare_variables_ops(backend, &md5, entry, original, payload).await?
     };
+    if !ops.is_empty() {
+      let label = if command == "ghidra.saveFunctionPrototype" {
+        format!(
+          "Before function signature edit at {}",
+          crate::address::display_address(entry)
+        )
+      } else {
+        format!(
+          "Before variable edit at {}",
+          crate::address::display_address(entry)
+        )
+      };
+      crate::engine::record_checkpoint(backend, &md5, &label).await?;
+    }
     self.engine.invalidate_symbols(&md5);
     let call_result = crate::mutations::execute_ops(backend, &md5, &ops).await;
     self.engine.invalidate_symbols(&md5);
@@ -187,6 +211,8 @@ impl Server {
       return Ok(crate::types_doc::noop_type_save(&md5, path, text, current));
     };
     workbench::allow_write(domain, operation, &parameters)?;
+    crate::engine::record_checkpoint(backend, &md5, &format!("Before data type edit ({path})"))
+      .await?;
     let (tool, tool_operation) = workbench::mcp_operation(domain, operation);
     self.engine.invalidate_symbols(&md5);
     let call_result = backend

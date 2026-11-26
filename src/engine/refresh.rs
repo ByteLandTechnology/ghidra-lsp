@@ -148,7 +148,7 @@ impl Engine {
   }
 
   /// Refreshes clean read-only `symbol`, `references`, and `type` snapshots in session `md5`.
-  async fn refresh_snapshots_locked(&self, md5: &str, start_epoch: u64, start_gen: u64) {
+  pub(super) async fn refresh_snapshots_locked(&self, md5: &str, start_epoch: u64, start_gen: u64) {
     let snapshots: Vec<_> = {
       let state = self.read_state();
       state

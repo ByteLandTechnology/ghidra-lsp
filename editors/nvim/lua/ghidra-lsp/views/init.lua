@@ -171,6 +171,23 @@ function M.refresh_buffer(buf)
         graphs.render_call_graph_into_buf(buf, md5, entry, nil, st.callersDepth or 1, st.calleesDepth or 1)
         return
     end
+    local s_md5, s_addr = name:match('^ghidra%-string://([^/]+)/string/(.*)$')
+    if s_md5 and s_addr then
+        local md5 = s_md5:lower()
+        local addr = format.url_decode(s_addr)
+        local text = ''
+        local ok, gv = pcall(client.exec_sync, 'ghidra.query', {
+            md5 = md5,
+            domain = 'global_variable',
+            operation = 'get',
+            params = { selector = { address = addr } },
+        })
+        if ok and type(gv) == 'table' then
+            text = tostring(gv.value or gv.representation or '')
+        end
+        common.set_readonly_lines(buf, vim.split(text, '\n', { plain = true }), 'text')
+        return
+    end
 end
 
 return M

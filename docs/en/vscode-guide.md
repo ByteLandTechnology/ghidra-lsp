@@ -135,6 +135,9 @@ Opening a project data type creates a `ghidra-type://<md5><path>.ghidra-type?v=3
 - `ghidraLsp.refreshSessions`: **Ghidra: Refresh Sessions**
 - `ghidraLsp.programOverview`: **Ghidra: Program Overview**
 - `ghidraLsp.reanalyze`: **Ghidra: Reanalyze Program**
+- `ghidraLsp.restorePreviousCheckpoint`: **Ghidra: Undo Last Edit (Restore Previous Checkpoint)**
+- `ghidraLsp.restoreCheckpoint`: **Ghidra: Restore Project Checkpoint…**
+- `ghidraLsp.resetSession`: **Ghidra: Reset Session (Clean Re-import)**
 - `ghidraLsp.cancelAnalysis`: **Ghidra: Stop Waiting for Analysis**
 - `ghidraLsp.closeSession`: **Ghidra: Close Program**
 - `ghidraLsp.installBinaries`: **Ghidra: Install or Update Binaries**
