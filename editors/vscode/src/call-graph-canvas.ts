@@ -128,10 +128,78 @@ export const callGraphStyles = `
 @keyframes call-reveal{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:translateY(0)}}
 @media(prefers-reduced-motion:reduce){.call-page *{animation:none!important;transition:none!important}}
 .vscode-high-contrast .call-canvas .call-edge,.vscode-high-contrast-light .call-canvas .call-edge{opacity:1!important}
-@media(forced-colors:active){.call-canvas .call-node-body{stroke:CanvasText}.call-canvas .is-root .call-node-body{fill:Highlight;stroke:Highlight}.call-canvas .is-root text{fill:HighlightText!important}.call-canvas .call-node.selected .call-node-body,.call-canvas .call-node:focus-visible .call-node-body{stroke:Highlight}.call-canvas .call-edge{color:CanvasText}.call-page .call-menu-content,.call-page .call-zoom{border-color:CanvasText}.call-page .node-branch{color:ButtonText}.call-node.is-root :is(.node-branch,.node-decompile){forced-color-adjust:none;color:HighlightText!important;background:transparent}.call-node.is-root :is(.node-branch,.node-decompile):focus-visible{outline-color:HighlightText}}
 @media(max-width:640px){.call-page .call-topbar{padding:8px 10px;gap:5px;min-height:48px}.call-page .call-topbar h1{font-size:13px}.call-page .call-search{position:absolute;z-index:4;top:52px;left:10px;right:10px;background:var(--vscode-editor-background)}.call-page .call-overview{width:120px;right:10px;bottom:54px}.call-page .call-overview svg{height:82px}.call-page .call-zoom{bottom:12px;right:10px}}
 
 @media(hover:none) and (pointer:coarse){.call-node.is-root .call-node-controls,.call-node.selected .call-node-controls{opacity:1;pointer-events:auto}}
+.call-page .call-icon-button,.call-page #call-menu>summary{display:inline-flex;align-items:center;justify-content:center}
+.call-page .call-topbar .call-icon-button[aria-expanded="true"],.call-page .call-icon-row [aria-pressed="true"]{width:auto;min-width:32px;gap:3px;padding-inline:6px;border:2px solid var(--ghidra-active-border)}
+.call-node.is-root .node-decompile{color:var(--vscode-foreground)}
+.call-page svg .node-branch{height:14px}
+.call-canvas div.call-node .node-branch{width:52px;height:26px;min-width:52px;min-height:26px}
+.call-node.is-root .node-branch{color:color-mix(in srgb,var(--vscode-foreground) 78%,var(--vscode-editor-background))}
+.call-node.is-root .node-branch[aria-expanded="true"]{color:var(--ghidra-focus)}
+.call-node.is-root .node-branch:is(:hover,:focus-visible){color:var(--vscode-foreground)}
+.call-page .node-branch:focus-visible,.call-node.is-root :is(.node-branch,.node-decompile):focus-visible{outline:2px solid var(--ghidra-focus);outline-offset:0}
+.call-canvas div.call-node{display:flex;flex-direction:column;align-items:stretch;width:max-content;min-width:210px;max-width:340px;border:1px solid var(--vscode-contrastBorder,var(--vscode-editorWidget-border,var(--vscode-panel-border)));border-radius:8px;background:var(--vscode-editor-background);color:var(--vscode-foreground);box-shadow:none}
+.call-canvas div.call-node.is-root{min-width:240px;background:var(--vscode-editor-background);color:var(--vscode-foreground);border:2px solid var(--ghidra-active-border);outline:2px solid color-mix(in srgb,var(--ghidra-active-border) 62%,var(--vscode-foreground));outline-offset:2px}
+.call-canvas div.call-node.is-root:is(.selected,:focus-visible,.search-match,.edge-endpoint){border-color:var(--ghidra-active-border);outline:2px solid var(--ghidra-focus);outline-offset:2px}
+.call-canvas div.call-node:not(.is-root):hover{background:var(--vscode-list-hoverBackground);border-color:var(--ghidra-focus)}
+.call-canvas div.call-node.selected:not(.is-root){background:var(--ghidra-selection-bg);color:var(--ghidra-selection-fg)}
+.call-canvas div.call-node:not(.is-root):is(.selected,:focus-visible,.search-match,.edge-endpoint){border-color:var(--ghidra-active-border);outline:2px solid var(--ghidra-active-border);outline-offset:0}
+.call-node-port{display:flex;justify-content:center;align-items:center;padding:1px 8px}
+.call-node-main{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px;padding:8px 8px 8px 12px;min-width:0}
+.call-node-copy{display:flex;flex-direction:column;gap:2px;min-width:0}
+.call-node-actions{display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.call-canvas div.call-node .node-title{color:inherit;min-width:0;white-space:normal;overflow-wrap:anywhere}
+.call-canvas div.call-node.is-root .call-root-address{color:var(--vscode-foreground);opacity:1;overflow-wrap:anywhere}
+.call-canvas .is-root .call-node-body{fill:var(--vscode-editor-background);stroke:var(--ghidra-active-border);stroke-width:3}
+.call-canvas .call-root-ring{fill:none;stroke:color-mix(in srgb,var(--ghidra-active-border) 62%,var(--vscode-foreground));stroke-width:1;vector-effect:non-scaling-stroke;pointer-events:none}
+.call-canvas .call-root-badge-slot{overflow:visible;pointer-events:none}
+.call-canvas .call-root-badge{display:inline-flex;align-items:center;align-self:flex-start;padding:1px 7px;border:1.5px solid var(--ghidra-active-border);border-radius:999px;background:var(--vscode-editor-background);color:var(--vscode-foreground);font:700 9.5px/1.2 var(--vscode-font-family);letter-spacing:.06em;pointer-events:none}
+.call-canvas .call-node-copy .call-root-badge{margin-bottom:2px}
+.call-canvas .call-node.selected:not(.is-root) .call-node-body,.call-canvas .call-node:focus-visible:not(.is-root) .call-node-body{stroke:var(--ghidra-active-border);stroke-width:2.5}
+.call-canvas .is-root .call-root-address{fill:var(--vscode-foreground);opacity:1}
+.call-canvas .is-root text{fill:var(--vscode-foreground)!important}
+body.call-page:is(.vscode-high-contrast,.vscode-high-contrast-light) .call-node .call-node-controls{opacity:1;pointer-events:auto;transition:none}
+body.call-page:is(.vscode-high-contrast,.vscode-high-contrast-light) :is(.node-decompile,.node-branch,.call-topbar .call-icon-button:not([aria-expanded="true"]),#call-menu>summary,#call-function-picker,.call-icon-row button:not([aria-pressed="true"]),.selection-buttons button){background:var(--vscode-button-secondaryBackground,var(--vscode-editor-background));color:var(--vscode-foreground);border:1px solid var(--ghidra-hv-border)}
+body.call-page.vscode-high-contrast .call-canvas .call-edge{color:var(--vscode-charts-blue,#75beff);opacity:1!important}
+body.call-page.vscode-high-contrast-light .call-canvas .call-edge{color:#0f4a85;opacity:1!important}
+body.call-page:is(.vscode-high-contrast,.vscode-high-contrast-light) .call-canvas div.call-node:not(.is-root){background:var(--vscode-editor-background);color:var(--vscode-foreground);border:1.5px solid var(--ghidra-hv-border)}
+body.call-page:is(.vscode-high-contrast,.vscode-high-contrast-light) .call-canvas div.call-node:not(.is-root):is(.selected,:focus-visible,.search-match,.edge-endpoint){background:var(--vscode-editor-background);color:var(--vscode-foreground);border-color:var(--ghidra-active-border);outline:2px solid var(--ghidra-active-border);outline-offset:0}
+body.call-page:is(.vscode-high-contrast,.vscode-high-contrast-light) .call-canvas div.call-node.is-root{background:var(--vscode-editor-background);color:var(--vscode-foreground);border:2px solid var(--ghidra-active-border);outline:2px solid var(--ghidra-hv-border);outline-offset:2px}
+body.call-page:is(.vscode-high-contrast,.vscode-high-contrast-light) .call-canvas div.call-node.is-root:is(.selected,:focus-visible,.search-match,.edge-endpoint){outline-color:var(--ghidra-focus)}
+body.call-page:is(.vscode-high-contrast,.vscode-high-contrast-light) .call-canvas .call-node:not(.is-root) .call-node-body{stroke:var(--ghidra-hv-border);stroke-width:1.5}
+body.call-page:is(.vscode-high-contrast,.vscode-high-contrast-light) .call-canvas .call-node.selected:not(.is-root) .call-node-body{fill:var(--vscode-editor-background);stroke:var(--ghidra-active-border);stroke-width:2.5}
+body.call-page:is(.vscode-high-contrast,.vscode-high-contrast-light) .call-canvas .call-node.selected:not(.is-root) text{fill:var(--vscode-foreground)}
+body.call-page:is(.vscode-high-contrast,.vscode-high-contrast-light) :is(.call-topbar .call-icon-button[aria-expanded="true"],.call-topbar [aria-expanded="true"],.call-icon-row [aria-pressed="true"]){background:var(--vscode-editor-background);color:var(--vscode-foreground);border:2px solid var(--ghidra-active-border)}
+@media(prefers-contrast:more){
+  .call-node .call-node-controls{opacity:1;pointer-events:auto;transition:none}
+  .call-canvas div.call-node:not(.is-root){border:1.5px solid var(--ghidra-hv-border)}
+  .call-page .node-decompile,.call-page .node-branch,.call-page .call-topbar .call-icon-button:not([aria-expanded="true"]),.call-page #call-menu>summary,.call-page #call-function-picker,.call-page .call-icon-row button:not([aria-pressed="true"]),.call-page .selection-buttons button{background:var(--vscode-button-secondaryBackground,var(--vscode-editor-background));color:var(--vscode-foreground);border:1px solid var(--ghidra-hv-border)}
+}
+@media(forced-colors:active){
+  .call-page .call-canvas{background:var(--ghidra-selection-bg)}
+  .call-node .call-node-controls{opacity:1;pointer-events:auto;transition:none}
+  .call-canvas div.call-node{background:var(--ghidra-selection-bg);color:var(--ghidra-selection-fg);border:1.5px solid var(--ghidra-hv-border);forced-color-adjust:none}
+  .call-canvas div.call-node.is-root{background:var(--ghidra-active-selection-bg);color:var(--ghidra-active-selection-fg);border:2px solid var(--ghidra-active-border);outline:2px solid var(--ghidra-hv-border);outline-offset:2px}
+  .call-canvas div.call-node.is-root:is(.selected,:focus-visible,.search-match,.edge-endpoint){outline-color:var(--ghidra-focus)}
+  .call-canvas div.call-node:not(.is-root):is(.selected,:focus-visible,.search-match,.edge-endpoint){background:var(--ghidra-selection-bg);color:var(--ghidra-selection-fg);border-color:var(--ghidra-active-border);outline:2px solid var(--ghidra-active-border);outline-offset:0}
+  .call-canvas div.call-node :is(.node-title,.call-root-address){color:var(--ghidra-selection-fg);opacity:1}
+  .call-canvas .call-root-badge{background:var(--ghidra-selection-bg);color:var(--ghidra-selection-fg);border:1.5px solid var(--ghidra-active-border)}
+  .call-canvas .call-node-body{fill:var(--ghidra-selection-bg);stroke:var(--ghidra-hv-border);stroke-width:1.5}
+  .call-canvas .is-root .call-node-body{fill:var(--ghidra-active-selection-bg);stroke:var(--ghidra-active-border);stroke-width:3}
+  .call-canvas .call-root-ring{stroke:var(--ghidra-hv-border)}
+  .call-canvas .call-node text,.call-canvas .call-node.selected:not(.is-root) text,.call-canvas .is-root text,.call-canvas .is-root .call-root-address{fill:var(--ghidra-selection-fg)!important;opacity:1}
+  .call-canvas .call-node.selected:not(.is-root) .call-node-body,.call-canvas .call-node:focus-visible:not(.is-root) .call-node-body,.call-canvas .call-node.edge-endpoint .call-node-body{fill:var(--ghidra-selection-bg);stroke:var(--ghidra-active-border);stroke-width:2.5}
+  .call-canvas .call-edge{color:var(--ghidra-selection-fg);opacity:1!important}
+  .call-canvas .call-edge.is-active,.call-canvas .call-edge.is-hovered,.call-canvas .call-edge:focus-visible{color:var(--ghidra-active-border);opacity:1!important}
+  #call-arrow path{fill:var(--ghidra-selection-fg);fill:context-stroke}
+  .call-page .node-decompile,.call-page .node-branch,.call-node.selected:not(.is-root) .node-branch,.call-node.is-root .node-branch,.call-node.is-root .node-decompile,.call-page .call-topbar .call-icon-button:not([aria-expanded="true"]),.call-page #call-menu>summary,.call-page #call-function-picker,.call-page .call-icon-row button:not([aria-pressed="true"]),.call-page .selection-buttons button,.call-page .call-zoom button{background:ButtonFace;color:ButtonText;border:1px solid var(--ghidra-hv-border)}
+  .call-page .node-branch:hover,.call-page .node-branch:focus-visible,.call-node.is-root :is(.node-branch,.node-decompile):focus-visible{background:ButtonFace;color:ButtonText;outline:2px solid var(--ghidra-focus);outline-offset:1px}
+  .call-page .call-topbar .call-icon-button[aria-expanded="true"],.call-page .call-topbar [aria-expanded="true"],.call-page .call-icon-row [aria-pressed="true"]{background:var(--ghidra-pressed-bg);color:var(--ghidra-selection-fg);border:2px solid var(--ghidra-active-border)}
+  .call-page .call-menu-content,.call-page .call-zoom,.call-overview,.call-page .call-details{background:var(--ghidra-selection-bg);color:var(--ghidra-selection-fg);border-color:var(--ghidra-hv-border)}
+}
+@media(max-width:640px){.call-page .call-topbar{padding:8px 8px;gap:4px}}
 `;
 
 /** Runs after the common selection handlers; all browsing controls use the panel's owning program. */
@@ -144,9 +212,9 @@ export const callGraphScript = String.raw`
       const centerCurrent=()=>graphViewport.center(Number(root.dataset.x)+Number(root.dataset.width)/2,Number(root.dataset.y)+Number(root.dataset.height)/2);
       document.getElementById('call-center').addEventListener('click',centerCurrent);
       for(const button of canvas.querySelectorAll('.node-branch')){button.addEventListener('click',event=>{event.stopPropagation();const node=button.closest('.call-node'),view=graphViewport.snapshot();branchAnchor={entry:node.dataset.entry,x:(Number(node.dataset.x)+Number(node.dataset.width)/2)*view.scale+view.x,y:(Number(node.dataset.y)+Number(node.dataset.height)/2)*view.scale+view.y,focusId:button.id};button.disabled=true;persist();send('callGraphToggle',{entry:node.dataset.entry,address:node.dataset.entry,direction:button.dataset.direction,graphRoot:state.entry})});button.addEventListener('dblclick',event=>event.stopPropagation());button.addEventListener('keydown',event=>event.stopPropagation())}
-      const details=document.querySelector('.call-details');details.open=samePage&&previous.callDetails===true;details.hidden=!details.open;details.addEventListener('toggle',()=>{details.hidden=!details.open;persist()});
+      const details=document.querySelector('.call-details');details.open=samePage&&previous.callDetails===true;details.hidden=!details.open;details.addEventListener('toggle',()=>{details.hidden=!details.open;if(details.open){graphViewport.reveal()}persist()});
       const overview=canvas.querySelector('.call-overview'),map=overview.querySelector('svg'),windowRect=map.querySelector('#call-overview-window');
-      overview.open=previous.callOverview===true;overview.hidden=!overview.open;overview.addEventListener('toggle',()=>{overview.hidden=!overview.open;if(graphViewport.snapshot().fitted){graphViewport.fit()}persist()});
+      overview.open=previous.callOverview===true;overview.hidden=!overview.open;overview.addEventListener('toggle',()=>{overview.hidden=!overview.open;if(graphViewport.snapshot().fitted){graphViewport.fit()}else if(overview.open){graphViewport.reveal()}persist()});
       const update=()=>{const view=graphViewport.snapshot(),box=map.viewBox.baseVal;const left=Math.max(0,Math.min(box.width,-view.x/view.scale)),top=Math.max(0,Math.min(box.height,-view.y/view.scale)),right=Math.max(left,Math.min(box.width,(canvas.clientWidth-view.x)/view.scale)),bottom=Math.max(top,Math.min(box.height,(canvas.clientHeight-view.y)/view.scale));const w=Math.min(box.width,Math.max(4,right-left)),h=Math.min(box.height,Math.max(4,bottom-top)),wx=Math.max(0,Math.min(box.width-w,left)),wy=Math.max(0,Math.min(box.height-h,top));windowRect.setAttribute('x',wx);windowRect.setAttribute('y',wy);windowRect.setAttribute('width',w);windowRect.setAttribute('height',h)};
       canvas.addEventListener('graph-viewport',update);
       let overviewPointer;
@@ -171,7 +239,7 @@ export const callGraphScript = String.raw`
       menu.addEventListener('keydown',event=>{if(event.target===summary&&['ArrowDown','ArrowUp'].includes(event.key)){menu.open=true}if(event.target.matches('select,input')||!['ArrowDown','ArrowUp','ArrowLeft','ArrowRight','Home','End'].includes(event.key)){return}const items=[...menu.querySelectorAll('button:not(:disabled),select,summary')].filter(item=>!item.closest('[hidden]')&&item!==summary&&[...menu.querySelectorAll('details:not([open])')].every(details=>!details.contains(item)||details.querySelector(':scope > summary')===item));if(!items.length){return}event.preventDefault();const index=items.indexOf(document.activeElement),next=event.key==='Home'?0:event.key==='End'?items.length-1:(event.key==='ArrowDown'||event.key==='ArrowRight')?(index+1)%items.length:(index<0?items.length-1:(index-1+items.length)%items.length);items[next].focus()});
       menu.addEventListener('focusout',()=>requestAnimationFrame(()=>{if(menu.open&&!menu.contains(document.activeElement)){menu.open=false}}));
 
-      const bindPanel=(id,panel)=>{const button=document.getElementById(id);const sync=()=>button.setAttribute('aria-pressed',String(panel.open));sync();panel.addEventListener('toggle',sync);button.addEventListener('click',()=>{panel.hidden=false;panel.open=!panel.open;menu.open=false;(menu.contains(button)?summary:button).focus()})};
+      const bindPanel=(id,panel)=>{const button=document.getElementById(id);const sync=()=>button.setAttribute('aria-pressed',String(panel.open));sync();panel.addEventListener('toggle',sync);button.addEventListener('click',()=>{panel.hidden=false;panel.open=!panel.open;menu.open=false;(menu.contains(button)?summary:button).focus();if(panel.open){if(panel===overview&&graphViewport.snapshot().fitted){graphViewport.fit()}else{graphViewport.reveal()}}})};
       bindPanel('call-menu-overview',overview);bindPanel('call-details-toggle',details);
       const searchToggle=document.getElementById('call-search-toggle'),searchHost=search.closest('.call-search');
       const openSearch=()=>{searchHost.hidden=false;searchToggle.setAttribute('aria-expanded','true');search.focus();search.select()};
