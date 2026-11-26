@@ -22,7 +22,7 @@
 - **リッチな LSP コードインテリジェンス**: ホバー、定義／宣言／実装／型定義へのジャンプ、相互参照、セマンティックトークン、コードレンズ、インレイヒント（ローカル変数ストレージとコール先アドレス）、折りたたみ範囲、ドキュメントリンク、コール階層、補完、シグネチャヘルプを提供します。
 - **デュアルエディタ統合**:
   - **Visual Studio Code 拡張機能**（[editors/vscode/README.md](../../editors/vscode/README.md)）: Program Browser サイドバー、双方向カーソル同期付きの Listing / Hex + Data Inspector / Control Flow ビュー、`[Graph | Columns]` 切替とホバー内縁グラバーバーを備えた Call Graph と Miller カラム探索、JSONC およびグラフィカル Data Type Editor、横並び 5 種バッジタブ付きインラインコメントスレッドを備えています。
-  - **Neovim プラグイン**（[editors/nvim/README.md](../../editors/nvim/README.md)）: 29 個の `:Ghidra*` コマンド（`:GhidraInstall` を含む）、`:GhidraEditType` によるライブ診断付き `.ghidra-type` JSONC 編集、フローティング 5 種コメントエディタ、関数プロトタイプ／変数フォーム、仮想 Listing / Hex / CFG / Call Graph バッファを備えています。
+  - **Neovim プラグイン**（[editors/nvim/README.md](../../editors/nvim/README.md)）: 32 個の `:Ghidra*` コマンド（`:GhidraInstall`、チェックポイント復元、セッションリセットを含む）、`:GhidraEditType` によるライブ診断付き `.ghidra-type` JSONC 編集、フローティング 5 種コメントエディタ、関数プロトタイプ／変数フォーム、仮想 Listing / Hex / CFG / Call Graph バッファを備えています。
 
 ![Ghidra LSP システムアーキテクチャ](../assets/diagrams/ja/system-architecture.svg)
 
@@ -94,9 +94,9 @@ CLI オプションの概要は次のとおりです（詳細は [クイック�
 | クイックスタート | 前提環境、ビルド、CLI オプション、初期動作確認、トラブルシューティング | [getting-started.md](getting-started.md) |
 | アーキテクチャ | プロセス境界、6 つの仮想 URI、正規化 ID、UTF-16 整合、単一デコンパイルパイプライン | [architecture.md](architecture.md) |
 | VS Code ガイド | サイドバー、カスタムエディタ、グラフ、Hex インスペクタ、設定とコマンド一覧 | [vscode-guide.md](vscode-guide.md) |
-| Neovim ガイド | 導入設定、29 個の `:Ghidra*` コマンド、キーマップ、フローティング編集 UI | [neovim-guide.md](neovim-guide.md) |
-| 編集と安全性 | 読み取り専用保証、`<F2>` スコープ付きリネーム、5 種コメント、データ型 JSONC スキーマ | [editing-and-safety.md](editing-and-safety.md) |
-| LSP と開発規約 | LSP ケーパビリティ行列、`ghidra.*` カスタムコマンド、`AGENTS.md` と `cargo xtask ci` | [lsp-and-development.md](lsp-and-development.md) |
+| Neovim ガイド | 導入設定、32 個の `:Ghidra*` コマンド、キーマップ、フローティング編集 UI | [neovim-guide.md](neovim-guide.md) |
+| 編集と安全性 | 読み取り専用保証、`<F2>` スコープ付きリネーム、プロジェクトチェックポイントとセッションリセット、5 種コメント、データ型 JSONC スキーマ | [editing-and-safety.md](editing-and-safety.md) |
+| LSP と開発規約 | LSP ケーパビリティ行列、全 49 個の `ghidra.*` カスタムコマンド、`AGENTS.md` と `cargo xtask ci` | [lsp-and-development.md](lsp-and-development.md) |
 
 ## ライセンス
 

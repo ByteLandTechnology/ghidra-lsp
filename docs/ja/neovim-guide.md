@@ -47,9 +47,9 @@
 
 ![Neovim Ghidra LSP ワークベンチ](../assets/screenshots/neovim-workbench.svg)
 
-## 全 29 個の `:Ghidra*` ユーザーコマンド
+## 全 32 個の `:Ghidra*` ユーザーコマンド
 
-`editors/nvim/plugin/ghidra-lsp.lua` に登録されている全 29 個のコマンドは次のとおりです。
+`editors/nvim/plugin/ghidra-lsp.lua` に登録されている全 32 個のコマンドは次のとおりです。
 
 | コマンド | 引数 | 動作 |
 | --- | --- | --- |
@@ -57,6 +57,9 @@
 | `:GhidraOpenBinary` | `[path]` | バイナリファイルを開きます（解析済みなら無言で復元、未解析なら解析実行を確認） |
 | `:GhidraSelectSession` | `[md5]` | 開いているまたは保存済みの Ghidra セッションを選択・アクティブ化します |
 | `:GhidraCloseSession` | `[md5]` | 指定または現在の Ghidra セッションを閉じます（未保存編集や保留中リネームがある場合は拒否） |
+| `:GhidraCheckpoints` | `[md5]` | 保存済みプロジェクトチェックポイントをピッカーで参照・復元します |
+| `:GhidraRestoreCheckpoint` | `[id\|name]` | 最新または `<Tab>` 補完で選択したチェックポイントを復元して全バッファを更新します |
+| `:GhidraResetSession` | `[analyze\|noanalyze]` | アクティブなセッションをクリーンな再インポート状態へリセットして全バッファを更新します |
 | `:GhidraReanalyze` | なし | アクティブな Ghidra プログラムの再解析を実行します |
 | `:GhidraOpenFunction` | `[entry\|name]` | エントリアドレスまたは関数名（`<Tab>` 補完付き）で関数を開きます |
 | `:GhidraFunctions` | なし | 検索可能なフローティングピッカーで関数一覧を参照して開きます |

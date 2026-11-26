@@ -93,8 +93,8 @@ export function formatFriendlyError(error: unknown): string {
         return 'This analysis session is closed. Reopen it from Sessions.';
     }
 
-    if (/does not support this operation|unknown operation of ghidra_|No such (?:method|operation):\s*(?:instruction\.|code_unit\.)|\/patch\/(?:clear_existing|disassemble) is not allowed/i.test(raw)) {
-        return 'The installed Ghidra MCP backend does not support this patching operation yet. Run "Ghidra: Install or Update Binaries" or update ghidra-mcp, then reload the window.';
+    if (/does not support (?:this operation|session\.)|unknown operation of ghidra_|No such (?:method|operation):\s*(?:instruction\.|code_unit\.|session\.)|\/patch\/(?:clear_existing|disassemble) is not allowed/i.test(raw)) {
+        return 'The installed Ghidra MCP backend does not support this operation yet. Run "Ghidra: Install or Update Binaries" or update ghidra-mcp, then reload the window.';
     }
 
     // Strip "MCP <domain>.<operation>: " prefix if still present

@@ -5,6 +5,7 @@
 local client = require('ghidra-lsp.client')
 local buffer = require('ghidra-lsp.buffer')
 local commands = require('ghidra-lsp.commands')
+local checkpoints = require('ghidra-lsp.checkpoints')
 local views = require('ghidra-lsp.views')
 local edit = require('ghidra-lsp.edit')
 local patch = require('ghidra-lsp.patch')
@@ -64,6 +65,9 @@ end
 M.open_binary = commands.open_binary
 M.select_session = commands.select_session
 M.close_session = commands.close_session
+M.checkpoints = checkpoints.checkpoints
+M.restore_checkpoint = checkpoints.restore_checkpoint
+M.reset_session = checkpoints.reset_session
 M.reanalyze = commands.reanalyze
 M.open_function = commands.open_function
 M.goto_address = commands.goto_address

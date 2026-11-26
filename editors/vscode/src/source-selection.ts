@@ -28,9 +28,10 @@ interface SourceIndex {
     spans: IndexedSpan[];
 }
 
-/** Cached snapshot promise for one `TextDocument` version. */
+/** Cached snapshot promise for one `TextDocument` version and session epoch. */
 interface SnapshotEntry {
     version: number;
+    epoch: number;
     promise: Promise<SourceIndex>;
 }
 
@@ -160,13 +161,25 @@ function locationAt(index: SourceIndex, position: vscode.Position): AddressRange
 export class SourceSelection {
     /** Cached snapshot promises keyed by `TextDocument`. */
     private readonly snapshots = new WeakMap<vscode.TextDocument, SnapshotEntry>();
+    /** Monotonic invalidation counters keyed by lowercase session MD5. */
+    private readonly epochs = new Map<string, number>();
     /** Create a selection mapper that uses `call`. */
     constructor(private readonly call: Call) {}
 
+    /** Invalidate cached span snapshots for session `md5`. */
+    invalidate(md5: string): void {
+        const key = md5.toLowerCase();
+        this.epochs.set(key, (this.epochs.get(key) ?? 0) + 1);
+    }
+    /** Return the current invalidation epoch for `document`. */
+    private epochFor(document: vscode.TextDocument): number {
+        return this.epochs.get(document.uri.authority.toLowerCase()) ?? 0;
+    }
     /** Get or request the indexed span snapshot for the current document version. */
     private snapshot(document: vscode.TextDocument): SnapshotEntry {
+        const epoch = this.epochFor(document);
         const known = this.snapshots.get(document);
-        if (known?.version === document.version) { return known; }
+        if (known?.version === document.version && known.epoch === epoch) { return known; }
         const version = document.version;
         let entry: SnapshotEntry | undefined;
         let request: Promise<LocationSnapshot>;
@@ -179,7 +192,7 @@ export class SourceSelection {
             request = Promise.reject(error);
         }
         const promise = request.then(snapshot => {
-            if (document.version !== version) {
+            if (document.version !== version || this.epochFor(document) !== epoch) {
                 if (this.snapshots.get(document) === entry) { this.snapshots.delete(document); }
                 return { points: [], lineSpans: [], spans: [] };
             }
@@ -188,7 +201,7 @@ export class SourceSelection {
             if (this.snapshots.get(document) === entry) { this.snapshots.delete(document); }
             throw error;
         });
-        entry = { version, promise };
+        entry = { version, epoch, promise };
         this.snapshots.set(document, entry);
         return entry;
     }
@@ -197,7 +210,7 @@ export class SourceSelection {
         if (!selections.length || !current()) { return []; }
         const entry = this.snapshot(document);
         const index = await entry.promise;
-        if (!current() || document.version !== entry.version) { return []; }
+        if (!current() || document.version !== entry.version || this.epochFor(document) !== entry.epoch) { return []; }
         const deduped = new Map<string, AddressRange>();
         const nonEmpty = selections.filter(selection => !selection.isEmpty);
         if (nonEmpty.length) {
@@ -237,7 +250,7 @@ export class SourceSelection {
         if (!addresses.length || !current()) { return []; }
         const entry = this.snapshot(document);
         const index = await entry.promise;
-        if (!current() || document.version !== entry.version) { return []; }
+        if (!current() || document.version !== entry.version || this.epochFor(document) !== entry.epoch) { return []; }
         const targets = indexTargetAddresses(addresses);
         if (!targets.size) { return []; }
         const ranges: vscode.Range[] = [];
