@@ -4,7 +4,8 @@
 import { Call } from './memory';
 import { plainAddress } from './listing-format';
 import { CommentKind, commentKinds } from './inline-comments';
-import { Data, object } from './web';
+import { Data, FieldError, object } from './web';
+import { formatFriendlyError } from './error';
 
 /** Human-readable label and description for one Ghidra comment kind. */
 export interface CommentFieldSpec {
@@ -156,8 +157,9 @@ export async function saveCommentFormSession(
         } catch (error) {
             if (isUncertainCommentWriteError(error)) {
                 session.uncertain = true;
+                throw error;
             }
-            throw error;
+            throw new FieldError(formatFriendlyError(error), [kind]);
         }
     }
     await refreshBrowser(session.md5);

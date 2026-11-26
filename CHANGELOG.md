@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.6.0](https://github.com/ByteLandTechnology/ghidra-lsp/compare/v0.5.0...v0.6.0) (2026-11-25)
+
+
+### Features
+
+* **vscode:** add pure-CSS high-contrast and graph state cues ([#37](https://github.com/ByteLandTechnology/ghidra-lsp/issues/37)) ([68437ad](https://github.com/ByteLandTechnology/ghidra-lsp/commit/68437ad45693ec55c4b2064e6ddbab99c3668174))
+
+
+### Bug Fixes
+
+* normalize type tables, row labels, moves, and hints ([#44](https://github.com/ByteLandTechnology/ghidra-lsp/issues/44)) ([2477721](https://github.com/ByteLandTechnology/ghidra-lsp/commit/24777216abc00ecf7a3be89df0f36cd24cace5ba))
+* **vscode:** replace disclosure menus with popovers ([#50](https://github.com/ByteLandTechnology/ghidra-lsp/issues/50)) ([77b729a](https://github.com/ByteLandTechnology/ghidra-lsp/commit/77b729a044a1c639371f30f218c963a5ce10b1bd))
+
 ## [0.5.0](https://github.com/ByteLandTechnology/ghidra-lsp/compare/v0.4.0...v0.5.0) (2026-11-25)
 
 

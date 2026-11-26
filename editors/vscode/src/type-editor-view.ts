@@ -3,17 +3,35 @@
 
 import * as vscode from 'vscode';
 import { applyEdits, modify, parse, ParseError } from 'jsonc-parser';
-import { typePath } from './type-files';
+import { takeTypeSaveError, TypeDiagnosticIssue, typeDiagnosticIssues, typePath } from './type-files';
 import { typeEditorViewId } from './virtual-files';
 import { callIcon } from './call-graph-icons';
-import { Data, escape, object, page, properties, reference, rows } from './web';
+import { Data, escape, FieldError, FieldPath, formControl, object, page, properties, reference, rows } from './web';
+import { formatFriendlyError } from './error';
 import { Call } from './memory';
 import { kindOf, parseType, reorderTypeMembers, typeModel, typeMutations } from './type-model';
 
 /** Custom editor viewType identifier for the graphical data type editor. */
 export const typeEditorView = typeEditorViewId;
 /** Control focus restoration target sent to the type editor webview. */
-interface EditorFocus { path?: (string | number)[]; move?: { key: string; index: number }; sort?: { key: string; field: string }; start?: number | null; end?: number | null; }
+interface EditorFocus {
+    /** Focused input or checkbox JSON path. */
+    path?: FieldPath;
+    /** Focused drag/keyboard reorder handle target. */
+    move?: { key: string; index: number };
+    /** Focused table column sort button target. */
+    sort?: { key: string; field: string };
+    /** Focused member remove button target. */
+    remove?: { key: string; index: number };
+    /** Whether the Open JSONC toolbar button holds focus. */
+    openJsonc?: boolean;
+    /** Zero-based index of the focused `<summary>` element. */
+    summary?: number;
+    /** Selection start offset on a focused text input. */
+    start?: number | null;
+    /** Selection end offset on a focused text input. */
+    end?: number | null;
+}
 /** Active table sort field and direction inside the type editor webview. */
 interface EditorSort { field: string; direction: 'ascending' | 'descending'; }
 /** Structured metadata summary rendered below the data type editor heading. */
@@ -101,27 +119,53 @@ export class DataTypeEditorView implements vscode.CustomTextEditorProvider, vsco
         let applying = false, panelVersion = document.version, generation = 0;
         let completedUpdateGeneration: number | undefined;
         let editorFocus: EditorFocus | undefined;
+        let pendingSaveError: { generation: number; error: string; path: FieldPath } | undefined;
         let cachedRawBytes: number | undefined;
         const sorts: Record<string, EditorSort> = {};
         let typeOptions = ['void', 'pointer', 'int', 'char', 'byte', 'undefined1', 'undefined4', 'uint', 'long'];
         const render = (focus?: EditorFocus, saving = false, statusMessage?: string): void => {
-            const renderGeneration = ++generation; panelVersion = document.version;
+            const renderGeneration = ++generation; panelVersion = document.version; pendingSaveError = undefined;
             const errors: ParseError[] = [];
             const model = parse(document.getText(), errors, { allowTrailingComma: true, disallowComments: false });
-            const modelKind = model && typeof model === 'object' && !Array.isArray(model) ? kindOf(object(model)) : '';
-            const input = (path: (string | number)[], value: unknown, label: string, inline = false, newKey = '', describedBy = ''): string => {
-                const encoded = escape(JSON.stringify(path));
-                const ariaDesc = describedBy ? ` aria-describedby="${escape(describedBy)}"` : '';
-                if (typeof value === 'boolean') { return `<label class="type-flag"><input type="checkbox" data-path="${encoded}" ${value ? 'checked' : ''}${readonly ? ' disabled' : ''}${ariaDesc}>${escape(label)}</label>`; }
-                const optionalLength = path[path.length - 1] === 'length';
-                const typeReference = ['type', 'return_type'].includes(String(path[path.length - 1]));
-                const control = `<input ${typeReference ? 'list="type-options" ' : ''}aria-label="${escape(label)}"${ariaDesc} data-path="${encoded}" data-number="${typeof value === 'number' || ['offset', 'length', 'value'].includes(String(path[path.length - 1]))}" value="${escape(value ?? '')}"${newKey ? ` data-new-key="${escape(newKey)}" placeholder="+ Add ${newKey === 'fields' ? 'field' : newKey === 'values' ? 'value' : 'parameter'}"` : optionalLength && !readonly ? ' placeholder="Auto"' : ''}${readonly ? ' readonly' : ''}>`;
-                return inline ? control : `<label>${escape(label)}${control}</label>`;
+            const modelKind = model && typeof model === 'object' && !Array.isArray(model) ? kindOf(object(model)).toLowerCase() : '';
+            const fieldRequired = (path: FieldPath): boolean => {
+                const leaf = String(path[path.length - 1]);
+                if (path[0] === 'signature' && path.length === 2) { return leaf === 'return_type' || leaf === 'calling_convention'; }
+                if (path[0] === 'signature' && path[1] === 'parameters') { return leaf === 'type'; }
+                if (path[0] === 'values') { return leaf === 'name' || leaf === 'value'; }
+                if (path[0] === 'fields') { return leaf === 'type' || (modelKind === 'struct' ? leaf === 'offset' : leaf === 'name'); }
+                return false;
+            };
+            const input = (path: FieldPath, value: unknown, label: string, inline = false, newKey = '', isNewRow = false, describedBy = '', id?: string): string => {
+                if (typeof value === 'boolean') {
+                    return formControl({ id, path, label, describedBy: describedBy || undefined, value, kind: 'checkbox', disabled: readonly, checkboxClass: 'type-flag' });
+                }
+                const leaf = String(path[path.length - 1]);
+                const optionalLength = leaf === 'length';
+                const isTypeRef = ['type', 'return_type'].includes(leaf);
+                const mandatory = !readonly && fieldRequired(path);
+                return formControl({
+                    id,
+                    path,
+                    label,
+                    describedBy: describedBy || undefined,
+                    value: value ?? '',
+                    kind: isTypeRef ? 'type' : 'text',
+                    inline,
+                    required: mandatory && !isNewRow,
+                    requiredWhenActive: mandatory && isNewRow,
+                    readonly,
+                    placeholder: newKey ? `+ Add ${newKey === 'fields' ? 'field' : newKey === 'values' ? 'value' : 'parameter'}` : optionalLength && !readonly ? 'Auto' : undefined,
+                    data: {
+                        number: String(typeof value === 'number' || ['offset', 'length', 'value'].includes(leaf)),
+                        'new-key': newKey || undefined,
+                    },
+                });
             };
             const list = (key: string, rows: unknown[], fields: string[]): string => {
                 const singular = key === 'fields' ? 'field' : key === 'values' ? 'value' : 'parameter';
                 const columns = fields.filter(field => field !== 'offset' || modelKind === 'struct');
-                const base: (string | number)[] = key === 'parameters' ? ['signature', key] : [key];
+                const base: FieldPath = key === 'parameters' ? ['signature', key] : [key];
                 const canMove = !readonly && (key === 'fields' || key === 'parameters');
                 const moveHintId = canMove ? `type-move-hint-${key}` : '';
                 const lengthHintId = !readonly && columns.includes('length') ? `type-length-hint-${key}` : '';
@@ -130,10 +174,10 @@ export class DataTypeEditorView implements vscode.CustomTextEditorProvider, vsco
                     const cells = columns.map(field => {
                         const isNewName = isNew && field === 'name';
                         const desc = readonly ? 'type-readonly-hint' : field === 'length' ? lengthHintId : '';
-                        return `<td data-field="${escape(field)}" data-label="${escape(field[0].toUpperCase() + field.slice(1))}">${input([...base, index, field], data[field], isNewName ? `Add ${singular}` : `${singular} ${rowNumber} ${field}`, true, isNewName ? key : '', desc)}</td>`;
+                        return `<td data-field="${escape(field)}" data-label="${escape(field[0].toUpperCase() + field.slice(1))}">${input([...base, index, field], data[field], isNewName ? `Add ${singular}` : `${singular} ${rowNumber} ${field}`, true, isNewName ? key : '', isNew, desc, `type-${key}-${rowNumber}-${field}`)}</td>`;
                     }).join('');
-                    const move = canMove ? `<td class="type-row-handle"><button type="button" class="type-icon type-move" data-move aria-label="Move ${singular} ${rowNumber}" aria-describedby="${escape(moveHintId)}" title="Move ${singular}"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 3h2v2H4zm6 0h2v2h-2zM4 7h2v2H4zm6 0h2v2h-2zM4 11h2v2H4zm6 0h2v2h-2z"/></svg></button></td>` : '';
-                    const remove = readonly ? '' : `<td class="type-row-action"><button type="button" class="type-icon" data-action="remove" aria-label="Remove ${singular} ${rowNumber}" title="Remove ${singular}">${callIcon('trash')}</button></td>`;
+                    const move = canMove ? `<td class="type-row-handle"><button id="type-${escape(key)}-${rowNumber}-move" type="button" class="type-icon type-move" data-move aria-label="Move ${singular} ${rowNumber}" aria-describedby="${escape(moveHintId)}" title="Move ${singular}"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 3h2v2H4zm6 0h2v2h-2zM4 7h2v2H4zm6 0h2v2h-2zM4 11h2v2H4zm6 0h2v2h-2z"/></svg></button></td>` : '';
+                    const remove = readonly ? '' : `<td class="type-row-action"><button id="type-${escape(key)}-${rowNumber}-remove" type="button" class="type-icon" data-action="remove" aria-label="Remove ${singular} ${rowNumber}" title="Remove ${singular}">${callIcon('trash')}</button></td>`;
                     return `<tr data-index="${index}"${isNew ? ' data-new="true"' : ''}>${move}${cells}${remove}</tr>`;
                 };
                 const indexed = rows.map((item, index) => ({ item, index }));
@@ -151,7 +195,7 @@ export class DataTypeEditorView implements vscode.CustomTextEditorProvider, vsco
                 const headers = columns.map(field => `<th scope="col" data-field="${escape(field)}" aria-sort="${field === 'offset' ? 'ascending' : 'none'}"><button type="button" class="type-sort" data-sort="${escape(field)}" aria-label="Sort by ${escape(field)}">${escape(field[0].toUpperCase() + field.slice(1))}<span aria-hidden="true"></span></button></th>`).join('');
                 return `<section class="type-list">${heading}${hintMarkup}<div class="type-table-wrap"><table class="type-table" data-type-list="${escape(key)}" data-kind="${escape(modelKind)}" data-readonly="${readonly}"><thead><tr>${canMove ? '<th class="type-handle-col" scope="col"><span class="type-sr-only">Move</span></th>' : ''}${headers}${readonly ? '' : '<th class="type-action-col" scope="col"><span class="type-sr-only">Actions</span></th>'}</tr></thead><tbody>${contents}${blank}</tbody></table></div></section>`;
             };
-            let body = '';
+            let body = '', pageError = '';
             if (readonly && !errors.length && model && typeof model === 'object' && !Array.isArray(model)) {
                 const m = model as Record<string, any>;
                 const reason = document.getText().split('\n').find(line => line.startsWith('// Read-only: '))?.slice('// Read-only: '.length) || 'This type is read-only.';
@@ -168,7 +212,7 @@ export class DataTypeEditorView implements vscode.CustomTextEditorProvider, vsco
                 }
                 body += `<details class="type-raw"><summary>Raw definition</summary><pre>${escape(document.getText())}</pre></details>`;
             } else if (errors.length || !model || typeof model !== 'object' || Array.isArray(model)) {
-                body = `<section class="type-definition"><p class="error">The definition contains invalid JSONC. Use Reopen Editor With… to correct it.</p></section>`;
+                pageError = 'The definition contains invalid JSONC. Use Reopen Editor With… to correct it.';
             } else {
                 const m = model as Record<string, any>;
                 body = '';
@@ -178,81 +222,82 @@ export class DataTypeEditorView implements vscode.CustomTextEditorProvider, vsco
                     const sig = m.signature as Record<string, any>;
                     const labels: Record<string, string> = { return_type: 'Return type', calling_convention: 'Calling convention', has_var_args: 'Variadic arguments', has_no_return: 'Does not return' };
                     const controls = (keys: string[]): string => keys.filter(key => key in sig).map(key => input(['signature', key], sig[key], labels[key])).join('');
-                    const advanced = ['calling_convention', 'has_var_args', 'has_no_return'].filter(key => key in sig && (key === 'calling_convention' ? ['default', 'unknown'].includes(String(sig[key])) : sig[key] === false));
+                    const advanced = ['calling_convention', 'has_var_args', 'has_no_return'].filter(key => key in sig && (key === 'calling_convention' ? String(sig[key] ?? '').trim().toLowerCase() === 'default' : sig[key] === false));
                     const visible = ['calling_convention', 'has_var_args', 'has_no_return'].filter(key => !advanced.includes(key));
                     body += `<section class="type-definition"><div class="form-grid">${controls(['return_type', ...visible.filter(key => key === 'calling_convention')])}</div><div class="type-flags">${controls(visible.filter(key => key !== 'calling_convention'))}</div></section>`;
                     if (advanced.length) { body += `<details class="signature-options"><summary>Signature options</summary><div class="form-grid">${controls(advanced.filter(key => key === 'calling_convention'))}</div><div class="type-flags">${controls(advanced.filter(key => key !== 'calling_convention'))}</div></details>`; }
                     if (Array.isArray(sig.parameters)) { body += list('parameters', sig.parameters, ['name', 'type']); }
                 }
+                if (body) { body = `<form id="type-form" novalidate>${body}</form>`; }
             }
-            if (!body) { body = '<p class="type-empty">No editable fields.</p>'; }
+            if (!body && !pageError) { body = '<p class="type-empty">No editable fields.</p>'; }
             const script = `
               let draftVersion=${document.version}, draftDirty=${document.isDirty}, busy=false, busyAction='', saveQueued=false, dragging=null, busyFocus=null;
               document.body.dataset.draftVersion=String(draftVersion);
+              document.getElementById('type-form')?.addEventListener('submit',event=>event.preventDefault());
               const focusInfo=()=>{
-                const el=document.activeElement;if(!el)return null;
-                if(el.dataset.path)return {path:JSON.parse(el.dataset.path),start:el.selectionStart,end:el.selectionEnd};
-                if(el.hasAttribute('data-move')){const row=el.closest('tr');return {move:{key:row.closest('table').dataset.typeList,index:Number(row.dataset.index)}}}
-                if(el.dataset.sort)return {sort:{key:el.closest('table').dataset.typeList,field:el.dataset.sort}};
+                const el=document.activeElement;if(!el||el===document.body)return null;
+                if(el.dataset?.path)return {path:JSON.parse(el.dataset.path),start:el.selectionStart,end:el.selectionEnd};
+                if(el.hasAttribute('data-open-jsonc'))return {openJsonc:true};
+                if(el.dataset?.action==='remove'){const row=el.closest('tr');if(row)return {remove:{key:row.closest('table').dataset.typeList,index:Number(row.dataset.index)}}}
+                if(el.tagName==='SUMMARY'){const idx=[...document.querySelectorAll('summary')].indexOf(el);if(idx>=0)return {summary:idx}}
+                if(el.hasAttribute('data-move')){const row=el.closest('tr');if(row)return {move:{key:row.closest('table').dataset.typeList,index:Number(row.dataset.index)}}}
+                if(el.dataset?.sort)return {sort:{key:el.closest('table').dataset.typeList,field:el.dataset.sort}};
                 return null;
               };
               const restoreFocus=focus=>{
-                if(!focus)return;const target=focus.path?[...document.querySelectorAll('[data-path]')].find(el=>el.dataset.path===JSON.stringify(focus.path))
+                if(!focus)return false;
+                const target=focus.path?[...document.querySelectorAll('[data-path]')].find(el=>el.dataset.path===JSON.stringify(focus.path))
+                  :focus.openJsonc?document.querySelector('[data-open-jsonc]')
+                  :focus.remove?(document.querySelector('table[data-type-list="'+focus.remove.key+'"] tr[data-index="'+focus.remove.index+'"] [data-action="remove"]')||document.querySelector('table[data-type-list="'+focus.remove.key+'"] tr[data-new] [data-path]'))
+                  :typeof focus.summary==='number'?document.querySelectorAll('summary')[focus.summary]
                   :focus.move?document.querySelector('table[data-type-list="'+focus.move.key+'"] tr[data-index="'+focus.move.index+'"] [data-move]')
                   :focus.sort?document.querySelector('table[data-type-list="'+focus.sort.key+'"] [data-sort="'+focus.sort.field+'"]'):null;
-                if(!target)return;target.focus({preventScroll:true});
-                if(typeof focus.start==='number'&&typeof focus.end==='number'&&typeof target.setSelectionRange==='function'){try{target.setSelectionRange(focus.start,focus.end)}catch{}}
+                return ghidraA11y.focus(target,{preventScroll:true,start:focus.start,end:focus.end});
               };
               const setBusy=(next,action='save')=>{
                 if(next===busy)return;if(next)busyFocus=focusInfo();busy=next;busyAction=next?action:'';
-                for(const element of document.querySelectorAll('input,button')){
-                  if(busy){element.dataset.wasDisabled=String(element.disabled);element.disabled=true}
-                  else if(element.dataset.wasDisabled!==undefined){element.disabled=element.dataset.wasDisabled==='true';delete element.dataset.wasDisabled}
-                }
+                const container=document.getElementById('type-form')||document.querySelector('main');
+                ghidraA11y.setBusy(document.querySelectorAll('input,button'),busy,container);
                 const status=document.querySelector('.type-status');
-                if(status){status.textContent=busy?(action==='save'?'Saving…':'Updating…'):(draftDirty?'Unsaved changes':'');status.dataset.state=busy?'saving':(draftDirty?'dirty':'clean')}
-                if(!busy){restoreFocus(busyFocus);busyFocus=null}
+                if(status){status.dataset.state=busy?'saving':(draftDirty?'dirty':'clean');ghidraA11y.announce(status,busy?(action==='save'?'Saving…':'Updating…'):(draftDirty?'Unsaved changes':''))}
+                if(!busy){if(busyFocus&&(!document.activeElement||document.activeElement===document.body))restoreFocus(busyFocus);busyFocus=null}
               };
               const enqueue=item=>{item.generation=${renderGeneration};vscode.postMessage(item)};
               document.addEventListener('focusin',()=>{if(!busy)enqueue({action:'focus',focus:focusInfo()})});
-              document.addEventListener('selectionchange',()=>{if(!busy&&document.activeElement?.dataset.path)enqueue({action:'focus',focus:focusInfo()})});
+              document.addEventListener('selectionchange',()=>{if(!busy&&document.activeElement?.dataset?.path)enqueue({action:'focus',focus:focusInfo()})});
               window.addEventListener('blur',()=>{if(!busy)enqueue({action:'focus',focus:null})});
-              const reindex=table=>{
-                if(!table?.tBodies[0])return;
-                const key=table.dataset.typeList,singular=key==='fields'?'field':key==='values'?'value':'parameter';
-                Array.from(table.tBodies[0].rows).forEach((row,position)=>{
-                  const number=position+1;
-                  for(const el of row.querySelectorAll('[data-path]')){
-                    const field=el.closest('td')?.dataset.field||JSON.parse(el.dataset.path).slice(-1)[0];
-                    el.id='type-'+key+'-'+number+'-'+field;
-                    el.setAttribute('aria-label',el.dataset.newKey?'Add '+singular:singular+' '+number+' '+field);
-                  }
-                  const moveBtn=row.querySelector('[data-move]'),removeBtn=row.querySelector('[data-action=remove]');
-                  if(moveBtn){moveBtn.id='type-'+key+'-'+number+'-move';moveBtn.setAttribute('aria-label','Move '+singular+' '+number)}
-                  if(removeBtn){removeBtn.id='type-'+key+'-'+number+'-remove';removeBtn.setAttribute('aria-label','Remove '+singular+' '+number)}
-                });
-              };
+              document.addEventListener('beforeinput',event=>{if(busy&&event.target.closest?.('input'))event.preventDefault()},true);
+              const reindex=table=>ghidraA11y.syncTable(table);
               const nextBlank=row=>{
                 const blank=row.cloneNode(true), index=Number(row.dataset.index)+1;
                 blank.dataset.index=String(index);
-                for(const el of blank.querySelectorAll('[id]'))el.removeAttribute('id');
                 for(const el of blank.querySelectorAll('[data-path]')){
+                  const prevErr=el.dataset.errorId;
+                  el.removeAttribute('aria-invalid');
+                  if(prevErr&&el.hasAttribute('aria-describedby')){
+                    const kept=el.getAttribute('aria-describedby').split(/\\s+/).filter(id=>id&&id!==prevErr&&id!=='error'&&id!=='type-validation');
+                    if(kept.length)el.setAttribute('aria-describedby',kept.join(' '));else el.removeAttribute('aria-describedby');
+                  }
                   const path=JSON.parse(el.dataset.path);path[path.length-2]=index;el.dataset.path=JSON.stringify(path);
-                  delete el.dataset.edited;
+                  delete el.dataset.edited;delete el.dataset.errorId;
                   if(el.dataset.newKey)el.value='';
                 }
+                for(const el of blank.querySelectorAll('[id]'))el.removeAttribute('id');
+                for(const el of blank.querySelectorAll('.field-error')){el.textContent='';el.hidden=true}
                 row.after(blank);
               };
               const edit=el=>{
-                if(!el||el.readOnly||el.disabled)return;
+                if(!el||el.readOnly||el.disabled||el.getAttribute('aria-disabled')==='true'||busy)return;
                 if(el.dataset.newKey){
                   if(!el.value)return;
                   const key=el.dataset.newKey,row=el.closest('tr'),table=row.closest('table'),index=Number(row.dataset.index),name=el.value;
                   nextBlank(row);delete row.dataset.new;delete el.dataset.newKey;el.removeAttribute('placeholder');
+                  for(const req of row.querySelectorAll('[data-required-when-active="true"]')){req.required=true;req.setAttribute('aria-required','true');delete req.dataset.requiredWhenActive}
                   reindex(table);
                   enqueue({action:'add',key,index,name});return;
                 }
-                el.dataset.edited='true';let value=el.type==='checkbox'?el.checked:el.value;
+                el.dataset.edited='true';ghidraA11y.clearFieldError(el);let value=el.type==='checkbox'?el.checked:el.value;
                 if(el.dataset.number==='true'&&typeof value==='string'&&value.trim()!==''){const number=Number(value);if(Number.isFinite(number))value=number}
                 enqueue({action:'change',path:JSON.parse(el.dataset.path),value});
               };
@@ -280,50 +325,73 @@ export class DataTypeEditorView implements vscode.CustomTextEditorProvider, vsco
                 setBusy(true,'move');enqueue({action:'move',key,from:Number(row.dataset.index),to:Number(target.dataset.index),before,order});
               };
               window.addEventListener('message',event=>{
-                if(event.data.action==='type-diagnostics'){const notice=document.getElementById('type-validation');if(notice){const errors=event.data.errors;notice.hidden=!errors.length;notice.textContent=errors.length?errors[0]+(errors.length>1?' (+'+(errors.length-1)+')':''):''}return}
+                if(event.data.action==='type-diagnostics'){
+                  const issues=Array.isArray(event.data.issues)?event.data.issues:(event.data.errors||[]).map(message=>({message,path:[]}));
+                  const summaryText=issues.length?issues[0].message+(issues.length>1?' (+'+(issues.length-1)+')':''):'';
+                  ghidraA11y.announce('type-validation',summaryText);
+                  ghidraA11y.markErrors(issues,{focus:false,fallbackId:'type-validation'});
+                  return;
+                }
                 if(event.data.action==='type-options'){const list=document.getElementById('type-options');if(list){list.replaceChildren(...event.data.values.map(value=>{const option=document.createElement('option');option.value=value;return option}))}return}
                 if(event.data.action==='type-meta'){const bytesEl=document.querySelector('[data-meta-bytes]');if(bytesEl&&!draftDirty&&event.data.bytesLabel){bytesEl.textContent=event.data.bytesLabel;bytesEl.hidden=false;const sep=bytesEl.previousElementSibling;if(sep?.classList.contains('type-meta-sep'))sep.hidden=false}return}
-                if(event.data.action==='save-failed'){setBusy(false);return}
+                if(event.data.action==='save-failed'){
+                  const prevFocus=busyFocus;setBusy(false);
+                  const message=event.data.error||'Could not save the data type.';
+                  ghidraA11y.announce('error',message);
+                  if(Array.isArray(event.data.path)&&event.data.path.length){ghidraA11y.markErrors([{path:event.data.path,message}],{focus:true,fallbackId:'error'})}
+                  else if(prevFocus){restoreFocus(prevFocus)}
+                  return;
+                }
                 if(event.data.action==='draft-version'){
                   draftVersion=event.data.version;draftDirty=!!event.data.dirty;document.body.dataset.draftVersion=String(draftVersion);
                   if(event.data.added?.offset!==undefined){const row=document.querySelector('table[data-type-list="'+event.data.added.key+'"] tr[data-index="'+event.data.added.index+'"]');const offset=row?.querySelector('td[data-field=offset] input');if(offset&&!offset.dataset.edited)offset.value=String(event.data.added.offset)}
                   if(event.data.meta){const bytesEl=document.querySelector('[data-meta-bytes]'),countEl=document.querySelector('[data-meta-count]');if(bytesEl&&event.data.meta.bytesLabel!==undefined){bytesEl.textContent=event.data.meta.bytesLabel||'';bytesEl.hidden=!event.data.meta.bytesLabel;const sep=bytesEl.previousElementSibling;if(sep?.classList.contains('type-meta-sep'))sep.hidden=!event.data.meta.bytesLabel}if(countEl&&event.data.meta.countLabel){countEl.textContent=event.data.meta.countLabel}}
-                  const status=document.querySelector('.type-status');if(status&&!busy){status.textContent=draftDirty?'Unsaved changes':'';status.dataset.state=draftDirty?'dirty':'clean'}
+                  const status=document.querySelector('.type-status');if(status&&!busy){status.dataset.state=draftDirty?'dirty':'clean';ghidraA11y.announce(status,draftDirty?'Unsaved changes':'')}
                 }
               });
               document.addEventListener('input',event=>{if(!event.isComposing)edit(event.target.closest('[data-path]'))});
               document.addEventListener('compositionend',event=>edit(event.target.closest('[data-path]')));
               document.addEventListener('click',event=>{
-                const jsoncButton=event.target.closest('[data-open-jsonc]');if(jsoncButton){event.preventDefault();event.stopPropagation();enqueue({action:'open-jsonc'});return}
-                const sortButton=event.target.closest('[data-sort]');if(sortButton){const head=sortButton.closest('th'),current=head.getAttribute('aria-sort'),next=current==='none'?'ascending':current==='ascending'?'descending':'none',table=sortButton.closest('table');sort(table,sortButton.dataset.sort,next);enqueue({action:'sort',key:table.dataset.typeList,field:sortButton.dataset.sort,direction:next});return}
-                const button=event.target.closest('[data-action=remove]');if(!button||button.disabled)return;
+                const checkbox=event.target.closest('input[type="checkbox"]');if(checkbox&&(busy||checkbox.getAttribute('aria-disabled')==='true')){event.preventDefault();return}
+                const jsoncButton=event.target.closest('[data-open-jsonc]');if(jsoncButton){event.preventDefault();event.stopPropagation();if(busy||jsoncButton.getAttribute('aria-disabled')==='true')return;enqueue({action:'open-jsonc'});return}
+                const sortButton=event.target.closest('[data-sort]');if(sortButton){event.preventDefault();if(busy||sortButton.getAttribute('aria-disabled')==='true')return;const head=sortButton.closest('th'),current=head.getAttribute('aria-sort'),next=current==='none'?'ascending':current==='ascending'?'descending':'none',table=sortButton.closest('table');sort(table,sortButton.dataset.sort,next);enqueue({action:'sort',key:table.dataset.typeList,field:sortButton.dataset.sort,direction:next});return}
+                const button=event.target.closest('[data-action=remove]');if(!button||button.disabled||button.getAttribute('aria-disabled')==='true'||busy){if(button&&(busy||button.getAttribute('aria-disabled')==='true')){event.preventDefault();event.stopPropagation()}return}
                 event.preventDefault();event.stopPropagation();const row=button.closest('tr');setBusy(true,'remove');enqueue({action:'remove',key:row.closest('table').dataset.typeList,index:Number(row.dataset.index)});
               },true);
               const clearDrag=()=>{dragging=null;for(const row of document.querySelectorAll('.is-dragging,.type-drop-before,.type-drop-after'))row.classList.remove('is-dragging','type-drop-before','type-drop-after')};
-              document.addEventListener('pointerdown',event=>{const handle=event.target.closest('[data-move]');if(!handle||busy||event.button!==0)return;dragging={row:handle.closest('tr'),handle,id:event.pointerId,x:event.clientX,y:event.clientY,active:false,target:null};handle.setPointerCapture(event.pointerId)});
+              document.addEventListener('pointerdown',event=>{const handle=event.target.closest('[data-move]');if(!handle||busy||handle.getAttribute('aria-disabled')==='true'||event.button!==0)return;dragging={row:handle.closest('tr'),handle,id:event.pointerId,x:event.clientX,y:event.clientY,active:false,target:null};handle.setPointerCapture(event.pointerId)});
               document.addEventListener('pointermove',event=>{if(!dragging||dragging.id!==event.pointerId)return;if(!dragging.active&&Math.hypot(event.clientX-dragging.x,event.clientY-dragging.y)>4){dragging.active=true;dragging.row.classList.add('is-dragging')}if(!dragging.active)return;event.preventDefault();const row=document.elementFromPoint(event.clientX,event.clientY)?.closest('tr[data-index]:not([data-new])');for(const other of document.querySelectorAll('.type-drop-before,.type-drop-after'))other.classList.remove('type-drop-before','type-drop-after');dragging.target=row&&row.closest('table')===dragging.row.closest('table')?row:null;if(dragging.target){const bounds=row.getBoundingClientRect();dragging.before=event.clientY<bounds.top+bounds.height/2;row.classList.add(dragging.before?'type-drop-before':'type-drop-after')}});
               document.addEventListener('pointerup',event=>{if(!dragging||dragging.id!==event.pointerId)return;const state=dragging;if(state.handle.hasPointerCapture(event.pointerId))state.handle.releasePointerCapture(event.pointerId);clearDrag();if(state.active)move(state.row,state.target,state.before)});
               document.addEventListener('pointercancel',clearDrag);
               document.addEventListener('keydown',event=>{
-                const handle=event.target.closest('[data-move]');if(handle&&(event.key==='ArrowUp'||event.key==='ArrowDown')){event.preventDefault();if(busy)return;const row=handle.closest('tr'),table=row.closest('table'),items=[...table.tBodies[0].querySelectorAll('tr[data-index]:not([data-new])')],index=items.indexOf(row),up=event.key==='ArrowUp',target=items[index+(up?-1:1)];if(!target){const status=document.querySelector('.type-status');if(status&&index>=0){const singular=table.dataset.typeList==='fields'?'field':'parameter',name=(row.querySelector('td[data-field="name"] input')?.value||'').trim(),label=singular[0].toUpperCase()+singular.slice(1)+(name?' '+name:'');status.textContent=label+' is at row '+(index+1)+' of '+items.length+(draftDirty?' · Unsaved changes':'');status.dataset.state=draftDirty?'dirty':'clean'}return}move(row,target,up);return}
-                if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='s'){event.preventDefault();event.stopPropagation();if(${readonly})return;if(busy){if(busyAction!=='save'&&!saveQueued){saveQueued=true;enqueue({action:'save-after-update'})}return}setBusy(true);enqueue({action:'save',focus:busyFocus})}
+                const handle=event.target.closest?.('[data-move]');if(handle&&(event.key==='ArrowUp'||event.key==='ArrowDown')){event.preventDefault();if(busy||handle.getAttribute('aria-disabled')==='true')return;const row=handle.closest('tr'),table=row.closest('table'),items=[...table.tBodies[0].querySelectorAll('tr[data-index]:not([data-new])')],index=items.indexOf(row),up=event.key==='ArrowUp',target=items[index+(up?-1:1)];if(!target){const status=document.querySelector('.type-status');if(status&&index>=0){const singular=table.dataset.typeList==='fields'?'field':'parameter',name=(row.querySelector('td[data-field="name"] input')?.value||'').trim(),label=singular[0].toUpperCase()+singular.slice(1)+(name?' '+name:'');status.dataset.state=draftDirty?'dirty':'clean';ghidraA11y.announce(status,label+' is at row '+(index+1)+' of '+items.length+(draftDirty?' · Unsaved changes':''))}return}move(row,target,up);return}
+                if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='s'){event.preventDefault();event.stopPropagation();if(${readonly})return;if(busy){if(busyAction!=='save'&&!saveQueued){saveQueued=true;enqueue({action:'save-after-update'})}return}ghidraA11y.announce('error','');setBusy(true,'save');enqueue({action:'save',focus:busyFocus})}
               },true);
-              const focusTarget=${JSON.stringify(focus || null).replace(/</g, '\\u003c')};if(${saving}){setBusy(true);busyFocus=focusTarget}else if(focusTarget)requestAnimationFrame(()=>restoreFocus(focusTarget));
+              const focusTarget=${JSON.stringify(focus || null).replace(/</g, '\\u003c')};if(focusTarget){restoreFocus(focusTarget);requestAnimationFrame(()=>restoreFocus(focusTarget))}if(${saving}){setBusy(true,'save');if(focusTarget)busyFocus=focusTarget}
               enqueue({action:'ready'});
             `;
             const path = typePath(document.uri);
             const summary = typeHeaderSummary(!errors.length ? model : undefined, path, readonly, document.isDirty ? undefined : cachedRawBytes);
             const statusText = statusMessage ? `${statusMessage}${document.isDirty ? ' · Unsaved changes' : ''}` : document.isDirty ? 'Unsaved changes' : '';
             const actions = `<div class="type-actions"><span class="type-status" data-state="${document.isDirty ? 'dirty' : 'clean'}" role="status">${escape(statusText)}</span><button type="button" data-open-jsonc aria-label="Open JSONC text editor beside" title="Open raw JSONC text editor beside">${callIcon('edit')}<span>JSONC</span></button></div>`;
-            panel.webview.html = page(path.split('/').pop() || 'Data type', 'Data type editor', summary.subtitle, `<p id="type-validation" class="type-validation" role="alert" hidden></p>` + body + `<datalist id="type-options">${typeOptions.map(value => `<option value="${escape(value)}"></option>`).join('')}</datalist>`, script, { kind: 'type-editor', md5: document.uri.authority, path }, actions, { subtitleHtml: summary.subtitleHtml });
+            panel.webview.html = page(path.split('/').pop() || 'Data type', 'Data type editor', summary.subtitle, `<p id="type-validation" class="type-validation" role="alert"></p>` + body + `<datalist id="type-options">${typeOptions.map(value => `<option value="${escape(value)}"></option>`).join('')}</datalist>`, script, { kind: 'type-editor', md5: document.uri.authority, path }, actions, { subtitleHtml: summary.subtitleHtml, ...(pageError ? { error: pageError } : {}) });
         };
-        const diagnostics = (): string[] => vscode.languages.getDiagnostics(document.uri).filter(item => item.source === 'Ghidra type' && item.severity === vscode.DiagnosticSeverity.Error).map(item => item.message);
+        const diagnostics = (): TypeDiagnosticIssue[] => typeDiagnosticIssues(document);
+        const postDiagnostics = (): Promise<void> => {
+            const issues = diagnostics();
+            return post({ action: 'type-diagnostics', errors: issues.map(item => item.message), issues });
+        };
         const listener = vscode.workspace.onDidChangeTextDocument(event => { if (event.document.uri.toString() === document.uri.toString() && !applying) { render(panel.active ? editorFocus : undefined); } });
         const diagnosticListener = vscode.languages.onDidChangeDiagnostics(event => {
-            if (event.uris.some(uri => uri.toString() === document.uri.toString())) { void panel.webview.postMessage({ action: 'type-diagnostics', errors: diagnostics() }); }
+            if (event.uris.some(uri => uri.toString() === document.uri.toString())) { void postDiagnostics(); }
         });
         panel.onDidDispose(() => { listener.dispose(); diagnosticListener.dispose(); });
         const post = async (message: unknown): Promise<void> => { try { await panel.webview.postMessage(message); } catch { /* The native editor may have replaced this view. */ } };
+        const throwSaveFailure = (): never => {
+            const failure = takeTypeSaveError(document.uri) || diagnostics()[0];
+            if (failure) { throw new FieldError(failure.message, failure.path); }
+            throw new Error('Could not save the data type. Check the document diagnostics.');
+        };
         let pending: Promise<void> = Promise.resolve();
         panel.webview.onDidReceiveMessage(message => {
           pending = pending.then(async () => {
@@ -333,7 +401,7 @@ export class DataTypeEditorView implements vscode.CustomTextEditorProvider, vsco
                     completedUpdateGeneration = undefined;
                     const focus = editorFocus;
                     render(focus, true);
-                    if (!await document.save()) { throw new Error('Could not save the data type. Check the document diagnostics.'); }
+                    if (!await document.save()) { throwSaveFailure(); }
                     render(panel.active ? focus : undefined);
                     return;
                 }
@@ -344,7 +412,12 @@ export class DataTypeEditorView implements vscode.CustomTextEditorProvider, vsco
                 }
                 if (message.action === 'ready') {
                     await post({ action: 'type-options', values: typeOptions });
-                    await post({ action: 'type-diagnostics', errors: diagnostics() });
+                    await postDiagnostics();
+                    if (pendingSaveError?.generation === generation) {
+                        const failed = pendingSaveError;
+                        pendingSaveError = undefined;
+                        await post({ action: 'save-failed', error: failed.error, path: failed.path });
+                    }
                     if (cachedRawBytes !== undefined && !document.isDirty) {
                         await post({ action: 'type-meta', bytesLabel: `${cachedRawBytes} ${cachedRawBytes === 1 ? 'byte' : 'bytes'}` });
                     }
@@ -358,7 +431,7 @@ export class DataTypeEditorView implements vscode.CustomTextEditorProvider, vsco
                     return;
                 }
                 if (panelVersion !== document.version) { render(); throw new Error('The definition changed in another view. Review the current values.'); }
-                if (message.action === 'save') { editorFocus = message.focus || undefined; if (!await document.save()) { throw new Error('Could not save the data type. Check the document diagnostics.'); } render(panel.active ? editorFocus : undefined); return; }
+                if (message.action === 'save') { pendingSaveError = undefined; editorFocus = message.focus || undefined; if (!await document.save()) { throwSaveFailure(); } render(panel.active ? editorFocus : undefined); return; }
                 if ((message.action === 'add' || message.action === 'remove' || message.action === 'move') && !readonly) {
                     const request = message;
                     if (!['fields', 'values', 'parameters'].includes(request.key)) { return; }
@@ -446,7 +519,13 @@ export class DataTypeEditorView implements vscode.CustomTextEditorProvider, vsco
                 panelVersion = document.version;
                 const meta = typeHeaderSummary(parse(next), typePath(document.uri), readonly);
                 await post({ action: 'draft-version', version: document.version, dirty: document.isDirty, meta: { bytesLabel: meta.bytesLabel || '', countLabel: meta.countLabel || '' } });
-            } catch (error) { await post({ action: 'save-failed' }); void vscode.window.showErrorMessage(String(error)); }
+            } catch (error) {
+                const friendly = formatFriendlyError(error);
+                const path = error instanceof FieldError ? error.path : [];
+                pendingSaveError = { generation, error: friendly, path };
+                await post({ action: 'save-failed', error: friendly, path });
+                void vscode.window.showErrorMessage(friendly);
+            }
           });
         });
         render();

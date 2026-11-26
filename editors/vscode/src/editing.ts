@@ -5,7 +5,7 @@ import * as vscode from 'vscode';
 import { Call } from './memory';
 import { ProgramContext } from './context';
 import { activeTypeUri, DataTypeFiles, typePath, typeScheme } from './type-files';
-import { Data, object, rows, escape, reference, typeReference, integer, page, section } from './web';
+import { Data, FieldError, FieldPath, object, rows, escape, reference, requiredText, typeReference, integer, formControl, page, section } from './web';
 import { formatFriendlyError } from './error';
 import { CodeLocation, cursorLocation } from './location';
 import { InlineComments } from './inline-comments';
@@ -23,111 +23,133 @@ import { memoryScheme } from './bytes';
 
 /** Input control descriptor inside a graphical edit form. */
 interface Field {
+    /** Form value key submitted for this control. */
     key: string;
+    /** Visible label text rendered for this control. */
     label: string;
+    /** Optional helper text linked to the control via `aria-describedby`. */
     description?: string;
+    /** Initial scalar or boolean value rendered in the control. */
     value?: unknown;
+    /** Control input presentation kind. */
     kind?: 'text' | 'number' | 'textarea' | 'checkbox' | 'type';
+    /** Whether the control must have a non-empty value on submit. */
+    required?: boolean;
+    /** Minimum valid integer value used when deciding advanced-section placement. */
+    min?: number;
+    /** Render the text control as read-only. */
     readonly?: boolean;
+    /** Request initial focus when the form opens. */
     autofocus?: boolean;
+    /** Keep the control outside `<details class="advanced-fields">` even when empty. */
     alwaysVisible?: boolean;
+    /** Visible line count for `textarea` controls. */
     rows?: number;
 }
 /** Additional behavior options for {@link EditingUI.form}. */
 interface FormOptions {
+    /** Optional helper sentence shown below the primary fields. */
     hint?: string;
+    /** Optional label for a secondary Cancel button in the form toolbar. */
     cancelLabel?: string;
+    /** Baseline scalar field values used to show an unsaved-changes badge. */
     initialValues?: Data;
+    /** Optional getter returning the latest saved baseline values after partial saves. */
+    getBaseline?: () => Data;
+    /** Predicate returning true when `values` contain unsaved edits. */
     isDirty?: (values: Data) => boolean;
+    /** Modal confirmation prompt shown before discarding unsaved edits. */
     confirmDiscardMessage?: string;
+    /** True when the form reopens after an uncertain post-send write error. */
     initialUncertain?: boolean;
+    /** Alert message announced immediately when `initialUncertain` is true. */
     uncertainMessage?: string;
+    /** Callback invoked when the user chooses Keep editing after closing a dirty tab. */
     onReopenDirtyClose?: (values: Data, uncertain: boolean) => void;
 }
 /** Column descriptor for an editable table grid inside a form. */
-interface Column { key: string; label: string; kind?: 'number' | 'type'; }
+interface Column { key: string; label: string; kind?: 'number' | 'type'; required?: boolean; }
 /** Editable table specification inside a graphical edit form. */
 interface Grid { key: string; label: string; columns: Column[]; values: Data[]; add?: boolean; remove?: boolean; }
 /** Form values and table rows posted back from the edit webview. */
 interface Submission { values: Data; tables: Record<string, Data[]>; }
+/** Post-save update payload returned by a form `save` callback. */
+interface SaveOutcome {
+    /** Close the form panel immediately after saving. */
+    close?: boolean;
+    /** Updated panel and `<h1>` title after saving. */
+    title?: string;
+    /** Refreshed table rows keyed by table name. */
+    tables?: Record<string, Data[]>;
+    /** Refreshed scalar field values keyed by field name. */
+    savedValues?: Data;
+    /** Custom status announcement shown after saving. */
+    message?: string;
+}
 /** Single backend mutation operation sent to `ghidra.mutate`. */
 interface Mutation { method: string; arguments: Data; }
 /** Read and trim a string field value from form data. */
 const value = (data: Data, key: string): string => String(data[key] ?? '').trim();
-/** Read a non-empty trimmed string field or throw a validation error naming `label`. */
-const required = (data: Data, key: string, label: string): string => {
-    const result = value(data, key);
-    if (!result) { throw new Error(`${label} is required.`); }
-    return result;
-};
+/** Read a non-empty trimmed string field or throw a {@link FieldError} for `label` at `path`. */
+const required = (data: Data, key: string, label: string, path: FieldPath = [key]): string => requiredText(data[key], label, path);
 /** Return true when checkbox field `key` is checked. */
 const checked = (data: Data, key: string): boolean => data[key] === true;
 /** Compare two JSON-serializable values for equality. */
 const equal = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
 /** Render one labeled HTML form control from a {@link Field} descriptor. */
 function input(field: Field): string {
-    const id = `field-${escape(field.key)}`;
-    const hintId = field.description ? `hint-${escape(field.key)}` : '';
-    const describedBy = hintId ? ` aria-describedby="${hintId}"` : '';
-    const attrs = `id="${id}" name="${escape(field.key)}"${describedBy}${field.readonly ? ' readonly' : ''}${field.autofocus ? ' autofocus' : ''}`;
-    if (field.kind === 'checkbox') { return `<label class="checkbox" for="${id}"><input ${attrs} type="checkbox"${field.value === true ? ' checked' : ''}>${escape(field.label)}</label>`; }
-    const control = field.kind === 'textarea'
-        ? `<textarea ${attrs} rows="${field.rows || 3}">${escape(field.value)}</textarea>`
-        : `<input ${attrs} type="${field.kind === 'number' ? 'number' : 'text'}" value="${escape(field.value)}"${field.kind === 'type' ? ' list="type-options"' : ''}>`;
-    const hintHtml = field.description ? `<span class="field-hint" id="${hintId}">${escape(field.description)}</span>` : '';
-    return `<label${field.kind === 'textarea' ? ' class="full"' : ''} for="${id}"><span>${escape(field.label)}</span>${hintHtml}${control}</label>`;
+    return formControl({
+        path: [field.key],
+        name: field.key,
+        label: field.label,
+        description: field.description,
+        value: field.value,
+        kind: field.kind,
+        rows: field.rows,
+        required: field.required,
+        readonly: field.readonly,
+        autofocus: field.autofocus,
+    });
 }
 /** Render an editable table grid section with optional row add/remove buttons. */
 function grid(spec: Grid): string {
     const singular = spec.key === 'parameters' ? 'parameter' : spec.key === 'locals' ? 'local variable' : 'row';
     const prefix = singular[0].toUpperCase() + singular.slice(1);
-    const row = (data: Data, index?: number): string => {
-        const number = index === undefined ? undefined : index + 1;
+    const row = (data: Data, rowIndex?: number): string => {
+        const number = rowIndex === undefined ? undefined : rowIndex + 1;
         const cells = spec.columns.map(column => {
-            const id = number === undefined ? '' : ` id="grid-${escape(spec.key)}-${number}-${escape(column.key)}"`;
+            const id = number === undefined ? undefined : `grid-${spec.key}-${number}-${column.key}`;
             const label = number === undefined ? column.label : `${prefix} ${number} ${column.label.toLowerCase()}`;
-            return `<td><input${id} data-column="${escape(column.key)}" data-label="${escape(column.label)}" aria-label="${escape(label)}" type="${column.kind === 'number' ? 'number' : 'text'}" value="${escape(data[column.key])}"${column.kind === 'type' ? ' list="type-options"' : ''}></td>`;
+            return `<td>${formControl({ id, path: [spec.key, rowIndex ?? spec.values.length, column.key], column: column.key, label, value: data[column.key], kind: column.kind, inline: true, required: column.required, data: { label: column.label } })}</td>`;
         }).join('');
         const remove = spec.remove === false ? '' : `<td><button${number === undefined ? '' : ` id="grid-${escape(spec.key)}-${number}-remove"`} type="button" class="row-remove secondary" data-remove-row aria-label="Remove ${escape(singular)}${number === undefined ? '' : ` ${number}`}" title="Remove ${escape(singular)}">${callIcon('trash')}</button></td>`;
         return `<tr data-original="${escape(data._original ?? '')}">${cells}${remove}</tr>`;
     };
     const actionHeader = spec.remove === false ? '' : '<th class="editable-action-col" scope="col"><span class="type-sr-only">Actions</span></th>';
-    return section(spec.label, `<div class="table-wrap"><table class="editable" data-table="${escape(spec.key)}" data-singular="${escape(singular)}"><thead><tr>${spec.columns.map(column => `<th scope="col">${escape(column.label)}</th>`).join('')}${actionHeader}</tr></thead><tbody>${spec.values.map((data, index) => row(data, index)).join('')}</tbody></table></div>${spec.add === false ? '' : `<template data-row-template="${escape(spec.key)}">${row({})}</template><button type="button" class="secondary icon-add" data-add-row="${escape(spec.key)}" aria-label="Add ${escape(singular)}" title="Add ${escape(singular)}">${callIcon('plus')}</button>`}`);
+    return section(spec.label, `<div class="table-wrap"><table class="editable" data-table="${escape(spec.key)}" data-singular="${escape(singular)}"><thead><tr>${spec.columns.map(column => `<th scope="col">${escape(column.label)}</th>`).join('')}${actionHeader}</tr></thead><tbody>${spec.values.map((item, index) => row(item, index)).join('')}</tbody></table></div>${spec.add === false ? '' : `<template data-row-template="${escape(spec.key)}">${row({})}</template><button type="button" class="secondary icon-add" data-add-row="${escape(spec.key)}" aria-label="Add ${escape(singular)}" title="Add ${escape(singular)}">${callIcon('plus')}</button>`}`);
 }
 /** Client-side webview script for table row edits, submission, and initial focus. */
 const formScript = `
-const reindex = table => {
-    const key = table.dataset.table, singular = table.dataset.singular || 'row';
-    const prefix = singular[0].toUpperCase() + singular.slice(1);
-    Array.from(table.tBodies[0].rows).forEach((row, index) => {
-        const number = index + 1;
-        for (const el of row.querySelectorAll('[data-column]')) {
-            el.id = 'grid-' + key + '-' + number + '-' + el.dataset.column;
-            el.setAttribute('aria-label', prefix + ' ' + number + ' ' + (el.dataset.label || el.dataset.column).toLowerCase());
-        }
-        const button = row.querySelector('[data-remove-row]');
-        if (button) {
-            button.id = 'grid-' + key + '-' + number + '-remove';
-            button.setAttribute('aria-label', 'Remove ' + singular + ' ' + number);
-        }
-    });
-};
+const editForm = document.getElementById('edit-form'), submitButton = document.getElementById('submit'), cancelButton = document.getElementById('cancel');
+let formSaving = false, formLocked = submitButton?.getAttribute('aria-disabled') === 'true';
+const busyControls = () => [submitButton, cancelButton, ...editForm.querySelectorAll('[data-add-row],[data-remove-row]')].filter(Boolean);
 document.addEventListener('click', event => {
     const remove = event.target.closest('[data-remove-row]');
     if (remove) {
+        if (formSaving || formLocked || remove.getAttribute('aria-disabled') === 'true') { event.preventDefault(); return; }
         const row = remove.closest('tr'), table = row.closest('table');
         const next = row.nextElementSibling?.querySelector('input') || row.previousElementSibling?.querySelector('input')
-            || [...document.querySelectorAll('[data-add-row]')].find(button => button.dataset.addRow === table.dataset.table)
-            || document.getElementById('submit');
+            || [...document.querySelectorAll('[data-add-row]')].find(button => button.dataset.addRow === table.dataset.table) || submitButton;
         row.remove();
-        reindex(table);
+        ghidraA11y.syncTable(table);
         next?.focus();
     }
     const add = event.target.closest('[data-add-row]');
     if (add) {
+        if (formSaving || formLocked || add.getAttribute('aria-disabled') === 'true') { event.preventDefault(); return; }
         const key = add.dataset.addRow, table = document.querySelector('[data-table="' + key + '"]'), body = table.tBodies[0];
         body.append(document.querySelector('[data-row-template="' + key + '"]').content.cloneNode(true));
-        reindex(table);
+        ghidraA11y.syncTable(table);
         body.lastElementChild?.querySelector('input')?.focus();
     }
 });
@@ -136,68 +158,108 @@ const collectFormValues = form => {
     for (const el of form.querySelectorAll('[name]')) { values[el.name] = el.type === 'checkbox' ? el.checked : el.value; }
     return values;
 };
-const editFormEl = document.getElementById('edit-form');
-let baselineValues = editFormEl.dataset.baseline ? JSON.parse(editFormEl.dataset.baseline) : null;
+let baselineValues = editForm.dataset.baseline ? JSON.parse(editForm.dataset.baseline) : null;
 const syncDirtyBadge = values => {
     const badge = document.getElementById('dirty-status');
     if (!badge || !baselineValues) { return; }
     const dirty = Object.keys(baselineValues).some(key => String(values[key] ?? '') !== String(baselineValues[key] ?? ''));
     badge.textContent = dirty ? 'Unsaved changes' : '';
 };
-editFormEl.addEventListener('input', () => {
-    const values = collectFormValues(editFormEl);
+const clearEditedError = event => ghidraA11y.clearFieldError(event.target);
+editForm.addEventListener('input', event => {
+    clearEditedError(event);
+    const values = collectFormValues(editForm);
     syncDirtyBadge(values);
     vscode.postMessage({ action: 'change', values });
 });
-document.getElementById('cancel')?.addEventListener('click', () => {
-    vscode.postMessage({ action: 'cancel', values: collectFormValues(editFormEl) });
+editForm.addEventListener('change', clearEditedError);
+cancelButton?.addEventListener('click', () => {
+    if (formSaving || cancelButton.getAttribute('aria-disabled') === 'true') { return; }
+    vscode.postMessage({ action: 'cancel', values: collectFormValues(editForm) });
 });
 document.addEventListener('keydown', event => {
     if ((event.ctrlKey || event.metaKey) && (event.key.toLowerCase() === 's' || event.key === 'Enter')) {
         event.preventDefault();
-        const submitBtn = document.getElementById('submit');
-        if (submitBtn && !submitBtn.disabled) { editFormEl.requestSubmit(); }
+        if (submitButton && !formSaving && !formLocked && submitButton.getAttribute('aria-disabled') !== 'true') { editForm.requestSubmit(); }
         return;
     }
-    if (event.key === 'Escape' && document.getElementById('cancel') && !event.defaultPrevented) {
+    if (event.key === 'Escape' && cancelButton && !formSaving && !event.defaultPrevented) {
         event.preventDefault();
-        vscode.postMessage({ action: 'cancel', values: collectFormValues(editFormEl) });
+        vscode.postMessage({ action: 'cancel', values: collectFormValues(editForm) });
     }
 });
-editFormEl.addEventListener('submit', event => {
+editForm.addEventListener('submit', event => {
     event.preventDefault();
-    const values = collectFormValues(event.target);
+    if (formSaving || formLocked || submitButton.getAttribute('aria-disabled') === 'true') { return; }
+    const values = collectFormValues(editForm);
     const tables = {};
-    for (const table of event.target.querySelectorAll('[data-table]')) {
+    for (const table of editForm.querySelectorAll('[data-table]')) {
+        ghidraA11y.syncTable(table);
         tables[table.dataset.table] = Array.from(table.tBodies[0].rows).map(row => {
             const data = { _original: row.dataset.original };
             for (const el of row.querySelectorAll('[data-column]')) { data[el.dataset.column] = el.value; }
             return data;
         });
     }
-    document.getElementById('submit').disabled = true;
-    document.getElementById('error').textContent = '';
-    document.getElementById('status').textContent = 'Saving analysis…';
+    formSaving = true;
+    ghidraA11y.clearErrors(editForm);
+    ghidraA11y.setBusy(busyControls(), true, editForm);
+    ghidraA11y.announce('error', '');
+    ghidraA11y.announce('status', 'Saving analysis…');
+    if (!editForm.contains(document.activeElement)) { submitButton.focus({ preventScroll: true }); }
     vscode.postMessage({ action: 'submit', values, tables });
 });
 window.addEventListener('message', event => {
     const message = event.data;
-    if (message.action === 'result') {
-        document.getElementById('submit').disabled = message.uncertain === true;
-        document.getElementById('error').textContent = message.error || '';
-        document.getElementById('status').textContent = message.error ? '' : message.message || 'Saved to the Ghidra project.';
-        if (!message.error && message.savedValues && typeof message.savedValues === 'object') {
-            baselineValues = message.savedValues;
-            for (const [key, val] of Object.entries(message.savedValues)) {
-                const field = editFormEl.querySelector('[name="' + key + '"]');
-                if (field && field.type !== 'checkbox') { field.value = String(val ?? ''); }
-            }
-            syncDirtyBadge(collectFormValues(editFormEl));
+    if (message?.action !== 'result') { return; }
+    formSaving = false;
+    formLocked = message.uncertain === true;
+    ghidraA11y.setBusy(busyControls(), false, editForm);
+    if (formLocked) { submitButton.setAttribute('aria-disabled', 'true'); }
+    else { submitButton.removeAttribute('aria-disabled'); }
+    if (message.savedBaseline && typeof message.savedBaseline === 'object') {
+        baselineValues = message.savedBaseline;
+        syncDirtyBadge(collectFormValues(editForm));
+    }
+    if (message.error) {
+        ghidraA11y.announce('status', '');
+        ghidraA11y.announce('error', message.error);
+        if (Array.isArray(message.path) && message.path.length) {
+            ghidraA11y.markErrors([{ path: message.path, message: message.error }], { root: editForm, focus: true, fallbackId: 'error' });
+        } else if (!editForm.contains(document.activeElement)) {
+            submitButton.focus({ preventScroll: true });
+        }
+        return;
+    }
+    if (message.savedValues?.title) {
+        const heading = document.querySelector('h1');
+        if (heading) { heading.textContent = message.savedValues.title; }
+        document.title = message.savedValues.title;
+    }
+    if (message.savedValues?.tables) {
+        for (const [key, savedRows] of Object.entries(message.savedValues.tables)) {
+            const table = editForm.querySelector('[data-table="' + key + '"]');
+            if (!table || !Array.isArray(savedRows)) { continue; }
+            [...table.tBodies[0].rows].forEach((row, index) => {
+                row.dataset.original = savedRows[index]?._original ?? String(index);
+            });
+            ghidraA11y.syncTable(table);
         }
     }
+    if (message.savedValues?.savedValues) {
+        baselineValues = message.savedValues.savedValues;
+        for (const [key, nextVal] of Object.entries(message.savedValues.savedValues)) {
+            const field = editForm.querySelector('[name="' + key + '"]');
+            if (field && field.type !== 'checkbox') { field.value = String(nextVal ?? ''); }
+        }
+        syncDirtyBadge(collectFormValues(editForm));
+    }
+    ghidraA11y.announce('error', '');
+    ghidraA11y.announce('status', message.message || 'Saved to the Ghidra project.');
+    if (!editForm.contains(document.activeElement)) { submitButton.focus({ preventScroll: true }); }
 });
-syncDirtyBadge(collectFormValues(editFormEl));
-const initialFocus = document.querySelector('[autofocus]') || document.querySelector('#edit-form input:not([readonly]), #edit-form textarea:not([readonly])');
+syncDirtyBadge(collectFormValues(editForm));
+const initialFocus = document.querySelector('[autofocus]') || document.querySelector('#edit-form input:not([readonly]), #edit-form textarea:not([readonly])') || submitButton;
 if (initialFocus) {
     initialFocus.focus();
     window.addEventListener('focus', () => { if (document.activeElement === document.body) { initialFocus.focus(); } }, { once: true });
@@ -263,7 +325,7 @@ export class EditingUI implements vscode.Disposable {
     /** Fetch selectable data type names and paths for type-picker datalists. */
     private async types(md5: string): Promise<string[]> { const result = await this.query<{ items: Data[] }>(md5, 'data_type', 'list', {}, true); return [...new Set(['void', 'pointer', 'int', 'char', 'byte', 'undefined1', 'undefined4', 'uint', 'long', ...result.items.flatMap(item => [String(item.path), String(item.name)])])].sort(); }
     /** Open a webview form panel and wire submission validation and save feedback. */
-    private async form(md5: string, title: string, subtitle: string, fields: Field[], grids: Grid[], save: (submission: Submission) => Promise<void | Data>, hintOrOptions: string | FormOptions = ''): Promise<void> {
+    private async form(md5: string, title: string, subtitle: string, fields: Field[], grids: Grid[], save: (submission: Submission) => Promise<void | SaveOutcome>, hintOrOptions: string | FormOptions = ''): Promise<void> {
         const options: FormOptions = typeof hintOrOptions === 'string' ? { hint: hintOrOptions } : hintOrOptions;
         const hint = options.hint || '';
         const usesTypes = fields.some(field => field.kind === 'type') || grids.some(grid => grid.columns.some(column => column.kind === 'type'));
@@ -292,7 +354,7 @@ export class EditingUI implements vscode.Disposable {
             }
         });
         panel.onDidChangeViewState(event => { if (event.webviewPanel.active) { void this.context.activate(md5).catch(error => vscode.window.showErrorMessage(formatFriendlyError(error))); } });
-        const advanced = fields.filter(field => !field.alwaysVisible && ((field.kind === 'checkbox' && field.key !== 'confirmed' && field.value !== true) || (field.kind === 'textarea' && !field.value) || (field.key === 'category' && (!field.value || field.value === '/')) || (field.key === 'size' && !field.value) || (field.key === 'convention' && ['default', 'unknown', '__cdecl'].includes(String(field.value)))));
+        const advanced = fields.filter(field => !field.alwaysVisible && ((field.kind === 'checkbox' && field.key !== 'confirmed' && field.value !== true) || (field.kind === 'textarea' && !field.value) || (field.key === 'category' && (!field.value || field.value === '/')) || (field.key === 'size' && field.value === 0 && (field.min ?? 0) <= 0) || (field.key === 'convention' && ['default', '__cdecl'].includes(String(field.value ?? '').trim().toLowerCase()))));
         const visibleFields = fields.filter(field => !advanced.includes(field));
         const controls = visibleFields.filter(field => field.kind !== 'checkbox' && field.kind !== 'textarea');
         const flags = visibleFields.filter(field => field.kind === 'checkbox');
@@ -304,11 +366,8 @@ export class EditingUI implements vscode.Disposable {
         const baselineAttr = options.initialValues ? ` data-baseline="${escape(JSON.stringify(options.initialValues))}"` : '';
         const cancelHtml = options.cancelLabel ? `<button class="secondary" id="cancel" type="button">${escape(options.cancelLabel)}</button>` : '';
         const dirtyBadgeHtml = options.initialValues ? '<span id="dirty-status" class="form-dirty" role="status" aria-live="polite"></span>' : '';
-        const submitDisabled = uncertain ? ' disabled' : '';
-        panel.webview.html = page(title, 'Edit analysis', subtitle, `<form id="edit-form"${baselineAttr}>${fieldBody ? `<section class="form-fields">${fieldBody}</section>` : ''}${hint ? `<p class="form-hint">${escape(hint)}</p>` : ''}${grids.map(grid).join('')}${advanced.length ? `<details class="advanced-fields"><summary>Advanced options</summary><div class="form-grid">${advanced.map(input).join('')}</div></details>` : ''}<datalist id="type-options">${types.map(type => `<option value="${escape(type)}"></option>`).join('')}</datalist><div class="toolbar form-actions"><button class="primary icon-submit${label === 'Delete type' ? ' danger' : ''}" id="submit" type="submit" aria-label="${label}" title="${label}"${submitDisabled}>${callIcon(label === 'Delete type' ? 'trash' : label === 'Create type' ? 'plus' : 'save')}</button>${cancelHtml}${dirtyBadgeHtml}</div><p id="status" class="success" role="status"></p></form>`, formScript);
-        if (uncertain && options.uncertainMessage) {
-            void panel.webview.postMessage({ action: 'result', error: options.uncertainMessage, uncertain: true });
-        }
+        const submitAttrs = uncertain ? ' aria-disabled="true"' : '';
+        panel.webview.html = page(title, 'Edit analysis', subtitle, `<form id="edit-form" novalidate${baselineAttr}>${fieldBody ? `<section class="form-fields">${fieldBody}</section>` : ''}${hint ? `<p class="form-hint">${escape(hint)}</p>` : ''}${grids.map(grid).join('')}${advanced.length ? `<details class="advanced-fields"><summary>Advanced options</summary><div class="form-grid">${advanced.map(input).join('')}</div></details>` : ''}<datalist id="type-options">${types.map(type => `<option value="${escape(type)}"></option>`).join('')}</datalist><div class="toolbar form-actions"><button class="primary icon-submit${label === 'Delete type' ? ' danger' : ''}" id="submit" type="submit" aria-label="${label}" title="${label}"${submitAttrs}>${callIcon(label === 'Delete type' ? 'trash' : label === 'Create type' ? 'plus' : 'save')}</button>${cancelHtml}${dirtyBadgeHtml}</div><p id="status" class="success" role="status"></p></form>`, formScript, undefined, '', uncertain && options.uncertainMessage ? { error: options.uncertainMessage } : {});
         let busy = false;
         panel.webview.onDidReceiveMessage(async (message: unknown) => {
             const data = object(message);
@@ -336,15 +395,20 @@ export class EditingUI implements vscode.Disposable {
             currentValues = object(data.values);
             try {
                 const outcome = await save({ values: currentValues, tables: Object.fromEntries(Object.entries(object(data.tables)).map(([key, values]) => [key, rows(values)])) });
-                const payload = outcome && typeof outcome === 'object' ? outcome : {};
-                const savedValues = payload.savedValues && typeof payload.savedValues === 'object' ? object(payload.savedValues) : undefined;
-                if (savedValues) { currentValues = { ...savedValues }; }
-                const statusMessage = typeof payload.message === 'string' && payload.message ? payload.message : 'Saved to the Ghidra project.';
-                await panel.webview.postMessage({ action: 'result', savedValues, message: statusMessage });
+                if (outcome?.savedValues) { currentValues = { ...outcome.savedValues }; }
+                if (outcome?.close) { confirmedClose = true; panel.dispose(); return; }
+                if (outcome?.title) { panel.title = outcome.title; }
+                await panel.webview.postMessage({ action: 'result', savedValues: outcome, message: outcome?.message || 'Saved to the Ghidra project.' });
             } catch (error) {
-                const message = String(error);
-                uncertain ||= /may have reached|timed out.*write|Modification reached|persistence failed|saving.*failed|saved.*failed|regeneration failed|editor rejected|outcome.*unknown|not persisted/i.test(message);
-                await panel.webview.postMessage({ action: 'result', error: formatFriendlyError(error), uncertain });
+                const rawMessage = String(error);
+                uncertain ||= /may have reached|timed out.*write|Modification reached|persistence failed|saving.*failed|saved.*failed|regeneration failed|editor rejected|outcome.*unknown|not persisted/i.test(rawMessage);
+                let errorPath = error instanceof FieldError ? error.path : [];
+                if (!errorPath.length) {
+                    if (/calling[_ ]convention/i.test(rawMessage) && fields.some(field => field.key === 'convention')) { errorPath = ['convention']; }
+                    else if (/return[_ ]type/i.test(rawMessage) && fields.some(field => field.key === 'returnType')) { errorPath = ['returnType']; }
+                    else if (/\baddress\b/i.test(rawMessage) && fields.some(field => field.key === 'address')) { errorPath = ['address']; }
+                }
+                await panel.webview.postMessage({ action: 'result', error: formatFriendlyError(error), path: errorPath, uncertain, savedBaseline: options.getBaseline?.() });
             }
             finally { busy = false; }
         });
@@ -368,30 +432,39 @@ export class EditingUI implements vscode.Disposable {
         const md5 = this.md5(candidate);
         const kind = kindArg || await vscode.window.showQuickPick(['struct', 'union', 'enum', 'typedef', 'function'], { title: 'Create data type' });
         if (!kind || !['struct', 'union', 'enum', 'typedef', 'function'].includes(kind)) { return; }
-        const fields: Field[] = [{ key: 'name', label: 'Type name' }, { key: 'category', label: 'Category path', value: '/' }];
-        if (kind === 'struct' || kind === 'enum') { fields.push({ key: 'size', label: kind === 'enum' ? 'Size in bytes (1–8)' : 'Initial size in bytes', kind: 'number', value: kind === 'enum' ? 4 : 0 }); }
-        if (kind === 'typedef') { fields.push({ key: 'base', label: 'Base type', kind: 'type', value: 'int' }); }
+        const fields: Field[] = [{ key: 'name', label: 'Type name', required: true }, { key: 'category', label: 'Category path', value: '/' }];
+        if (kind === 'struct' || kind === 'enum') { fields.push({ key: 'size', label: kind === 'enum' ? 'Size in bytes (1–8)' : 'Initial size in bytes', kind: 'number', value: kind === 'enum' ? 4 : 0, required: true, min: kind === 'enum' ? 1 : 0 }); }
+        if (kind === 'typedef') { fields.push({ key: 'base', label: 'Base type', kind: 'type', value: 'int', required: true }); }
         if (kind === 'function') { fields.push(...this.signatureFields({})); }
         await this.form(md5, `Create ${kind}`, this.context.name(md5), fields, kind === 'function' ? [this.parameterGrid([])] : [], async ({ values, tables }) => {
-            const resource: Data = { kind, name: required(values, 'name', 'Type name'), category_path: value(values, 'category') || '/' };
-            if (kind === 'struct' || kind === 'enum') { resource.size = integer(values.size, 'Size', kind === 'enum' ? 1 : 0, kind === 'enum' ? 8 : 2147483647); }
-            if (kind === 'typedef') { resource.base_type = typeReference(values.base); }
+            const resource: Data = { kind, name: required(values, 'name', 'Type name', ['name']), category_path: value(values, 'category') || '/' };
+            if (kind === 'struct' || kind === 'enum') { resource.size = integer(values.size, 'Size', kind === 'enum' ? 1 : 0, kind === 'enum' ? 8 : 2147483647, ['size']); }
+            if (kind === 'typedef') { resource.base_type = typeReference(values.base, ['base'], 'Base type'); }
             if (kind === 'function') { resource.signature = this.signature(values, tables.parameters || []); }
             await this.mutations(md5, [{ method: 'data_type.create', arguments: { resource } }]);
         });
     }
     /** Build form fields for function signature creation. */
     private signatureFields(data: Data): Field[] { return [
-        { key: 'returnType', label: 'Return type', kind: 'type', value: reference(data.return_type || { kind: 'named', name: 'void' }) },
-        { key: 'convention', label: 'Calling convention', value: data.calling_convention || 'default' },
+        { key: 'returnType', label: 'Return type', kind: 'type', value: reference(data.return_type || { kind: 'named', name: 'void' }), required: true },
+        { key: 'convention', label: 'Calling convention', value: data.calling_convention || 'default', required: true },
         { key: 'varargs', label: 'Variadic arguments', kind: 'checkbox', value: data.has_var_args }, { key: 'noreturn', label: 'Does not return', kind: 'checkbox', value: data.has_no_return },
     ]; }
     /** Build an editable parameter table grid for function data types. */
-    private parameterGrid(parameters: Data[]): Grid { return { key: 'parameters', label: 'Parameters', columns: [{ key: 'name', label: 'Name' }, { key: 'type', label: 'Data type', kind: 'type' }], values: parameters.map((param, index) => ({ _original: String(index), name: param.name, type: reference(param.data_type) })) }; }
+    private parameterGrid(parameters: Data[]): Grid { return { key: 'parameters', label: 'Parameters', columns: [{ key: 'name', label: 'Name' }, { key: 'type', label: 'Data type', kind: 'type', required: true }], values: parameters.map((param, index) => ({ _original: String(index), name: param.name, type: reference(param.data_type) })) }; }
     /** Parse and validate function signature fields and parameter rows into a payload. */
     private signature(values: Data, parameters: Data[]): Data {
-        if (value(values, 'convention').toLowerCase() === 'unknown') { throw new Error('Choose a known calling convention, such as default, for a function data type.'); }
-        return { return_type: typeReference(values.returnType), calling_convention: required(values, 'convention', 'Calling convention'), has_var_args: checked(values, 'varargs'), has_no_return: checked(values, 'noreturn'), parameters: parameters.map(param => ({ name: value(param, 'name'), data_type: typeReference(param.type) })) }; }
+        const returnType = typeReference(values.returnType, ['returnType'], 'Return type');
+        const callingConvention = required(values, 'convention', 'Calling convention', ['convention']);
+        if (callingConvention.toLowerCase() === 'unknown') { throw new FieldError('Choose a known calling convention, such as default, for a function data type.', ['convention']); }
+        return {
+            return_type: returnType,
+            calling_convention: callingConvention,
+            has_var_args: checked(values, 'varargs'),
+            has_no_return: checked(values, 'noreturn'),
+            parameters: parameters.map((param, index) => ({ name: value(param, 'name'), data_type: typeReference(param.type, ['parameters', index, 'type'], `Parameter ${index + 1} data type`) })),
+        };
+    }
     /** Open a `ghidra-type://` document in `ghidra.dataTypeEditor` for the selected data type. */
     async editType(candidate?: unknown, pathArg?: string): Promise<void> {
         const uri = activeTypeUri(candidate);
@@ -405,26 +478,27 @@ export class EditingUI implements vscode.Disposable {
     async deleteType(candidate?: unknown, pathArg?: string): Promise<void> {
         const md5 = this.md5(candidate); const path = await this.chooseType(md5, pathArg || this.resource(candidate, 'path')); if (!path) { return; }
         const original = await this.query(md5, 'data_type', 'get', { selector: { path } });
-        await this.form(md5, 'Delete data type', path, [{ key: 'confirmed', label: 'Delete this type from the analysis project (uses may become undefined)', kind: 'checkbox' }], [], async ({ values }) => {
-            if (!checked(values, 'confirmed')) { throw new Error('Select the deletion checkbox to continue.'); }
+        await this.form(md5, 'Delete data type', path, [{ key: 'confirmed', label: 'Delete this type from the analysis project (uses may become undefined)', kind: 'checkbox', required: true }], [], async ({ values }) => {
+            if (!checked(values, 'confirmed')) { throw new FieldError('Select the deletion checkbox to continue.', ['confirmed']); }
             await this.unchanged(md5, 'data_type', { path }, original);
             await this.mutations(md5, [{ method: 'data_type.delete', arguments: { selector: { path } } }]);
+            return { close: true };
         });
     }
     /** Open a form to apply a data type at a global data address. */
     async applyType(candidate?: unknown, pathArg?: string, addressArg?: string): Promise<void> {
         const md5 = this.md5(candidate); const path = pathArg || this.resource(candidate, 'path') || await this.chooseType(md5); if (!path) { return; }
-        await this.form(md5, 'Apply data type', this.context.name(md5), [{ key: 'address', label: 'Data address', value: addressArg }, { key: 'name', label: 'Variable name (for new data)' }, { key: 'type', label: 'Data type', kind: 'type', value: path }], [], async ({ values }) => {
-            const address = required(values, 'address', 'Address'); const dataType = typeReference(values.type);
+        await this.form(md5, 'Apply data type', this.context.name(md5), [{ key: 'address', label: 'Data address', value: addressArg, required: true }, { key: 'name', label: 'Variable name (for new data)' }, { key: 'type', label: 'Data type', kind: 'type', value: path, required: true }], [], async ({ values }) => {
+            const address = required(values, 'address', 'Address', ['address']); const dataType = typeReference(values.type, ['type'], 'Data type');
             let existing: Data | undefined;
             try { existing = await this.query(md5, 'global_variable', 'get', { selector: { address } }); } catch (error) { if (!/not found|not_found|no .*data|does not exist|not a defined|not defined/i.test(String(error))) { throw error; } }
-            await this.mutations(md5, [{ method: existing ? 'global_variable.patch' : 'global_variable.create', arguments: existing ? { selector: { address }, patch: { data_type: dataType, ...(value(values, 'name') ? { name: value(values, 'name') } : {}) } } : { resource: { address, name: required(values, 'name', 'Variable name'), data_type: dataType } } }]);
+            await this.mutations(md5, [{ method: existing ? 'global_variable.patch' : 'global_variable.create', arguments: existing ? { selector: { address }, patch: { data_type: dataType, ...(value(values, 'name') ? { name: value(values, 'name') } : {}) } } : { resource: { address, name: required(values, 'name', 'Variable name', ['name']), data_type: dataType } } }]);
         });
     }
     /** Open a form to edit a function prototype, flags, comment, and parameters. */
     async editFunction(candidate?: unknown, entryArg?: string): Promise<void> {
         const md5 = this.md5(candidate); const entry = await this.entry(md5, entryArg || this.resource(candidate, 'entry')); if (!entry) { return; }
-        const proto = await this.call<{
+        let proto = await this.call<{
             entry: string;
             original: Data;
             name: string;
@@ -439,38 +513,52 @@ export class EditingUI implements vscode.Disposable {
         const paramGrid: Grid = {
             key: 'parameters',
             label: 'Parameters',
-            columns: [{ key: 'name', label: 'Name' }, { key: 'type', label: 'Data type', kind: 'type' }],
+            columns: [{ key: 'name', label: 'Name', required: true }, { key: 'type', label: 'Data type', kind: 'type', required: true }],
             values: (proto.parameters || []).map((param, index) => ({ _original: String(index), name: param.name, type: param.type })),
         };
         await this.form(md5, `Edit ${String(proto.name)}`, entry, [
-            { key: 'name', label: 'Function name', value: proto.name },
-            { key: 'returnType', label: 'Return type', kind: 'type', value: proto.returnType || 'void' },
-            { key: 'convention', label: 'Calling convention', value: proto.callingConvention || 'default' },
+            { key: 'name', label: 'Function name', value: proto.name, required: true },
+            { key: 'returnType', label: 'Return type', kind: 'type', value: proto.returnType || 'void', required: true },
+            { key: 'convention', label: 'Calling convention', value: proto.callingConvention || 'default', required: true },
             { key: 'varargs', label: 'Variadic arguments', kind: 'checkbox', value: proto.hasVarArgs },
             { key: 'noreturn', label: 'Does not return', kind: 'checkbox', value: proto.hasNoReturn },
             { key: 'inline', label: 'Inline function', kind: 'checkbox', value: proto.isInline },
             { key: 'comment', label: 'Function comment', kind: 'textarea', value: proto.comment || '' },
         ], [paramGrid], async ({ values, tables }) => {
+            const name = required(values, 'name', 'Function name', ['name']);
+            const returnType = required(values, 'returnType', 'Return type', ['returnType']);
+            typeReference(returnType, ['returnType'], 'Return type');
+            const callingConvention = required(values, 'convention', 'Calling convention', ['convention']);
+            const parameters = (tables.parameters || []).map((param, index) => {
+                const paramName = required(param, 'name', `Parameter ${index + 1} name`, ['parameters', index, 'name']);
+                typeReference(param.type, ['parameters', index, 'type'], `Parameter ${index + 1} data type`);
+                return { ...param, name: paramName, type: value(param, 'type') };
+            });
             await this.call('ghidra.saveFunctionPrototype', {
                 md5,
                 entry: proto.entry || entry,
                 original: proto.original,
-                name: required(values, 'name', 'Function name'),
-                returnType: required(values, 'returnType', 'Return type'),
-                callingConvention: required(values, 'convention', 'Calling convention'),
+                name,
+                returnType,
+                callingConvention,
                 hasVarArgs: checked(values, 'varargs'),
                 hasNoReturn: checked(values, 'noreturn'),
                 isInline: checked(values, 'inline'),
                 comment: String(values.comment ?? ''),
-                parameters: tables.parameters || [],
+                parameters,
             });
             await this.refreshBrowser(md5);
+            proto = await this.call('ghidra.functionPrototype', { md5, entry: proto.entry || entry });
+            return {
+                title: `Edit ${String(proto.name)}`,
+                tables: { parameters: (proto.parameters || []).map((param, index) => ({ _original: String(index), name: param.name, type: param.type })) },
+            };
         });
     }
     /** Open a form to rename or retype function parameters and local variables. */
     async editVariables(candidate?: unknown, entryArg?: string): Promise<void> {
         const md5 = this.md5(candidate); const entry = await this.entry(md5, entryArg || this.resource(candidate, 'entry')); if (!entry) { return; }
-        const proto = await this.call<{
+        let proto = await this.call<{
             entry: string;
             original: Data;
             name: string;
@@ -482,21 +570,38 @@ export class EditingUI implements vscode.Disposable {
             label,
             add: false,
             remove: false,
-            columns: [{ key: 'name', label: 'Name' }, { key: 'type', label: 'Data type', kind: 'type' }],
+            columns: [{ key: 'name', label: 'Name', required: true }, { key: 'type', label: 'Data type', kind: 'type', required: true }],
             values: vars.map((variable, index) => ({ _original: String(index), name: variable.name, type: variable.type })),
         });
         await this.form(md5, `Variables · ${String(proto.name)}`, entry, [], [
             spec('parameters', 'Parameters', proto.parameters || []),
             spec('locals', 'Local variables', proto.locals || []),
         ], async ({ tables }) => {
+            const parameters = (tables.parameters || []).map((param, index) => {
+                const paramName = required(param, 'name', `Parameter ${index + 1} name`, ['parameters', index, 'name']);
+                typeReference(param.type, ['parameters', index, 'type'], `Parameter ${index + 1} data type`);
+                return { ...param, name: paramName, type: value(param, 'type') };
+            });
+            const locals = (tables.locals || []).map((local, index) => {
+                const localName = required(local, 'name', `Local variable ${index + 1} name`, ['locals', index, 'name']);
+                typeReference(local.type, ['locals', index, 'type'], `Local variable ${index + 1} data type`);
+                return { ...local, name: localName, type: value(local, 'type') };
+            });
             await this.call('ghidra.saveVariables', {
                 md5,
                 entry: proto.entry || entry,
                 original: proto.original,
-                parameters: tables.parameters || [],
-                locals: tables.locals || [],
+                parameters,
+                locals,
             });
             await this.refreshBrowser(md5);
+            proto = await this.call('ghidra.functionPrototype', { md5, entry: proto.entry || entry });
+            return {
+                tables: {
+                    parameters: (proto.parameters || []).map((param, index) => ({ _original: String(index), name: param.name, type: param.type })),
+                    locals: (proto.locals || []).map((local, index) => ({ _original: String(index), name: local.name, type: local.type })),
+                },
+            };
         });
     }
     /** Open the inline comment thread at an open pseudocode token, or the 5-kind comment form otherwise. */
@@ -541,6 +646,7 @@ export class EditingUI implements vscode.Disposable {
                 hint: 'Leave a comment field blank to clear that comment kind in Ghidra. Press Ctrl+S or Ctrl+Enter to save, or Escape to close.',
                 cancelLabel: 'Cancel',
                 initialValues: { ...session.saved },
+                getBaseline: () => ({ ...session.saved }),
                 isDirty: values => isCommentSessionDirty(session, values),
                 confirmDiscardMessage: 'Discard unsaved comment drafts?',
                 initialUncertain: session.uncertain,
@@ -620,17 +726,22 @@ export class EditingUI implements vscode.Disposable {
         const md5 = this.md5(candidate); let id = idArg || this.resource(candidate, 'symbolId');
         if (!id) { const all = await this.call<{ items: Data[] }>('ghidra.symbols', { md5 }); id = (await vscode.window.showQuickPick(all.items.map(symbol => ({ label: String(symbol.name), description: String(symbol.address), id: String(symbol.id) })), { title: 'Select symbol' }))?.id; }
         if (!id) { return; }
-        const symbol = await this.query(md5, 'symbol', 'get', { selector: { id } });
+        let symbol = await this.query(md5, 'symbol', 'get', { selector: { id } });
         let global: Data | undefined;
         try { global = await this.query(md5, 'global_variable', 'get', { selector: { address: symbol.address } }); } catch (error) { if (!/not found|not_found|no .*data|does not exist|not a defined|not defined/i.test(String(error))) { throw error; } }
-        await this.form(md5, `Edit ${String(symbol.name)}`, String(symbol.address), [{ key: 'name', label: 'Symbol name', value: symbol.name }, ...(global ? [{ key: 'type', label: 'Data type', kind: 'type' as const, value: reference(global.data_type) }] : [])], [], async ({ values }) => {
+        await this.form(md5, `Edit ${String(symbol.name)}`, String(symbol.address), [{ key: 'name', label: 'Symbol name', value: symbol.name, required: true }, ...(global ? [{ key: 'type', label: 'Data type', kind: 'type' as const, value: reference(global.data_type), required: true }] : [])], [], async ({ values }) => {
+            const name = required(values, 'name', 'Symbol name', ['name']);
+            const dataType = global ? typeReference(values.type, ['type'], 'Data type') : undefined;
             await this.unchanged(md5, 'symbol', { id }, symbol);
             if (global) { await this.unchanged(md5, 'global_variable', { address: symbol.address }, global); }
-            const name = required(values, 'name', 'Symbol name'); const operations: Mutation[] = [];
+            const operations: Mutation[] = [];
             // A non-primary alias shares data with its primary symbol; rename the selected symbol identity only.
             if (name !== symbol.name) { operations.push({ method: 'symbol.patch', arguments: { selector: { id }, patch: { name } } }); }
-            if (global) { const dataType = typeReference(values.type); if (!equal(dataType, global.data_type)) { operations.push({ method: 'global_variable.patch', arguments: { selector: { address: symbol.address }, patch: { data_type: dataType } } }); } }
+            if (global && dataType && !equal(dataType, global.data_type)) { operations.push({ method: 'global_variable.patch', arguments: { selector: { address: symbol.address }, patch: { data_type: dataType } } }); }
             await this.mutations(md5, operations);
+            symbol = await this.query(md5, 'symbol', 'get', { selector: { id } });
+            if (global) { global = await this.query(md5, 'global_variable', 'get', { selector: { address: symbol.address } }); }
+            return { title: `Edit ${String(symbol.name)}` };
         });
     }
     /** Close inline comments and edit panels belonging to program `md5`. */
