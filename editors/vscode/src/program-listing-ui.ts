@@ -5,7 +5,7 @@
  * HTML and client script renderer for the Program Listing webview.
  */
 import { randomBytes } from 'node:crypto';
-import { MemoryBlockInfo, parseAddress } from './address-math';
+import { MemoryBlockInfo, parseAddress, sameAddress } from './address-math';
 import { callIcon, callIcons } from './call-graph-icons';
 import { iconFontStyles } from './icon-font';
 import { ListingRenderItem, ListingTarget, ListingUnit, ListingUndefinedRun, ListingWindowModel } from './listing-model';
@@ -13,7 +13,7 @@ import { displayAddress } from './names';
 import { pageStyles } from './page-styles';
 import { addrSpan, programViewStyles } from './program-views-styles';
 import { highlightAsm, highlightName } from './syntax';
-import { moreActionsPopover, pageOptionsPopover, viewStyles, webviewPopoverScript, webviewShortcutScript } from './view-ui';
+import { browserLiveRegions, browserStateScript, moreActionsPopover, pageOptionsPopover, viewStyles, webviewPopoverScript, webviewShortcutScript } from './view-ui';
 import { domId, escape, gotoFormHtml, liveRegionsHtml } from './web';
 
 /** Full view-model payload used to render the graphical Program Listing HTML page. */
@@ -64,6 +64,7 @@ function linkifyInlineTargets(opHtml: string, targets: ListingTarget[]): string 
 /** Render HTML table rows for listing code units, headers, comments, and undefined runs. */
 export function renderListingRowsHtml(items: ListingRenderItem[], selectedAddress: string): string {
     const out: string[] = [];
+    let selectedMarked = false;
     const renderUnit = (unit: ListingUnit, hiddenRun = false): string => {
         const parts: string[] = [];
         if (unit.blockHeader) {
@@ -93,7 +94,10 @@ export function renderListingRowsHtml(items: ListingRenderItem[], selectedAddres
             parts.push(`<tr class="listing-aux-row listing-pre-row"${hiddenRun ? ' hidden' : ''}><td class="addr"></td><td colspan="4">; ${escape(unit.preComment)}</td></tr>`);
         }
 
-        const isSel = selectedAddress && unit.address.toLowerCase() === selectedAddress.toLowerCase();
+        const isSel = Boolean(!selectedMarked && selectedAddress && (sameAddress(unit.address, selectedAddress) || unit.address.toLowerCase() === selectedAddress.toLowerCase()));
+        if (isSel) {
+            selectedMarked = true;
+        }
         const rawOpHtml = unit.kind === 'instruction'
             ? highlightAsm(unit.operandsText, 'span', false)
             : unit.typePath
@@ -105,7 +109,7 @@ export function renderListingRowsHtml(items: ListingRenderItem[], selectedAddres
             ? `<span class="target-chips">${visibleTargets.map(t => `<button type="button" class="target-link" data-jump="${escape(t.to)}" title="${escape(`Jump to ${t.to}${t.kind ? ` (${t.kind})` : ''}`)}">→ ${escape(t.label)}</button>`).join('')}</span>`
             : '';
         const eolHtml = unit.eolComment ? `; ${escape(unit.eolComment)}` : '';
-        parts.push(`<tr id="${domId('unit', unit.address)}" class="listing-unit-row${isSel ? ' selected' : ''}" tabindex="0" data-address="${escape(unit.address)}" data-byte-length="${unit.byteLength}" data-kind="${escape(unit.kind)}"${unit.entry ? ` data-entry="${escape(unit.entry)}"` : ''}${unit.functionName ? ` data-fn-name="${escape(unit.functionName)}"` : ''}${unit.targets[0]?.to ? ` data-jump-primary="${escape(unit.targets[0].to)}"` : ''}${hiddenRun ? ' data-run-member="true" hidden' : ''}><td class="addr">${addrSpan(unit.address)}</td><td class="col-bytes" title="${escape(unit.bytesText)}">${escape(unit.bytesShort)}</td><td class="col-mnemonic"><span class="tok-mnemonic">${escape(unit.mnemonic)}</span></td><td class="col-operands">${opHtml}${chipsHtml}</td><td class="col-comment">${eolHtml}</td></tr>`);
+        parts.push(`<tr id="${domId('unit', unit.address)}" class="listing-unit-row${isSel ? ' selected' : ''}"${isSel ? ' aria-current="true"' : ''} tabindex="0" data-address="${escape(unit.address)}" data-byte-length="${unit.byteLength}" data-kind="${escape(unit.kind)}"${unit.entry ? ` data-entry="${escape(unit.entry)}"` : ''}${unit.functionName ? ` data-fn-name="${escape(unit.functionName)}"` : ''}${unit.targets[0]?.to ? ` data-jump-primary="${escape(unit.targets[0].to)}"` : ''}${hiddenRun ? ' data-run-member="true" hidden' : ''}><td class="addr">${addrSpan(unit.address)}</td><td class="col-bytes" title="${escape(unit.bytesText)}">${escape(unit.bytesShort)}</td><td class="col-mnemonic"><span class="tok-mnemonic">${escape(unit.mnemonic)}</span></td><td class="col-operands">${opHtml}${chipsHtml}</td><td class="col-comment">${eolHtml}</td></tr>`);
 
         if (unit.postComment) {
             parts.push(`<tr class="listing-aux-row listing-post-row"${hiddenRun ? ' hidden' : ''}><td class="addr"></td><td colspan="4">; post: ${escape(unit.postComment)}</td></tr>`);
@@ -172,7 +176,7 @@ ${programViewStyles}
   </div>
 </div>
 ${liveRegionsHtml(Boolean(payload.busy), payload.error ?? '')}
-<p id="filter-status" role="status" aria-live="polite" hidden></p>
+${browserLiveRegions}
 <div class="table-wrap" id="listing-wrap">
   <table class="listing-table">
     <thead><tr><th scope="col">Address</th><th scope="col" class="col-bytes">Bytes</th><th scope="col" class="col-mnemonic">Mnemonic</th><th scope="col" class="col-operands">Operands</th><th scope="col" class="col-comment">Comments</th></tr></thead>
@@ -217,6 +221,7 @@ const scopeNote = document.getElementById('listing-scope-note');
 const more = document.getElementById('more-actions');
 const moreSummary = document.getElementById('more-actions-button');
 const icons = ${JSON.stringify(callIcons)};
+${browserStateScript}
 
 if (samePage) {
   if (typeof previous.filter === 'string') search.value = previous.filter;
@@ -260,7 +265,7 @@ document.addEventListener('focusin', persist);
 wrap.addEventListener('scroll', () => persist(), { passive: true });
 
 const unitRows = () => [...tbody.querySelectorAll('tr.listing-unit-row')];
-const findUnitRow = addr => addr ? unitRows().find(r => r.dataset.address?.toLowerCase() === addr.toLowerCase()) : undefined;
+const findUnitRow = addr => addr ? unitRows().find(r => sameAddr(r.dataset.address, addr)) : undefined;
 const shortAddr = v => /^ram:[0-9a-f]+$/i.test(v || '') ? v.slice(4) : String(v || '');
 
 const focusListingFallback = () => {
@@ -275,21 +280,24 @@ const focusListingFallback = () => {
     firstVisible.focus({ preventScroll: true });
     return;
   }
-  search?.focus({ preventScroll: true });
+  const clearBtn = document.getElementById('clear-filter');
+  ((clearBtn && !clearBtn.closest('[hidden]')) ? clearBtn : search)?.focus({ preventScroll: true });
 };
 
 const updateSelectionTools = () => {
   const label = document.getElementById('selection-label');
   const bar = label.closest('.selection-tools');
-  const activeEl = document.activeElement;
-  const focusedAction = bar.contains(activeEl) ? (activeEl.dataset?.action || (activeEl === moreSummary ? '__more__' : '')) : '';
+  const hadBarFocus = bar.contains(document.activeElement);
+  const focusedAction = hadBarFocus
+    ? (document.activeElement === moreSummary ? '__more__' : (document.activeElement?.dataset?.action || ''))
+    : '';
   const active = findUnitRow(selected);
   const visible = !!active && !active.hidden;
   bar.hidden = !visible;
   document.body.classList.toggle('has-selection', visible);
   if (!visible) {
     closePopover(more);
-    if (focusedAction) focusListingFallback();
+    if (hadBarFocus) focusListingFallback();
     return;
   }
   const fn = active.dataset.entry || '';
@@ -336,19 +344,26 @@ const updateSelectionTools = () => {
   const moreLabel = 'More actions for ' + label.textContent;
   moreSummary.setAttribute('aria-label', moreLabel);
   moreSummary.title = moreLabel;
+  const popoverOpen = isPopoverOpen(more);
+  if (popoverOpen) positionPopover(more);
   if (focusedAction) {
-    const candidate = focusedAction === '__more__' ? (!moreSummary.hidden ? moreSummary : null) : bar.querySelector('[data-action="' + focusedAction + '"]');
-    const restore = (candidate && (!more.contains(candidate) || isPopoverOpen(more)))
-      ? candidate
-      : (isPopoverOpen(more) ? (menuButtons(more)[0] || (!moreSummary.hidden ? moreSummary : null)) : (bar.querySelector('#selection-primary button') || (!moreSummary.hidden ? moreSummary : null)));
-    restore?.focus({ preventScroll: true });
+    if (focusedAction === '__more__') {
+      ((!moreSummary.hidden ? moreSummary : null) || document.querySelector('#selection-primary button'))?.focus({ preventScroll: true });
+    } else {
+      const candidate = document.getElementById('action-' + focusedAction);
+      const restore = (candidate && (!more.contains(candidate) || popoverOpen))
+        ? candidate
+        : (popoverOpen
+          ? (menuButtons(more)[0] || (!moreSummary.hidden ? moreSummary : null) || document.querySelector('#selection-primary button'))
+          : (document.querySelector('#selection-primary button') || (!moreSummary.hidden ? moreSummary : null)));
+      restore?.focus({ preventScroll: true });
+    }
   }
 };
 
 const selectRow = (row, notify = true, scroll = true, forceAddress = notify) => {
   if (!row) return;
-  for (const r of tbody.querySelectorAll('tr.selected')) r.classList.remove('selected');
-  row.classList.add('selected');
+  setCurrentRow(row, tbody);
   selected = row.dataset.address || '';
   selectedEntry = row.dataset.entry || '';
   selectedKind = row.dataset.kind || 'instruction';
@@ -380,24 +395,20 @@ const applyFilter = () => {
     aux.hidden = !!q || (aux.classList.contains('listing-undef-run') && !optCollapse.checked);
   }
   const empty = document.querySelector('.no-results');
-  const status = document.getElementById('filter-status');
   const wrapTable = wrap.querySelector('table');
   if (wrapTable) wrapTable.hidden = !!q && visible === 0;
   empty.hidden = !q || visible > 0;
-  status.hidden = !q;
-  status.classList.toggle('sr-filter-status', !!q && visible === 0);
-  status.textContent = q ? (visible ? visible + ' of ' + rows.length + ' displayed rows match.' : 'No displayed rows match this filter.') : '';
+  updateFilterStatus({ query: q, visible, total: q ? rows.length : visible });
   updateSelectionTools();
 };
 
 const bindTableInteractions = () => {
-  for (const row of unitRows()) {
-    if (selected && row.dataset.address?.toLowerCase() === selected.toLowerCase()) {
-      row.classList.add('selected');
-      selectedEntry = row.dataset.entry || '';
-      selectedKind = row.dataset.kind || 'instruction';
-      selectedLength = Number(row.dataset.byteLength) || 1;
-    }
+  const activeRow = findUnitRow(selected) || null;
+  setCurrentRow(activeRow, tbody);
+  if (activeRow) {
+    selectedEntry = activeRow.dataset.entry || '';
+    selectedKind = activeRow.dataset.kind || 'instruction';
+    selectedLength = Number(activeRow.dataset.byteLength) || 1;
   }
   applyViewClasses();
   applyFilter();
@@ -452,14 +463,16 @@ tbody.addEventListener('keydown', event => {
   if (event.target.closest('[data-jump],[data-expand-run],button')) return;
   const row = event.target.closest('tr.listing-unit-row');
   if (!row) return;
-  const visible = unitRows().filter(r => !r.hidden);
-  const idx = visible.indexOf(row);
-  if (event.key === 'ArrowDown' && idx + 1 < visible.length) { event.preventDefault(); visible[idx + 1].focus(); selectRow(visible[idx + 1], true, true); }
-  else if (event.key === 'ArrowUp' && idx > 0) { event.preventDefault(); visible[idx - 1].focus(); selectRow(visible[idx - 1], true, true); }
-  else if (event.key === 'Home' && visible.length) { event.preventDefault(); visible[0].focus(); selectRow(visible[0], true, true); }
-  else if (event.key === 'End' && visible.length) { event.preventDefault(); visible[visible.length - 1].focus(); selectRow(visible[visible.length - 1], true, true); }
-  else if (event.key === 'Enter') {
+  if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
     event.preventDefault();
+    const next = stepRowFocus(unitRows().filter(r => !r.hidden), row, event.key);
+    if (next) selectRow(next, true, false);
+  } else if (event.key === ' ') {
+    event.preventDefault();
+    selectRow(row, true, false);
+  } else if (event.key === 'Enter') {
+    event.preventDefault();
+    if (!sameAddr(selected, row.dataset.address)) selectRow(row, false, false);
     const jump = row.dataset.jumpPrimary;
     if (jump) { setBusyState(true); vscode.postMessage({ action: 'goto', address: jump, fromGoto: false }); }
     else if (primaryAction) vscode.postMessage({ action: primaryAction, address: selected, entry: selectedEntry, kind: selectedKind });
@@ -471,14 +484,18 @@ document.addEventListener('click', event => {
   if (btn && !btn.disabled) {
     const act = btn.dataset.action;
     const menu = btn.closest('[data-popover-menu]');
+    if (act === 'copyAddress' && selected) {
+      closePopover(pageOptions);
+      persist();
+      vscode.postMessage({ action: 'copyAddress', address: selected, focusId: document.activeElement?.id || '' });
+      return;
+    }
     if (menu) focusInvokerAndClose(menu);
     if (['navBack', 'navForward', 'refresh', 'loadBefore', 'loadAfter'].includes(act)) setBusyState(true);
     persist();
     const focusId = document.activeElement?.id || '';
     if (['navBack', 'navForward', 'refresh', 'loadBefore', 'loadAfter', 'toggleSync', 'openHexBeside'].includes(act)) {
       vscode.postMessage({ action: act, focusId });
-    } else if (act === 'copyAddress' && selected) {
-      vscode.postMessage({ action: 'copyAddress', address: selected, focusId });
     } else if (selected) {
       vscode.postMessage({ action: act, address: selected, entry: selectedEntry, kind: selectedKind, focusId });
     }
@@ -515,7 +532,7 @@ document.addEventListener('keydown', event => {
   }
   if (isModShortcut(event, 'f')) { event.preventDefault(); search.focus(); search.select(); return; }
   if (isModShortcut(event, 'g')) { event.preventDefault(); addressInput.focus(); addressInput.select(); return; }
-  if (event.key === 'Escape') {
+  if (event.key === 'Escape' && !event.defaultPrevented) {
     if (search.value) { search.value = ''; applyFilter(); persist(); return; }
   }
   if (event.key === '/' && canUseSingleKeyShortcut(event)) { event.preventDefault(); search.focus(); search.select(); }

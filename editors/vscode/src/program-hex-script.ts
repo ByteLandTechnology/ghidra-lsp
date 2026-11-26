@@ -5,7 +5,7 @@
  * Client-side script for keyboard navigation, range selection, and focus retention in the Memory and Bytes webview.
  */
 import { callIcons } from './call-graph-icons';
-import { webviewPopoverScript, webviewShortcutScript } from './view-ui';
+import { browserStateScript, webviewPopoverScript, webviewShortcutScript } from './view-ui';
 
 /** Build the inline client script for the Memory and Bytes webview page. */
 export function renderProgramHexScript(stateJson: string): string {
@@ -45,11 +45,16 @@ const moreSummary = document.getElementById('more-actions-button');
 const icons = ${JSON.stringify(callIcons)};
 const toInspectorEndian = val => (val === 'big' || val === 'be') ? 'be' : 'le';
 const toProgramEndian = val => (val === 'big' || val === 'be') ? 'big' : 'little';
+${browserStateScript}
 
 if (samePage) {
   if (typeof previous.filter === 'string') search.value = previous.filter;
   if (memoryMap && typeof previous.mapOpen === 'boolean') memoryMap.open = previous.mapOpen;
   if (typeof previous.showInspector === 'boolean') showInspectorChk.checked = previous.showInspector;
+  if (previous.selectedKind === 'block' && typeof previous.selected === 'string' && previous.selected) {
+    selectedKind = 'block';
+    selected = previous.selected;
+  }
   if (previous.inspectorEndian === 'be' || previous.inspectorEndian === 'le' || previous.endian === 'little' || previous.endian === 'big') {
     const nextEndian = toProgramEndian(previous.inspectorEndian || previous.endian);
     endianSelect.value = nextEndian;
@@ -66,11 +71,7 @@ const parseAddr = raw => {
   const width = Math.max(m[2].length, 1);
   return { space: rawSpace.toLowerCase(), rawSpace, offset, width, canonical: rawSpace + ':' + offset.toString(16).padStart(width, '0') };
 };
-const sameAddr = (a, b) => {
-  const left = parseAddr(a), right = parseAddr(b);
-  return left && right ? left.space === right.space && left.offset === right.offset : String(a || '').toLowerCase() === String(b || '').toLowerCase();
-};
-if (selectionLength > 1) {
+if (selectedKind !== 'block' && selectionLength > 1) {
   const initParsed = parseAddr(selected);
   if (initParsed) cursorAddress = initParsed.rawSpace + ':' + (initParsed.offset + BigInt(selectionLength - 1)).toString(16).padStart(initParsed.width, '0');
 }
@@ -208,6 +209,7 @@ const persist = () => {
   vscode.setState({
     ...state,
     selected,
+    selectedKind,
     selectionLength,
     filter: search.value,
     mapOpen: memoryMap?.open === true,
@@ -234,14 +236,16 @@ const focusHexFallback = () => {
 const updateSelectionTools = () => {
   const label = document.getElementById('selection-label');
   const bar = label.closest('.selection-tools');
-  const activeEl = document.activeElement;
-  const focusedAction = bar.contains(activeEl) ? (activeEl.dataset?.action || (activeEl === moreSummary ? '__more__' : '')) : '';
+  const hadBarFocus = bar.contains(document.activeElement);
+  const focusedAction = hadBarFocus
+    ? (document.activeElement === moreSummary ? '__more__' : (document.activeElement?.dataset?.action || ''))
+    : '';
   const activeHex = hexBody.querySelector('tr.hex-row:not([hidden]) .hb.is-selected') || hexBody.querySelector('tr.selected:not([hidden])');
-  const activeMap = memoryMap?.querySelector('tr.selected:not([hidden])');
+  const activeMap = memoryMap?.querySelector('tr[aria-current="true"]:not([hidden])');
   const visible = (!!activeHex && !hexMain.hidden) || (!!activeMap && memoryMap?.open);
   bar.hidden = !visible;
   document.body.classList.toggle('has-selection', visible);
-  if (!visible) { closePopover(more); if (focusedAction) focusHexFallback(); return; }
+  if (!visible) { closePopover(more); if (hadBarFocus) focusHexFallback(); return; }
 
   const isBlock = selectedKind === 'block' || (!!activeMap && !activeHex);
   const curBlock = findBlockFor(selected);
@@ -281,12 +285,20 @@ const updateSelectionTools = () => {
   const moreLabel = 'More actions for ' + label.textContent;
   moreSummary.setAttribute('aria-label', moreLabel);
   moreSummary.title = moreLabel;
+  const popoverOpen = isPopoverOpen(more);
+  if (popoverOpen) positionPopover(more);
   if (focusedAction) {
-    const candidate = focusedAction === '__more__' ? (!moreSummary.hidden ? moreSummary : null) : document.getElementById('action-' + focusedAction);
-    const restore = (candidate && (!more.contains(candidate) || isPopoverOpen(more)))
-      ? candidate
-      : (isPopoverOpen(more) ? (menuButtons(more)[0] || (!moreSummary.hidden ? moreSummary : null)) : (document.getElementById('action-' + primaryAction) || (!moreSummary.hidden ? moreSummary : null)));
-    restore?.focus({ preventScroll: true });
+    if (focusedAction === '__more__') {
+      ((!moreSummary.hidden ? moreSummary : null) || document.getElementById('action-' + primaryAction))?.focus({ preventScroll: true });
+    } else {
+      const candidate = document.getElementById('action-' + focusedAction);
+      const restore = (candidate && (!more.contains(candidate) || popoverOpen))
+        ? candidate
+        : (popoverOpen
+          ? (menuButtons(more)[0] || (!moreSummary.hidden ? moreSummary : null) || document.getElementById('action-' + primaryAction))
+          : (document.getElementById('action-' + primaryAction) || (!moreSummary.hidden ? moreSummary : null)));
+      restore?.focus({ preventScroll: true });
+    }
   }
 };
 
@@ -295,6 +307,7 @@ const highlightRange = (startAddr, len = 1, notify = true, scroll = true, forceA
   if (!start) return;
   const clampedLen = Math.max(1, len);
   const endOffset = start.offset + BigInt(clampedLen) - 1n;
+  setCurrentRow(null);
   for (const el of document.querySelectorAll('.hb.is-selected,.ha.is-selected,tr.selected')) {
     el.classList.remove('is-selected', 'selected');
   }
@@ -368,12 +381,14 @@ const applyFilter = () => {
 
   const collapsedMatches = !!q && !hasGridMatch && !memoryMap?.open && mapRows.some(r => !r.hidden);
   const empty = document.querySelector('.no-results');
-  const status = document.getElementById('filter-status');
   empty.hidden = !q || visible > 0;
   empty.querySelector('span').textContent = collapsedMatches ? 'Matches in collapsed memory map.' : 'No matching rows.';
-  status.hidden = !q;
-  status.classList.toggle('sr-filter-status', !!q && visible === 0);
-  status.textContent = !q ? '' : visible ? visible + ' of ' + total + ' displayed rows match.' : collapsedMatches ? 'Matches in collapsed memory map.' : 'No displayed rows match this filter.';
+  updateFilterStatus({
+    query: q,
+    visible,
+    total,
+    emptyText: collapsedMatches ? 'Matches in collapsed memory map.' : 'No displayed rows match this filter.',
+  });
   updateSelectionTools();
 };
 
@@ -530,7 +545,7 @@ const selectBlockRow = row => {
   if (!row) return;
   for (const el of document.querySelectorAll('.hb.is-selected,.ha.is-selected,tr.selected')) el.classList.remove('is-selected', 'selected');
   for (const el of rawByteCells()) el.setAttribute('aria-selected', 'false');
-  row.classList.add('selected');
+  setCurrentRow(row);
   selected = row.dataset.address || '';
   selectedKind = 'block';
   selectionLength = 1;
@@ -566,13 +581,8 @@ mapTbody?.addEventListener('keydown', event => {
     return;
   }
   if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
-  const rows = [...mapTbody.querySelectorAll('tr[data-address]:not([hidden])')];
-  if (!rows.length) return;
-  const idx = rows.indexOf(row);
-  const next = event.key === 'Home' ? 0 : event.key === 'End' ? rows.length - 1 : Math.max(0, Math.min(rows.length - 1, (idx < 0 ? 0 : idx) + (event.key === 'ArrowDown' ? 1 : -1)));
   event.preventDefault();
-  rows[next]?.focus();
-  rows[next]?.scrollIntoView({ block: 'nearest' });
+  stepRowFocus([...mapTbody.querySelectorAll('tr[data-address]:not([hidden])')], row, event.key);
 });
 memoryMap?.addEventListener('toggle', () => { applyFilter(); persist(); });
 
@@ -581,14 +591,18 @@ document.addEventListener('click', event => {
   if (btn && !btn.disabled) {
     const act = btn.dataset.action;
     const menu = btn.closest('[data-popover-menu]');
+    if (act === 'copyAddress' && selected) {
+      closePopover(pageOptions);
+      persist();
+      vscode.postMessage({ action: 'copyAddress', address: selected, focusId: document.activeElement?.id || '' });
+      return;
+    }
     if (menu) focusInvokerAndClose(menu);
     if (['navBack', 'navForward', 'refresh', 'loadBefore', 'loadAfter'].includes(act)) setBusyState(true);
     persist();
     const focusId = document.activeElement?.id || '';
     if (['navBack', 'navForward', 'refresh', 'loadBefore', 'loadAfter', 'toggleSync', 'openListingBeside'].includes(act)) {
       vscode.postMessage({ action: act, focusId });
-    } else if (act === 'copyAddress' && selected) {
-      vscode.postMessage({ action: 'copyAddress', address: selected, focusId });
     } else if (selected) {
       vscode.postMessage({ action: act, address: selected, kind: selectedKind, focusId });
     }
@@ -631,7 +645,7 @@ document.addEventListener('keydown', event => {
   }
   if (isModShortcut(event, 'f')) { event.preventDefault(); search.focus(); search.select(); return; }
   if (isModShortcut(event, 'g')) { event.preventDefault(); addressInput.focus(); addressInput.select(); return; }
-  if (event.key === 'Escape') {
+  if (event.key === 'Escape' && !event.defaultPrevented) {
     if (search.value) { search.value = ''; applyFilter(); persist(); return; }
   }
   if (event.key === '/' && canUseSingleKeyShortcut(event)) { event.preventDefault(); search.focus(); search.select(); }
@@ -684,7 +698,7 @@ window.addEventListener('message', event => {
     if (blockSelect && msg.currentBlockStart) blockSelect.value = msg.currentBlockStart;
     if (msg.sectionLabel) hexMain.setAttribute('aria-label', msg.sectionLabel);
     applyFilter();
-    const keepBlockSel = Boolean(msg.preserveScroll && selectedKind === 'block' && memoryMap?.querySelector('tr.selected'));
+    const keepBlockSel = Boolean(msg.preserveScroll && selectedKind === 'block' && memoryMap?.querySelector('tr[aria-current="true"],tr.selected'));
     const nextSel = keepBlockSel ? selected : (msg.selectedAddress || selected);
     const nextLen = msg.length || 1;
     if (keepBlockSel) {
@@ -749,7 +763,12 @@ window.addEventListener('message', event => {
 });
 
 applyFilter();
-highlightRange(selected, selectionLength, false, !samePage);
+const initialMapRow = selectedKind === 'block' && mapTbody ? [...mapTbody.querySelectorAll('tr[data-address]')].find(r => sameAddr(r.dataset.address, selected)) : undefined;
+if (initialMapRow) {
+  selectBlockRow(initialMapRow);
+} else {
+  highlightRange(selected, selectionLength, false, !samePage);
+}
 requestAnimationFrame(() => {
   if (samePage && previous.address === state.address && typeof previous.scrollTop === 'number') {
     hexWrap.scrollTop = previous.scrollTop;

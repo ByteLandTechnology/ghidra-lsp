@@ -13,7 +13,7 @@ import { displayAddress } from './names';
 import { pageStyles } from './page-styles';
 import { renderProgramHexScript } from './program-hex-script';
 import { addrSpan, programViewStyles } from './program-views-styles';
-import { moreActionsPopover, pageOptionsPopover, viewStyles } from './view-ui';
+import { browserLiveRegions, moreActionsPopover, pageOptionsPopover, viewStyles } from './view-ui';
 import { domId, escape, gotoFormHtml, liveRegionsHtml } from './web';
 
 /** Short byte-order identifier used by the Data Inspector pill toggle. */
@@ -214,7 +214,7 @@ ${programViewStyles}
   </div>
 </div>
 ${liveRegionsHtml(Boolean(payload.busy), payload.error ?? '')}
-<p id="filter-status" role="status" aria-live="polite" hidden></p>
+${browserLiveRegions}
 <div class="hex-workspace">
   <section class="hex-main" aria-label="Memory bytes at ${escape(payload.cursorAddress)}">
     <div class="table-wrap hex-grid-wrap" id="hex-wrap">

@@ -85,11 +85,7 @@ export const callViewScript = String.raw`
 export const callColumnsScript = String.raw`
     let mountCallColumnsUi,filterCallColumns;
     (()=>{
-      filterCallColumns=()=>{const browser=document.querySelector('[data-call-columns]');if(!browser){return}const columns=[...browser.querySelectorAll('.call-column')],query=search.value.trim().toLowerCase();let found=0,total=0;for(const column of columns){let count=0;for(const row of column.querySelectorAll('.call-column-row')){total++;row.hidden=!!query&&!((row.dataset.label+' '+row.dataset.entry).toLowerCase().includes(query));if(!row.hidden){count++;found++}}column.querySelector('.call-column-no-matches').hidden=!query||count>0||!column.querySelector('.call-column-row')}const status=document.getElementById('filter-status');status.hidden=!query;status.textContent=found+' of '+total+' displayed functions match.'};
-      if(search&&!search.dataset.callColumnsSearchBound){
-        search.dataset.callColumnsSearchBound='true';
-        search.addEventListener('input',()=>{if(document.querySelector('[data-call-columns]')){filterCallColumns();persist()}});
-      }
+      filterCallColumns=()=>{const browser=document.querySelector('[data-call-columns]');if(!browser){return}const columns=[...browser.querySelectorAll('.call-column')],query=search.value.trim().toLowerCase();let found=0,total=0;for(const column of columns){let count=0;for(const row of column.querySelectorAll('.call-column-row')){total++;row.hidden=!!query&&!((row.dataset.label+' '+row.dataset.entry).toLowerCase().includes(query));if(!row.hidden){count++;found++}}column.querySelector('.call-column-no-matches').hidden=!query||count>0||!column.querySelector('.call-column-row')}updateFilterStatus({query,visible:found,total,visuallyHidden:false,matchText:found+' of '+total+' displayed functions match.',emptyText:'0 of '+total+' displayed functions match.',restoredText:'Filter cleared. Showing all '+total+' displayed functions.'})};
       mountCallColumnsUi=(preserveState=false,savedUi=undefined)=>{
         const browser=document.querySelector('[data-call-columns]');if(!browser){return}
         const strip=browser.querySelector('.call-column-strip'),columns=[...browser.querySelectorAll('.call-column')],path=browser.dataset.path,direction=browser.dataset.direction;
@@ -108,8 +104,8 @@ export const callColumnsScript = String.raw`
         for(const button of browser.querySelectorAll('.call-column-code,.call-column-source-code')){button.addEventListener('click',event=>{event.stopPropagation();const fn=button.classList.contains('call-column-source-code')?button:button.closest('.call-column-row');send('decompile',{entry:fn.dataset.entry,address:fn.dataset.entry,kind:'function',label:fn.dataset.label})})}
         for(const button of browser.querySelectorAll('[data-column-direction]')){button.addEventListener('click',()=>{if(button.dataset.columnDirection===direction){return}request('callColumnDirection',{direction:button.dataset.columnDirection})})}
         for(const button of browser.querySelectorAll('[data-column-trail]')){button.addEventListener('click',()=>request('callColumnTrail',{index:Number(button.dataset.columnTrail)},Number(button.dataset.columnTrail)))}
-        const homeBtn=document.getElementById('call-column-home');if(homeBtn&&!homeBtn.dataset.callBound){homeBtn.dataset.callBound='true';homeBtn.addEventListener('click',()=>request('callColumnTrail',{index:0},0))}
-        filterCallColumns();
+        const homeBtn=document.getElementById('call-column-home');if(homeBtn){homeBtn.onclick=()=>request('callColumnTrail',{index:0},0)}
+        if(!inPageUpdate){filterCallColumns()}
         const applyLayout=()=>{
           strip.scrollLeft=saved?.left||0;
           for(const column of columns){column.querySelector('.call-column-list').scrollTop=saved?.lists?.[column.dataset.source]||0}
