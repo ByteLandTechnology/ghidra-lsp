@@ -97,12 +97,13 @@ Verify installation with `:checkhealth ghidra-lsp`.
 - `K` / `<C-k>` / `gd` / `gD` / `gi` / `gy` / `gr` / `gO`: Native LSP Hover, Signature Help, Definition, Declaration, Implementation, Type Definition, References, and Document Symbols.
 - `q`: Close snapshot, Listing, Memory, String, CFG, or Call Graph splits.
 
-## Commands (25)
+## Commands (28)
 
 - `:GhidraInstall [lsp|mcp]`: Install or update managed `ghidra-lsp` and `ghidra-mcp` binaries via `npm`.
 
 - `:GhidraOpenBinary [path]`: Open a binary file (restores silently when analyzed, or asks to analyze).
 - `:GhidraSelectSession [md5]` / `:GhidraCloseSession [md5]` / `:GhidraReanalyze`: Manage active sessions and program analysis.
+- `:GhidraCheckpoints [md5]` / `:GhidraRestoreCheckpoint [id|name]` / `:GhidraResetSession [analyze|noanalyze]`: Browse or restore saved project checkpoints, or reset a session to a clean binary import.
 - `:GhidraOpenFunction [entry|name]` / `:GhidraFunctions`: Open or search functions with `<Tab>` completion.
 - `:GhidraSymbols` / `:GhidraTypes` / `:GhidraStrings`: Search symbols, data types, and defined strings.
 - `:GhidraEditType [path]`: Open an editable `ghidra-type://<md5><path>.ghidra-type` JSONC buffer.

@@ -3,7 +3,7 @@
 
 /** Shared styles for control-flow, call-graph, and call-column pages. */
 export const controlFlowStyles = `
-.flow-page{overflow:hidden}
+.flow-page{overflow:hidden;overflow:clip}
 .flow-page main{height:100vh;max-width:none;padding:0;margin:0;position:relative;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto auto minmax(0,1fr);gap:0}
 .flow-page .flow-topbar{grid-row:1;position:relative;z-index:4;display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:6px 8px;padding:8px 14px;min-width:0;border-bottom:1px solid var(--vscode-panel-border);background:var(--vscode-editor-background)}
 .flow-page .flow-topbar:not(:has(.flow-topbar-controls)){grid-template-columns:minmax(0,1fr) auto}
@@ -24,10 +24,10 @@ export const controlFlowStyles = `
 .flow-page .scope{grid-row:3;margin:0;padding:4px 12px;font-size:11px;line-height:1.4;border-bottom:1px solid var(--vscode-panel-border);background:var(--vscode-editor-background);color:var(--ghidra-muted)}
 .flow-page .selection-tools{flex-wrap:wrap;padding-bottom:6px}
 .flow-page .flow-canvas,.flow-page .call-columns,.flow-page main>.empty,.flow-page main>.error{grid-row:4;min-width:0;min-height:0}
-.flow-page .flow-canvas{position:relative;width:100%;height:100%;overflow:hidden;cursor:grab;touch-action:none;border:0;border-radius:0;background:var(--vscode-editor-background)}
+.flow-page .flow-canvas{position:relative;width:100%;height:100%;overflow:hidden;overflow:clip;cursor:grab;touch-action:none;border:0;border-radius:0;background:var(--vscode-editor-background)}
 .flow-canvas.panning,.flow-canvas.panning .graph-node{cursor:grabbing}
 .flow-canvas>svg{display:block;width:100%;height:100%;overflow:visible;user-select:none}
-.flow-canvas .graph-cards{position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:1}
+.flow-canvas .graph-cards{position:absolute;inset:0;overflow:hidden;overflow:clip;pointer-events:none;z-index:1}
 .flow-canvas .graph-card-world{position:absolute;left:0;top:0;width:4096px;height:0;overflow:visible;transform-origin:0 0;pointer-events:none}
 .flow-canvas .graph-node{position:absolute;pointer-events:auto;box-sizing:border-box;outline:none;box-shadow:none;user-select:none}
 .flow-canvas .cfg-node{display:flex;flex-direction:column;width:max-content;min-width:220px;max-width:540px;border:1px solid var(--vscode-contrastBorder,var(--vscode-editorWidget-border,var(--vscode-panel-border)));border-radius:8px;background:var(--vscode-editor-background);color:var(--vscode-editor-foreground,var(--vscode-foreground))}
@@ -103,30 +103,80 @@ body.flow-page:is(.vscode-high-contrast,.vscode-high-contrast-light) .flow-canva
 export const controlFlowScript = String.raw`
     graphViewport=(()=>{
       const canvas=document.querySelector('[data-control-flow],[data-call-graph]');if(!canvas){return undefined}
-      const svg=canvas.querySelector('svg'),world=svg.querySelector('.graph-world'),cardWorld=canvas.querySelector('.graph-card-world');
+      const svg=canvas.querySelector('svg'),world=svg.querySelector('.graph-world'),cards=canvas.querySelector('.graph-cards'),cardWorld=canvas.querySelector('.graph-card-world'),host=canvas.closest('main')||document;
       let width=Math.max(1,Number(svg.dataset.width)||1),height=Math.max(1,Number(svg.dataset.height)||1);
       const saved=samePage?previous.graphViewport:undefined;
       const restored=saved&&[saved.scale,saved.x,saved.y].every(Number.isFinite)&&saved.scale>0;
       let scale=restored?saved.scale:1,x=restored?saved.x:0,y=restored?saved.y:24,fitted=!!(restored&&saved.fitted),userMoved=Boolean(restored),drag;
-      let suppressClick=false,firstHighlight=true;
-      // Keep both graphs reachable; small CFGs may still be panned inside the viewport.
-      const panBounds=()=>{const overview=canvas.querySelector('.call-overview,.cfg-overview'),reserve=fitted&&overview?.open?overview.offsetWidth+20:0;const axis=(viewport,span)=>canvas.hasAttribute('data-control-flow')?{min:Math.min(80,span/2)-span,max:viewport-Math.min(80,span/2)}:({min:Math.min(18,viewport-span-18),max:Math.max(18,viewport-span-18)});return {x:axis(Math.max(1,canvas.clientWidth-reserve),width*scale),y:axis(canvas.clientHeight,height*scale)}};
-      const update=()=>{const bounds=panBounds();if(bounds){x=Math.max(bounds.x.min,Math.min(bounds.x.max,x));y=Math.max(bounds.y.min,Math.min(bounds.y.max,y))}world.setAttribute('transform','translate('+x+','+y+') scale('+scale+')');if(cardWorld){cardWorld.style.transform='translate('+x+'px,'+y+'px) scale('+scale+')'}svg.dataset.zoom=String(scale);document.getElementById('graph-zoom').textContent=Math.round(scale*100)+'%';canvas.dispatchEvent(new CustomEvent('graph-viewport'));persist()};
-      const fit=()=>{const overview=canvas.querySelector('.call-overview,.cfg-overview'),reserve=overview?.open?overview.offsetWidth+20:0,inset=18,bottom=canvas.hasAttribute('data-control-flow')?58:18;scale=Math.min(1,Math.max(1,canvas.clientWidth-reserve-36)/width,Math.max(1,canvas.clientHeight-inset-bottom)/height);x=(canvas.clientWidth-reserve-width*scale)/2;y=inset+(canvas.clientHeight-inset-bottom-height*scale)/2;fitted=true;userMoved=true;update()};
+      let suppressClick=false,firstHighlight=true,pointerFocus=false;
+      // Remove visible floating overlays from the viewport area.
+      const safeBoxes=()=>{
+        const rect=canvas.getBoundingClientRect(),vw=canvas.clientWidth||rect.width,vh=canvas.clientHeight||rect.height,pad=Math.min(12,Math.max(4,Math.floor(Math.min(vw,vh)*.04)));
+        const base={left:pad,top:pad,right:Math.max(pad+1,vw-pad),bottom:Math.max(pad+1,vh-pad)};
+        let boxes=[base];
+        for(const el of host.querySelectorAll('.cfg-zoom,.cfg-overview,.scope,.call-zoom,.call-overview,.call-details,#filter-status,.cfg-search,.call-search')){
+          if(el.hidden||el.closest('[hidden]')||el.classList.contains('sr-filter-status')){continue}
+          const r=el.getBoundingClientRect();if(r.width<=0||r.height<=0||r.right<=rect.left+1||r.left>=rect.right-1||r.bottom<=rect.top+1||r.top>=rect.bottom-1){continue}
+          const gap=Math.min(8,pad),ox0=r.left-rect.left-gap,oy0=r.top-rect.top-gap,ox1=r.right-rect.left+gap,oy1=r.bottom-rect.top+gap,next=[];
+          for(const b of boxes){
+            if(ox1<=b.left||ox0>=b.right||oy1<=b.top||oy0>=b.bottom){next.push(b);continue}
+            if(ox0>b.left){next.push({left:b.left,top:b.top,right:ox0,bottom:b.bottom})}
+            if(ox1<b.right){next.push({left:ox1,top:b.top,right:b.right,bottom:b.bottom})}
+            if(oy0>b.top){next.push({left:b.left,top:b.top,right:b.right,bottom:oy0})}
+            if(oy1<b.bottom){next.push({left:b.left,top:oy1,right:b.right,bottom:b.bottom})}
+          }
+          const filtered=next.filter(b=>b.right-b.left>=16&&b.bottom-b.top>=16).filter((a,i,arr)=>!arr.some((b,j)=>i!==j&&b.left<=a.left&&b.top<=a.top&&b.right>=a.right&&b.bottom>=a.bottom));
+          if(filtered.length){boxes=filtered}
+        }
+        return boxes.length?boxes:[base]
+      };
+      const boxArea=b=>Math.max(0,b.right-b.left)*Math.max(0,b.bottom-b.top);
+      const largestSafe=()=>safeBoxes().reduce((best,b)=>boxArea(b)>boxArea(best)?b:best);
+      const bestSafe=(tw,th)=>safeBoxes().reduce((best,b)=>{const fitA=Math.min(b.right-b.left,tw)*Math.min(b.bottom-b.top,th),fitB=Math.min(best.right-best.left,tw)*Math.min(best.bottom-best.top,th);return fitA>fitB+.5||Math.abs(fitA-fitB)<=.5&&boxArea(b)>boxArea(best)?b:best});
+      // Keep the graph in view and let edge items move clear of overlays.
+      const panBounds=()=>{const boxes=safeBoxes(),sLeft=Math.min(...boxes.map(b=>b.left)),sRight=Math.max(...boxes.map(b=>b.right)),sTop=Math.min(...boxes.map(b=>b.top)),sBottom=Math.max(...boxes.map(b=>b.bottom));const axis=(sMin,sMax,span)=>{const keep=Math.min(16,span/2);return {min:sMin+keep-span-8,max:sMax-keep+8}};return {x:axis(sLeft,sRight,width*scale),y:axis(sTop,sBottom,height*scale)}};
+      const update=()=>{if(canvas.scrollLeft||canvas.scrollTop){canvas.scrollLeft=canvas.scrollTop=0}if(cards&&(cards.scrollLeft||cards.scrollTop)){cards.scrollLeft=cards.scrollTop=0}const bounds=panBounds();if(bounds){x=Math.max(bounds.x.min,Math.min(bounds.x.max,x));y=Math.max(bounds.y.min,Math.min(bounds.y.max,y))}world.setAttribute('transform','translate('+x+','+y+') scale('+scale+')');if(cardWorld){cardWorld.style.transform='translate('+x+'px,'+y+'px) scale('+scale+')'}svg.dataset.zoom=String(scale);document.getElementById('graph-zoom').textContent=Math.round(scale*100)+'%';canvas.dispatchEvent(new CustomEvent('graph-viewport'));persist()};
+      const fit=()=>{const safe=largestSafe(),sw=Math.max(1,safe.right-safe.left),sh=Math.max(1,safe.bottom-safe.top);scale=Math.min(1,sw/width,sh/height);x=safe.left+(sw-width*scale)/2;y=safe.top+(sh-height*scale)/2;fitted=true;userMoved=true;update()};
       const zoom=(next,px=canvas.clientWidth/2,py=canvas.clientHeight/2)=>{next=Math.max(.05,Math.min(4,next));x=px-(px-x)*next/scale;y=py-(py-y)*next/scale;scale=next;fitted=false;userMoved=true;update()};
       const placeInitial=()=>{
-        const first=canvas.querySelector('.is-root')||canvas.querySelector('.graph-node.selected')||canvas.querySelector('.graph-node');
-        if(canvas.hasAttribute('data-call-graph')&&width<=canvas.clientWidth-36&&height<=canvas.clientHeight-36){scale=1;x=(canvas.clientWidth-width)/2;y=(canvas.clientHeight-height)/2}
-        else{x=first?(canvas.clientWidth-Number(first.dataset.width)*scale)/2-Number(first.dataset.x)*scale:(canvas.clientWidth-width*scale)/2;y=(canvas.hasAttribute('data-call-graph')?(canvas.clientHeight-Number(first?.dataset.height||0)*scale)/2:24)-Number(first?.dataset.y||0)*scale}
+        const safe=largestSafe(),sw=Math.max(1,safe.right-safe.left),sh=Math.max(1,safe.bottom-safe.top),first=canvas.querySelector('.is-root')||canvas.querySelector('.graph-node.selected')||canvas.querySelector('.graph-node');
+        if(canvas.hasAttribute('data-call-graph')&&width<=sw&&height<=sh){scale=1;x=safe.left+(sw-width)/2;y=safe.top+(sh-height)/2}
+        else{x=first?safe.left+(sw-Number(first.dataset.width)*scale)/2-Number(first.dataset.x)*scale:safe.left+(sw-width*scale)/2;y=(canvas.hasAttribute('data-call-graph')?safe.top+(sh-Number(first?.dataset.height||0)*scale)/2:Math.max(safe.top,24))-Number(first?.dataset.y||0)*scale}
       };
-      const reveal=node=>{const nx=Number(node.dataset.x),ny=Number(node.dataset.y),nw=Number(node.dataset.width),nh=Number(node.dataset.height);
-        if(nx*scale+x>=16&&ny*scale+y>=16&&(nx+nw)*scale+x<=canvas.clientWidth-16&&(ny+nh)*scale+y<=canvas.clientHeight-16){return}
-        x=(canvas.clientWidth-nw*scale)/2-nx*scale;y=Math.max(16,(canvas.clientHeight-nh*scale)/2)-ny*scale;fitted=false;userMoved=true;update()};
+      const boundsOf=item=>{
+        if(!item||!(world.contains(item)||cardWorld?.contains(item))){return undefined}
+        const fo=item.closest('foreignObject');
+        if(fo){const node=fo.closest('.call-node,.graph-node');return {x:(Number(node?.dataset.x)||0)+(Number(fo.getAttribute('x'))||0),y:(Number(node?.dataset.y)||0)+(Number(fo.getAttribute('y'))||0),width:Math.max(4,Number(fo.getAttribute('width'))||0),height:Math.max(4,Number(fo.getAttribute('height'))||0)}}
+        const node=item.closest('.graph-node,.call-node');
+        if(node&&item!==node){
+          const nr=node.getBoundingClientRect(),ir=item.getBoundingClientRect();
+          if(nr.width>0&&ir.width>0){return {x:(Number(node.dataset.x)||0)+(ir.left-nr.left)/scale,y:(Number(node.dataset.y)||0)+(ir.top-nr.top)/scale,width:Math.max(4,ir.width/scale),height:Math.max(4,ir.height/scale)}}
+        }
+        if(item.matches('.graph-node,.call-node')){const w=Number(item.dataset.width)||item.offsetWidth||0,h=Number(item.dataset.height)||item.offsetHeight||0;return w>0&&h>0?{x:Number(item.dataset.x)||0,y:Number(item.dataset.y)||0,width:w,height:h}:undefined}
+        if(typeof item.getBBox==='function'){try{const box=item.getBBox(),path=item.querySelector('path.edge'),len=path&&typeof path.getTotalLength==='function'?path.getTotalLength():0,anchor=len>0?path.getPointAtLength(len/2):undefined,w=Math.max(8,box.width),h=Math.max(8,box.height);return {x:box.x-(w-box.width)/2,y:box.y-(h-box.height)/2,width:w,height:h,anchor}}catch{return undefined}}
+        return undefined
+      };
+      const focusSelector='.node-decompile,.node-branch,.cfg-edge,.call-edge,.graph-node,.call-node';
+      const activeTarget=()=>canvas.contains(document.activeElement)&&document.activeElement.closest(focusSelector);
+      const reveal=(item=activeTarget()||canvas.querySelector('.graph-node.selected')||canvas.querySelector('.cfg-edge.is-active,.call-edge.is-active'))=>{
+        if(drag){return}
+        const target=boundsOf(item);if(!target){return}
+        const tw=target.width*scale,th=target.height*scale,sx0=target.x*scale+x,sx1=sx0+tw,sy0=target.y*scale+y,sy1=sy0+th;
+        if(safeBoxes().some(b=>{const bw=b.right-b.left,bh=b.bottom-b.top,okX=tw<=bw?(sx0>=b.left&&sx1<=b.right):target.anchor?(target.anchor.x*scale+x>=b.left+4&&target.anchor.x*scale+x<=b.right-4):(sx0<=b.left&&sx1>=b.right),okY=th<=bh?(sy0>=b.top&&sy1<=b.bottom):target.anchor?(target.anchor.y*scale+y>=b.top+4&&target.anchor.y*scale+y<=b.bottom-4):(sy0<=b.top&&sy1>=b.bottom);return okX&&okY})){return}
+        const safe=bestSafe(tw,th),bw=safe.right-safe.left,bh=safe.bottom-safe.top;
+        const ax=tw<=bw||!target.anchor?target.x+target.width/2:target.anchor.x;
+        const ay=th<=bh||!target.anchor?target.y+target.height/2:target.anchor.y;
+        const nx=(safe.left+safe.right)/2-ax*scale,ny=(safe.top+safe.bottom)/2-ay*scale;
+        if(Math.abs(nx-x)<.5&&Math.abs(ny-y)<.5){return}
+        x=nx;y=ny;fitted=false;userMoved=true;update()
+      };
       let searchIndex=-1;search.addEventListener('input',()=>{searchIndex=-1});
       search.addEventListener('keydown',event=>{if(event.key!=='Enter'){return}event.preventDefault();const matches=[...canvas.querySelectorAll('.graph-node.search-match')];if(matches.length){searchIndex=(searchIndex+1)%matches.length;reveal(matches[searchIndex])}});
       const select=(rows,follow)=>{const ids=new Set(rows.map(row=>row.dataset.node));svg.querySelectorAll('.cfg-edge,.call-edge').forEach(edge=>{const connected=ids.has(edge.dataset.from)||ids.has(edge.dataset.to);edge.classList.toggle('connected',connected);edge.classList.toggle('dimmed',ids.size>0&&!connected)});
         if(follow&&rows[0]&&!(firstHighlight&&restored)){reveal(rows[0])}if(follow){firstHighlight=false}};
-      canvas.addEventListener('focusin',event=>{const node=event.target.closest('.graph-node');if(node?.matches(':focus-visible')){reveal(node)}});
+      document.addEventListener('pointerdown',()=>{pointerFocus=true;requestAnimationFrame(()=>{pointerFocus=false})},true);
+      document.addEventListener('keydown',event=>{if(!['Control','Shift','Alt','Meta'].includes(event.key)){pointerFocus=false}},true);
+      canvas.addEventListener('focusin',event=>{const item=event.target.closest(focusSelector);if(item&&(!pointerFocus||item.matches?.(':focus-visible'))){reveal(item)}});
       document.getElementById('graph-fit').addEventListener('click',fit);
       document.getElementById('graph-zoom').addEventListener('click',()=>zoom(1));
       document.getElementById('graph-zoom-in').addEventListener('click',()=>zoom(scale*1.2));
@@ -229,11 +279,12 @@ export const controlFlowScript = String.raw`
         }
         if(Array.isArray(msg.nodes)&&msg.nodes.length){lastSent=msg.nodes.map(item=>item.id+':'+item.width+'x'+item.height).join('|')}
         if(fitted){fit()}else if(!userMoved){placeInitial();update()}else if(anchorEl){x=anchorX-(Number(anchorEl.dataset.x)+Number(anchorEl.dataset.width)/2)*scale;y=anchorY-(Number(anchorEl.dataset.y)+Number(anchorEl.dataset.height)/2)*scale;update()}else{update()}
+        if(activeTarget()){reveal()}
         canvas.dataset.layoutSettled=String(msg.requestId||'true');
         canvas.dispatchEvent(new CustomEvent('graph-layout-settled'));
         scheduleMeasure();
       });
       requestAnimationFrame(()=>{const anchor=samePage?previous.branchAnchor:undefined;if(restored&&anchor&&Number.isFinite(anchor.x)&&Number.isFinite(anchor.y)){const node=[...canvas.querySelectorAll('.call-node')].find(item=>item.dataset.entry===anchor.entry);if(node){x=anchor.x-(Number(node.dataset.x)+Number(node.dataset.width)/2)*scale;y=anchor.y-(Number(node.dataset.y)+Number(node.dataset.height)/2)*scale;fitted=false;userMoved=true}}if(!restored){placeInitial()}update();select([...canvas.querySelectorAll('.graph-node.selected')],false);scheduleMeasure()});
-      return {select,fit,center:(cx,cy)=>{x=canvas.clientWidth/2-cx*scale;y=canvas.clientHeight/2-cy*scale;fitted=false;userMoved=true;update()},snapshot:()=>({scale,x,y,fitted,bounds:panBounds()})};
+      return {select,fit,reveal,center:(cx,cy)=>{x=canvas.clientWidth/2-cx*scale;y=canvas.clientHeight/2-cy*scale;fitted=false;userMoved=true;update()},snapshot:()=>({scale,x,y,fitted,bounds:panBounds()})};
     })();
 `;

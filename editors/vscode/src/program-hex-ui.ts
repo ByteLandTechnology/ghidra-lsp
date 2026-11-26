@@ -13,7 +13,7 @@ import { displayAddress } from './names';
 import { pageStyles } from './page-styles';
 import { renderProgramHexScript } from './program-hex-script';
 import { addrSpan, programViewStyles } from './program-views-styles';
-import { moreActionsPopover, pageOptionsPopover, viewStyles } from './view-ui';
+import { browserLiveRegions, moreActionsPopover, pageOptionsPopover, viewStyles } from './view-ui';
 import { escape } from './web';
 
 /** Short byte-order identifier used by the Data Inspector pill toggle. */
@@ -228,7 +228,7 @@ ${programViewStyles}
     ${pageOptionsPopover(`${blockOptions ? `<label class="pv-option-row">Memory block<select id="block-select" aria-label="Memory block">${blockOptions}</select></label>` : ''}<label class="pv-option-row">Byte order<select id="hex-endian" aria-label="Byte order"><option value="little"${payload.endian === 'little' ? ' selected' : ''}>Little-endian</option><option value="big"${payload.endian === 'big' ? ' selected' : ''}>Big-endian</option></select></label><label class="pv-option-row">Bytes per row<select id="hex-row-width" aria-label="Bytes per row"><option value="16"${payload.bytesPerRow === 16 ? ' selected' : ''}>16 bytes</option><option value="8"${payload.bytesPerRow === 8 ? ' selected' : ''}>8 bytes</option></select></label><label><input id="hex-show-inspector" type="checkbox" checked>Show Data Inspector</label><p id="hex-scope-note">${escape(scopeText)}</p>`)}
   </div>
 </div>
-<p id="filter-status" role="status" aria-live="polite" hidden></p>
+${browserLiveRegions}
 <div class="hex-workspace">
   <section class="hex-main" aria-label="Memory bytes at ${escape(payload.cursorAddress)}">
     <div class="table-wrap hex-grid-wrap" id="hex-wrap">

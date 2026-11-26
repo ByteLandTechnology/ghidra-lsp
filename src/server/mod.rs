@@ -3,6 +3,8 @@
 
 //! Language Server Protocol state, virtual buffer synchronization, and command dispatch.
 
+/// Custom command execution handlers for checkpoints and session reset.
+mod checkpoint_commands;
 /// Custom command execution handlers for session, function, and location actions.
 mod commands;
 /// Domain command handlers for binaries, queries, mutations, and rename lifecycle.
@@ -80,6 +82,10 @@ const COMMANDS: &[&str] = &[
   "ghidra.typeAtPosition",
   "ghidra.binaryInterface",
   "ghidra.closeSession",
+  "ghidra.checkpoints",
+  "ghidra.createCheckpoint",
+  "ghidra.restoreCheckpoint",
+  "ghidra.resetSession",
   "ghidra.reanalyze",
   "ghidra.cancelJob",
   "ghidra.configure",
@@ -439,6 +445,14 @@ impl Server {
       | "ghidra.callGraph" => {
         self
           .execute_view_command(&params.command, arg, backend.as_ref())
+          .await
+      }
+      "ghidra.checkpoints"
+      | "ghidra.createCheckpoint"
+      | "ghidra.restoreCheckpoint"
+      | "ghidra.resetSession" => {
+        self
+          .execute_checkpoint_command(&params.command, arg, backend.as_ref())
           .await
       }
       _ => {
