@@ -5,32 +5,32 @@
 export const callColumnsStyles = `
 /* Hallmark · app · call columns · VS Code theme · direct function navigation */
 /* Critique: keep the path readable and reveal row actions in context. */
-.call-page .call-view-switch{display:inline-flex;align-items:center;flex-wrap:wrap;gap:2px;padding:2px;border:1px solid var(--vscode-panel-border);border-radius:8px;background:var(--vscode-sideBar-background,var(--vscode-editor-background));max-width:100%}
-.call-page .call-view-switch button{display:inline-flex;align-items:center;justify-content:center;gap:5px;width:auto;min-width:26px;min-height:26px;height:auto;padding:4px 9px;border:0;border-radius:6px;background:transparent;color:var(--ghidra-muted);font-size:12px;font-weight:500;line-height:1.2;white-space:nowrap}
+.call-page .call-view-switch{display:inline-flex;align-items:center;flex-wrap:wrap;flex-shrink:0;gap:2px;padding:2px;border:1px solid var(--vscode-panel-border);border-radius:8px;background:var(--vscode-sideBar-background,var(--vscode-editor-background));max-width:100%}
+.call-page .call-view-switch button{display:inline-flex;align-items:center;justify-content:center;gap:5px;width:auto;min-width:26px;min-height:26px;height:auto;padding:3px 9px;border:0;border-radius:6px;background:transparent;color:var(--ghidra-muted);font-size:12px;font-weight:500;line-height:1.2;white-space:nowrap}
 .call-page .call-view-switch button:hover:not([aria-pressed="true"]){background:var(--vscode-list-hoverBackground);color:var(--vscode-foreground)}
 .call-page .call-view-switch [aria-pressed="true"]{background:var(--vscode-button-background,var(--ghidra-active-selection-bg));color:var(--vscode-button-foreground,var(--ghidra-active-selection-fg));border:2px solid var(--ghidra-active-border);font-weight:600}
 .call-page .call-view-switch .call-icon{font-size:14px;flex-shrink:0}
 .call-columns{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr) auto;min-height:0;overflow:hidden}
-.call-column-navigation{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:6px 14px;min-height:42px;padding:6px 14px;border-bottom:1px solid var(--vscode-panel-border);background:var(--vscode-editor-background)}
-.call-direction{display:inline-flex;flex-wrap:wrap;gap:2px;justify-self:start;max-width:100%;background:var(--vscode-sideBar-background,var(--vscode-editor-background));padding:2px;border:1px solid var(--vscode-panel-border);border-radius:8px}
-.call-page .call-direction button{display:inline-flex;align-items:center;justify-content:center;gap:5px;border:0;min-width:26px;min-height:26px;height:auto;padding:4px 9px;border-radius:6px;background:transparent;color:var(--ghidra-muted);font-size:12px;font-weight:500;line-height:1.2;white-space:nowrap}
+.call-column-navigation{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;min-height:40px;padding:6px 14px;border-bottom:1px solid var(--vscode-panel-border);background:var(--vscode-editor-background)}
+.call-direction{display:inline-flex;flex-wrap:wrap;gap:2px;flex-shrink:0;max-width:100%;background:var(--vscode-sideBar-background,var(--vscode-editor-background));padding:2px;border:1px solid var(--vscode-panel-border);border-radius:8px}
+.call-page .call-direction button{display:inline-flex;align-items:center;justify-content:center;gap:5px;border:0;min-width:26px;min-height:26px;height:auto;padding:3px 9px;border-radius:6px;background:transparent;color:var(--ghidra-muted);font-size:12px;font-weight:500;line-height:1.2;white-space:nowrap}
 .call-page .call-direction button .call-icon{font-size:14px;flex-shrink:0}
 .call-page .call-direction [aria-pressed="true"]{background:var(--ghidra-selection-bg);color:var(--ghidra-selection-fg);border:2px solid var(--ghidra-active-border);font-weight:600}
-.call-column-trail{display:flex;align-items:center;flex-wrap:wrap;gap:2px 4px;min-width:0;max-height:60px;overflow-y:auto;scrollbar-width:thin}
+.call-column-trail{display:flex;align-items:center;flex-wrap:wrap;gap:2px 4px;flex:1 1 200px;min-width:0;max-width:100%;max-height:60px;overflow-y:auto;scrollbar-width:thin}
 .call-column-trail .call-icon{font-size:12px;color:var(--ghidra-muted);flex-shrink:0}
-.call-page .call-column-trail button{display:inline-flex;align-items:center;justify-content:center;border:0;border-radius:4px;background:transparent;padding:2px 6px;min-width:26px;min-height:26px;height:auto;color:var(--ghidra-muted);font-size:11px;line-height:1.25;max-width:min(200px,100%)}
+.call-page .call-column-trail button{display:inline-flex;align-items:center;justify-content:center;border:0;border-radius:4px;background:transparent;padding:2px 6px;min-width:24px;min-height:24px;height:auto;color:var(--ghidra-muted);font-size:11px;line-height:1.25;max-width:min(200px,100%);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:0}
 .call-page .call-column-trail .call-trail-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 .call-page .call-column-trail [aria-current]{color:var(--vscode-foreground);font-weight:600}
-.call-column-strip{display:flex;min-width:0;min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin}
+.call-column-strip{display:flex;min-width:0;min-height:0;overflow-x:auto;overflow-y:hidden;overscroll-behavior:contain;scrollbar-width:thin}
 .call-page .call-column{display:flex;flex-direction:column;flex:0 0 280px;width:280px;min-width:0;min-height:0;margin:0;padding:0;border:0;border-right:1px solid var(--vscode-panel-border)}
 .call-page .call-column-heading{display:grid;grid-template-columns:minmax(0,1fr) 28px;align-items:center;gap:2px 8px;flex-shrink:0;padding:12px 14px 10px;margin:0;border-bottom:1px solid var(--vscode-panel-border)}
 .call-page .call-column-heading h2{font-size:12px;font-weight:600;line-height:1.5;margin:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .call-column-heading>span{font-size:11px;color:var(--ghidra-muted)}
-.call-page .call-column-code,.call-page .call-column-source-code{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;min-width:28px;min-height:28px;padding:4px;border:0;border-radius:4px;background:transparent;color:var(--ghidra-muted)}
+.call-page .call-column-code,.call-page .call-column-source-code{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;min-width:24px;min-height:24px;padding:4px;border:0;border-radius:4px;background:transparent;color:var(--ghidra-muted)}
 .call-column-source-code{grid-column:2;grid-row:1/3}
 .call-column-list{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:8px;scrollbar-width:thin}
 .call-column-row{display:flex;align-items:center;gap:2px;position:relative;border-radius:3px;color:var(--vscode-foreground)}
-.call-page .call-column-pick{display:flex;align-items:center;gap:6px;flex:1;min-width:0;min-height:36px;height:auto;border:0;border-radius:3px;padding:6px 4px 6px 8px;text-align:left;background:transparent;color:inherit}
+.call-page .call-column-pick{display:flex;align-items:center;gap:6px;flex:1;min-width:0;min-height:34px;height:auto;border:0;border-radius:3px;padding:6px 4px 6px 8px;text-align:left;background:transparent;color:inherit}
 .call-column-pick>.call-icon:first-child{color:var(--ghidra-muted);font-size:14px;flex-shrink:0}
 .call-column-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}
 .call-column-addr{flex:0 1 auto;min-width:0;max-width:96px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:11px var(--vscode-editor-font-family,monospace);font-variant-numeric:tabular-nums;color:var(--ghidra-muted)}
@@ -73,11 +73,26 @@ body.call-page:is(.vscode-high-contrast,.vscode-high-contrast-light) .call-colum
   .call-column-row:focus-within :is(.call-column-pick,.call-column-code):focus-visible,.call-page .call-column-pick:focus-visible{outline:2px solid var(--ghidra-focus);outline-offset:-2px}
 }
 @media(max-width:640px){
-  .call-column-navigation{grid-template-columns:minmax(0,1fr);padding:4px 8px;gap:4px}
+  .call-column-navigation{padding:4px 8px;gap:4px 8px;min-height:0}
   .call-page .call-column{flex-basis:min(280px,calc(100% - 16px));width:min(280px,calc(100% - 16px))}
   .call-page .call-view-switch button,.call-page .call-direction button{padding:3px 6px;gap:3px;font-size:11px;min-height:24px;min-width:24px}
-  .call-page .call-column-trail button{min-height:24px;min-width:24px;padding:2px 5px}
+  .call-page .call-column-trail button{min-height:24px;min-width:24px;padding:2px 5px;max-width:min(160px,100%)}
   .call-page .call-column-heading{padding:8px 10px}
+}
+@media(max-height:420px){
+  .call-page .call-view-switch{padding:1px}
+  .call-page .call-view-switch button{min-height:24px;padding:2px 6px}
+  .call-column-navigation{padding:2px 8px;gap:2px 6px;min-height:0}
+  .call-direction{padding:1px}
+  .call-page .call-direction button{min-height:24px;padding:2px 5px;gap:3px;font-size:11px}
+  .call-column-trail{flex:1 1 56px;flex-wrap:nowrap;max-height:none;overflow-x:auto;overflow-y:hidden}
+  .call-page .call-column-trail button{min-height:24px;min-width:24px;padding:1px 5px;max-width:min(108px,100%)}
+  .call-page .call-column-heading{grid-template-columns:minmax(0,1fr) auto 24px;gap:2px 6px;padding:2px 8px}
+  .call-page .call-column-source-code{grid-column:3;grid-row:1;width:24px;height:24px;padding:3px}
+  .call-column-heading>span{grid-column:2;grid-row:1;white-space:nowrap}
+  .call-column-list{padding:4px;min-height:0}
+  .call-page .call-column-pick{min-height:28px;padding:3px 4px 3px 6px}
+  .call-column-empty{padding:10px 8px}
 }
 `;
 
@@ -112,7 +127,7 @@ export const callColumnsScript = String.raw`
       const closeSearch=()=>{searchHost.hidden=true;searchToggle.setAttribute('aria-expanded','false');searchToggle.focus()};
       searchToggle.addEventListener('click',()=>searchHost.hidden?openSearch():closeSearch());
       filterCallColumns=()=>{const activeBrowser=document.querySelector('[data-call-columns]');if(!activeBrowser){return}const activeColumns=[...activeBrowser.querySelectorAll('.call-column')],query=search.value.trim().toLowerCase();let found=0,total=0;for(const column of activeColumns){let count=0;for(const row of column.querySelectorAll('.call-column-row')){total++;row.hidden=!!query&&!((row.dataset.label+' '+row.dataset.entry).toLowerCase().includes(query));if(!row.hidden){count++;found++}}column.querySelector('.call-column-no-matches').hidden=!query||count>0||!column.querySelector('.call-column-row')}updateFilterStatus({query,visible:found,total,visuallyHidden:false,matchText:found+' of '+total+' displayed functions match.',emptyText:'0 of '+total+' displayed functions match.',restoredText:'Filter cleared. Showing all '+total+' displayed functions.'})};
-      search.addEventListener('input',()=>{filterCallColumns();persist()});search.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();search.value='';filterCallColumns();closeSearch()}else if(event.key==='Enter'){event.preventDefault();browser.querySelector('.call-column-row:not([hidden]) .call-column-pick:not(:disabled)')?.focus()}});if(search.value){openSearch()}filterCallColumns();
+      search.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();search.value='';filterCallColumns();closeSearch();persist()}else if(event.key==='Enter'){event.preventDefault();browser.querySelector('.call-column-row:not([hidden]) .call-column-pick:not(:disabled)')?.focus()}});if(search.value){openSearch()}filterCallColumns();
       const menu=document.getElementById('call-menu'),summary=menu.querySelector('summary');
       menu.addEventListener('keydown',event=>{if(!['ArrowDown','ArrowUp','ArrowLeft','ArrowRight','Home','End'].includes(event.key)){return}event.preventDefault();menu.open=true;const items=[...menu.querySelectorAll('button')],at=items.indexOf(document.activeElement),next=event.key==='Home'?0:event.key==='End'?items.length-1:(event.key==='ArrowDown'||event.key==='ArrowRight')?(at+1)%items.length:(at<=0?items.length-1:at-1);items[next]?.focus()});
       document.addEventListener('click',event=>{if(menu.open&&(!menu.contains(event.target)||event.target.closest('button'))){menu.open=false}});

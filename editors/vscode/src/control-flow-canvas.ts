@@ -8,7 +8,7 @@ export const controlFlowStyles = `
 .flow-page .flow-topbar{grid-row:1;position:relative;z-index:4;display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:6px 8px;padding:8px 14px;min-width:0;border-bottom:1px solid var(--vscode-panel-border);background:var(--vscode-editor-background)}
 .flow-page .flow-topbar:not(:has(.flow-topbar-controls)){grid-template-columns:minmax(0,1fr) auto}
 .flow-page .flow-topbar-primary{display:flex;align-items:center;gap:8px;min-width:0}
-.flow-page .flow-topbar-controls,.flow-page .flow-topbar-actions{display:flex;align-items:center;flex-wrap:wrap;gap:4px;min-width:0}
+.flow-page .flow-topbar-controls,.flow-page .flow-topbar-actions{display:flex;align-items:center;flex-wrap:wrap;gap:4px;min-width:0;max-width:100%}
 .flow-page .flow-topbar-actions{justify-self:end}
 .flow-page .flow-search{grid-column:1/-1;min-width:0}
 .flow-page .flow-search input{width:100%;min-width:0;max-width:none;min-height:28px;height:auto}
@@ -20,11 +20,11 @@ export const controlFlowStyles = `
 .flow-page :is(button:not(.link),#call-menu>summary,.cfg-overview-close){min-width:24px;min-height:24px}
 .flow-page .zoom-step{min-width:28px;font-size:16px;padding:0 7px}
 .flow-page #graph-zoom{min-width:51px;font-variant-numeric:tabular-nums}
-.flow-page #filter-status{grid-row:2;margin:0;padding:4px 12px;font-size:11px;line-height:1.4;border-bottom:1px solid var(--vscode-panel-border);background:var(--vscode-editor-background);color:var(--vscode-foreground)}
-.flow-page .scope{grid-row:3;margin:0;padding:4px 12px;font-size:11px;line-height:1.4;border-bottom:1px solid var(--vscode-panel-border);background:var(--vscode-editor-background);color:var(--ghidra-muted)}
+.flow-page #filter-status{grid-row:2;margin:0;padding:4px 12px;font-size:11px;line-height:1.35;overflow-wrap:anywhere;border-bottom:1px solid var(--vscode-panel-border);background:var(--vscode-editor-background);color:var(--vscode-foreground)}
+.flow-page .scope{grid-row:3;margin:0;padding:4px 12px;font-size:11px;line-height:1.35;overflow-wrap:anywhere;border-bottom:1px solid var(--vscode-panel-border);background:var(--vscode-editor-background);color:var(--ghidra-muted)}
 .flow-page .selection-tools{flex-wrap:wrap;padding-bottom:6px}
 .flow-page .flow-canvas,.flow-page .call-columns,.flow-page main>.empty,.flow-page main>.error{grid-row:4;min-width:0;min-height:0}
-.flow-page .flow-canvas{position:relative;width:100%;height:100%;overflow:hidden;overflow:clip;cursor:grab;touch-action:none;border:0;border-radius:0;background:var(--vscode-editor-background)}
+.flow-page .flow-canvas{position:relative;width:100%;height:100%;min-height:0;overflow:hidden;overflow:clip;cursor:grab;touch-action:none;border:0;border-radius:0;background:var(--vscode-editor-background)}
 .flow-canvas.panning,.flow-canvas.panning .graph-node{cursor:grabbing}
 .flow-canvas>svg{display:block;width:100%;height:100%;overflow:visible;user-select:none}
 .flow-canvas .graph-cards{position:absolute;inset:0;overflow:hidden;overflow:clip;pointer-events:none;z-index:1}
@@ -91,11 +91,15 @@ body.flow-page:is(.vscode-high-contrast,.vscode-high-contrast-light) .flow-canva
   .flow-page .flow-topbar-controls{grid-column:1;justify-self:start}
   .flow-page .flow-topbar:has(.flow-topbar-controls) .flow-topbar-actions{grid-column:2;justify-self:end}
   .flow-page .flow-topbar-actions{gap:2px}
-  .flow-page #filter-status,.flow-page .scope{padding:3px 8px}
+  .flow-page #filter-status,.flow-page .scope{padding:3px 8px;font-size:11px}
 }
 @media(max-width:300px){
   .flow-page .flow-topbar{grid-template-columns:minmax(0,1fr)}
   .flow-page .flow-topbar-controls,.flow-page .flow-topbar:has(.flow-topbar-controls) .flow-topbar-actions,.flow-page .flow-topbar-actions{grid-column:1/-1;justify-self:start}
+}
+@media(max-height:420px){
+  .flow-page .flow-topbar{padding:4px 8px;gap:3px 6px}
+  .flow-page #filter-status,.flow-page .scope{padding:2px 8px;font-size:10px;line-height:1.25;max-height:24px;overflow-y:auto}
 }
 `;
 

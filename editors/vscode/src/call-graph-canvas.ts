@@ -8,18 +8,19 @@ export const callGraphStyles = `
 .call-page .call-topbar-primary{flex:1;min-width:0}
 .call-page .call-topbar h1{font-size:14px;letter-spacing:.01em;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin:0}
 .call-page .call-topbar .call-function-title{display:flex;align-items:center;min-width:0}
-.call-page .call-topbar #call-function-picker{display:flex;align-items:center;gap:6px;max-width:100%;min-width:24px;min-height:28px;height:auto;padding:4px 6px;border:0;border-radius:4px;background:transparent;color:inherit;font:inherit;letter-spacing:inherit;text-align:left}
+.call-page .call-topbar #call-function-picker{display:flex;align-items:center;gap:6px;max-width:100%;min-width:24px;min-height:28px;height:auto;padding:4px 6px;border:0;border-radius:4px;background:transparent;color:inherit;font:inherit;letter-spacing:inherit;text-align:left;overflow:hidden}
 .call-function-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .call-function-title .call-icon:first-child{color:var(--ghidra-muted);flex-shrink:0}
 .call-function-title .call-icon:last-child{font-size:12px;color:var(--ghidra-muted);flex-shrink:0}
 .call-icon{font:16px call-icons;display:inline-block;line-height:1;vertical-align:middle}
-.call-page .call-icon-button,.call-page #call-menu>summary{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;min-width:28px;min-height:28px;padding:6px;border:0;border-radius:4px;background:transparent;text-align:center;cursor:pointer;flex-shrink:0}
+.call-page .call-icon-button,.call-page #call-menu>summary{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;min-width:24px;min-height:24px;padding:6px;border:0;border-radius:4px;background:transparent;text-align:center;cursor:pointer;flex-shrink:0}
 .call-page .call-topbar button{background:transparent;border:0;min-height:28px;height:auto}
 .call-page button:hover,.call-page #call-menu>summary:hover{background:var(--vscode-toolbar-hoverBackground,var(--vscode-list-hoverBackground))}
 .call-page #call-menu{margin:0;border:0;padding:0;flex-shrink:0}
 .call-page #call-menu>summary,.call-page #call-menu[open]>summary{list-style:none;margin:0}
 .call-page #call-menu>summary::-webkit-details-marker{display:none}
 .call-menu-content{position:absolute;z-index:6;right:8px;top:calc(100% + 2px);width:min(304px,calc(100vw - 16px));max-height:max(96px,calc(100vh - 116px));overflow:auto;background:var(--vscode-menu-background,var(--vscode-editor-background));color:var(--vscode-menu-foreground,var(--vscode-foreground));border:1px solid var(--vscode-menu-border,var(--vscode-panel-border));box-shadow:0 4px 12px var(--vscode-widget-shadow);padding:8px;cursor:default}
+.call-page #call-menu:not([open]) .call-menu-content{display:none}
 .call-page #call-menu[open] .call-menu-content{animation:call-reveal 140ms cubic-bezier(.2,.8,.2,1)}
 .call-page .selection-tools{display:flex;flex-direction:column;gap:4px;margin:0;padding:4px 0 8px;border-bottom:1px solid var(--vscode-panel-border)}
 .call-page #selection-label{display:flex;flex-direction:column;font-size:12px;line-height:1.6;padding:2px 8px 8px;overflow-wrap:anywhere;color:var(--ghidra-muted)}
@@ -102,7 +103,8 @@ export const callGraphStyles = `
 .call-overview{margin:0;padding:0;position:absolute;z-index:2;right:14px;bottom:52px;width:min(176px,calc(100% - 20px));max-height:calc(100% - 58px);background:var(--vscode-editor-background);border:1px solid var(--vscode-editorWidget-border,var(--vscode-panel-border));border-radius:8px;box-shadow:0 2px 8px var(--vscode-widget-shadow);overflow:hidden;opacity:.95;cursor:default}
 .call-overview summary{display:flex;align-items:center;gap:6px;min-height:28px;margin:0!important;padding:4px 8px;font-size:11px;font-weight:500;cursor:pointer;user-select:none;list-style:none}
 .call-overview summary::-webkit-details-marker{display:none}
-.call-overview summary .call-icon{font-size:13px}
+.call-overview summary>span:not(.call-icon){flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.call-overview summary .call-icon{font-size:13px;flex-shrink:0}
 .call-overview summary .call-icon:last-child{margin-left:auto}
 .call-canvas .call-overview svg{display:block;width:100%;height:110px;border-top:1px solid var(--vscode-panel-border);cursor:crosshair;background:var(--vscode-sideBar-background)}
 .call-overview path{fill:none;stroke:var(--vscode-descriptionForeground);stroke-width:2}
@@ -170,6 +172,22 @@ body.call-page:is(.vscode-high-contrast,.vscode-high-contrast-light) :is(.call-t
   .call-page .call-overview svg{height:68px}
   .call-page .call-zoom{bottom:8px;right:8px}
   .call-page .call-zoom button{min-width:28px;min-height:28px;padding:3px 6px}
+}
+@media(max-height:420px){
+  .call-page .call-topbar{min-height:32px}
+  .call-page .call-topbar #call-function-picker{min-height:24px;padding:2px 5px}
+  .call-page .call-icon-button,.call-page #call-menu>summary{width:24px;height:24px;min-width:24px;min-height:24px;padding:2px}
+  .call-page .call-topbar .call-icon-button[aria-expanded="true"]{width:auto;min-width:24px;min-height:24px;height:auto;padding-inline:4px}
+  .call-page .call-topbar button{min-height:24px}
+  .call-page .call-search input{min-height:24px;padding:2px 6px}
+  .call-page .call-zoom{bottom:6px;right:6px}
+  .call-page .call-zoom button{min-width:24px;min-height:24px;padding:2px 5px}
+  .call-page .call-zoom #graph-zoom{min-width:42px;font-size:11px}
+  .call-page .call-overview{right:6px;bottom:34px;max-height:calc(100% - 40px)}
+  .call-page .call-overview[open]{display:flex;flex-direction:column}
+  .call-overview summary{min-height:24px;padding:2px 6px;flex-shrink:0}
+  .call-page .call-overview svg{flex:1 1 auto;min-height:24px;height:52px}
+  .call-page .call-details{bottom:34px;left:8px;right:8px;padding:6px 10px}
 }
 `;
 
