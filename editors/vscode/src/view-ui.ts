@@ -183,7 +183,7 @@ export const viewStyles = `
 .browser-page .browser-search input{width:100%;height:32px;padding-left:30px;min-width:0;max-width:none;font-size:12px}
 .browser-page .scope{font-size:11px;line-height:1.6;margin:10px 0 12px;color:var(--ghidra-muted)}
 .browser-page #filter-status{font-size:11px;margin:8px 0;color:var(--ghidra-muted)}
-.browser-page #filter-status.sr-filter-status{position:absolute;width:1px;height:1px;padding:0;margin:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.browser-page #filter-status.sr-filter-status{position:absolute;width:1px;height:1px;padding:0;margin:0;border:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 html:has(body.browser-page.has-selection){scroll-padding-bottom:68px}
 .browser-page.has-selection main{padding-bottom:76px}
 .browser-page .selection-tools{position:fixed;z-index:4;left:50%;bottom:12px;transform:translateX(-50%);width:calc(100% - 32px);max-width:760px;box-shadow:0 3px 12px var(--vscode-widget-shadow);display:flex;align-items:center;flex-wrap:nowrap;gap:10px;padding:6px 10px;margin-bottom:0;border:1px solid var(--vscode-panel-border);border-radius:4px;background:var(--vscode-sideBar-background,var(--vscode-editor-background))}
@@ -305,7 +305,7 @@ html:has(body.browser-page.has-selection){scroll-padding-bottom:68px}
 .inspector-menu-content .icon-button{width:32px;min-height:0;padding:7px;justify-content:center}
 .inspector-menu-content .icon-button.danger{color:var(--vscode-errorForeground);margin:0 0 0 3px;padding:7px;border-top:0;position:relative}
 .inspector-menu-content .icon-button.danger::before{content:'';position:absolute;left:-3px;top:6px;bottom:6px;width:1px;background:var(--vscode-panel-border)}
-.sr-status{position:absolute;width:1px;height:1px;padding:0;margin:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.sr-status{position:absolute;width:1px;height:1px;padding:0;margin:0;border:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .inspector-page.is-busy::before{content:'';position:fixed;z-index:20;top:0;left:0;width:30%;height:2px;background:var(--vscode-progressBar-background,var(--vscode-focusBorder));opacity:0;animation:inspector-busy-in 0s linear 150ms forwards,inspector-busy 1.2s cubic-bezier(.4,0,.2,1) 150ms infinite}
 @keyframes inspector-busy-in{to{opacity:1}}
 @keyframes inspector-busy{from{transform:translateX(-100%)}to{transform:translateX(340%)}}
@@ -330,6 +330,74 @@ body.browser-page:is(.vscode-high-contrast,.vscode-high-contrast-light) tbody tr
   .browser-page tr:focus-visible,.browser-page :is(button,summary,input):focus-visible,.inspector-page :is(button,summary,input):focus-visible,.edit-page :is(button,summary,input,select,textarea):focus-visible{outline:2px solid var(--ghidra-focus);outline-offset:-2px}
   .browser-page .selection-tools,.inspector-menu-content,.page-options-content,.browser-page #selection-more{background:var(--ghidra-selection-bg);color:var(--ghidra-selection-fg);border:1px solid var(--ghidra-hv-border)}
 }
+`;
+
+/** Persistent polite live regions for filter results and action confirmations. */
+export const browserLiveRegions = '<p id="filter-status" class="sr-filter-status" role="status" aria-live="polite"></p><p id="action-status" class="sr-status" role="status" aria-live="polite"></p>';
+
+/** Shared client-side helpers for table selection state, keyboard row movement, and polite live status updates. */
+export const browserStateScript = String.raw`
+    const normAddr=raw=>{const fallback=(typeof state==='object'&&state&&state.defaultSpace?state.defaultSpace:'ram');const m=/^(?:([A-Za-z_][A-Za-z0-9_.-]*):)?(?:0x)?([0-9a-f]+)$/i.exec(String(raw||'').trim());return m?((m[1]||fallback).toLowerCase()+':'+BigInt('0x'+m[2]).toString(16)):String(raw||'').trim().toLowerCase()};
+    const sameAddr=(left,right)=>Boolean(left&&right&&normAddr(left)===normAddr(right));
+    const setCurrentRow=(activeRow,root=document)=>{
+      for(const row of root.querySelectorAll('table:not([role="grid"]) tr.selected,table:not([role="grid"]) tr[aria-current]')){
+        if(row!==activeRow){row.classList.remove('selected');row.removeAttribute('aria-current')}
+      }
+      if(activeRow&&activeRow.tagName==='TR'&&!activeRow.closest('table[role="grid"]')){
+        activeRow.classList.add('selected');activeRow.setAttribute('aria-current','true');
+      }
+    };
+    const stepRowFocus=(rows,currentRow,key)=>{
+      if(!rows.length||!['ArrowDown','ArrowUp','Home','End'].includes(key)){return null}
+      const index=rows.indexOf(currentRow);
+      const next=key==='Home'?0:key==='End'?rows.length-1:index<0?0:Math.max(0,Math.min(rows.length-1,index+(key==='ArrowDown'?1:-1)));
+      const target=rows[next];
+      if(target){target.focus();target.scrollIntoView({block:'nearest'})}
+      return target||null;
+    };
+    let filterWasActive=false;
+    const setFilterStatusText=(status,text)=>{if(status.textContent!==text){status.textContent=text}};
+    const resetFilterStatus=()=>{
+      filterWasActive=false;
+      const status=document.getElementById('filter-status');if(!status){return}
+      status.removeAttribute('hidden');status.classList.add('sr-filter-status');
+      setFilterStatusText(status,'');
+    };
+    const updateFilterStatus=({query,visible,total,matchText,emptyText='No displayed rows match this filter.',restoredText,visuallyHidden})=>{
+      const status=document.getElementById('filter-status');if(!status){return}
+      status.removeAttribute('hidden');
+      const hasQuery=Boolean(query);
+      if(!hasQuery){
+        status.classList.add('sr-filter-status');
+        if(filterWasActive){
+          filterWasActive=false;
+          setFilterStatusText(status,restoredText??(total===0?'Filter cleared. No displayed rows.':total===1?'Filter cleared. Showing 1 displayed row.':'Filter cleared. Showing all '+total+' displayed rows.'));
+        }else{
+          setFilterStatusText(status,'');
+        }
+        return;
+      }
+      filterWasActive=true;
+      const hideVisually=visuallyHidden!==undefined?Boolean(visuallyHidden):visible===0;
+      status.classList.toggle('sr-filter-status',hideVisually);
+      setFilterStatusText(status,visible>0?(matchText??(visible+' of '+total+' displayed rows match.')):emptyText);
+    };
+    let actionStatusFrame=0,actionStatusNextFrame=0;
+    const announceActionStatus=text=>{
+      const status=document.getElementById('action-status');if(!status){return}
+      status.removeAttribute('hidden');
+      if(actionStatusFrame){cancelAnimationFrame(actionStatusFrame);actionStatusFrame=0}
+      if(actionStatusNextFrame){cancelAnimationFrame(actionStatusNextFrame);actionStatusNextFrame=0}
+      const hadText=Boolean(status.textContent);
+      status.textContent='';
+      if(!text){return}
+      actionStatusFrame=requestAnimationFrame(()=>{
+        actionStatusFrame=0;
+        if(hadText){actionStatusNextFrame=requestAnimationFrame(()=>{actionStatusNextFrame=0;status.textContent=String(text)})}
+        else{status.textContent=String(text)}
+      });
+    };
+    window.addEventListener('message',event=>{if(event.data?.action==='actionStatus'){announceActionStatus(event.data.message||'')}});
 `;
 
 /** Format the search toggle tooltip for the active shortcut mode. */
@@ -504,10 +572,20 @@ const restorePopoverAwareFocus=id=>{
 
 /** Client-side script for filterable browser tables and keyboard row navigation. */
 export const browserViewScript = String.raw`
-    (()=>{
+    const mountBrowserView=()=>{
       if(!document.body.classList.contains('browser-page')){return}
-      for(const table of document.querySelectorAll('.table-wrap')){table.addEventListener('scroll',schedulePersist,{passive:true});if(!table.querySelector('tbody tr')){table.hidden=true;const next=table.nextElementSibling;const counted=/\(0\)\s*$/.test(table.closest('section')?.querySelector('h2')?.textContent||'');if(!counted&&!next?.classList.contains('empty')){const empty=document.createElement('p');empty.className='table-empty';empty.hidden=!!search.value;empty.setAttribute('role','status');empty.textContent='No entries.';table.after(empty)}}}
-      document.getElementById('clear-filter').addEventListener('click',()=>{search.value='';filter();persist();search.focus()});
-      for(const row of selectable){row.addEventListener('keydown',event=>{if(!['ArrowDown','ArrowUp','Home','End'].includes(event.key)){return}const rows=[...row.closest('tbody').querySelectorAll('tr[data-address]:not([hidden]),tr[data-entry]:not([hidden])')],index=rows.indexOf(row),next=event.key==='Home'?0:event.key==='End'?rows.length-1:Math.max(0,Math.min(rows.length-1,index+(event.key==='ArrowDown'?1:-1)));event.preventDefault();rows[next]?.focus();rows[next]?.scrollIntoView({block:'nearest'})})}
-    })();
+      for(const table of document.querySelectorAll('.table-wrap')){
+        if(!table.dataset.browserBound){table.dataset.browserBound='true';table.addEventListener('scroll',schedulePersist,{passive:true})}
+        if(!table.querySelector('tbody tr')){table.hidden=true;const next=table.nextElementSibling;const counted=/\(0\)\s*$/.test(table.closest('section')?.querySelector('h2')?.textContent||'');if(!counted&&!next?.classList.contains('empty')&&!next?.classList.contains('table-empty')){const empty=document.createElement('p');empty.className='table-empty';empty.hidden=!!search.value.trim();empty.textContent='No entries.';table.after(empty)}}
+      }
+      const clearBtn=document.getElementById('clear-filter');
+      if(clearBtn&&!clearBtn.dataset.browserBound){clearBtn.dataset.browserBound='true';clearBtn.addEventListener('click',()=>{search.value='';filter();persist();search.focus()})}
+      if(!document.body.dataset.browserEscBound){document.body.dataset.browserEscBound='true';document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!event.defaultPrevented&&(typeof openPopovers!=='function'||!openPopovers().length)&&search.value){event.preventDefault();search.value='';filter();persist()}})}
+      for(const row of selectable){
+        if(row.dataset.rowNavBound){continue}
+        row.dataset.rowNavBound='true';
+        row.addEventListener('keydown',event=>{if(event.target.closest('button')){return}const tbody=row.closest('tbody');if(!tbody||!['ArrowDown','ArrowUp','Home','End'].includes(event.key)){return}event.preventDefault();stepRowFocus([...tbody.querySelectorAll('tr[data-address]:not([hidden]),tr[data-entry]:not([hidden])')],row,event.key)});
+      }
+    };
+    mountBrowserView();
 `;
