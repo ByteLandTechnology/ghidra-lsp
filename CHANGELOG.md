@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.7.0](https://github.com/ByteLandTechnology/ghidra-lsp/compare/v0.6.0...v0.7.0) (2026-11-26)
+
+
+### Features
+
+* add project checkpoints and session reset ([#38](https://github.com/ByteLandTechnology/ghidra-lsp/issues/38)) ([fcb7c95](https://github.com/ByteLandTechnology/ghidra-lsp/commit/fcb7c95ac1365359f6ec9446b73f0e0b25a41b5e))
+* **vscode:** add shared accessibility primitives to mutation forms ([#25](https://github.com/ByteLandTechnology/ghidra-lsp/issues/25)) ([455c0b0](https://github.com/ByteLandTechnology/ghidra-lsp/commit/455c0b000afae7b8e108dbde7e3b4cb718a99774))
+* **vscode:** expose native table state and live status ([#24](https://github.com/ByteLandTechnology/ghidra-lsp/issues/24)) ([8397b9e](https://github.com/ByteLandTechnology/ghidra-lsp/commit/8397b9e517d011eb31350c8ffb02c72678f1dcda))
+
+
+### Bug Fixes
+
+* **vscode:** pan graph viewport around floating overlays ([#23](https://github.com/ByteLandTechnology/ghidra-lsp/issues/23)) ([9ae5459](https://github.com/ByteLandTechnology/ghidra-lsp/commit/9ae54598b1521c7f3fc32c6dd20c743c6bab8de5))
+
 ## [0.6.0](https://github.com/ByteLandTechnology/ghidra-lsp/compare/v0.5.0...v0.6.0) (2026-11-25)
 
 
