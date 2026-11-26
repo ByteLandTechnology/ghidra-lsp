@@ -29,8 +29,15 @@ pub(crate) async fn record_checkpoint(backend: &McpBackend, md5: &str, name: &st
       backend.set_checkpoint_create_supported(false).await;
       Ok(())
     }
+    Err(error) if unsupported_attached_gpr_checkpoint(&error) => Ok(()),
     Err(error) => Err(error),
   }
+}
+
+/// Returns true when `error` shows that `md5` is an attached `.gpr` project without checkpoints.
+fn unsupported_attached_gpr_checkpoint(error: &anyhow::Error) -> bool {
+  let message = format!("{error:#}").to_ascii_lowercase();
+  message.contains("attached .gpr") && message.contains("not supported")
 }
 
 /// Returns true when `error` shows that `ghidra_session` does not implement `operation`.
