@@ -3,6 +3,8 @@
 
 //! Language Server Protocol state, virtual buffer synchronization, and command dispatch.
 
+/// Custom command execution handlers for analysis job cancellation.
+mod cancel_commands;
 /// Custom command execution handlers for checkpoints and session reset.
 mod checkpoint_commands;
 /// Custom command execution handlers for session, function, and location actions.
@@ -366,43 +368,6 @@ impl Server {
       );
       tokio::time::sleep(Duration::from_millis(500)).await;
     }
-  }
-
-  /// Opens a backend session from a filesystem `path` or an existing saved program `md5`.
-  async fn open_session(&self, arg: &Value) -> Result<Value> {
-    ensure!(
-      arg.get("path").is_some() != arg.get("md5").is_some(),
-      "provide exactly one binary path or saved program MD5"
-    );
-    let (md5, parameters) = if let Some(path) = arg.get("path") {
-      let path = path
-        .as_str()
-        .filter(|path| !path.trim().is_empty())
-        .context("path must be a nonempty string")?;
-      (None, json!({"path": path}))
-    } else {
-      ensure!(
-        arg.get("md5").and_then(Value::as_str).is_some(),
-        "md5 must be a string"
-      );
-      (Some(self.scoped_md5(arg).await?), json!({}))
-    };
-    let backend = self.engine.lock().await.backend.clone();
-    let opened = backend
-      .call("session", "open", md5.as_deref(), parameters)
-      .await?;
-    if let Some(expected) = md5 {
-      let actual = opened
-        .pointer("/session/md5")
-        .or_else(|| opened.pointer("/session/id"))
-        .and_then(Value::as_str)
-        .context("session has no MD5")?;
-      ensure!(
-        actual.eq_ignore_ascii_case(&expected),
-        "backend opened a different saved program"
-      );
-    }
-    Ok(opened)
   }
 
   /// Dispatches one `workspace/executeCommand` invocation.

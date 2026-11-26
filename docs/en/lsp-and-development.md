@@ -43,8 +43,8 @@ All 49 commands declared in `COMMANDS` (`src/server/mod.rs`) and dispatched acro
 | --- | --- | --- |
 | `ghidra.sessions` | `{}` | List all known `ghidra-mcp` sessions |
 | `ghidra.selectSession` | `{"md5"}` | Verify session is `ready` and set it active |
-| `ghidra.openBinary` | `{"path" \| "md5", "analyze?"}` | Synchronously open binary or saved MD5, optionally run analysis, wait up to 10 minutes |
-| `ghidra.beginOpenBinary` | `{"path" \| "md5", "analyze?"}` | Start async open job and return polling `token` |
+| `ghidra.openBinary` | `{"path" \| "md5", "analyze?", "programName?", "processor?", "compilerSpec?", "loader?", "baseAddress?", "reimport?"}` | Synchronously open a binary, `.gpr` project, or saved MD5 with optional import flags, run analysis if requested, and wait up to 10 minutes |
+| `ghidra.beginOpenBinary` | `{"path" \| "md5", "analyze?", "programName?", "processor?", "compilerSpec?", "loader?", "baseAddress?", "reimport?"}` | Start an async binary or `.gpr` open job with optional import flags and return a polling `token` |
 | `ghidra.pollOpenBinary` | `{"token"}` | Advance/poll pending open or analysis job and return progress snapshot |
 | `ghidra.beginReanalyze` | `{"md5?", "analyzers?"}` | Start async program reanalysis and return polling `token` |
 | `ghidra.reanalyze` | `{"md5?", "analyzers?", "wait?"}` | Start analysis, optionally wait (`default: true`), persist, and refresh open buffers |
