@@ -1,7 +1,7 @@
 {
   "name": "ghidra-lsp",
   "displayName": "Ghidra LSP",
-  "description": "Browse and rename Ghidra symbols through ghidra-mcp",
+  "description": "Live Ghidra decompilation, disassembly, graphs, and reverse engineering in VS Code",
   "version": "0.7.0",
   "publisher": "byteland-app",
   "license": "MIT",
