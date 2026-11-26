@@ -9,7 +9,9 @@ use anyhow::{Context, Result, bail, ensure};
 use serde_json::{Value, json};
 
 use super::CONFLICT_FORM;
-use crate::address::{format_type_ref, is_array_type_ref, parse_type_ref_for};
+use crate::address::{
+  format_type_ref, is_array_type_ref, parse_type_ref_for, validate_c_signature,
+};
 use crate::backend::{BackendCapabilities, McpBackend};
 use crate::workbench;
 
@@ -463,11 +465,18 @@ fn compile_function_prototype_ops(
   payload: &Value,
   caps: BackendCapabilities,
 ) -> Result<Vec<Value>> {
+  if let Some(raw_sig) = payload.get("signature").and_then(Value::as_str)
+    && !raw_sig.trim().is_empty()
+  {
+    validate_c_signature(raw_sig)?;
+    return compile_signature_patch_op(entry, original, payload, raw_sig.trim(), caps);
+  }
   if let Some(sig) = payload
     .get("signature")
     .map(value_as_trimmed_str)
     .filter(|s| !s.is_empty())
   {
+    validate_c_signature(&sig)?;
     return compile_signature_patch_op(entry, original, payload, &sig, caps);
   }
 

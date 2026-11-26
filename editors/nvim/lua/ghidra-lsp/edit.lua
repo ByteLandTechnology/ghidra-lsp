@@ -225,6 +225,9 @@ function M.edit_function(arg)
             comment = comment_val,
         }
         if sig ~= '' then
+            if #sig > 8192 then
+                error('C signature must not exceed 8192 UTF-8 bytes')
+            end
             payload.signature = sig
         else
             payload.returnType = vim.trim(kv.return_type or proto.returnType or 'void')
@@ -380,6 +383,9 @@ function M.parse_c(arg)
         local c_source = vim.trim(table.concat(body, '\n'))
         if c_source == '' then
             error('Enter at least one C declaration before importing')
+        end
+        if #c_source > 65536 then
+            error('C declarations must not exceed 65536 UTF-8 bytes')
         end
         local res = client.exec_sync('ghidra.mutate', {
             md5 = md5,

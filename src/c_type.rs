@@ -9,8 +9,37 @@ use serde_json::{Value, json};
 /// Maximum UTF-8 byte length permitted for one C data-type expression.
 const MAX_C_TYPE_BYTES: usize = 4_096;
 
+/// Maximum UTF-8 byte length permitted for one C function signature string.
+const MAX_C_SIGNATURE_BYTES: usize = 8_192;
+
+/// Maximum UTF-8 byte length permitted for one `data_type.parse_c` payload.
+const MAX_C_DECLARATIONS_BYTES: usize = 65_536;
+
 /// Maximum wrapper nesting depth permitted in a structured `DataTypeReference`.
 const MAX_TYPE_NESTING_DEPTH: usize = 32;
+
+/// Checks that a C function signature string is non-empty and at most 8,192 UTF-8 bytes.
+pub(crate) fn validate_c_signature(raw: &str) -> Result<()> {
+  ensure!(!raw.trim().is_empty(), "C signature must not be empty.");
+  ensure!(
+    raw.len() <= MAX_C_SIGNATURE_BYTES,
+    "C signature must not exceed 8192 UTF-8 bytes."
+  );
+  Ok(())
+}
+
+/// Checks that a C header declaration string is non-empty and at most 65,536 UTF-8 bytes.
+pub(crate) fn validate_c_declarations(raw: &str) -> Result<()> {
+  ensure!(
+    !raw.trim().is_empty(),
+    "Enter at least one C declaration before importing."
+  );
+  ensure!(
+    raw.len() <= MAX_C_DECLARATIONS_BYTES,
+    "C declarations must not exceed 65536 UTF-8 bytes."
+  );
+  Ok(())
+}
 
 /// Finds the byte index of the closing parenthesis matching `open` in `text`.
 fn find_matching_paren(text: &str, open: usize) -> Option<usize> {

@@ -11,7 +11,7 @@ use tower_lsp_server::ls_types::{
   SemanticToken, SemanticTokenModifier, SemanticTokenType, SemanticTokensLegend,
 };
 
-use crate::address::parse_type_ref_for;
+use crate::address::{parse_type_ref_for, validate_c_declarations, validate_c_signature};
 use crate::backend::{BackendCapabilities, ListOptions, McpBackend, list_pages};
 use crate::document::{Document, advance_position};
 
@@ -341,6 +341,11 @@ pub(crate) fn adapt_write_params(
       {
         obj.insert(target_field.to_owned(), val);
       }
+      let raw = params
+        .get(target_field)
+        .and_then(Value::as_str)
+        .unwrap_or("");
+      validate_c_declarations(raw)?;
     }
     ("data_type", "create" | "upsert") => {
       if let Some(res) = params.get_mut("resource") {
@@ -367,11 +372,15 @@ pub(crate) fn adapt_write_params(
     }
     ("function", "patch") => {
       if let Some(patch) = params.get_mut("patch") {
-        if patch.get("signature").is_some_and(|v| !v.is_null()) {
+        if let Some(sig_val) = patch.get("signature").filter(|v| !v.is_null()) {
           ensure!(
             caps.function_signature,
             "A newer ghidra-mcp is required for one-line C function signatures."
           );
+          let sig = sig_val
+            .as_str()
+            .context("function.patch signature must be a string")?;
+          validate_c_signature(sig)?;
         }
         if patch.get("parameters").is_some_and(|v| !v.is_null()) {
           ensure!(

@@ -208,7 +208,10 @@ window.addEventListener('message', event => {
     if (message.savedValues?.savedValues) {
         for (const [key, nextVal] of Object.entries(message.savedValues.savedValues)) {
             const field = editForm.querySelector('[name="' + key + '"]');
-            if (field && field.type !== 'checkbox') { field.value = String(nextVal ?? ''); }
+            if (field) {
+                if (field.type === 'checkbox') { field.checked = Boolean(nextVal); }
+                else { field.value = String(nextVal ?? ''); }
+            }
         }
     }
     ghidraA11y.announce('error', '');
@@ -347,7 +350,9 @@ export class EditingUI implements vscode.Disposable {
                 { key: 'category', label: 'Category path', value: '/', alwaysVisible: true },
                 { key: 'declarations', label: 'C declarations', kind: 'textarea', rows: 6, required: true, alwaysVisible: true, placeholder: 'struct Packet {\n    const char *payload;\n    uint32_t length;\n};', autofocus: true },
             ], [], async ({ values }) => {
-                await this.mutations(md5, [{ method: 'data_type.parse_c', arguments: { declarations: required(values, 'declarations', 'C declarations', ['declarations']), category_path: value(values, 'category') || '/' } }]);
+                const declarations = required(values, 'declarations', 'C declarations', ['declarations']);
+                if (Buffer.byteLength(declarations, 'utf8') > 65536) { throw new FieldError('C declarations must not exceed 65536 UTF-8 bytes.', ['declarations']); }
+                await this.mutations(md5, [{ method: 'data_type.parse_c', arguments: { declarations, category_path: value(values, 'category') || '/' } }]);
                 return { message: 'Imported C declarations into the Ghidra project.' };
             }, 'Enter self-contained C structs, unions, enums, typedefs, and function prototypes without #include directives.');
             return;
@@ -450,6 +455,7 @@ export class EditingUI implements vscode.Disposable {
         ], [paramGrid], async ({ values, tables }) => {
             const cSignature = value(values, 'signature');
             if (cSignature) {
+                if (Buffer.byteLength(cSignature, 'utf8') > 8192) { throw new FieldError('C signature must not exceed 8192 UTF-8 bytes.', ['signature']); }
                 const newName = value(values, 'name');
                 await this.call('ghidra.saveFunctionPrototype', {
                     md5,
@@ -489,7 +495,16 @@ export class EditingUI implements vscode.Disposable {
             proto = await this.call('ghidra.functionPrototype', { md5, entry: proto.entry || entry });
             return {
                 title: `Edit ${String(proto.name)}`,
-                savedValues: { name: proto.name, returnType: proto.returnType || 'void', convention: proto.callingConvention || 'default', signature: '' },
+                savedValues: {
+                    name: proto.name,
+                    returnType: proto.returnType || 'void',
+                    convention: proto.callingConvention || 'default',
+                    signature: '',
+                    varargs: proto.hasVarArgs,
+                    noreturn: proto.hasNoReturn,
+                    inline: proto.isInline,
+                    comment: proto.comment || '',
+                },
                 tables: { parameters: (proto.parameters || []).map((param, index) => ({ _original: String(index), name: param.name, type: param.type })) },
             };
         }, 'Enter C types directly (such as const char *, int (*)[4], or void (*)(int)), reorder rows, or supply a full C signature.');

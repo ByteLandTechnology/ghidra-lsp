@@ -11,7 +11,8 @@ use serde_json::{Value, json};
 
 use crate::backend::{McpBackend, list_operation};
 pub(crate) use crate::c_type::{
-  format_type_ref, is_array_type_ref, parse_type_ref, parse_type_ref_for,
+  format_type_ref, is_array_type_ref, parse_type_ref, parse_type_ref_for, validate_c_declarations,
+  validate_c_signature,
 };
 
 /// Canonical parsed address components with explicit address space and 64-bit offset.
