@@ -219,6 +219,21 @@
         "title": "Ghidra: Reanalyze Program"
       },
       {
+        "command": "ghidraLsp.restorePreviousCheckpoint",
+        "title": "Ghidra: Restore Previous Checkpoint",
+        "icon": "$(discard)"
+      },
+      {
+        "command": "ghidraLsp.restoreCheckpoint",
+        "title": "Ghidra: Restore Checkpoint…",
+        "icon": "$(history)"
+      },
+      {
+        "command": "ghidraLsp.resetSession",
+        "title": "Ghidra: Reset Session",
+        "icon": "$(debug-restart)"
+      },
+      {
         "command": "ghidraLsp.cancelAnalysis",
         "title": "Ghidra: Stop Waiting for Analysis",
         "icon": "$(debug-pause)"
@@ -823,6 +838,14 @@
         {
           "command": "ghidraLsp.applyType",
           "group": "editing@4"
+        },
+        {
+          "command": "ghidraLsp.restorePreviousCheckpoint",
+          "group": "history@1"
+        },
+        {
+          "command": "ghidraLsp.restoreCheckpoint",
+          "group": "history@2"
         }
       ],
       "view/item/context": [
@@ -905,6 +928,21 @@
           "command": "ghidraLsp.reanalyze",
           "when": "viewItem == ghidra.session || viewItem == ghidra.activeSession || viewItem == ghidra.sessionTask || viewItem == ghidra.activeSessionTask",
           "group": "ghidra@1"
+        },
+        {
+          "command": "ghidraLsp.restorePreviousCheckpoint",
+          "when": "viewItem == ghidra.session || viewItem == ghidra.activeSession",
+          "group": "ghidra@1b"
+        },
+        {
+          "command": "ghidraLsp.restoreCheckpoint",
+          "when": "viewItem == ghidra.session || viewItem == ghidra.activeSession",
+          "group": "ghidra@1c"
+        },
+        {
+          "command": "ghidraLsp.resetSession",
+          "when": "viewItem == ghidra.session || viewItem == ghidra.activeSession",
+          "group": "ghidra@1d"
         },
         {
           "command": "ghidraLsp.closeSession",
