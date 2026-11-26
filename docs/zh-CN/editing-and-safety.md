@@ -77,4 +77,15 @@
 - **自动降级只读的类型**：内置基元类型、`typedef`、零长度或重叠结构体字段、位域（名称带 `:位宽` 后缀）、包含多个匿名字段的结构体或任意匿名成员的联合体、缺少结构化签名的函数定义以及值超出 53 位无损 JSON 安全整数范围的 64 位枚举，均以只读模式打开并附带明确原因注释。
 - **保存流水线与草稿保护**：保存前 `fetch_and_check_type_conflict` 使用 `same_type_data` 比对当前 Ghidra 后端快照与本地 `original` 快照。若外部已更改，编辑器保留用户当前草稿不丢弃，并引导通过 **Compare Data Type with Ghidra** 与 **Reload Data Type from Ghidra** 审阅差异后再提交。写成功并持久化后，服务端重新读取规范化后的类型结构（含 Ghidra 自动调整后的对齐偏移量与新分配的成员 `id`）回写至编辑缓冲区。
 
+---
+
+## 项目检查点与干净会话重置
+
+在提交任何符号重命名（`Engine::save`）、注释更新（`ghidra.saveComment`）、函数签名或变量编辑（`ghidra.saveFunctionPrototype`、`ghidra.saveVariables`）、JSONC 数据类型写入（`ghidra.saveTypeDocument`）、重新分析（`ghidra.beginReanalyze`、`ghidra.reanalyze`）以及工作台修改（除 `program.save` 外的 `ghidra.mutate`）之前，`ghidra-lsp` 会自动调用 `ghidra-mcp` 的 `session.checkpoint.create` 记录修改前快照（`src/engine/checkpoints.rs`）。
+
+`ghidra-mcp` 先执行 `program.save` 持久化当前活动程序，再将 `project.gpr` 与 `project.rep/` 复制到 `projects/<md5>/checkpoints/<id>/`（自动跳过瞬态 `.lock` / `.lock~` 锁文件），并在超出 `[checkpoints] max_per_binary` 上限时淘汰最早的检查点。
+
+- **恢复检查点（`ghidra.restoreCheckpoint`）**：以不保存方式强制停止当前 Ghidra 进程（`force = true`），从所选检查点（省略 `id` 与 `name` 时取最新检查点）原子替换 `projects/<md5>/ghidra/` 并重新启动会话，清理待决重命名，重新生成全部已打开的 `ghidra://` 反编译与快照缓冲区、同步 `ghidra-type://` 文档并广播 `ghidra/changed` 刷新所有侧边栏与分析视图。
+- **重置会话（`ghidra.resetSession`）**：不保存即停止活动 Ghidra 进程，删除 `projects/<md5>/ghidra/` 与 `projects/<md5>/checkpoints/`，同时完整保留 `binary` 与 `binary.json`，按需重新导入并执行自动分析（`reopen: true`、`analyze`），再刷新全部已打开视图。
+
 下一章：[LSP 能力参考与开发规范](lsp-and-development.md)。

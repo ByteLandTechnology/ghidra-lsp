@@ -100,9 +100,9 @@ ghidra-lsp --mcp-command ghidra-mcp --request-timeout-ms 35000
 | [快速上手](getting-started.md) | 环境要求、编译构建、CLI 参数、编辑器冒烟测试与排障 |
 | [系统架构](architecture.md) | 进程模型、6 种虚拟 URI、规范标识、UTF-16 对齐与单次反编译管线 |
 | [VS Code 指南](vscode-guide.md) | 侧边栏视图、自定义编辑器、图形化面板、配置项与全部命令 |
-| [Neovim 指南](neovim-guide.md) | 插件安装、`:checkhealth`、26 条 `:Ghidra*` 命令（含 `:GhidraInstall` 与 `:GhidraParseC`）、快捷键与虚拟缓冲区 |
-| [编辑与安全模型](editing-and-safety.md) | 只读伪代码保障、`<F2>` 作用域预览与 Origin Save、写超时后状态重读、`all_or_none` 批量事务、`.ghidra-type` JSONC 模式 |
-| [LSP 与开发指南](lsp-and-development.md) | LSP 能力矩阵、45 个内置命令、代码布局、`AGENTS.md` 规范与黑盒测试边界 |
+| [Neovim 指南](neovim-guide.md) | 插件安装、`:checkhealth`、29 条 `:Ghidra*` 命令（含 `:GhidraInstall`、`:GhidraParseC`、检查点与会话重置）、快捷键与虚拟缓冲区 |
+| [编辑与安全模型](editing-and-safety.md) | 只读伪代码保障、`<F2>` 作用域预览与 Origin Save、自动项目检查点与会话重置、写超时后状态重读、`all_or_none` 批量事务、`.ghidra-type` JSONC 模式 |
+| [LSP 与开发指南](lsp-and-development.md) | LSP 能力矩阵、49 个内置命令、代码布局、`AGENTS.md` 规范与黑盒测试边界 |
 
 ---
 

@@ -105,6 +105,7 @@ impl Server {
         "Save or discard the pending rename before analysis"
       );
       drop(e);
+      crate::engine::record_checkpoint(backend, &md5, "Before program analysis").await?;
       let mut parameters = json!({});
       if let Some(analyzers) = arg.get("analyzers") {
         parameters["analyzers"] = analyzers.clone();
@@ -322,6 +323,7 @@ impl Server {
       "Save or discard the pending rename before analysis"
     );
     drop(e);
+    crate::engine::record_checkpoint(backend, &md5, "Before program analysis").await?;
     let mut parameters = json!({});
     if let Some(analyzers) = arg.get("analyzers") {
       parameters["analyzers"] = analyzers.clone();
@@ -354,6 +356,10 @@ impl Server {
     let parameters = workbench::adapt_write_params(domain, operation, parameters, caps)?;
     let e = self.engine.lock().await;
     Self::ensure_program_clean(&e, &md5)?;
+    if (domain, operation) != ("program", "save") {
+      crate::engine::record_checkpoint(backend, &md5, &format!("Before {domain}.{operation}"))
+        .await?;
+    }
     let (tool, tool_operation) = workbench::mcp_operation(domain, operation);
     let result = backend
       .call(tool, &tool_operation, Some(&md5), parameters)

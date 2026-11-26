@@ -101,4 +101,13 @@ Built-in primitives, pointers, arrays, typedefs, enums containing 64-bit values 
 2. **Optimistic conflict detection**: On save, `ghidra.saveTypeDocument` queries `data_type.get` again and compares it structurally (`same_type_data`) against the opened `original` snapshot. On mismatch, it rejects the write, preserves your draft, and lets you inspect differences with **Compare Data Type with Ghidra**.
 3. **Atomic write and readback**: Applies `data_type.patch` or `data_type.upsert` (gated by `workbench::allow_write`), saves with `program.save`, refreshes open function decompilations, and reads back the normalized type text (actual Ghidra field offsets and updated member `id` values) and the refreshed `original` snapshot.
 
+## Project checkpoints and clean session reset
+
+Before committing any rename (`Engine::save`), comment edit (`ghidra.saveComment`), function prototype or variable edit (`ghidra.saveFunctionPrototype`, `ghidra.saveVariables`), JSONC data-type write (`ghidra.saveTypeDocument`), reanalysis (`ghidra.beginReanalyze`, `ghidra.reanalyze`), or workbench mutation (`ghidra.mutate` outside `program.save`), `ghidra-lsp` calls `session.checkpoint.create` in `ghidra-mcp` (`src/engine/checkpoints.rs`).
+
+`ghidra-mcp` persists the live program (`program.save`), copies `project.gpr` and `project.rep/` into `projects/<md5>/checkpoints/<id>/` without `.lock` or `.lock~` files, and evicts the oldest snapshot once the `[checkpoints] max_per_binary` cap is reached.
+
+- **Restore a checkpoint (`ghidra.restoreCheckpoint`)**: Stops the active Ghidra process immediately without saving (`force = true`), replaces `projects/<md5>/ghidra/` atomically from the selected checkpoint (or the newest checkpoint when `id` and `name` are omitted), relaunches Ghidra, clears any pending rename, regenerates all open `ghidra://` buffers, reloads open `ghidra-type://` documents, and emits `ghidra/changed` so symbol trees, data types, listings, memory views, and graphs refresh together.
+- **Reset a session (`ghidra.resetSession`)**: Stops the active Ghidra process without saving, deletes `projects/<md5>/ghidra/` and `projects/<md5>/checkpoints/` while keeping `binary` and `binary.json`, optionally re-imports and re-analyzes the binary (`reopen: true`, `analyze`), and refreshes all open views.
+
 Next chapter: [LSP and Development Guide](lsp-and-development.md).

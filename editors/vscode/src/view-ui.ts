@@ -29,11 +29,11 @@ export const viewStyles = `
 .inspector-actions>button,.inspector-page .recovery>button,.inspector-menu-content button,.edit-page .form-actions button,.edit-page [data-add-row]{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:32px;font-size:12px;border-radius:3px}
 .inspector-page .icon-button,.browser-page .icon-button{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;min-height:0;padding:7px;border:0;background:transparent;color:var(--vscode-foreground);border-radius:3px;flex-shrink:0}
 .inspector-page .icon-button[hidden],.browser-page .icon-button[hidden]{display:none!important}
-.inspector-page .icon-button:hover:enabled,.browser-page .icon-button:hover:enabled{background:var(--vscode-toolbar-hoverBackground,var(--vscode-list-hoverBackground))}
+.inspector-page .icon-button:hover:enabled:not([aria-disabled="true"]),.browser-page .icon-button:hover:enabled:not([aria-disabled="true"]){background:var(--vscode-toolbar-hoverBackground,var(--vscode-list-hoverBackground))}
 [data-popover-menu]:not(:popover-open){display:none}
 [data-popover-menu]{position:fixed;inset:auto;margin:0;max-width:calc(100vw - 16px);max-height:calc(100vh - 16px);overflow-y:auto;border:1px solid var(--vscode-menu-border,var(--vscode-panel-border));border-radius:4px;background:var(--vscode-menu-background,var(--vscode-editor-background));color:var(--vscode-menu-foreground,var(--vscode-foreground));box-shadow:0 4px 12px var(--vscode-widget-shadow)}
 .inspector-menu-content button{width:100%;justify-content:flex-start;text-align:left;border:0;background:transparent;color:inherit;padding:7px 9px}
-.inspector-menu-content button:hover:enabled{background:var(--vscode-menu-selectionBackground,var(--vscode-list-hoverBackground));color:var(--vscode-menu-selectionForeground,var(--vscode-foreground))}
+.inspector-menu-content button:hover:enabled:not([aria-disabled="true"]){background:var(--vscode-menu-selectionBackground,var(--vscode-list-hoverBackground));color:var(--vscode-menu-selectionForeground,var(--vscode-foreground))}
 .inspector-menu-content .danger{color:var(--vscode-errorForeground);border-top:1px solid var(--vscode-panel-border);margin-top:4px;padding-top:10px}
 /* Hallmark · data type editor · the definition is the work surface. */
 .inspector-page[data-view-kind="type-editor"] main{max-width:1060px;margin:0;padding:16px 22px 32px}
@@ -45,16 +45,16 @@ export const viewStyles = `
 .inspector-page[data-view-kind="type-editor"] .type-meta-sep{opacity:.55;user-select:none}
 .inspector-page[data-view-kind="type-editor"] .type-meta-stat{font-variant-numeric:tabular-nums;white-space:nowrap}
 .inspector-page[data-view-kind="type-editor"] .type-actions{display:inline-flex;align-items:center;gap:8px;flex-shrink:0}
-.inspector-page[data-view-kind="type-editor"] .type-validation:not([hidden]){margin:8px 0 12px;padding:8px 12px;border-left:1px solid var(--vscode-errorForeground);color:var(--vscode-errorForeground);background:color-mix(in srgb,var(--vscode-errorForeground) 6%,var(--vscode-editor-background))}
+.inspector-page[data-view-kind="type-editor"] .type-validation:not(:empty){margin:8px 0 12px;padding:8px 12px;border-left:1px solid var(--vscode-errorForeground);color:var(--vscode-errorForeground);background:color-mix(in srgb,var(--vscode-errorForeground) 6%,var(--vscode-editor-background))}
 .inspector-page[data-view-kind="type-editor"] .type-status{display:inline-flex;align-items:center;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:500;color:var(--ghidra-muted);background:var(--vscode-sideBar-background,var(--vscode-editor-background));border:1px solid var(--vscode-panel-border);white-space:nowrap}
-.inspector-page[data-view-kind="type-editor"] .type-status:empty{position:absolute;width:1px;height:1px;padding:0;margin:0;border:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.inspector-page[data-view-kind="type-editor"] .type-status:empty,.inspector-page[data-view-kind="type-editor"] .type-validation:empty{position:absolute;width:1px;height:1px;padding:0;margin:0;border:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .inspector-page[data-view-kind="type-editor"] .type-status[data-state="dirty"]{color:var(--ghidra-warning);border-color:color-mix(in srgb,var(--ghidra-warning) 45%,transparent)}
 .inspector-page[data-view-kind="type-editor"] .type-status[data-state="saving"]{color:var(--ghidra-accent);border-color:color-mix(in srgb,var(--ghidra-accent) 45%,transparent)}
 .inspector-page[data-view-kind="type-editor"] .type-actions [data-open-jsonc]{display:inline-flex;align-items:center;gap:6px;min-height:28px;padding:4px 10px;border:1px solid var(--vscode-panel-border);border-radius:6px;background:var(--vscode-button-secondaryBackground,var(--vscode-input-background));color:var(--vscode-button-secondaryForeground,var(--vscode-foreground));font-size:12px;font-weight:500;cursor:pointer;white-space:nowrap}
-.inspector-page[data-view-kind="type-editor"] .type-actions [data-open-jsonc]:hover:enabled{background:var(--vscode-button-secondaryHoverBackground,var(--vscode-list-hoverBackground));border-color:var(--ghidra-focus)}
+.inspector-page[data-view-kind="type-editor"] .type-actions [data-open-jsonc]:hover:enabled:not([aria-disabled="true"]){background:var(--vscode-button-secondaryHoverBackground,var(--vscode-list-hoverBackground));border-color:var(--ghidra-focus)}
 .inspector-page[data-view-kind="type-editor"] .type-actions [data-open-jsonc] .call-icon{font-size:14px}
 .inspector-page[data-view-kind="type-editor"] .type-icon{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;min-height:0;padding:6px;border:0;background:transparent;color:var(--ghidra-muted);border-radius:3px}
-.inspector-page[data-view-kind="type-editor"] .type-icon:hover{background:var(--vscode-toolbar-hoverBackground,var(--vscode-list-hoverBackground));color:var(--vscode-foreground)}
+.inspector-page[data-view-kind="type-editor"] .type-icon:hover:enabled:not([aria-disabled="true"]){background:var(--vscode-toolbar-hoverBackground,var(--vscode-list-hoverBackground));color:var(--vscode-foreground)}
 .inspector-page[data-view-kind="type-editor"] .type-list{margin:0 0 20px;padding-top:12px}
 .inspector-page[data-view-kind="type-editor"] .type-list:first-of-type{border-top:0;padding-top:0}
 .inspector-page[data-view-kind="type-editor"] .type-definition{margin:0 0 20px;padding:0;border:0}
@@ -74,6 +74,8 @@ export const viewStyles = `
 .inspector-page[data-view-kind="type-editor"] .type-table input{width:100%;height:32px;min-width:0;border:1px solid transparent;border-radius:2px;background:transparent;cursor:text}
 .inspector-page[data-view-kind="type-editor"] .type-table input:hover{background:var(--vscode-input-background);border-color:var(--vscode-input-border,transparent)}
 .inspector-page[data-view-kind="type-editor"] .type-table input:focus{background:var(--vscode-input-background);outline:2px solid var(--ghidra-focus);outline-offset:-2px}
+.inspector-page[data-view-kind="type-editor"] .type-table input[aria-invalid="true"]{background:var(--vscode-input-background);border-color:var(--vscode-inputValidation-errorBorder,var(--vscode-errorForeground))}
+.inspector-page[data-view-kind="type-editor"] .type-table tr:has(.field-error:not([hidden]):not(:empty)) td{vertical-align:top}
 .inspector-page[data-view-kind="type-editor"] .type-table td[data-field="offset"] input,.inspector-page[data-view-kind="type-editor"] .type-table td[data-field="length"] input,.inspector-page[data-view-kind="type-editor"] .type-table td[data-field="value"] input{font-variant-numeric:tabular-nums}
 .inspector-page[data-view-kind="type-editor"] .type-table th[data-field="offset"]{width:88px}
 .inspector-page[data-view-kind="type-editor"] .type-table th[data-field="length"]{width:100px}
@@ -99,10 +101,11 @@ export const viewStyles = `
 .inspector-page[data-view-kind="type-editor"] .type-empty{margin:0;padding:12px 8px;color:var(--ghidra-muted);border-top:1px solid var(--vscode-panel-border)}
 .inspector-page .type-sr-only,.edit-page .type-sr-only{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .inspector-page[data-view-kind="type-editor"] .form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr));gap:12px}
-.inspector-page[data-view-kind="type-editor"] .form-grid label:not(.type-flag){display:flex;flex-direction:column;gap:4px;min-width:0}
+.inspector-page[data-view-kind="type-editor"] .form-grid :is(label:not(.type-flag),.form-field:not(.form-field-check)){display:flex;flex-direction:column;gap:4px;min-width:0}
+.inspector-page[data-view-kind="type-editor"] .form-grid .form-field>input:not([type="checkbox"]){margin-top:0}
 .inspector-page[data-view-kind="type-editor"] .form-grid input:not([type="checkbox"]){width:100%;min-width:0}
 .inspector-page[data-view-kind="type-editor"] .type-flags{display:flex;flex-wrap:wrap;gap:8px 24px;margin-top:12px}
-.inspector-page[data-view-kind="type-editor"] .type-flag{display:flex;align-items:center;gap:8px;min-height:32px}
+.inspector-page[data-view-kind="type-editor"] .type-flag,.inspector-page[data-view-kind="type-editor"] .form-field-check>.type-flag{display:flex;align-items:center;gap:8px;min-height:32px}
 
 @media(max-width:640px){
 .inspector-page[data-view-kind="type-editor"] main{padding:12px 12px 24px}
@@ -118,6 +121,7 @@ export const viewStyles = `
 .inspector-page[data-view-kind="type-editor"] .type-table:is([data-kind="struct"],[data-kind="structure"]) th[data-field="type"],.inspector-page[data-view-kind="type-editor"] .type-table:not([data-kind="struct"],[data-kind="structure"]) th[data-field="length"]{grid-column:2;grid-row:2}
 .inspector-page[data-view-kind="type-editor"] .type-table:is([data-kind="struct"],[data-kind="structure"]) th[data-field="length"]{grid-column:3;grid-row:2}
 .inspector-page[data-view-kind="type-editor"] .type-table tbody tr{display:grid;grid-template-columns:32px repeat(2,minmax(0,1fr)) 32px;gap:6px 8px;padding:8px 0;border-bottom:1px solid var(--vscode-panel-border)}
+.inspector-page[data-view-kind="type-editor"] .type-table tbody tr:has(.field-error:not([hidden]):not(:empty)){align-items:start}
 .inspector-page[data-view-kind="type-editor"] .type-table tr:last-child{border-bottom:0}
 .inspector-page[data-view-kind="type-editor"] .type-table td{display:block;min-width:0;padding:0;border:0}
 .inspector-page[data-view-kind="type-editor"] .type-table tr[data-new] td:not([data-field="name"]){display:none}
@@ -130,6 +134,7 @@ export const viewStyles = `
 .inspector-page[data-view-kind="type-editor"] .type-table:is([data-kind="struct"],[data-kind="structure"]) td[data-field="length"]{grid-column:3;grid-row:2}
 .edit-page .editable,.edit-page .editable thead,.edit-page .editable tbody{display:block;min-width:0}
 .edit-page .editable tr{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 8px;align-items:center;padding:6px;border-bottom:1px solid var(--vscode-panel-border)}
+.edit-page .editable tr:has(.field-error:not([hidden]):not(:empty)){align-items:start}
 .edit-page .editable tr:has(.row-remove,.row-move,.editable-action-col){grid-template-columns:repeat(2,minmax(0,1fr)) 32px}
 .edit-page .editable[data-reorder] tr{grid-template-columns:repeat(2,minmax(0,1fr)) 104px}
 .edit-page .editable tbody tr:last-child{border-bottom:0}
@@ -171,7 +176,7 @@ export const viewStyles = `
 .edit-page .success:not(:empty){font-size:12px;padding:10px 0}
 .edit-page .editable .editable-action-col{position:relative}
 .edit-page :is(.row-remove,.row-move){display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;min-height:0;padding:6px;border:0;background:transparent;color:var(--ghidra-muted)}
-.edit-page :is(.row-remove,.row-move):hover:enabled{background:var(--vscode-toolbar-hoverBackground,var(--vscode-list-hoverBackground));color:var(--vscode-foreground)}
+.edit-page :is(.row-remove,.row-move):hover:enabled:not([aria-disabled="true"]){background:var(--vscode-toolbar-hoverBackground,var(--vscode-list-hoverBackground));color:var(--vscode-foreground)}
 .browser-page main{max-width:1450px;margin:0;padding:20px 24px 32px}
 .browser-page h1{font-size:16px;line-height:1.4;margin:0 0 2px}
 .browser-page .subtitle{font-size:11px;overflow-wrap:anywhere}
@@ -184,7 +189,7 @@ export const viewStyles = `
 .browser-page .browser-search input{width:100%;height:32px;padding-left:30px;min-width:0;max-width:none;font-size:12px}
 .browser-page .scope{font-size:11px;line-height:1.6;margin:10px 0 12px;color:var(--ghidra-muted)}
 .browser-page #filter-status{font-size:11px;margin:8px 0;color:var(--ghidra-muted)}
-.browser-page #filter-status.sr-filter-status{position:absolute;width:1px;height:1px;padding:0;margin:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.browser-page #filter-status.sr-filter-status{position:absolute;width:1px;height:1px;padding:0;margin:0;border:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 html:has(body.browser-page.has-selection){scroll-padding-bottom:68px}
 .browser-page.has-selection main{padding-bottom:76px}
 .browser-page .selection-tools{position:fixed;z-index:4;left:50%;bottom:12px;transform:translateX(-50%);width:calc(100% - 32px);max-width:760px;box-shadow:0 3px 12px var(--vscode-widget-shadow);display:flex;align-items:center;flex-wrap:nowrap;gap:10px;padding:6px 10px;margin-bottom:0;border:1px solid var(--vscode-panel-border);border-radius:4px;background:var(--vscode-sideBar-background,var(--vscode-editor-background))}
@@ -266,7 +271,7 @@ html:has(body.browser-page.has-selection){scroll-padding-bottom:68px}
 /* The content establishes hierarchy; avoid a border around each section. */
 .inspector-page header,.edit-page header{border:0;padding-bottom:0;margin-bottom:24px}
 .inspector-page h1,.edit-page h1{font-size:16px;letter-spacing:normal}
-.inspector-page main>details,.edit-page .advanced-fields,.inspector-page section,.edit-page section,.edit-page .form-actions{border-top:0}
+.inspector-page :is(main,form)>details,.edit-page .advanced-fields,.inspector-page section,.edit-page section,.edit-page .form-actions{border-top:0}
 .inspector-page dl>div{border-bottom:0}
 .edit-page .editable:has(tbody:empty){display:none}
 .edit-page .table-wrap:has(.editable tbody:empty){display:none}
@@ -286,8 +291,8 @@ html:has(body.browser-page.has-selection){scroll-padding-bottom:68px}
 .inspector-page .type-category{color:var(--ghidra-muted);font-size:11px;overflow-wrap:anywhere}
 .inspector-page .hex{font-size:inherit}
 .inspector-page .detail-heading{font-size:12px;font-weight:600;margin:16px 0 0;color:var(--ghidra-muted)}
-.inspector-page main>details>:not(summary){margin-left:16px}
-.inspector-page main>details[open]{margin-bottom:28px}
+.inspector-page :is(main,form)>details>:not(summary){margin-left:16px}
+.inspector-page :is(main,form)>details[open]{margin-bottom:28px}
 .inspector-page[data-view-kind="function"] main>.function-definition+section{margin-top:14px}.inspector-page[data-view-kind="function"] main>.function-definition+section>h2{margin-bottom:2px}
 .inspector-page .parameters .param-storage{display:none;color:var(--ghidra-muted)}
 .inspector-page:has(#function-details[open]) .parameters .param-storage{display:inline}
@@ -306,7 +311,7 @@ html:has(body.browser-page.has-selection){scroll-padding-bottom:68px}
 .inspector-menu-content .icon-button{width:32px;min-height:0;padding:7px;justify-content:center}
 .inspector-menu-content .icon-button.danger{color:var(--vscode-errorForeground);margin:0 0 0 3px;padding:7px;border-top:0;position:relative}
 .inspector-menu-content .icon-button.danger::before{content:'';position:absolute;left:-3px;top:6px;bottom:6px;width:1px;background:var(--vscode-panel-border)}
-.sr-status{position:absolute;width:1px;height:1px;padding:0;margin:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.sr-status{position:absolute;width:1px;height:1px;padding:0;margin:0;border:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .inspector-page.is-busy::before{content:'';position:fixed;z-index:20;top:0;left:0;width:30%;height:2px;background:var(--vscode-progressBar-background,var(--vscode-focusBorder));opacity:0;animation:inspector-busy-in 0s linear 150ms forwards,inspector-busy 1.2s cubic-bezier(.4,0,.2,1) 150ms infinite}
 @keyframes inspector-busy-in{to{opacity:1}}
 @keyframes inspector-busy{from{transform:translateX(-100%)}to{transform:translateX(340%)}}
@@ -315,11 +320,13 @@ html:has(body.browser-page.has-selection){scroll-padding-bottom:68px}
 .browser-page tbody tr.selected{outline:2px solid var(--ghidra-active-border);outline-offset:-2px}
 .browser-page tbody tr.selected:focus{outline:2px solid var(--ghidra-active-selection-fg);outline-offset:-2px}
 body.inspector-page[data-view-kind="type-editor"]:is(.vscode-high-contrast,.vscode-high-contrast-light) :is(.type-table input,.type-table tr[data-new] td[data-field="name"] input),body.edit-page:is(.vscode-high-contrast,.vscode-high-contrast-light) .editable input{border:1px solid var(--ghidra-hv-border);background:var(--vscode-input-background)}
+:is(body.vscode-high-contrast,body.vscode-high-contrast-light) :is(.type-table input,.editable input)[aria-invalid="true"]{border-color:var(--vscode-inputValidation-errorBorder,var(--vscode-errorForeground))}
 body.inspector-page[data-view-kind="type-editor"]:is(.vscode-high-contrast,.vscode-high-contrast-light) :is(.type-row-handle,.type-row-handle .type-move,.type-row-action,.type-row-action button),body.edit-page:is(.vscode-high-contrast,.vscode-high-contrast-light) :is(.row-remove,.row-move){opacity:1;transition:none}
 body.inspector-page:is(.vscode-high-contrast,.vscode-high-contrast-light) :is(.icon-button,.inspector-menu>summary,.page-options>summary),body.inspector-page[data-view-kind="type-editor"]:is(.vscode-high-contrast,.vscode-high-contrast-light) :is(.type-icon,.type-actions [data-open-jsonc]),body.browser-page:is(.vscode-high-contrast,.vscode-high-contrast-light) :is(.icon-button:not([aria-pressed="true"]):not([aria-expanded="true"]),.more-actions>summary,.page-options>summary),body.edit-page:is(.vscode-high-contrast,.vscode-high-contrast-light) :is(.row-remove,.row-move){border:1px solid var(--ghidra-hv-border);color:var(--vscode-foreground)}
 body.browser-page:is(.vscode-high-contrast,.vscode-high-contrast-light) tbody tr.selected,body.browser-page:is(.vscode-high-contrast,.vscode-high-contrast-light) tbody tr.selected:focus{background:var(--vscode-editor-background);color:var(--vscode-foreground);outline:2px solid var(--ghidra-active-border);outline-offset:-2px}
 @media(prefers-contrast:more){
   .inspector-page[data-view-kind="type-editor"] .type-table input,.inspector-page[data-view-kind="type-editor"] .type-table tr[data-new] td[data-field="name"] input,.edit-page .editable input{border:1px solid var(--ghidra-hv-border);background:var(--vscode-input-background)}
+  .inspector-page[data-view-kind="type-editor"] .type-table input[aria-invalid="true"],.edit-page .editable input[aria-invalid="true"]{border-color:var(--vscode-inputValidation-errorBorder,var(--vscode-errorForeground))}
   .inspector-page[data-view-kind="type-editor"] :is(.type-row-handle,.type-row-handle .type-move,.type-row-action,.type-row-action button),.edit-page :is(.row-remove,.row-move){opacity:1;transition:none}
   .inspector-page .icon-button,.browser-page .icon-button:not([aria-pressed="true"]):not([aria-expanded="true"]),.inspector-page[data-view-kind="type-editor"] .type-icon,.edit-page :is(.row-remove,.row-move),.inspector-menu>summary,.browser-page .more-actions>summary,.page-options>summary,.inspector-page[data-view-kind="type-editor"] .type-actions [data-open-jsonc]{border:1px solid var(--ghidra-hv-border);color:var(--vscode-foreground)}
 }
@@ -331,6 +338,74 @@ body.browser-page:is(.vscode-high-contrast,.vscode-high-contrast-light) tbody tr
   .browser-page tr:focus-visible,.browser-page :is(button,summary,input):focus-visible,.inspector-page :is(button,summary,input):focus-visible,.edit-page :is(button,summary,input,select,textarea):focus-visible{outline:2px solid var(--ghidra-focus);outline-offset:-2px}
   .browser-page .selection-tools,.inspector-menu-content,.page-options-content,.browser-page #selection-more{background:var(--ghidra-selection-bg);color:var(--ghidra-selection-fg);border:1px solid var(--ghidra-hv-border)}
 }
+`;
+
+/** Persistent polite live regions for filter results and action confirmations. */
+export const browserLiveRegions = '<p id="filter-status" class="sr-filter-status" role="status" aria-live="polite"></p><p id="action-status" class="sr-status" role="status" aria-live="polite"></p>';
+
+/** Shared client-side helpers for table selection state, keyboard row movement, and polite live status updates. */
+export const browserStateScript = String.raw`
+    const normAddr=raw=>{const fallback=(typeof state==='object'&&state&&state.defaultSpace?state.defaultSpace:'ram');const m=/^(?:([A-Za-z_][A-Za-z0-9_.-]*):)?(?:0x)?([0-9a-f]+)$/i.exec(String(raw||'').trim());return m?((m[1]||fallback).toLowerCase()+':'+BigInt('0x'+m[2]).toString(16)):String(raw||'').trim().toLowerCase()};
+    const sameAddr=(left,right)=>Boolean(left&&right&&normAddr(left)===normAddr(right));
+    const setCurrentRow=(activeRow,root=document)=>{
+      for(const row of root.querySelectorAll('table:not([role="grid"]) tr.selected,table:not([role="grid"]) tr[aria-current]')){
+        if(row!==activeRow){row.classList.remove('selected');row.removeAttribute('aria-current')}
+      }
+      if(activeRow&&activeRow.tagName==='TR'&&!activeRow.closest('table[role="grid"]')){
+        activeRow.classList.add('selected');activeRow.setAttribute('aria-current','true');
+      }
+    };
+    const stepRowFocus=(rows,currentRow,key)=>{
+      if(!rows.length||!['ArrowDown','ArrowUp','Home','End'].includes(key)){return null}
+      const index=rows.indexOf(currentRow);
+      const next=key==='Home'?0:key==='End'?rows.length-1:index<0?0:Math.max(0,Math.min(rows.length-1,index+(key==='ArrowDown'?1:-1)));
+      const target=rows[next];
+      if(target){target.focus();target.scrollIntoView({block:'nearest'})}
+      return target||null;
+    };
+    let filterWasActive=false;
+    const setFilterStatusText=(status,text)=>{if(status.textContent!==text){status.textContent=text}};
+    const resetFilterStatus=()=>{
+      filterWasActive=false;
+      const status=document.getElementById('filter-status');if(!status){return}
+      status.removeAttribute('hidden');status.classList.add('sr-filter-status');
+      setFilterStatusText(status,'');
+    };
+    const updateFilterStatus=({query,visible,total,matchText,emptyText='No displayed rows match this filter.',restoredText,visuallyHidden})=>{
+      const status=document.getElementById('filter-status');if(!status){return}
+      status.removeAttribute('hidden');
+      const hasQuery=Boolean(query);
+      if(!hasQuery){
+        status.classList.add('sr-filter-status');
+        if(filterWasActive){
+          filterWasActive=false;
+          setFilterStatusText(status,restoredText??(total===0?'Filter cleared. No displayed rows.':total===1?'Filter cleared. Showing 1 displayed row.':'Filter cleared. Showing all '+total+' displayed rows.'));
+        }else{
+          setFilterStatusText(status,'');
+        }
+        return;
+      }
+      filterWasActive=true;
+      const hideVisually=visuallyHidden!==undefined?Boolean(visuallyHidden):visible===0;
+      status.classList.toggle('sr-filter-status',hideVisually);
+      setFilterStatusText(status,visible>0?(matchText??(visible+' of '+total+' displayed rows match.')):emptyText);
+    };
+    let actionStatusFrame=0,actionStatusNextFrame=0;
+    const announceActionStatus=text=>{
+      const status=document.getElementById('action-status');if(!status){return}
+      status.removeAttribute('hidden');
+      if(actionStatusFrame){cancelAnimationFrame(actionStatusFrame);actionStatusFrame=0}
+      if(actionStatusNextFrame){cancelAnimationFrame(actionStatusNextFrame);actionStatusNextFrame=0}
+      const hadText=Boolean(status.textContent);
+      status.textContent='';
+      if(!text){return}
+      actionStatusFrame=requestAnimationFrame(()=>{
+        actionStatusFrame=0;
+        if(hadText){actionStatusNextFrame=requestAnimationFrame(()=>{actionStatusNextFrame=0;status.textContent=String(text)})}
+        else{status.textContent=String(text)}
+      });
+    };
+    window.addEventListener('message',event=>{if(event.data?.action==='actionStatus'){announceActionStatus(event.data.message||'')}});
 `;
 
 /** Format the search toggle tooltip for the active shortcut mode. */
@@ -380,7 +455,7 @@ export const webviewPopoverScript = String.raw`
 const isPopoverOpen=menu=>{if(!menu){return false}try{return menu.matches(':popover-open')}catch{return menu.hasAttribute('data-open')}};
 const openPopovers=()=>[...document.querySelectorAll('[data-popover-menu]')].filter(isPopoverOpen);
 const popoverInvoker=menu=>menu?.id?document.querySelector('[popovertarget="'+CSS.escape(menu.id)+'"]'):null;
-const menuButtons=menu=>[...menu.querySelectorAll('button:not(:disabled)')].filter(btn=>!btn.hidden&&!btn.closest('[hidden]'));
+const menuButtons=menu=>[...menu.querySelectorAll('button:not(:disabled):not([aria-disabled="true"])')].filter(btn=>!btn.hidden&&!btn.closest('[hidden]'));
 const closePopover=menu=>{if(!menu||!isPopoverOpen(menu)){return}if(typeof menu.hidePopover==='function'){menu.hidePopover()}else{menu.removeAttribute('data-open')}};
 const positionPopover=menu=>{
   if(!menu||!isPopoverOpen(menu)){return}
@@ -505,10 +580,20 @@ const restorePopoverAwareFocus=id=>{
 
 /** Client-side script for filterable browser tables and keyboard row navigation. */
 export const browserViewScript = String.raw`
-    (()=>{
+    const mountBrowserView=()=>{
       if(!document.body.classList.contains('browser-page')){return}
-      for(const table of document.querySelectorAll('.table-wrap')){table.addEventListener('scroll',schedulePersist,{passive:true});if(!table.querySelector('tbody tr')){table.hidden=true;const next=table.nextElementSibling;const counted=/\(0\)\s*$/.test(table.closest('section')?.querySelector('h2')?.textContent||'');if(!counted&&!next?.classList.contains('empty')){const empty=document.createElement('p');empty.className='table-empty';empty.hidden=!!search.value;empty.setAttribute('role','status');empty.textContent='No entries.';table.after(empty)}}}
-      document.getElementById('clear-filter').addEventListener('click',()=>{search.value='';filter();persist();search.focus()});
-      for(const row of selectable){row.addEventListener('keydown',event=>{if(!['ArrowDown','ArrowUp','Home','End'].includes(event.key)){return}const rows=[...row.closest('tbody').querySelectorAll('tr[data-address]:not([hidden]),tr[data-entry]:not([hidden])')],index=rows.indexOf(row),next=event.key==='Home'?0:event.key==='End'?rows.length-1:Math.max(0,Math.min(rows.length-1,index+(event.key==='ArrowDown'?1:-1)));event.preventDefault();rows[next]?.focus();rows[next]?.scrollIntoView({block:'nearest'})})}
-    })();
+      for(const table of document.querySelectorAll('.table-wrap')){
+        if(!table.dataset.browserBound){table.dataset.browserBound='true';table.addEventListener('scroll',schedulePersist,{passive:true})}
+        if(!table.querySelector('tbody tr')){table.hidden=true;const next=table.nextElementSibling;const counted=/\(0\)\s*$/.test(table.closest('section')?.querySelector('h2')?.textContent||'');if(!counted&&!next?.classList.contains('empty')&&!next?.classList.contains('table-empty')){const empty=document.createElement('p');empty.className='table-empty';empty.hidden=!!search.value.trim();empty.textContent='No entries.';table.after(empty)}}
+      }
+      const clearBtn=document.getElementById('clear-filter');
+      if(clearBtn&&!clearBtn.dataset.browserBound){clearBtn.dataset.browserBound='true';clearBtn.addEventListener('click',()=>{search.value='';filter();persist();search.focus()})}
+      if(!document.body.dataset.browserEscBound){document.body.dataset.browserEscBound='true';document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!event.defaultPrevented&&(typeof openPopovers!=='function'||!openPopovers().length)&&search.value){event.preventDefault();search.value='';filter();persist()}})}
+      for(const row of selectable){
+        if(row.dataset.rowNavBound){continue}
+        row.dataset.rowNavBound='true';
+        row.addEventListener('keydown',event=>{if(event.target.closest('button')){return}const tbody=row.closest('tbody');if(!tbody||!['ArrowDown','ArrowUp','Home','End'].includes(event.key)){return}event.preventDefault();stepRowFocus([...tbody.querySelectorAll('tr[data-address]:not([hidden]),tr[data-entry]:not([hidden])')],row,event.key)});
+      }
+    };
+    mountBrowserView();
 `;

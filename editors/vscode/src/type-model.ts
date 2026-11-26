@@ -2,18 +2,18 @@
 // SPDX-License-Identifier: MIT
 
 import { applyEdits, createScanner, findNodeAtLocation, getNodeValue, modify, Node, ParseError, parseTree, printParseErrorCode, SyntaxKind } from 'jsonc-parser';
-import { Data, isArrayTypeReference, object, reference, rows, typeReference } from './web';
+import { Data, FieldError, FieldPath, isArrayTypeReference, object, reference, rows, typeReference } from './web';
 
 /** Single backend mutation operation derived from a data type edit. */
 export interface TypeMutation { method: string; arguments: Data; }
 /** Editable JSONC model representation of a Ghidra struct, union, enum, or function definition. */
 export interface TypeModel { path: string; kind: string; fields?: Data[]; values?: Data[]; signature?: Data; }
-/** JSON path segment sequence locating a field inside a type document. */
-type JsonPath = (string | number)[];
-/** Validation or schema error carrying the offending JSON path or character span. */
-export class TypeEditError extends Error {
+/** JSON path segments that identify a field in a type document. */
+type JsonPath = FieldPath;
+/** Validation or schema error with a JSON path or character span. */
+export class TypeEditError extends FieldError {
     /** Create a type edit error attached to `path` and an optional source span. */
-    constructor(message: string, readonly path: JsonPath = [], readonly offset?: number, readonly length?: number) { super(message); }
+    constructor(message: string, path: JsonPath = [], readonly offset?: number, readonly length?: number) { super(message, path); }
 }
 /** Deeply compare two JSON values for structural equality. */
 export const sameTypeData = (a: unknown, b: unknown): boolean => {
@@ -92,7 +92,7 @@ function array(value: unknown, path: JsonPath): Data[] {
 /** Validate and parse a string data type reference at `path`. */
 function type(value: unknown, path: JsonPath): string {
     const name = string(value, path);
-    try { return typeReference(name); } catch (error) { fail(String(error), path); }
+    try { return typeReference(name, path); } catch (error) { fail(error instanceof Error ? error.message : String(error), path); }
 }
 /** Reject duplicate object keys anywhere in a parsed JSONC syntax tree. */
 function uniqueKeys(node: Node): void {

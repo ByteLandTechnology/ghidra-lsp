@@ -16,8 +16,8 @@ It serves Ghidra decompiled pseudocode, disassembly listings, hexadecimal byte w
 - **Protocol isolation**: Reads LSP JSON-RPC requests from `stdin`, writes framed LSP JSON-RPC responses only to `stdout`, writes logs only to `stderr`, and runs `ghidra-mcp` as a child process over MCP `stdio`.
 - **Single-decompile request budget**: Fetches GUI lines, decompiler tokens, native cursor bindings, and all five Ghidra comment kinds (`plate`, `pre`, `eol`, `post`, `repeatable`) in one `decompilation.get` call.
 - **UTF-16 and checked `u64` safety**: Computes every LSP `Position` and `Range` in UTF-16 code units, slices UTF-8 strings only at character boundaries, and computes memory addresses with checked 64-bit math.
-- **Controlled persistence**: Keeps decompiled C text read-only except for scoped `<F2>` rename previews that require saving the origin buffer, and guards mutations with optimistic conflict checks and write-timeout state verification.
-- **Full editor integrations**: Provides custom editors, synchronized webviews, horizontal 5-kind comment badge tabs, and interactive call graphs in Visual Studio Code, and 26 `:Ghidra*` commands and virtual buffers in Neovim. Both editor integrations can install missing `ghidra-lsp` and `ghidra-mcp` binaries automatically through `npm`.
+- **Controlled persistence**: Keeps decompiled C text read-only except for scoped `<F2>` rename previews that require saving the origin buffer, records automatic pre-edit project checkpoints, and guards mutations with optimistic conflict checks and write-timeout state verification.
+- **Full editor integrations**: Provides custom editors, synchronized webviews, horizontal 5-kind comment badge tabs, checkpoint restore/reset actions, and interactive call graphs in Visual Studio Code, and 29 `:Ghidra*` commands and virtual buffers in Neovim. Both editor integrations can install missing `ghidra-lsp` and `ghidra-mcp` binaries automatically through `npm`.
 
 ## Architecture overview
 
@@ -90,9 +90,9 @@ Start with [Getting Started](docs/en/getting-started.md), or open a chapter dire
 | [Getting Started](docs/en/getting-started.md) | Prerequisites, Rust build, CLI flags, verification steps, and troubleshooting |
 | [Architecture](docs/en/architecture.md) | Process model, zero-disk-leak policy, 6 URI schemes, alignment, and single-decompile budget |
 | [VS Code Guide](docs/en/vscode-guide.md) | Installation, sidebar views, custom editors, all `ghidraLsp.*` settings, and commands |
-| [Neovim Guide](docs/en/neovim-guide.md) | Plugin setup, all 26 `:Ghidra*` commands, keymaps, comment float, and windows |
-| [Editing and Safety](docs/en/editing-and-safety.md) | Scoped `<F2>` renames, 5 comment kinds, prototypes, JSONC `.ghidra-type` schema, and timeouts |
-| [LSP and Development](docs/en/lsp-and-development.md) | LSP capability matrix, all 45 `workspace/executeCommand` APIs, layout, and `cargo xtask ci` |
+| [Neovim Guide](docs/en/neovim-guide.md) | Plugin setup, all 29 `:Ghidra*` commands, keymaps, comment float, and windows |
+| [Editing and Safety](docs/en/editing-and-safety.md) | Scoped `<F2>` renames, project checkpoints, session reset, 5 comment kinds, prototypes, JSONC `.ghidra-type` schema, and timeouts |
+| [LSP and Development](docs/en/lsp-and-development.md) | LSP capability matrix, all 49 `workspace/executeCommand` APIs, layout, and `cargo xtask ci` |
 
 ## Workspace layout
 
