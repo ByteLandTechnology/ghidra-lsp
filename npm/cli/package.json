@@ -1,6 +1,6 @@
 {
   "name": "@ghidra-lsp/cli",
-  "version": "0.3.1",
+  "version": "0.6.0",
   "description": "Language server for Ghidra decompilation through ghidra-mcp.",
   "license": "MIT",
   "repository": {
@@ -26,11 +26,11 @@
     "node": ">=18"
   },
   "optionalDependencies": {
-    "@ghidra-lsp/darwin-arm64": "0.3.1",
-    "@ghidra-lsp/darwin-x64": "0.3.1",
-    "@ghidra-lsp/linux-arm64": "0.3.1",
-    "@ghidra-lsp/linux-x64": "0.3.1",
-    "@ghidra-lsp/win32-arm64": "0.3.1",
-    "@ghidra-lsp/win32-x64": "0.3.1"
+    "@ghidra-lsp/darwin-arm64": "0.6.0",
+    "@ghidra-lsp/darwin-x64": "0.6.0",
+    "@ghidra-lsp/linux-arm64": "0.6.0",
+    "@ghidra-lsp/linux-x64": "0.6.0",
+    "@ghidra-lsp/win32-arm64": "0.6.0",
+    "@ghidra-lsp/win32-x64": "0.6.0"
   }
 }

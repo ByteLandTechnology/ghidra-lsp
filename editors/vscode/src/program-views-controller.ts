@@ -101,6 +101,7 @@ export interface ProgramPanelState {
     pvBytesPerRow?: 8 | 16;
     pvEndian?: ProgramEndian;
     pvSelectionLength?: number;
+    pendingFocusId?: string;
 }
 
 /** Maximum number of code units fetched per graphical Listing page. */
@@ -336,6 +337,8 @@ export class ProgramViewsController {
             return;
         }
 
+        const focusId = state.pendingFocusId;
+        state.pendingFocusId = undefined;
         const payload: ListingViewPayload = {
             md5: state.md5,
             programName: stringOf(res.programName) || meta.programName,
@@ -352,6 +355,7 @@ export class ProgramViewsController {
             syncEnabled: Boolean(state.syncEnabled),
             singleKeyShortcuts: this.singleKeyShortcutsEnabled(),
             totalUnitsLabel,
+            ...(focusId ? { focusId } : {}),
         };
         state.panel.webview.html = renderProgramListingPage(payload);
     }
@@ -439,6 +443,8 @@ export class ProgramViewsController {
             return;
         }
 
+        const focusId = state.pendingFocusId;
+        state.pendingFocusId = undefined;
         const payload: HexViewPayload = {
             md5: state.md5,
             programName: stringOf(res.programName) || meta.programName,
@@ -461,6 +467,7 @@ export class ProgramViewsController {
             singleKeyShortcuts: this.singleKeyShortcutsEnabled(),
             bytesPerRow,
             initialInspector: inspectorEntries,
+            ...(focusId ? { focusId } : {}),
         };
         state.panel.webview.html = renderProgramHexPage(payload);
     }
@@ -530,6 +537,7 @@ export class ProgramViewsController {
         if (pushHistory) { this.pushHistory(state, resolved); }
         state.address = resolved;
         state.selected = resolved;
+        state.pvSelectionLength = 1;
         state.cursor = undefined;
         state.pvWindowStart = undefined;
         state.pvPrevStarts = [];
@@ -560,6 +568,8 @@ export class ProgramViewsController {
         }
         const action = stringOf(message.action);
         const address = stringOf(message.address);
+        const focusId = stringOf(message.focusId);
+        state.pendingFocusId = focusId || undefined;
 
         if (action === 'toggleSync') {
             state.syncEnabled = !(state.syncEnabled ?? this.defaultSyncEnabled());
@@ -587,6 +597,7 @@ export class ProgramViewsController {
             if (cur) { state.pvFuture = [...(state.pvFuture || []), { address: cur }].slice(-50); }
             state.address = prev.address;
             state.selected = prev.address;
+            state.pvSelectionLength = 1;
             state.cursor = undefined;
             state.pvWindowStart = undefined;
             state.pvPrevStarts = [];
@@ -602,6 +613,7 @@ export class ProgramViewsController {
             if (cur) { state.pvHistory = [...(state.pvHistory || []), { address: cur }].slice(-50); }
             state.address = next.address;
             state.selected = next.address;
+            state.pvSelectionLength = 1;
             state.cursor = undefined;
             state.pvWindowStart = undefined;
             state.pvPrevStarts = [];
@@ -619,6 +631,7 @@ export class ProgramViewsController {
                 if (prevStart) {
                     state.address = prevStart;
                     state.selected = prevStart;
+                    state.pvSelectionLength = 1;
                     await this.renderHex(state, 'partial');
                 }
             }
@@ -633,6 +646,7 @@ export class ProgramViewsController {
                 if (nextStart) {
                     state.address = nextStart;
                     state.selected = nextStart;
+                    state.pvSelectionLength = 1;
                     await this.renderHex(state, 'partial');
                 }
             }
@@ -669,7 +683,7 @@ export class ProgramViewsController {
         if (action === 'selectByte' && state.kind === 'memory' && address) {
             state.selected = address;
             state.pvSelectionLength = Math.max(1, Number(message.length) || 1);
-            await this.broadcastCursorSync(state, address, 1);
+            await this.broadcastCursorSync(state, address, state.pvSelectionLength);
             await this.updateInspector(state);
             return true;
         }
@@ -710,6 +724,7 @@ export class ProgramViewsController {
                     continue;
                 }
                 if (peer.kind === 'memory') {
+                    peer.pvSelectionLength = byteLength;
                     if (peer.pvChunk && addressInRange(address, peer.pvChunk.start, peer.pvChunk.end)) {
                         peer.selected = address;
                         await peer.panel.webview.postMessage({ action: 'highlight', address, length: byteLength });
@@ -765,6 +780,7 @@ export class ProgramViewsController {
                         await this.renderListing(peer, peer.pvListingWindow ? 'partial' : 'full');
                     }
                 } else if (peer.kind === 'memory') {
+                    peer.pvSelectionLength = 1;
                     if (peer.pvChunk && addressInRange(address, peer.pvChunk.start, peer.pvChunk.end)) {
                         peer.selected = address;
                         await peer.panel.webview.postMessage({ action: 'highlight', address, length: 1 });

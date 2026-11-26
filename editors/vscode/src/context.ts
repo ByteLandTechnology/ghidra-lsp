@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import * as vscode from 'vscode';
+import { countLabel } from './a11y';
 import { Call } from './memory';
 
 /** Virtual URI schemes associated with a Ghidra program MD5. */
@@ -155,9 +156,17 @@ export class ProgramContext implements vscode.Disposable {
     dispose(): void { this.changed.dispose(); this.scope.dispose(); }
 }
 
-/** A sidebar header shows its count in muted text, naming its program only while more than one is in use. */
-export function viewDescription(context: { multiple?: boolean; name(md5: string): string }, md5: string | undefined, count?: number): string | undefined {
+/** A sidebar header shows its count with a noun in muted text, naming its program only while more than one is in use. */
+export function viewDescription(
+    context: { multiple?: boolean; name(md5: string): string },
+    md5: string | undefined,
+    count?: number,
+    singular = 'item',
+    plural?: string,
+): string | undefined {
     if (!md5) { return undefined; }
     const program = context.multiple ? context.name(md5) : undefined;
-    return count && count > 0 ? (program ? `${count} · ${program}` : String(count)) : program;
+    if (typeof count !== 'number' || count < 0) { return program; }
+    const summary = countLabel(count, singular, plural);
+    return program ? `${summary} · ${program}` : summary;
 }
