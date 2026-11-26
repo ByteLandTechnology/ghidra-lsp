@@ -5,6 +5,7 @@
 local client = require('ghidra-lsp.client')
 local buffer = require('ghidra-lsp.buffer')
 local format = require('ghidra-lsp.format')
+local open = require('ghidra-lsp.open')
 local ui = require('ghidra-lsp.ui')
 
 local M = {}
@@ -122,31 +123,34 @@ function M.select_session(callback)
     end)
 end
 
---- Open a binary file path or 32-hex MD5 session in Ghidra.
-function M.open_binary(path_or_md5, callback)
-    local function proceed(raw_input)
-        if not raw_input or vim.trim(raw_input) == '' then return end
-        local trimmed = vim.trim(raw_input)
-        local is_md5 = trimmed:match('^[a-fA-F0-9]+$') ~= nil and #trimmed == 32
-        local open_arg, display_name
-        if is_md5 then
-            open_arg = { md5 = trimmed:lower() }
-            display_name = client.session_names[trimmed:lower()] or trimmed:sub(1, 8)
-        else
-            local expanded = vim.fn.fnamemodify(vim.fn.expand(trimmed), ':p')
-            open_arg = { path = expanded }
-            display_name = vim.fn.fnamemodify(expanded, ':t')
-        end
+--- Open a binary, firmware image, `.gpr` project, or 32-hex MD5 session in Ghidra.
+function M.open_binary(target_or_opts, opts_or_cb, callback)
+    local target, options, cb, interactive = open.resolve_call(target_or_opts, opts_or_cb, callback)
 
+    local function submit(open_arg, display_name, is_md5, can_pick_program)
         client.execute_command('ghidra.openBinary', { open_arg }, function(err, result)
             if err or not result or not result.md5 then
-                vim.notify('Failed to open Ghidra program: ' .. format_error(err), vim.log.levels.ERROR)
+                local msg = format_error(err)
+                local candidates = can_pick_program and not open_arg.programName and open.extract_candidates(msg) or nil
+                if candidates and #vim.api.nvim_list_uis() > 0 and cb == nil then
+                    ui.pick(candidates, { prompt = 'Select Ghidra Program:' }, function(choice)
+                        if not choice then
+                            vim.notify('Failed to open Ghidra program: ' .. msg, vim.log.levels.ERROR)
+                            return
+                        end
+                        local retry = vim.tbl_extend('force', {}, open_arg, { programName = choice })
+                        local label = (open_arg.path and vim.fn.fnamemodify(open_arg.path, ':t') or display_name) .. ' (' .. choice .. ')'
+                        submit(retry, label, is_md5, false)
+                    end)
+                    return
+                end
+                vim.notify('Failed to open Ghidra program: ' .. msg, vim.log.levels.ERROR)
                 return
             end
             local md5 = result.md5:lower()
             client.current_md5 = md5
             client.open_sessions[md5] = true
-            if not is_md5 then
+            if not is_md5 or open_arg.programName then
                 client.session_names[md5] = display_name
             end
             vim.schedule(function()
@@ -155,9 +159,9 @@ function M.open_binary(path_or_md5, callback)
             vim.notify('Opened ' .. display_name .. ' (' .. md5:sub(1, 8) .. ')', vim.log.levels.INFO)
 
             local function opened()
-                if type(callback) == 'function' then callback(md5) end
+                if type(cb) == 'function' then cb(md5) end
             end
-            if result.analyzed or result.analysisRunning then
+            if result.analyzed or result.analysisRunning or open_arg.analyze == false then
                 opened()
                 return
             end
@@ -196,10 +200,23 @@ function M.open_binary(path_or_md5, callback)
         end)
     end
 
-    if path_or_md5 and path_or_md5 ~= '' then
-        proceed(path_or_md5)
+    local function proceed(raw_input, prompt_fw)
+        local open_arg, display_name, is_md5 = open.build_request(raw_input, options, client.session_names)
+        if not open_arg then return end
+        open.maybe_prompt_firmware(open_arg, prompt_fw, function(final_arg)
+            submit(final_arg, display_name, is_md5, true)
+        end)
+    end
+
+    if target and target ~= '' then
+        proceed(target, false)
     else
-        vim.ui.input({ prompt = 'Path to binary or 32-hex MD5: ', completion = 'file' }, proceed)
+        vim.ui.input({ prompt = 'Path to binary, .gpr project, or 32-hex MD5: ', completion = 'file' }, function(raw)
+            if not raw or vim.trim(raw) == '' then return end
+            local parsed_target, parsed_opts = open.parse_fargs(vim.split(vim.trim(raw), '%s+', { trimempty = true }))
+            options = vim.tbl_extend('force', options, parsed_opts)
+            proceed(parsed_target, interactive)
+        end)
     end
 end
 

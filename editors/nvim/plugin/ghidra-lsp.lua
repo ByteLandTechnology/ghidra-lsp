@@ -11,8 +11,14 @@ local ghidra = require('ghidra-lsp')
 require('ghidra-lsp.buffer').setup_autocmds()
 
 vim.api.nvim_create_user_command('GhidraOpenBinary', function(opts)
-    ghidra.open_binary(opts.args ~= '' and opts.args or nil)
-end, { nargs = '?', complete = 'file', desc = 'Open a binary in Ghidra LSP' })
+    ghidra.open_binary(#opts.fargs > 0 and opts.fargs or nil)
+end, {
+    nargs = '*',
+    complete = function(arg_lead, cmd_line)
+        return require('ghidra-lsp.open').complete(arg_lead, cmd_line)
+    end,
+    desc = 'Open a binary or .gpr project in Ghidra LSP',
+})
 
 vim.api.nvim_create_user_command('GhidraSelectSession', function(opts)
     ghidra.select_session(opts.args ~= '' and opts.args or nil)

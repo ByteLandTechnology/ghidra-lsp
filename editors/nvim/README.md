@@ -101,7 +101,7 @@ Verify installation with `:checkhealth ghidra-lsp`.
 
 - `:GhidraInstall [lsp|mcp]`: Install or update managed `ghidra-lsp` and `ghidra-mcp` binaries via `npm`.
 
-- `:GhidraOpenBinary [path]`: Open a binary file (restores silently when analyzed, or asks to analyze).
+- `:GhidraOpenBinary [path|md5] [options...]`: Open a binary, firmware image, `.gpr` project, or saved MD5 session (`programName=`, `processor=`, `compilerSpec=`, `loader=`, `baseAddress=`, `reimport=`).
 - `:GhidraSelectSession [md5]` / `:GhidraCloseSession [md5]` / `:GhidraReanalyze`: Manage active sessions and program analysis.
 - `:GhidraCheckpoints [md5]` / `:GhidraRestoreCheckpoint [id|name]` / `:GhidraResetSession [analyze|noanalyze]`: Browse or restore saved project checkpoints, or reset a session to a clean binary import.
 - `:GhidraOpenFunction [entry|name]` / `:GhidraFunctions`: Open or search functions with `<Tab>` completion.

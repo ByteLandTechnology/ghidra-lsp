@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 
 use anyhow::{Context, Result, bail, ensure};
-use rmcp::model::CallToolRequestParams;
+use rmcp::model::{CallToolRequestParams, CallToolResult};
 use rmcp::service::{Peer, RunningService, ServiceError};
 use rmcp::transport::TokioChildProcess;
 use rmcp::{RoleClient, ServiceExt};
@@ -72,15 +72,29 @@ fn schema_accepts_string(schema: &Value) -> bool {
   if schema.get("type").and_then(Value::as_str) == Some("string") {
     return true;
   }
+  if schema
+    .get("type")
+    .and_then(Value::as_array)
+    .is_some_and(|types| types.iter().any(|item| item.as_str() == Some("string")))
+  {
+    return true;
+  }
   schema
     .get("oneOf")
     .or_else(|| schema.get("anyOf"))
     .and_then(Value::as_array)
-    .is_some_and(|items| {
-      items
-        .iter()
-        .any(|item| item.get("type").and_then(Value::as_str) == Some("string"))
-    })
+    .is_some_and(|items| items.iter().any(schema_accepts_string))
+}
+
+/// Result of checking `ghidra_session` `open` parameter support on the child server.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SessionOpenSupport {
+  /// The child server accepts `.gpr` attachment and firmware import parameters.
+  Extended,
+  /// The child server predates `.gpr` attachment and firmware import parameters.
+  Legacy,
+  /// The child server does not publish a `ghidra_help` `session.open` schema.
+  Unknown,
 }
 
 /// Active MCP client session paired with a monotonic identifier.
@@ -95,6 +109,22 @@ struct ClientSession {
   schema_supports_checkpoints: bool,
   /// Whether `checkpoint.create` is active for pre-edit checkpoints on this connection.
   checkpoint_create_supported: Arc<AtomicBool>,
+  /// Cached `session.open` parameter check result for this child process.
+  session_open_support: Option<SessionOpenSupport>,
+}
+
+/// Snapshot of the active MCP child session returned by [`McpBackend::ensure_client`].
+struct SessionHandle {
+  /// Session identifier used to invalidate only the failed connection.
+  id: u64,
+  /// Cloneable `rmcp` client peer handle.
+  peer: Peer<RoleClient>,
+  /// Cached schema capabilities queried from `ghidra_help`.
+  capabilities: Option<BackendCapabilities>,
+  /// Shared flag for `checkpoint.create` support on this connection.
+  checkpoint_create_supported: Arc<AtomicBool>,
+  /// Cached `session.open` parameter check result for this child process.
+  session_open_support: Option<SessionOpenSupport>,
 }
 
 /// Concrete MCP stdio transport client managing a lazy child `ghidra-mcp` process.
@@ -117,16 +147,8 @@ impl McpBackend {
     }
   }
 
-  /// Connects to `ghidra-mcp` if needed and returns the active session state.
-  async fn ensure_session(
-    &self,
-    deadline: Duration,
-  ) -> Result<(
-    u64,
-    Peer<RoleClient>,
-    Option<BackendCapabilities>,
-    Arc<AtomicBool>,
-  )> {
+  /// Connects to `ghidra-mcp` if needed and returns the active session handle.
+  async fn ensure_client(&self, deadline: Duration) -> Result<SessionHandle> {
     let mut guard = self.client.lock().await;
     if guard.is_none() {
       let mut command = Command::new(&self.config.mcp_command);
@@ -146,22 +168,76 @@ impl McpBackend {
         capabilities: None,
         schema_supports_checkpoints,
         checkpoint_create_supported: Arc::new(AtomicBool::new(schema_supports_checkpoints)),
+        session_open_support: None,
       });
     }
     let session = guard.as_ref().context("MCP client session is not active")?;
-    Ok((
-      session.id,
-      session.service.peer().clone(),
-      session.capabilities,
-      Arc::clone(&session.checkpoint_create_supported),
-    ))
+    Ok(SessionHandle {
+      id: session.id,
+      peer: session.service.peer().clone(),
+      capabilities: session.capabilities,
+      checkpoint_create_supported: Arc::clone(&session.checkpoint_create_supported),
+      session_open_support: session.session_open_support,
+    })
+  }
+
+  /// Resets the active client session if its identifier still matches `session_id`.
+  async fn invalidate(&self, session_id: u64) {
+    let mut guard = self.client.lock().await;
+    if guard.as_ref().is_some_and(|s| s.id == session_id) {
+      *guard = None;
+    }
+  }
+
+  /// Checks whether the connected `ghidra-mcp` supports `.gpr` attachment and firmware flags.
+  pub(crate) async fn check_extended_open(&self, gpr_target: bool) -> Result<()> {
+    let deadline = Duration::from_millis(self.config.request_timeout_ms.clamp(100, 300_000));
+    let handle = self.ensure_client(deadline).await?;
+    let support = if let Some(support) = handle.session_open_support {
+      support
+    } else {
+      let args_obj = json!({ "domain": "session", "operation": "open" })
+        .as_object()
+        .cloned()
+        .context("MCP help arguments must be a JSON object")?;
+      let request = CallToolRequestParams::new("ghidra_help").with_arguments(args_obj);
+      match tokio::time::timeout(deadline, handle.peer.call_tool(request)).await {
+        Ok(Ok(result)) => {
+          let detected = classify_session_open_help(&result);
+          let mut guard = self.client.lock().await;
+          if let Some(session) = guard.as_mut().filter(|s| s.id == handle.id) {
+            session.session_open_support = Some(detected);
+          }
+          detected
+        }
+        Ok(Err(error)) => {
+          self.invalidate(handle.id).await;
+          return Err(error.into());
+        }
+        Err(_) => {
+          self.invalidate(handle.id).await;
+          bail!("MCP help.session.open timed out");
+        }
+      }
+    };
+    if support == SessionOpenSupport::Legacy {
+      if gpr_target {
+        bail!(
+          "Installed ghidra-mcp does not support .gpr project attachment; update ghidra-mcp first"
+        );
+      }
+      bail!(
+        "Installed ghidra-mcp does not support firmware import options; update ghidra-mcp first"
+      );
+    }
+    Ok(())
   }
 
   /// Returns true when the connected `ghidra-mcp` backend supports `checkpoint.create`.
   pub(crate) async fn supports_checkpoint_create(&self) -> Result<bool> {
     let deadline = Duration::from_millis(self.config.request_timeout_ms.clamp(100, 300_000));
-    let (_, _, _, supported) = self.ensure_session(deadline).await?;
-    Ok(supported.load(Ordering::Relaxed))
+    let handle = self.ensure_client(deadline).await?;
+    Ok(handle.checkpoint_create_supported.load(Ordering::Relaxed))
   }
 
   /// Updates the cached `checkpoint.create` capability flag for the active client session.
@@ -208,17 +284,11 @@ impl McpBackend {
       }
       Ok(Err(ServiceError::McpError(_))) => Ok(None),
       Ok(Err(error)) => {
-        let mut guard = self.client.lock().await;
-        if guard.as_ref().is_some_and(|s| s.id == session_id) {
-          *guard = None;
-        }
+        self.invalidate(session_id).await;
         Err(error.into())
       }
       Err(_) => {
-        let mut guard = self.client.lock().await;
-        if guard.as_ref().is_some_and(|s| s.id == session_id) {
-          *guard = None;
-        }
+        self.invalidate(session_id).await;
         bail!("MCP ghidra_help timed out")
       }
     }
@@ -227,14 +297,14 @@ impl McpBackend {
   /// Returns cached schema capabilities for the active `ghidra-mcp` session.
   pub(crate) async fn capabilities(&self) -> Result<BackendCapabilities> {
     let deadline = Duration::from_millis(self.config.request_timeout_ms.clamp(100, 300_000));
-    let (session_id, peer, cached, _) = self.ensure_session(deadline).await?;
-    if let Some(caps) = cached {
+    let handle = self.ensure_client(deadline).await?;
+    if let Some(caps) = handle.capabilities {
       return Ok(caps);
     }
     let fn_help = self
       .call_help(
-        session_id,
-        &peer,
+        handle.id,
+        &handle.peer,
         deadline,
         json!({ "domain": "ghidra_function", "operation": "patch" }),
       )
@@ -242,6 +312,7 @@ impl McpBackend {
     let caps = if let Some(fn_schema) = fn_help {
       let c_type_strings = fn_schema
         .pointer("/inputSchema/$defs/data_type_reference")
+        .or_else(|| fn_schema.pointer("/inputSchema/properties/patch/properties/return_type"))
         .is_some_and(schema_accepts_string);
       let atomic_function_parameters = fn_schema
         .pointer("/inputSchema/properties/patch/properties/parameters")
@@ -251,8 +322,8 @@ impl McpBackend {
         .is_some();
       let dt_help = self
         .call_help(
-          session_id,
-          &peer,
+          handle.id,
+          &handle.peer,
           deadline,
           json!({ "domain": "ghidra_data_type" }),
         )
@@ -285,7 +356,7 @@ impl McpBackend {
       BackendCapabilities::modern()
     };
     let mut guard = self.client.lock().await;
-    if let Some(session) = guard.as_mut().filter(|s| s.id == session_id) {
+    if let Some(session) = guard.as_mut().filter(|s| s.id == handle.id) {
       session.capabilities = Some(caps);
     }
     Ok(caps)
@@ -310,7 +381,9 @@ impl McpBackend {
         .max(scan_ms)
         .clamp(100, 300_000),
     );
-    let (session_id, peer, ..) = self.ensure_session(deadline).await?;
+    let handle = self.ensure_client(deadline).await?;
+    let session_id = handle.id;
+    let peer = handle.peer;
     let mut args = json!({ "operation": operation, "params": params });
     if let Some(md5) = md5 {
       args["md5"] = json!(md5);
@@ -355,17 +428,11 @@ impl McpBackend {
         normalize(value)
       }
       Ok(Err(error)) => {
-        let mut guard = self.client.lock().await;
-        if guard.as_ref().is_some_and(|s| s.id == session_id) {
-          *guard = None;
-        }
+        self.invalidate(session_id).await;
         Err(error.into())
       }
       Err(_) => {
-        let mut guard = self.client.lock().await;
-        if guard.as_ref().is_some_and(|s| s.id == session_id) {
-          *guard = None;
-        }
+        self.invalidate(session_id).await;
         if is_read_only_operation(domain, operation) {
           bail!("MCP {domain}.{operation} timed out");
         }
@@ -374,6 +441,33 @@ impl McpBackend {
         )
       }
     }
+  }
+}
+
+/// Classifies `ghidra_help` output for `session.open` into extended, legacy, or unknown support.
+fn classify_session_open_help(result: &CallToolResult) -> SessionOpenSupport {
+  if result.is_error == Some(true) {
+    return SessionOpenSupport::Unknown;
+  }
+  let payload = result.structured_content.clone().or_else(|| {
+    result
+      .content
+      .iter()
+      .find_map(|c| c.as_text().and_then(|t| serde_json::from_str(&t.text).ok()))
+  });
+  let Some(properties) = payload
+    .as_ref()
+    .and_then(|v| v.pointer("/inputSchema/properties"))
+    .and_then(Value::as_object)
+  else {
+    return SessionOpenSupport::Unknown;
+  };
+  if properties.contains_key("programName") && properties.contains_key("processor") {
+    SessionOpenSupport::Extended
+  } else if properties.contains_key("path") {
+    SessionOpenSupport::Legacy
+  } else {
+    SessionOpenSupport::Unknown
   }
 }
 

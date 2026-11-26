@@ -6,13 +6,45 @@
 use std::sync::atomic::Ordering;
 
 use anyhow::{Context, Result, bail, ensure};
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 use tower_lsp_server::ls_types::Uri;
 
-use super::{OpenProgress, ProgramAnalysis, Server, job_id};
+use super::{OpenProgress, ProgramAnalysis, Server, job_error_text, job_id};
 use crate::backend::{McpBackend, list_all};
 use crate::document::{canonical_virtual_uri, matches_text};
 use crate::workbench;
+
+/// Optional string fields that `session.open` accepts for `.gpr` selection and firmware imports.
+const OPEN_STRING_OPTIONS: [&str; 5] = [
+  "programName",
+  "processor",
+  "compilerSpec",
+  "loader",
+  "baseAddress",
+];
+
+/// Copies optional `session.open` fields from `arg` into `parameters` and reports if any exist.
+fn copy_open_options(arg: &Value, parameters: &mut Map<String, Value>) -> Result<bool> {
+  let mut added = false;
+  for field in OPEN_STRING_OPTIONS {
+    if let Some(value) = arg.get(field).filter(|value| !value.is_null()) {
+      let text = value
+        .as_str()
+        .with_context(|| format!("{field} must be a string"))?
+        .trim();
+      if !text.is_empty() {
+        parameters.insert(field.to_owned(), json!(text));
+        added = true;
+      }
+    }
+  }
+  if let Some(value) = arg.get("reimport").filter(|value| !value.is_null()) {
+    let reimport = value.as_bool().context("reimport must be a boolean")?;
+    parameters.insert(String::from("reimport"), json!(reimport));
+    added = true;
+  }
+  Ok(added)
+}
 
 impl Server {
   /// Dispatches binary lifecycle, policy-checked MCP, and rename management commands.
@@ -89,7 +121,7 @@ impl Server {
   ) -> Result<Value> {
     let opening = command == "ghidra.beginOpenBinary";
     let (md5, response) = if opening {
-      let response = self.open_session(arg).await?;
+      let response = self.open_session(arg, backend).await?;
       let md5 = response
         .pointer("/session/md5")
         .or_else(|| response.pointer("/session/id"))
@@ -164,8 +196,9 @@ impl Server {
         Some("completed") => {}
         Some("failed" | "cancelled") => {
           progress.error = Some(format!(
-            "Ghidra {} job did not complete: {job}",
-            progress.phase
+            "Ghidra {} job did not complete: {}",
+            progress.phase,
+            job_error_text(job)
           ));
           let value = progress.value(token);
           self
@@ -239,9 +272,57 @@ impl Server {
     Ok(value)
   }
 
+  /// Opens a backend session from a binary or `.gpr` `path`, or from a saved program `md5`.
+  async fn open_session(&self, arg: &Value, backend: &McpBackend) -> Result<Value> {
+    ensure!(
+      arg.get("path").is_some() != arg.get("md5").is_some(),
+      "provide exactly one binary or .gpr path, or one saved program MD5"
+    );
+    let mut parameters = Map::new();
+    let mut gpr_target = false;
+    let md5 = if let Some(path) = arg.get("path") {
+      let path = path
+        .as_str()
+        .map(str::trim)
+        .filter(|path| !path.is_empty())
+        .context("path must be a nonempty string")?;
+      gpr_target = std::path::Path::new(path)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("gpr"));
+      parameters.insert(String::from("path"), json!(path));
+      None
+    } else {
+      ensure!(
+        arg.get("md5").and_then(Value::as_str).is_some(),
+        "md5 must be a string"
+      );
+      Some(self.scoped_md5(arg).await?)
+    };
+    let has_options = copy_open_options(arg, &mut parameters)?;
+    if gpr_target || has_options {
+      backend.check_extended_open(gpr_target).await?;
+    }
+    let opened = backend
+      .call("session", "open", md5.as_deref(), Value::Object(parameters))
+      .await?;
+    if let Some(expected) = md5 {
+      let actual = opened
+        .pointer("/session/md5")
+        .or_else(|| opened.pointer("/session/id"))
+        .and_then(Value::as_str)
+        .context("session has no MD5")?;
+      ensure!(
+        actual.eq_ignore_ascii_case(&expected),
+        "backend opened a different saved program"
+      );
+    }
+    Ok(opened)
+  }
+
   /// Synchronously opens a program session, optionally runs analysis, and selects it.
   async fn handle_open_binary(&self, arg: &Value, backend: &McpBackend) -> Result<Value> {
-    let opened = self.open_session(arg).await?;
+    let opened = self.open_session(arg, backend).await?;
     let md5 = opened
       .pointer("/session/md5")
       .or_else(|| opened.pointer("/session/id"))
