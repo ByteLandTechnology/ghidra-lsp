@@ -125,37 +125,61 @@ fn format_label(raw: Option<&str>) -> String {
   }
 }
 
-/// Reads PE, ELF, or Mach-O import and export tables from `executable_path` on disk after
-/// verifying the imported binary MD5.
+/// Reads PE, ELF, or Mach-O import and export tables from `executable_path` on disk.
 async fn disk_interface(backend: &McpBackend, md5: &str, program: &Value) -> Result<Value> {
-  let path = program
+  let attached_gpr = is_attached_gpr(backend, md5).await;
+  let Some(path) = program
     .get("executable_path")
     .and_then(Value::as_str)
-    .context("Imported binary path is unavailable")?
-    .to_owned();
+    .filter(|value| !value.is_empty())
+    .map(str::to_owned)
+  else {
+    if attached_gpr {
+      return Ok(unavailable_interface(
+        "attached project",
+        "Original binary path is absent in the attached .gpr project",
+      ));
+    }
+    anyhow::bail!("Imported binary path is unavailable");
+  };
   let image_base = program
     .get("image_base")
     .and_then(Value::as_str)
     .and_then(parse_base);
-  let size = tokio::fs::metadata(&path)
-    .await
-    .context("Read imported binary metadata")?
-    .len();
+  let size = match tokio::fs::metadata(&path).await {
+    Ok(meta) => meta.len(),
+    Err(error) if attached_gpr => {
+      return Ok(unavailable_interface(
+        "attached project",
+        format!("Original binary file is not readable on disk: {error}"),
+      ));
+    }
+    Err(error) => return Err(error).context("Read imported binary metadata"),
+  };
   ensure!(
     size <= 2 * 1024 * 1024 * 1024,
     "Binary interface reader is limited to 2 GiB inputs"
   );
-  let bytes = tokio::fs::read(&path)
-    .await
-    .context("Read imported binary")?;
+  let bytes = match tokio::fs::read(&path).await {
+    Ok(bytes) => bytes,
+    Err(error) if attached_gpr => {
+      return Ok(unavailable_interface(
+        "attached project",
+        format!("Original binary file is not readable on disk: {error}"),
+      ));
+    }
+    Err(error) => return Err(error).context("Read imported binary"),
+  };
   let cloned_base = image_base.clone();
   let expected_md5 = md5.to_owned();
   let mut result = tokio::task::spawn_blocking(move || {
-    let actual = format!("{:x}", Md5::digest(&bytes));
-    ensure!(
-      actual.eq_ignore_ascii_case(&expected_md5),
-      "Imported binary changed on disk: session MD5 does not match the loader-table input"
-    );
+    if !attached_gpr {
+      let actual = format!("{:x}", Md5::digest(&bytes));
+      ensure!(
+        actual.eq_ignore_ascii_case(&expected_md5),
+        "Imported binary changed on disk: session MD5 does not match the loader-table input"
+      );
+    }
     parse(&bytes, cloned_base)
   })
   .await??;
@@ -209,6 +233,34 @@ async fn disk_interface(backend: &McpBackend, md5: &str, program: &Value) -> Res
   Ok(result)
 }
 
+/// Checks whether session `md5` comes from an attached `.gpr` project.
+async fn is_attached_gpr(backend: &McpBackend, md5: &str) -> bool {
+  let Ok(response) = backend.call("session", "get", Some(md5), json!({})).await else {
+    return false;
+  };
+  let file_name = response
+    .pointer("/session/fileName")
+    .or_else(|| response.get("fileName"))
+    .and_then(Value::as_str);
+  file_name.is_some_and(|name| {
+    std::path::Path::new(name)
+      .extension()
+      .and_then(|ext| ext.to_str())
+      .is_some_and(|ext| ext.eq_ignore_ascii_case("gpr"))
+  })
+}
+
+/// Builds an empty loader-table payload with one limitation message.
+fn unavailable_interface(source: &str, limitation: impl Into<String>) -> Value {
+  json!({
+    "imports": [],
+    "exports": [],
+    "format": "unavailable",
+    "source": source,
+    "limitations": [limitation.into()],
+  })
+}
+
 /// Parses an address string into an address-space prefix and numeric offset.
 fn parse_base(raw: &str) -> Option<(String, u64)> {
   let (space, offset) = raw
@@ -233,13 +285,10 @@ fn parse(bytes: &[u8], image_base: Option<(String, u64)>) -> Result<Value> {
   let file = match object::File::parse(bytes) {
     Ok(file) => file,
     Err(error) => {
-      return Ok(json!({
-        "imports": [],
-        "exports": [],
-        "format": "unavailable",
-        "source": "imported binary",
-        "limitations": [format!("No supported ELF/PE/thin Mach-O loader tables: {error}")],
-      }));
+      return Ok(unavailable_interface(
+        "imported binary",
+        format!("No supported ELF/PE/thin Mach-O loader tables: {error}"),
+      ));
     }
   };
   let format = format!("{:?}", file.format());
