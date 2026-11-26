@@ -354,7 +354,7 @@ impl Server {
       let job = state.get("job").unwrap_or(&state);
       match job.get("status").and_then(Value::as_str) {
         Some("completed") => return Ok(()),
-        Some("failed" | "cancelled") => bail!("Ghidra job failed: {job}"),
+        Some("failed" | "cancelled") => bail!("Ghidra job failed: {}", job_error_text(job)),
         _ => {}
       }
       ensure!(
@@ -363,43 +363,6 @@ impl Server {
       );
       tokio::time::sleep(Duration::from_millis(500)).await;
     }
-  }
-
-  /// Opens a backend session from a filesystem `path` or an existing saved program `md5`.
-  async fn open_session(&self, arg: &Value) -> Result<Value> {
-    ensure!(
-      arg.get("path").is_some() != arg.get("md5").is_some(),
-      "provide exactly one binary path or saved program MD5"
-    );
-    let (md5, parameters) = if let Some(path) = arg.get("path") {
-      let path = path
-        .as_str()
-        .filter(|path| !path.trim().is_empty())
-        .context("path must be a nonempty string")?;
-      (None, json!({"path": path}))
-    } else {
-      ensure!(
-        arg.get("md5").and_then(Value::as_str).is_some(),
-        "md5 must be a string"
-      );
-      (Some(self.scoped_md5(arg).await?), json!({}))
-    };
-    let backend = self.engine.lock().await.backend.clone();
-    let opened = backend
-      .call("session", "open", md5.as_deref(), parameters)
-      .await?;
-    if let Some(expected) = md5 {
-      let actual = opened
-        .pointer("/session/md5")
-        .or_else(|| opened.pointer("/session/id"))
-        .and_then(Value::as_str)
-        .context("session has no MD5")?;
-      ensure!(
-        actual.eq_ignore_ascii_case(&expected),
-        "backend opened a different saved program"
-      );
-    }
-    Ok(opened)
   }
 
   /// Dispatches one `workspace/executeCommand` invocation.
@@ -496,6 +459,16 @@ fn job_id(response: &Value) -> Option<String> {
     .or_else(|| response.get("id"))
     .and_then(Value::as_str)
     .map(str::to_owned)
+}
+
+/// Returns the error text from a backend job payload, or its JSON representation.
+pub(super) fn job_error_text(job: &Value) -> String {
+  job
+    .get("error")
+    .and_then(Value::as_str)
+    .map(str::trim)
+    .filter(|text| !text.is_empty())
+    .map_or_else(|| job.to_string(), str::to_owned)
 }
 
 /// Converts any displayable error into a JSON-RPC `INVALID_PARAMS` error.

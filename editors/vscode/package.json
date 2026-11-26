@@ -1,8 +1,8 @@
 {
   "name": "ghidra-lsp",
   "displayName": "Ghidra LSP",
-  "description": "Browse and rename Ghidra symbols through ghidra-mcp",
-  "version": "0.6.0",
+  "description": "Live Ghidra decompilation, disassembly, graphs, and reverse engineering in VS Code",
+  "version": "0.7.0",
   "publisher": "byteland-app",
   "license": "MIT",
   "icon": "resources/icon.png",
@@ -182,8 +182,12 @@
       },
       {
         "command": "ghidraLsp.openBinary",
-        "title": "Ghidra: Open Binary",
+        "title": "Ghidra: Open Binary or Project",
         "icon": "$(add)"
+      },
+      {
+        "command": "ghidraLsp.openBinaryWithOptions",
+        "title": "Ghidra: Open Binary or Project with Options…"
       },
       {
         "command": "ghidraLsp.openFunction",
@@ -694,6 +698,11 @@
           "command": "ghidraLsp.openBinary",
           "when": "resourceScheme == file",
           "group": "navigation@20"
+        },
+        {
+          "command": "ghidraLsp.openBinaryWithOptions",
+          "when": "resourceScheme == file",
+          "group": "navigation@21"
         }
       ],
       "view/title": [
