@@ -5,6 +5,8 @@
 
 /// Completion, signature help, and type-definition lookups.
 mod assist;
+/// Pre-edit checkpoint helpers and post-restore session document regeneration.
+mod checkpoints;
 /// Highlights, inlay hints, code lenses, folding ranges, and document links.
 mod decorations;
 /// Incoming and outgoing call hierarchy builders.
@@ -15,6 +17,8 @@ mod locals;
 mod navigation;
 /// Scoped rename preview, origin save persistence, and document refresh.
 mod rename;
+
+pub(crate) use checkpoints::{record_checkpoint, unsupported_session_operation};
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;

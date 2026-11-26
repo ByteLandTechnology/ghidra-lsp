@@ -2,18 +2,18 @@
 // SPDX-License-Identifier: MIT
 
 import { applyEdits, createScanner, findNodeAtLocation, getNodeValue, modify, Node, ParseError, parseTree, printParseErrorCode, SyntaxKind } from 'jsonc-parser';
-import { Data, object, reference, rows, typeReference } from './web';
+import { Data, FieldError, FieldPath, object, reference, rows, typeReference } from './web';
 
 /** Single backend mutation operation derived from a data type edit. */
 export interface TypeMutation { method: string; arguments: Data; }
 /** Editable JSONC model representation of a Ghidra struct, union, enum, or function definition. */
 export interface TypeModel { path: string; kind: string; fields?: Data[]; values?: Data[]; signature?: Data; }
-/** JSON path segment sequence locating a field inside a type document. */
-type JsonPath = (string | number)[];
-/** Validation or schema error carrying the offending JSON path or character span. */
-export class TypeEditError extends Error {
+/** JSON path segments that identify a field in a type document. */
+type JsonPath = FieldPath;
+/** Validation or schema error with a JSON path or character span. */
+export class TypeEditError extends FieldError {
     /** Create a type edit error attached to `path` and an optional source span. */
-    constructor(message: string, readonly path: JsonPath = [], readonly offset?: number, readonly length?: number) { super(message); }
+    constructor(message: string, path: JsonPath = [], readonly offset?: number, readonly length?: number) { super(message, path); }
 }
 /** Deeply compare two JSON values for structural equality. */
 export const sameTypeData = (a: unknown, b: unknown): boolean => {
@@ -25,7 +25,7 @@ export const sameTypeData = (a: unknown, b: unknown): boolean => {
     return a === b;
 };
 /** Normalize backend type kind strings to `struct`, `union`, `enum`, or `function`. */
-const kindOf = (data: Data): string => ({ structure: 'struct', function_definition: 'function' }[String(data.kind)] || String(data.kind));
+export const kindOf = (data: Data): string => ({ structure: 'struct', function_definition: 'function' }[String(data.kind ?? '')] || String(data.kind ?? ''));
 /** Return the human-readable reason why `data` is read-only, or undefined when editable. */
 export function readonlyTypeReason(data: Data): string | undefined {
     const kind = kindOf(data);
@@ -92,7 +92,7 @@ function array(value: unknown, path: JsonPath): Data[] {
 /** Validate and parse a string data type reference at `path`. */
 function type(value: unknown, path: JsonPath): Data {
     const name = string(value, path);
-    try { return typeReference(name); } catch (error) { fail(String(error), path); }
+    try { return typeReference(name, path); } catch (error) { fail(error instanceof Error ? error.message : String(error), path); }
 }
 /** Reject duplicate object keys anywhere in a parsed JSONC syntax tree. */
 function uniqueKeys(node: Node): void {
@@ -157,14 +157,18 @@ export function parseType(text: string, original: TypeModel): TypeModel {
 }
 
 /** Move a member without discarding JSONC notes; structure offsets follow the new layout. */
-export function reorderTypeMembers(text: string, raw: Data, key: string, from: number, to: number): { text: string; index: number } {
+export function reorderTypeMembers(text: string, raw: Data, key: string, from: number, to: number, visualOrder?: readonly number[]): { text: string; index: number } {
     const original = typeModel(raw), draft = parseType(text, original);
     const path: JsonPath = key === 'parameters' ? ['signature', key] : [key];
     const members = key === 'parameters' ? rows(draft.signature?.parameters) : key === 'fields' ? draft.fields : undefined;
-    if (!members || !Number.isInteger(from) || !Number.isInteger(to) || from < 0 || to < 0 || from >= members.length || to >= members.length) {
+    const validVisualOrder = visualOrder !== undefined && Array.isArray(visualOrder) && !!members
+        && visualOrder.length === members.length
+        && visualOrder.every(index => Number.isInteger(index) && index >= 0 && index < members.length)
+        && new Set(visualOrder).size === members.length;
+    if (!members || !Number.isInteger(from) || !Number.isInteger(to) || from < 0 || to < 0 || from >= members.length || to >= members.length || (visualOrder !== undefined && !validVisualOrder)) {
         throw new Error('The member list changed. Try moving it again.');
     }
-    let order = members.map((_, index) => index);
+    let order = validVisualOrder ? [...visualOrder] : members.map((_, index) => index);
     if (draft.kind === 'struct' && key === 'fields') {
         const source = rows(raw.fields).filter(field => field.is_undefined !== true);
         const originals = original.fields || [];
@@ -176,9 +180,10 @@ export function reorderTypeMembers(text: string, raw: Data, key: string, from: n
             if (!previous && field.type === 'undefined1') { return 1; }
             throw new TypeEditError('Save changes to field types before moving fields.', ['fields', index, 'type']);
         });
-        order.sort((a, b) => Number(members[a].offset) - Number(members[b].offset));
+        const offsetOrder = members.map((_, index) => index).sort((a, b) => Number(members[a].offset) - Number(members[b].offset));
+        if (!validVisualOrder) { order = [...offsetOrder]; }
         const start = order.indexOf(from), end = order.indexOf(to);
-        const gaps = order.map((index, i) => Number(members[index].offset) - (i ? Number(members[order[i - 1]].offset) + lengths[order[i - 1]] : 0));
+        const gaps = offsetOrder.map((index, i) => Number(members[index].offset) - (i ? Number(members[offsetOrder[i - 1]].offset) + lengths[offsetOrder[i - 1]] : 0));
         if (gaps.some(gap => !Number.isSafeInteger(gap) || gap < 0)) { throw new TypeEditError('Fix overlapping fields before moving them.', ['fields']); }
         order.splice(end, 0, order.splice(start, 1)[0]);
         let offset = 0;
@@ -190,7 +195,8 @@ export function reorderTypeMembers(text: string, raw: Data, key: string, from: n
             offset += lengths[index];
         }
     } else {
-        order.splice(to, 0, order.splice(from, 1)[0]);
+        const start = order.indexOf(from), end = order.indexOf(to);
+        order.splice(end, 0, order.splice(start, 1)[0]);
     }
     const tree = parseTree(text), array = tree && findNodeAtLocation(tree, path), nodes = array?.children || [];
     if (nodes.length !== members.length) { throw new Error('The member list changed. Try moving it again.'); }

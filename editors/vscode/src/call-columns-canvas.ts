@@ -49,6 +49,31 @@ export const callColumnsStyles = `
 .call-column-row[aria-busy="true"] .call-column-chevron{opacity:.4}
 .sr-only{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 @media(max-width:640px){.call-column-navigation{padding:8px 10px;gap:10px}.call-page .call-column{flex-basis:min(280px,calc(100% - 24px));width:min(280px,calc(100% - 24px))}.call-page .call-view-switch button,.call-page .call-direction button{padding:0 7px;gap:4px;font-size:11px}}
+.call-page .call-view-switch button{gap:5px;padding:0 9px}
+.call-page .call-view-switch [aria-pressed="true"],.call-page .call-direction [aria-pressed="true"]{border:2px solid var(--ghidra-active-border)}
+.call-column-pick[aria-pressed="true"]::before{color:var(--ghidra-focus);font-size:12px}
+.call-column-row:focus-within .call-column-pick[aria-pressed="true"]::before{color:inherit}
+.call-column-row.is-selected{outline:2px solid var(--ghidra-active-border);outline-offset:-2px}
+.call-page .call-column-pick:focus-visible{outline:2px solid var(--ghidra-focus);outline-offset:-2px}
+body.call-page:is(.vscode-high-contrast,.vscode-high-contrast-light) .call-column-row>.call-column-code{opacity:1;transition:none}
+body.call-page:is(.vscode-high-contrast,.vscode-high-contrast-light) :is(.call-column-code,.call-column-source-code,.call-view-switch button:not([aria-pressed="true"]),.call-direction button:not([aria-pressed="true"]),.call-column-trail button){border:1px solid var(--ghidra-hv-border);color:var(--vscode-foreground)}
+body.call-page:is(.vscode-high-contrast,.vscode-high-contrast-light) :is(.call-view-switch [aria-pressed="true"],.call-direction [aria-pressed="true"]){background:var(--vscode-editor-background);color:var(--vscode-foreground);border:2px solid var(--ghidra-active-border)}
+body.call-page:is(.vscode-high-contrast,.vscode-high-contrast-light) :is(.call-column-row.is-selected,.call-column-row:focus-within){background:var(--vscode-editor-background);color:var(--vscode-foreground);outline:2px solid var(--ghidra-active-border);outline-offset:-2px}
+body.call-page:is(.vscode-high-contrast,.vscode-high-contrast-light) .call-column-row:focus-within :is(.call-column-pick,.call-column-code):focus-visible{outline-color:var(--ghidra-active-border)}
+@media(prefers-contrast:more){
+  .call-page .call-column-row>.call-column-code{opacity:1;transition:none}
+  .call-page .call-column-code,.call-page .call-column-source-code,.call-page .call-view-switch button:not([aria-pressed="true"]),.call-page .call-direction button:not([aria-pressed="true"]),.call-page .call-column-trail button{border:1px solid var(--ghidra-hv-border);color:var(--vscode-foreground)}
+}
+@media(forced-colors:active){
+  .call-page .call-column-row>.call-column-code{opacity:1;transition:none}
+  .call-page .call-column-code,.call-page .call-column-source-code,.call-page .call-view-switch button:not([aria-pressed="true"]),.call-page .call-direction button:not([aria-pressed="true"]),.call-page .call-column-trail button{background:ButtonFace;color:ButtonText;border:1px solid var(--ghidra-hv-border)}
+  .call-page .call-view-switch [aria-pressed="true"],.call-page .call-direction [aria-pressed="true"]{background:var(--ghidra-pressed-bg);color:var(--ghidra-selection-fg);border:2px solid var(--ghidra-active-border)}
+  .call-column-row.is-selected,.call-column-row:focus-within{background:var(--ghidra-selection-bg);color:var(--ghidra-selection-fg);outline:2px solid var(--ghidra-active-border);outline-offset:-2px}
+  .call-page .call-column-pick{background:transparent;color:var(--ghidra-selection-fg);border:0}
+  .call-column-pick>.call-icon,.call-column-pick[aria-pressed="true"]::before,.call-column-addr,.call-column-chevron{color:var(--ghidra-muted)}
+  .call-column-row:focus-within :is(.call-column-pick,.call-column-code):focus-visible,.call-page .call-column-pick:focus-visible{outline:2px solid var(--ghidra-focus);outline-offset:-2px}
+}
+@media(max-width:640px){.call-page .call-view-switch button,.call-page .call-direction button{padding:0 6px;gap:3px}}
 `;
 
 /** Both presentations share the toolbar and the owning program, without sharing layout state. */
@@ -76,13 +101,13 @@ export const callColumnsScript = String.raw`
       for(const button of browser.querySelectorAll('.call-column-code,.call-column-source-code')){button.addEventListener('click',event=>{event.stopPropagation();const fn=button.classList.contains('call-column-source-code')?button:button.closest('.call-column-row');send('decompile',{entry:fn.dataset.entry,address:fn.dataset.entry,kind:'function',label:fn.dataset.label})})}
       for(const button of browser.querySelectorAll('[data-column-direction]')){button.addEventListener('click',()=>{if(button.dataset.columnDirection===direction){return}button.disabled=true;request('callColumnDirection',{direction:button.dataset.columnDirection})})}
       for(const button of browser.querySelectorAll('[data-column-trail]')){button.addEventListener('click',()=>request('callColumnTrail',{index:Number(button.dataset.columnTrail)}))}
-      document.getElementById('call-column-home').addEventListener('click',()=>request('callColumnTrail',{index:0}));
+      const homeBtn=document.getElementById('call-column-home');if(homeBtn&&!homeBtn.dataset.callBound){homeBtn.dataset.callBound='true';homeBtn.addEventListener('click',()=>request('callColumnTrail',{index:0}))}
       const searchToggle=document.getElementById('call-search-toggle'),searchHost=search.closest('.call-search');
       const openSearch=()=>{searchHost.hidden=false;searchToggle.setAttribute('aria-expanded','true');search.focus();search.select()};
       const closeSearch=()=>{searchHost.hidden=true;searchToggle.setAttribute('aria-expanded','false');searchToggle.focus()};
       searchToggle.addEventListener('click',()=>searchHost.hidden?openSearch():closeSearch());
-      const filterColumns=()=>{const query=search.value.trim().toLowerCase();let found=0,total=0;for(const column of columns){let count=0;for(const row of column.querySelectorAll('.call-column-row')){total++;row.hidden=!!query&&!((row.dataset.label+' '+row.dataset.entry).toLowerCase().includes(query));if(!row.hidden){count++;found++}}column.querySelector('.call-column-no-matches').hidden=!query||count>0||!column.querySelector('.call-column-row')}const status=document.getElementById('filter-status');status.hidden=!query;status.textContent=found+' of '+total+' displayed functions match.'};
-      search.addEventListener('input',()=>{filterColumns();persist()});search.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();search.value='';filterColumns();closeSearch()}else if(event.key==='Enter'){event.preventDefault();browser.querySelector('.call-column-row:not([hidden]) .call-column-pick:not(:disabled)')?.focus()}});if(search.value){openSearch()}filterColumns();
+      filterCallColumns=()=>{const activeBrowser=document.querySelector('[data-call-columns]');if(!activeBrowser){return}const activeColumns=[...activeBrowser.querySelectorAll('.call-column')],query=search.value.trim().toLowerCase();let found=0,total=0;for(const column of activeColumns){let count=0;for(const row of column.querySelectorAll('.call-column-row')){total++;row.hidden=!!query&&!((row.dataset.label+' '+row.dataset.entry).toLowerCase().includes(query));if(!row.hidden){count++;found++}}column.querySelector('.call-column-no-matches').hidden=!query||count>0||!column.querySelector('.call-column-row')}updateFilterStatus({query,visible:found,total,visuallyHidden:false,matchText:found+' of '+total+' displayed functions match.',emptyText:'0 of '+total+' displayed functions match.',restoredText:'Filter cleared. Showing all '+total+' displayed functions.'})};
+      search.addEventListener('input',()=>{filterCallColumns();persist()});search.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();search.value='';filterCallColumns();closeSearch()}else if(event.key==='Enter'){event.preventDefault();browser.querySelector('.call-column-row:not([hidden]) .call-column-pick:not(:disabled)')?.focus()}});if(search.value){openSearch()}filterCallColumns();
       const menu=document.getElementById('call-menu'),summary=menu.querySelector('summary');
       menu.addEventListener('keydown',event=>{if(!['ArrowDown','ArrowUp','ArrowLeft','ArrowRight','Home','End'].includes(event.key)){return}event.preventDefault();menu.open=true;const items=[...menu.querySelectorAll('button')],at=items.indexOf(document.activeElement),next=event.key==='Home'?0:event.key==='End'?items.length-1:(event.key==='ArrowDown'||event.key==='ArrowRight')?(at+1)%items.length:(at<=0?items.length-1:at-1);items[next]?.focus()});
       document.addEventListener('click',event=>{if(menu.open&&(!menu.contains(event.target)||event.target.closest('button'))){menu.open=false}});

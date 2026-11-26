@@ -269,6 +269,7 @@ export class Workbench implements vscode.Disposable {
         const key = `${kind}:${md5}:${entry || ''}`;
         const existing = kind === 'callGraph' ? [...this.panels.values()].find(panel => panel.kind === kind && panel.md5 === md5 && panel.entry === entry) : this.panels.get(key);
         if (existing) {
+            existing.pendingFocusId = undefined;
             if (address) {
                 if (kind === 'listing' || kind === 'memory') {
                     const resolved = await this.programViews.prepareNavigation(existing, address, true);
@@ -298,7 +299,10 @@ export class Workbench implements vscode.Disposable {
     }
     /** Build the serializable state snapshot stored inside webview HTML for VS Code reload. */
     private snapshot(state: PanelState): Data {
+        const focusId = state.pendingFocusId; state.pendingFocusId = undefined;
         return { kind: state.kind, md5: state.md5, address: state.kind === 'listing' ? state.displayAddress || state.address : state.address, entry: state.entry, cursor: state.cursor, previous: state.previous, singleKeyShortcuts: singleKeyShortcutsEnabled(),
+            ...(focusId ? { focusId } : {}),
+            ...(state.selected && state.kind !== 'callGraph' ? { selected: state.selected } : {}),
             ...(state.kind === 'listing' || state.kind === 'memory' ? { selected: state.selected, syncEnabled: state.syncEnabled, bytesPerRow: state.pvBytesPerRow, endian: state.pvEndian } : {}),
             ...(state.kind === 'callGraph' ? { selected: state.entry, selectedEntry: state.entry, callExpansion: state.callExpansion || { callers: [state.entry!], callees: [state.entry!] }, callHistory: state.callHistory || [], callView: state.callView || 'graph', callColumnDirection: state.callColumnDirection || 'callees', callColumnPath: state.callColumnPath || [] } : {}) };
     }
@@ -308,7 +312,7 @@ export class Workbench implements vscode.Disposable {
         const md5 = stringOf(saved.md5).toLowerCase();
         this.context.track(md5);
         panel.title = this.context.titled(names[kind], md5);
-        const state: PanelState = { kind, md5, address: stringOf(saved.address) || undefined, entry: stringOf(saved.entry) || undefined, previous: [], generation: 0, panel };
+        const state: PanelState = { kind, md5, address: stringOf(saved.address) || undefined, entry: stringOf(saved.entry) || undefined, selected: stringOf(saved.selected) || undefined, previous: [], generation: 0, panel };
         if (kind === 'listing' || kind === 'memory') {
             state.selected = stringOf(saved.selected) || state.address;
             if (typeof saved.syncEnabled === 'boolean') { state.syncEnabled = saved.syncEnabled; }
@@ -373,16 +377,24 @@ export class Workbench implements vscode.Disposable {
         let subtitle = `${this.context.name(state.md5)}${state.entry ? ` · ${displayAddress(state.entry)}` : ''}`;
         let body = '', scope = '', scopeSummary: string | undefined, next = false, address: string | undefined;
         let callTools: string | undefined, callName: string | undefined;
+        let selectedMarked = false;
+        const markSelected = (row: Row): Row => {
+            if (selectedMarked || !state.selected || (!row.address && !row.entry)) { return row; }
+            const hit = row.address ? sameAddress(row.address, state.selected) : Boolean(row.entry && sameAddress(row.entry, state.selected));
+            if (!hit) { return row; }
+            selectedMarked = true;
+            return { ...row, selected: true };
+        };
         if (state.kind === 'strings') {
             const { items: strings, scanned } = await definedStrings(this.call, state.md5);
-            body = table(['Address', 'Length', 'Data type', 'String'], strings.map(unit => ({ cells: [unit.address, unit.length, unit.type, unit.value], address: unit.address, kind: 'data', detail: unit.type })));
+            body = table(['Address', 'Length', 'Data type', 'String'], strings.map(unit => markSelected({ cells: [unit.address, unit.length, unit.type, unit.value], address: unit.address, kind: 'data', detail: unit.type })));
             scopeSummary = `${strings.length} strings`;
             scope = `${strings.length} strings recognized by Ghidra among ${scanned} defined data units in the default address space. Raw bytes are not scanned for strings.`;
             if (!strings.length) { body += '<p class="empty">Ghidra has not defined any strings in this program.</p>'; }
         } else if (state.kind === 'imports' || state.kind === 'exports') {
             const result = await this.call<BinaryInterface>('ghidra.binaryInterface', { md5: state.md5 });
             const symbols = items(result[state.kind]);
-            body = table(state.kind === 'imports' ? ['Name', 'Library', 'Address', 'Kind'] : ['Name', 'Address', 'Ordinal', 'Forwarded target', 'Kind'], symbols.map(symbol => ({ cells: state.kind === 'imports' ? [symbolName(symbol, true), stringOf(symbol.library), stringOf(symbol.address), stringOf(symbol.kind)] : [symbolName(symbol, true), stringOf(symbol.address), stringOf(symbol.ordinal), stringOf(symbol.forward), stringOf(symbol.kind)], address: stringOf(symbol.address) || undefined, label: symbolName(symbol, true), kind: 'symbol' })));
+            body = table(state.kind === 'imports' ? ['Name', 'Library', 'Address', 'Kind'] : ['Name', 'Address', 'Ordinal', 'Forwarded target', 'Kind'], symbols.map(symbol => markSelected({ cells: state.kind === 'imports' ? [symbolName(symbol, true), stringOf(symbol.library), stringOf(symbol.address), stringOf(symbol.kind)] : [symbolName(symbol, true), stringOf(symbol.address), stringOf(symbol.ordinal), stringOf(symbol.forward), stringOf(symbol.kind)], address: stringOf(symbol.address) || undefined, label: symbolName(symbol, true), kind: 'symbol' })));
             scopeSummary = `${symbols.length} ${state.kind} · ${result.format || 'binary'}`;
             scope = `${symbols.length} ${state.kind} · ${result.format || 'binary'}${result.source ? ` · ${result.source}` : ''}${result.limitations?.length ? `. ${result.limitations.join(' ')}` : ''}`;
             if (!symbols.length) { body += `<p class="empty">No ${state.kind} reported.</p>`; }
@@ -392,14 +404,14 @@ export class Workbench implements vscode.Disposable {
                 body += `<section><h2>${direction === 'to' ? 'Incoming' : 'Outgoing'} (${references.length})</h2>${table(['From', 'To', 'Kind', 'Operand', 'Source', 'Navigation'], references.map(ref => {
                     const target = stringOf(direction === 'to' ? ref.from : ref.to);
                     const navigable = parseAddress(target) !== undefined;
-                    return { cells: [stringOf(ref.from), stringOf(ref.to), stringOf(ref.type), stringOf(ref.operand_index), stringOf(ref.source_type), navigable ? direction === 'to' ? 'Open source' : 'Open destination' : 'Non-memory reference'], ...(navigable ? { address: target } : {}), kind: direction === 'to' ? 'reference-source' : 'reference-destination' };
+                    return markSelected({ cells: [stringOf(ref.from), stringOf(ref.to), stringOf(ref.type), stringOf(ref.operand_index), stringOf(ref.source_type), navigable ? direction === 'to' ? 'Open source' : 'Open destination' : 'Non-memory reference'], ...(navigable ? { address: target } : {}), kind: direction === 'to' ? 'reference-source' : 'reference-destination' });
                 }))}</section>`;
             }
             address = state.address;
             scope = '';
         } else if (state.kind === 'callers' || state.kind === 'callees') {
             const rows = collection(await this.query(state.md5, 'function', 'call.list', { filter: { entry: state.entry, direction: state.kind } }, true));
-            body = table(['Function', 'Entry', 'Call site'], rows.map(fn => ({ cells: [symbolName(fn, true), stringOf(fn.entry), stringOf(fn.call_site) || 'Not reported'], entry: stringOf(fn.entry), address: stringOf(fn.call_site || fn.entry), label: symbolName(fn, true), kind: 'function' })));
+            body = table(['Function', 'Entry', 'Call site'], rows.map(fn => markSelected({ cells: [symbolName(fn, true), stringOf(fn.entry), stringOf(fn.call_site) || 'Not reported'], entry: stringOf(fn.entry), address: stringOf(fn.call_site || fn.entry), label: symbolName(fn, true), kind: 'function' })));
             scopeSummary = `${rows.length} ${state.kind}`;
             scope = scopeSummary;
         } else if (state.kind === 'callGraph') {
@@ -521,6 +533,8 @@ export class Workbench implements vscode.Disposable {
     }
     /** Handle interactive navigation, filtering, and graph actions posted by a workbench webview. */
     private async message(state: PanelState, message: Data): Promise<void> {
+        const focusId = stringOf(message.focusId);
+        state.pendingFocusId = focusId && ['refresh', 'goto', 'next', 'previous'].includes(stringOf(message.action)) ? focusId : undefined;
         if (await this.programViews.handleMessage(state, message)) { return; }
         const action = stringOf(message.action), address = stringOf(message.address), entry = stringOf(message.entry);
         if (address) { state.selected = address; }

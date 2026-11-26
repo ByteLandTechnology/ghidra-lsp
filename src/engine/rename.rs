@@ -293,6 +293,7 @@ impl Engine {
 
     let (domain, selector, current_name) = self.resolve_rename_target(&md5, &pending).await?;
     if !pending.patched && current_name == pending.symbol.name {
+      self.record_rename_checkpoint(&md5, &pending).await?;
       // Mark uncertain write outcomes before sending so retries re-check backend identity first.
       if let Some(p) = self.pending.get_mut(&md5) {
         p.patched = true;
@@ -665,7 +666,7 @@ impl Engine {
   }
 
   /// Refreshes clean read-only `symbol`, `references`, and `type` snapshots in session `md5`.
-  async fn refresh_snapshots(&mut self, md5: &str) {
+  pub(super) async fn refresh_snapshots(&mut self, md5: &str) {
     let snapshots: Vec<_> = self
       .docs
       .values()
