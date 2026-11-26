@@ -30,6 +30,9 @@ import { DataTypeFiles, typeScheme } from './type-files';
 import { registerCheckpointCommands } from './checkpoints';
 import { installManagedBinaries, resolveOrInstallBinaries, ResolvedBinaries } from './installer';
 import { createLspMiddleware } from './lsp-middleware';
+import {
+    extractCandidatePrograms, formatOpenDisplayName, OpenProgramRequest, resolveOpenInput,
+} from './open-options';
 
 /** Active LSP language client instance for `ghidra-lsp`. */
 let client: LanguageClient | undefined;
@@ -347,19 +350,33 @@ export async function activate(extension: vscode.ExtensionContext): Promise<void
     }
 
     const analysisPrompts = new Map<string, object>();
-    async function openBinary(selected: vscode.Uri): Promise<void> {
-        if (selected.scheme !== 'file') { throw new Error('Choose a local binary'); }
-        const name = selected.path.split('/').pop() || 'Binary';
-        await openProgram({ path: selected.fsPath }, name, selected.fsPath);
-    }
-    async function openProgram(target: { path: string } | { md5: string }, name: string, originalPath?: string): Promise<void> {
-        const session = await vscode.window.withProgress({
-            location: vscode.ProgressLocation.Window, title: `Ghidra: Opening ${name}`,
-        }, async () => {
-            const operation = await call<AnalysisOperation>('ghidra.beginOpenBinary', target);
-            sessionsView.refresh();
-            return pollAnalysis(operation, () => {});
-        });
+    async function openProgram(
+        target: OpenProgramRequest,
+        name: string,
+        originalPath?: string,
+        allowCandidatePrompt = false,
+    ): Promise<void> {
+        let session: AnalysisOperation;
+        try {
+            session = await vscode.window.withProgress({
+                location: vscode.ProgressLocation.Window, title: `Ghidra: Opening ${name}`,
+            }, async () => {
+                const operation = await call<AnalysisOperation>('ghidra.beginOpenBinary', target);
+                sessionsView.refresh();
+                return pollAnalysis(operation, () => {});
+            });
+        } catch (error) {
+            const candidates = allowCandidatePrompt && !target.programName ? extractCandidatePrograms(error) : undefined;
+            if (!candidates) { throw error; }
+            const chosen = await vscode.window.showQuickPick(candidates, {
+                title: 'Select Ghidra Program',
+                placeHolder: `Multiple programs exist in ${name}`,
+            });
+            if (!chosen) { throw error; }
+            const nextName = originalPath ? formatOpenDisplayName(originalPath, chosen) : `${name} (${chosen})`;
+            await openProgram({ ...target, programName: chosen }, nextName, originalPath, false);
+            return;
+        }
         await context.remember(session.md5, name, originalPath);
         await context.activate(session.md5, name, originalPath);
         await browser.open(session.md5, name);
@@ -395,9 +412,13 @@ export async function activate(extension: vscode.ExtensionContext): Promise<void
         })), { placeHolder: 'Select a ready Ghidra session' });
         if (choice) { await context.activate(choice.md5, choice.label); await browser.open(choice.md5, choice.label); }
     });
-    register('openBinary', async resource => {
-        const selected = resource instanceof vscode.Uri ? resource : (await vscode.window.showOpenDialog({ canSelectMany: false, openLabel: 'Open with Ghidra' }))?.[0];
-        if (selected) { await openBinary(selected); }
+    register('openBinary', async (resource, extra) => {
+        const resolved = await resolveOpenInput(resource, extra, false);
+        if (resolved) { await openProgram(resolved.target, resolved.name, resolved.originalPath, resolved.interactive); }
+    });
+    register('openBinaryWithOptions', async (resource, extra) => {
+        const resolved = await resolveOpenInput(resource, extra, true);
+        if (resolved) { await openProgram(resolved.target, resolved.name, resolved.originalPath, true); }
     });
     register('openRecent', async resource => {
         const requested = resource ? context.recent.find(program => program.md5 === context.resolve(resource)) : undefined;

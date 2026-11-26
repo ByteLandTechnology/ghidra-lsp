@@ -127,7 +127,8 @@ Opening an editable project data type (`struct`, `union`, `enum`, or `function`)
 
 ### Sessions and analysis
 
-- `ghidraLsp.openBinary`: **Ghidra: Open Binary**
+- `ghidraLsp.openBinary`: **Ghidra: Open Binary or Project**
+- `ghidraLsp.openBinaryWithOptions`: **Ghidra: Open Binary or Project with Options…**
 - `ghidraLsp.openRecent`: **Ghidra: Open Recent Program**
 - `ghidraLsp.openRecentItem`: **Ghidra: Reopen Session**
 - `ghidraLsp.selectSession`: **Ghidra: Select Session**
