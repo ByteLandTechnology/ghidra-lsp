@@ -47,8 +47,8 @@
 | --- | --- | --- |
 | `ghidra.sessions` | `{}` | 列出当前已知的全部 `ghidra-mcp` 会话 |
 | `ghidra.selectSession` | `{"md5"}` | 校验会话处于 `ready` 状态并将其设为当前活动会话 |
-| `ghidra.openBinary` | `{"path" \| "md5", "analyze?"}` | 同步打开磁盘二进制或已保存 MD5，可选执行分析并最多等待 10 分钟 |
-| `ghidra.beginOpenBinary` | `{"path" \| "md5", "analyze?"}` | 启动异步打开作业并返回轮询 `token` |
+| `ghidra.openBinary` | `{"path" \| "md5", "analyze?", "programName?", "processor?", "compilerSpec?", "loader?", "baseAddress?", "reimport?"}` | 同步打开磁盘二进制、`.gpr` 项目或已保存 MD5（支持可选导入参数），可选执行分析并最多等待 10 分钟 |
+| `ghidra.beginOpenBinary` | `{"path" \| "md5", "analyze?", "programName?", "processor?", "compilerSpec?", "loader?", "baseAddress?", "reimport?"}` | 启动二进制或 `.gpr` 项目的异步打开作业（支持可选导入参数）并返回轮询 `token` |
 | `ghidra.pollOpenBinary` | `{"token"}` | 推进并查询未决打开或分析作业，返回进度快照 |
 | `ghidra.beginReanalyze` | `{"md5?", "analyzers?"}` | 启动异步重分析作业并返回轮询 `token` |
 | `ghidra.reanalyze` | `{"md5?", "analyzers?", "wait?"}` | 触发重分析，可选等待完成（默认 `true`）、持久化并刷新打开文档 |
