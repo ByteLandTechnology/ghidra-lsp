@@ -1,6 +1,6 @@
 # LSP Protocol and Development Guide
 
-This reference documents every Language Server Protocol (LSP) capability exposed by `ghidra-lsp`, the complete catalog of 45 `workspace/executeCommand` methods, repository module layout, and `AGENTS.md` compliance rules.
+This reference documents every Language Server Protocol (LSP) capability exposed by `ghidra-lsp`, the complete catalog of 49 `workspace/executeCommand` methods, repository module layout, and `AGENTS.md` compliance rules.
 
 ## LSP capability matrix
 
@@ -29,13 +29,13 @@ Declared in `Server::initialize` (`src/server/lsp.rs`):
 | `codeLensProvider` | `resolveProvider: false` | Emits function header lenses for `Listing`, `Call Graph`, `Control Flow`, `Callers`, `Callees`, and `References` |
 | `foldingRangeProvider` | `true` | Computes comment block (`//`, `/* ... */`) and brace `{ ... }` folding ranges |
 | `documentLinkProvider` | `resolveProvider: false` | Links inline `ghidra://` URIs, `ram:<hex>` addresses, and `0x<hex>` literals to `ghidra://` targets |
-| `executeCommandProvider` | 45 commands | Exposes session, analysis, window, mutation, and rename commands listed below |
+| `executeCommandProvider` | 49 commands | Exposes session, checkpoint, analysis, window, mutation, and rename commands listed below |
 
 Custom server notification: `ghidra/changed` (`{"md5": "<32-hex>"}`) notifies clients when cached views or backend analysis state change.
 
 ## `workspace/executeCommand` catalog
 
-All 45 commands declared in `COMMANDS` (`src/server/mod.rs`) and dispatched across `commands.rs`, `domain_commands.rs`, `edit_commands.rs`, and `view_commands.rs`:
+All 49 commands declared in `COMMANDS` (`src/server/mod.rs`) and dispatched across `commands.rs`, `checkpoint_commands.rs`, `domain_commands.rs`, `edit_commands.rs`, and `view_commands.rs`:
 
 ### Sessions, binaries, and analysis
 
@@ -49,6 +49,10 @@ All 45 commands declared in `COMMANDS` (`src/server/mod.rs`) and dispatched acro
 | `ghidra.beginReanalyze` | `{"md5?", "analyzers?"}` | Start async program reanalysis and return polling `token` |
 | `ghidra.reanalyze` | `{"md5?", "analyzers?", "wait?"}` | Start analysis, optionally wait (`default: true`), persist, and refresh open buffers |
 | `ghidra.closeSession` | `{"md5?", "force?"}` | Close a clean program session (rejects pending renames or dirty buffers) and clear caches |
+| `ghidra.checkpoints` | `{"md5?"}` | List saved project checkpoints for the session (`items`, `maxPerBinary`) |
+| `ghidra.createCheckpoint` | `{"md5?", "name?"}` | Persist the clean session and save a project checkpoint |
+| `ghidra.restoreCheckpoint` | `{"md5?", "id?", "name?"}` | Force-stop Ghidra without save, restore a checkpoint, relaunch, and refresh all open views |
+| `ghidra.resetSession` | `{"md5?", "reopen?", "analyze?"}` | Delete `ghidra/` and checkpoints while keeping `binary` and `binary.json`, optionally re-import and analyze |
 | `ghidra.cancelJob` | `{}` | Returns explicit guidance because installed `ghidra-mcp` exposes `job.get` / `job.wait` without `job.cancel` |
 
 ### Program catalogs and documents
@@ -121,7 +125,7 @@ ghidra-lsp/
 │   ├── engine/                 # Decompilation, navigation, completion, hierarchy, rename lifecycle
 │   ├── graph/                  # Basic-block CFG and bounded call-graph builders
 │   ├── mutations/              # Comment, function prototype, and variable batch planners
-│   ├── server/                 # LSP trait implementation and 45 custom command handlers
+│   ├── server/                 # LSP trait implementation and 49 custom command handlers
 │   ├── types_doc/              # JSONC lexer/parser, validation, conflict check, type mutations
 │   └── views/                  # Cached metadata, listing window, memory chunk, byte inspector
 ├── xtask/                      # Workspace verification CLI (fmt, headers, lines, forbidden, ci)

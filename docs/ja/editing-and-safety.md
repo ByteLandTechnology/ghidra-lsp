@@ -121,4 +121,13 @@
 2. **レイアウト再読込（Readback）**: `data_type.patch` / `data_type.upsert` と `program.save` が完了すると、Ghidra が再計算した実際のメンバオフセット・パディング・新しい `id` を読み戻し、エディタ上の JSONC テキストを正規化して同期します。
 3. **送信後エラーのロック保護**: リクエスト送信後にタイムアウトや永続化失敗が起きた場合、サーバーは `The save may have reached Ghidra; compare and reload before retrying` を返し、クライアントは再試行前に比較と再読込を促します。
 
+## プロジェクトチェックポイントとクリーンセッションリセット
+
+シンボルリネーム（`Engine::save`）、コメント変更（`ghidra.saveComment`）、関数シグネチャ・変数変更（`ghidra.saveFunctionPrototype`、`ghidra.saveVariables`）、JSONC データ型保存（`ghidra.saveTypeDocument`）、再解析（`ghidra.beginReanalyze`、`ghidra.reanalyze`）、およびワークベンチ書き込み（`program.save` 以外の `ghidra.mutate`）を確定する直前に、`ghidra-lsp` は自動的に `ghidra-mcp` の `session.checkpoint.create` を呼び出して変更前のスナップショットを記録します（`src/engine/checkpoints.rs`）。
+
+`ghidra-mcp` は稼働中のプログラムを `program.save` で保存したうえで、`.lock` / `.lock~` ファイルを除外して `project.gpr` と `project.rep/` を `projects/<md5>/checkpoints/<id>/` に複製し、`[checkpoints] max_per_binary` 上限を超えた場合は最も古いスナップショットを自動削除します。
+
+- **チェックポイント復元（`ghidra.restoreCheckpoint`）**: 稼働中の Ghidra プロセスを保存せずに即時停止（`force = true`）し、選択したチェックポイント（`id` と `name` を省略した場合は最新チェックポイント）から `projects/<md5>/ghidra/` を原子的に置き換えて再起動し、保留中リネームのクリア、開いている全 `ghidra://` / `ghidra-type://` ドキュメントの再同期、および `ghidra/changed` 通知による全ビューの更新を行います。
+- **セッションリセット（`ghidra.resetSession`）**: 稼働中の Ghidra プロセスを保存せずに停止し、`binary` と `binary.json` を残したまま `projects/<md5>/ghidra/` と `projects/<md5>/checkpoints/` を削除し、必要に応じてクリーンな再インポートと自動解析（`reopen: true`、`analyze`）を実行して全ビューを更新します。
+
 次の章: [LSP と開発規約](lsp-and-development.md)。

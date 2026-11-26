@@ -28,6 +28,30 @@ vim.api.nvim_create_user_command('GhidraCloseSession', function(opts)
     ghidra.close_session(opts.args ~= '' and opts.args or nil)
 end, { nargs = '?', desc = 'Close active or specified Ghidra session' })
 
+vim.api.nvim_create_user_command('GhidraCheckpoints', function(opts)
+    ghidra.checkpoints(opts.args ~= '' and opts.args or nil)
+end, { nargs = '?', desc = 'Browse and restore saved Ghidra project checkpoints' })
+
+vim.api.nvim_create_user_command('GhidraRestoreCheckpoint', function(opts)
+    ghidra.restore_checkpoint(opts.args ~= '' and opts.args or nil)
+end, {
+    nargs = '?',
+    complete = function(arg)
+        return require('ghidra-lsp.checkpoints').complete_checkpoints(arg)
+    end,
+    desc = 'Restore previous or specified Ghidra project checkpoint',
+})
+
+vim.api.nvim_create_user_command('GhidraResetSession', function(opts)
+    ghidra.reset_session(opts.args ~= '' and opts.args or nil)
+end, {
+    nargs = '?',
+    complete = function()
+        return { 'analyze', 'noanalyze' }
+    end,
+    desc = 'Reset active Ghidra session to a clean binary import',
+})
+
 vim.api.nvim_create_user_command('GhidraReanalyze', function()
     ghidra.reanalyze()
 end, { desc = 'Analyze or re-analyze the active Ghidra program' })

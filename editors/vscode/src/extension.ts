@@ -27,6 +27,7 @@ import { ViewSets } from './views';
 import { AnalysisMode, ControlFlowView } from './control-flow-view';
 import { singleKeyShortcutsEnabled } from './program-views-controller';
 import { DataTypeFiles, typeScheme } from './type-files';
+import { registerCheckpointCommands } from './checkpoints';
 import { installManagedBinaries, resolveOrInstallBinaries, ResolvedBinaries } from './installer';
 import {
     extractCandidatePrograms, formatOpenDisplayName, OpenProgramRequest, resolveOpenInput,
@@ -459,6 +460,7 @@ export async function activate(extension: vscode.ExtensionContext): Promise<void
             await call('ghidra.refresh', { md5 });
             listingFiles.refresh(md5);
             byteFiles.refresh(md5);
+            viewSets.refresh(md5);
             await typeFiles.refresh(md5);
             await renames.refresh(md5);
             await browser.refresh(md5);
@@ -515,6 +517,11 @@ export async function activate(extension: vscode.ExtensionContext): Promise<void
     register('reanalyze', async resource => {
         const md5 = context.require(resource);
         await runAnalysis(md5, context.name(md5), true);
+    });
+    registerCheckpointCommands({
+        register, call, context, memory, labels, references, stringFiles, stringsView,
+        listingFiles, byteFiles, typeFiles, renames, browser, workbench, graphView, viewSets,
+        sessionsView, programVersions, runAnalysis,
     });
     register('demangle', async resource => {
         const md5 = context.require(resource);
@@ -696,6 +703,7 @@ export async function activate(extension: vscode.ExtensionContext): Promise<void
                 stringFiles.refresh(md5);
                 listingFiles.refresh(md5);
                 byteFiles.refresh(md5);
+                viewSets.refresh(md5);
                 const skipBrowser = (refreshedSeq.get(md5) ?? -1) >= seq;
                 void Promise.all([
                     ...(skipBrowser ? [] : [browser.refresh(md5)]),
