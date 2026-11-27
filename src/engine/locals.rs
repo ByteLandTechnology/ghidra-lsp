@@ -7,115 +7,108 @@ use std::collections::{HashMap, HashSet};
 
 use serde_json::{Value, json};
 
-use super::Engine;
 use crate::document::{
   LocalBinding, Span, Symbol, format_storage_value, is_field_access, resolve_locals,
 };
 
-impl Engine {
-  /// Caches parameter and local details for `entry_str` and binds variable and parameter spans.
-  pub(super) fn bind_function_locals(
-    &mut self,
-    md5: &str,
-    entry_str: &str,
-    code: &str,
-    function: &Value,
-    has_native_locals: bool,
-    spans: &mut [Span],
-  ) {
-    let mut local_symbols = vec![];
-    let param_prefix = format!("Parameter:{md5}:{entry_str}:");
-    let local_prefix = format!("Local:{md5}:{entry_str}:");
-    self
-      .local_details
-      .retain(|k, _| !k.starts_with(&param_prefix) && !k.starts_with(&local_prefix));
-    for (key, kind) in [("parameters", "Parameter"), ("local_variables", "Local")] {
-      for variable in function
-        .get(key)
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
+/// Caches parameter and local details for `entry_str` and binds variable and parameter spans.
+pub(super) fn bind_function_locals(
+  md5: &str,
+  entry_str: &str,
+  code: &str,
+  function: &Value,
+  has_native_locals: bool,
+  spans: &mut [Span],
+) -> HashMap<String, Value> {
+  let mut local_details = HashMap::new();
+  let mut local_symbols = vec![];
+  for (key, kind) in [("parameters", "Parameter"), ("local_variables", "Local")] {
+    for variable in function
+      .get(key)
+      .and_then(Value::as_array)
+      .into_iter()
+      .flatten()
+    {
+      let Some(name) = variable.get("name").and_then(Value::as_str) else {
+        continue;
+      };
+      if name.is_empty() {
+        continue;
+      }
+      let ordinal = (kind == "Parameter")
+        .then(|| variable.get("ordinal").and_then(Value::as_u64))
+        .flatten();
+      if kind == "Parameter" && ordinal.is_none() {
+        continue;
+      }
+      let storage_val = variable.get("storage").filter(|s| !s.is_null());
+      let identity = if let Some(ord) = ordinal {
+        json!({"ordinal": ord})
+      } else if let Some(storage) = storage_val {
+        json!({"storage": storage, "name": name})
+      } else {
+        json!({"name": name})
+      };
+      let id = format!("{kind}:{md5}:{entry_str}:{identity}");
+      let mut detail = variable.clone();
+      detail["entry"] = json!(entry_str);
+      detail["kind"] = json!(kind);
+      local_details.insert(id.clone(), detail);
+      let storage_text = format_storage_value(storage_val);
+      let serialization = storage_val
+        .and_then(|v| {
+          v.get("serialization")
+            .and_then(Value::as_str)
+            .or_else(|| v.as_str())
+        })
+        .map(str::to_owned);
+      local_symbols.push(LocalBinding {
+        symbol: Symbol {
+          demangled_name: None,
+          id,
+          name: name.into(),
+          address: entry_str.to_owned(),
+          namespace: String::new(),
+          kind: kind.into(),
+        },
+        ordinal,
+        storage: (!storage_text.is_empty()).then_some(storage_text),
+        serialization,
+      });
+    }
+  }
+  bind_native_local_spans(
+    code,
+    spans,
+    &local_symbols,
+    &mut local_details,
+    md5,
+    entry_str,
+  );
+  resolve_locals(code, spans, &local_symbols);
+  if !has_native_locals {
+    for span in spans {
+      if span.symbol.is_none()
+        && matches!(span.token.kind.as_str(), "variable" | "parameter")
+        && !is_field_access(code, span.start)
       {
-        let Some(name) = variable.get("name").and_then(Value::as_str) else {
-          continue;
-        };
-        if name.is_empty() {
-          continue;
-        }
-        let ordinal = (kind == "Parameter")
-          .then(|| variable.get("ordinal").and_then(Value::as_u64))
-          .flatten();
-        if kind == "Parameter" && ordinal.is_none() {
-          continue;
-        }
-        let storage_val = variable.get("storage").filter(|s| !s.is_null());
-        let identity = if let Some(ord) = ordinal {
-          json!({"ordinal": ord})
-        } else if let Some(storage) = storage_val {
-          json!({"storage": storage, "name": name})
+        let kind = if span.token.kind == "parameter" {
+          "Parameter"
         } else {
-          json!({"name": name})
+          "Local"
         };
-        let id = format!("{kind}:{md5}:{entry_str}:{identity}");
-        let mut detail = variable.clone();
-        detail["entry"] = json!(entry_str);
-        detail["kind"] = json!(kind);
-        self.local_details.insert(id.clone(), detail);
-        let storage_text = format_storage_value(storage_val);
-        let serialization = storage_val
-          .and_then(|v| {
-            v.get("serialization")
-              .and_then(Value::as_str)
-              .or_else(|| v.as_str())
-          })
-          .map(str::to_owned);
-        local_symbols.push(LocalBinding {
-          symbol: Symbol {
-            demangled_name: None,
-            id,
-            name: name.into(),
-            address: entry_str.to_owned(),
-            namespace: String::new(),
-            kind: kind.into(),
-          },
-          ordinal,
-          storage: (!storage_text.is_empty()).then_some(storage_text),
-          serialization,
+        span.symbol = Some(Symbol {
+          demangled_name: None,
+          id: format!("{kind}:{md5}:{entry_str}:name={}", span.token.text),
+          name: span.token.text.clone(),
+          address: entry_str.to_owned(),
+          namespace: String::new(),
+          kind: kind.into(),
         });
       }
     }
-    bind_native_local_spans(
-      code,
-      spans,
-      &local_symbols,
-      &mut self.local_details,
-      md5,
-      entry_str,
-    );
-    resolve_locals(code, spans, &local_symbols);
-    if !has_native_locals {
-      for span in spans {
-        if span.symbol.is_none()
-          && matches!(span.token.kind.as_str(), "variable" | "parameter")
-          && !is_field_access(code, span.start)
-        {
-          let kind = if span.token.kind == "parameter" {
-            "Parameter"
-          } else {
-            "Local"
-          };
-          span.symbol = Some(Symbol {
-            demangled_name: None,
-            id: format!("{kind}:{md5}:{entry_str}:name={}", span.token.text),
-            name: span.token.text.clone(),
-            address: entry_str.to_owned(),
-            namespace: String::new(),
-            kind: kind.into(),
-          });
-        }
-      }
-    }
   }
+  local_details
 }
 
 /// Merges `local_variables` from `decompilation` into `function` without duplicating entries.

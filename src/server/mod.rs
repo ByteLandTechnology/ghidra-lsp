@@ -19,23 +19,23 @@ mod symbols;
 mod view_commands;
 
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64};
+use std::sync::{Arc, PoisonError, RwLock};
 use std::time::Duration;
 
 use anyhow::{Context, Result, bail, ensure};
 use serde_json::{Value, json};
-use tokio::sync::{Mutex, MutexGuard};
+use tokio::sync::{Mutex, OwnedMutexGuard};
 use tower_lsp_server::ls_types::{
-  Diagnostic, DiagnosticSeverity, DocumentChanges, ExecuteCommandParams, OneOf,
-  OptionalVersionedTextDocumentIdentifier, Position, Range, TextDocumentEdit, TextEdit, Uri,
-  WorkspaceEdit, notification,
+  Diagnostic, DiagnosticSeverity, DocumentChanges, ExecuteCommandParams, Hover, HoverContents,
+  HoverParams, MarkupContent, MarkupKind, OneOf, OptionalVersionedTextDocumentIdentifier, Position,
+  Range, TextDocumentEdit, TextEdit, Uri, WorkspaceEdit, notification,
 };
 use tower_lsp_server::{Client, jsonrpc};
 
 use crate::backend::{Config, McpBackend};
-use crate::document::{canonical_virtual_uri, position};
-use crate::engine::{Engine, Refresh};
+use crate::document::{canonical_virtual_uri, data_type_name, position};
+use crate::engine::{Engine, EngineState, Refresh};
 use crate::workbench;
 
 /// Command identifiers advertised during `initialize`.
@@ -159,8 +159,10 @@ impl OpenProgress {
 pub(crate) struct Server {
   /// Connected LSP client used for progress and diagnostic notifications.
   client: Client,
-  /// Active engine holding backend state, session selection, and opened buffers.
-  engine: Mutex<Engine>,
+  /// Dedicated synchronous lock storing the active `ghidra-mcp` transport handle.
+  backend: RwLock<Arc<McpBackend>>,
+  /// Concurrent engine coordinating singleflight RPCs and isolated in-memory state.
+  engine: Engine,
   /// Shared cache of program metadata and call-graph lookups.
   pub(super) view_cache: crate::views::ViewCache,
   /// Baseline transport configuration merged with client `initializationOptions`.
@@ -178,9 +180,11 @@ pub(crate) struct Server {
 impl Server {
   /// Creates a new LSP server instance with `client` and initial `config`.
   pub(crate) fn new(client: Client, config: Config) -> Self {
+    let backend = Arc::new(McpBackend::new(config.clone()));
     Self {
       client,
-      engine: Mutex::new(Engine::new(Arc::new(McpBackend::new(config.clone())))),
+      backend: RwLock::new(Arc::clone(&backend)),
+      engine: Engine::new(backend),
       view_cache: crate::views::ViewCache::new(),
       default_config: config,
       lazy_symbols: AtomicBool::new(false),
@@ -190,9 +194,24 @@ impl Server {
     }
   }
 
+  /// Clones the active [`McpBackend`] handle without locking [`EngineState`].
+  pub(super) fn backend(&self) -> Arc<McpBackend> {
+    self
+      .backend
+      .read()
+      .unwrap_or_else(PoisonError::into_inner)
+      .clone()
+  }
+
+  /// Replaces the [`McpBackend`] transport and resets [`Engine`] caches.
+  pub(super) fn swap_backend(&self, backend: Arc<McpBackend>) {
+    *self.backend.write().unwrap_or_else(PoisonError::into_inner) = Arc::clone(&backend);
+    self.engine.reset(backend);
+  }
+
   /// Queries `analysis.get` for `md5` and normalizes completion flags.
   async fn program_analysis(&self, md5: &str) -> Result<ProgramAnalysis> {
-    let backend = self.engine.lock().await.backend.clone();
+    let backend = self.backend();
     let status = backend
       .call("analysis", "get", Some(md5), json!({}))
       .await?;
@@ -214,13 +233,13 @@ impl Server {
   }
 
   /// Verifies that session `md5` has no pending rename or unsaved local edits.
-  fn ensure_program_clean(e: &Engine, md5: &str) -> Result<()> {
+  fn ensure_program_clean(state: &EngineState, md5: &str) -> Result<()> {
     ensure!(
-      !e.pending.contains_key(md5),
+      !state.pending.contains_key(md5),
       "Save or discard the pending rename in this program before another modification"
     );
     ensure!(
-      !e.docs.values().any(|d| d.md5 == md5 && !d.clean()),
+      !state.docs.values().any(|d| d.md5 == md5 && !d.clean()),
       "Discard unrelated edits in this program before modifying Ghidra"
     );
     Ok(())
@@ -229,7 +248,7 @@ impl Server {
   /// Persists a backend write, refreshes session documents, and pushes editor updates.
   async fn commit_and_refresh(
     &self,
-    mut e: MutexGuard<'_, Engine>,
+    session_guard: OwnedMutexGuard<()>,
     backend: &McpBackend,
     md5: &str,
     already_saved_result: Option<&Value>,
@@ -240,14 +259,14 @@ impl Server {
       workbench::persist(backend, md5).await
     };
     if let Err(error) = persisted {
-      drop(e);
+      drop(session_guard);
       self.changed(md5).await;
       return Err(error).context(
         "Modification reached Ghidra, but saving the project failed. Refresh and inspect the program before retrying",
       );
     }
-    let changes = e.refresh_session(md5, None).await;
-    drop(e);
+    let changes = self.engine.refresh_session_locked(md5, None).await;
+    drop(session_guard);
     self.changed(md5).await;
     self
       .apply_refresh(changes.context(
@@ -257,10 +276,10 @@ impl Server {
   }
 
   /// Resolves the target session MD5 from `arg.md5` or the currently active session.
-  async fn scoped_md5(&self, arg: &Value) -> Result<String> {
+  fn scoped_md5(&self, arg: &Value) -> Result<String> {
     let md5 = match arg.get("md5").and_then(Value::as_str) {
       Some(md5) => md5.to_lowercase(),
-      None => self.engine.lock().await.session()?.to_owned(),
+      None => self.engine.read_state().session()?.to_owned(),
     };
     ensure!(
       md5.len() == 32 && md5.bytes().all(|b| b.is_ascii_hexdigit()),
@@ -273,8 +292,9 @@ impl Server {
   async fn report(&self, uri: &Uri) {
     let canon = canonical_virtual_uri(uri);
     let diagnostics = {
-      let e = self.engine.lock().await;
-      e.docs
+      let state = self.engine.read_state();
+      state
+        .docs
         .get(&canon)
         .and_then(|d| d.warning.as_ref())
         .map(|message| {
@@ -323,15 +343,16 @@ impl Server {
       "Ghidra was updated but the editor rejected regenerated text. Refresh the documents: {:?}",
       response.failure_reason
     );
-    let mut e = self.engine.lock().await;
+    let mut state = self.engine.write_state();
     for change in changes {
-      if let Some(doc) = e.docs.get_mut(&change.uri) {
+      if let Some(doc) = state.docs.get_mut(&change.uri) {
         // Never overwrite a concurrent unrelated user edit inside the synchronized buffer.
-        if doc.current == change.old || doc.current == change.new {
+        if (doc.version == change.version && doc.current == change.old) || doc.current == change.new
+        {
           doc.current = change.new;
         }
       }
-      e.refresh_allowed.remove(&change.uri);
+      state.refresh_allowed.remove(&change.uri);
     }
     Ok(())
   }
@@ -345,7 +366,7 @@ impl Server {
     else {
       bail!("backend did not return a job ID: {job}");
     };
-    let backend = self.engine.lock().await.backend.clone();
+    let backend = self.backend();
     let deadline = tokio::time::Instant::now() + Duration::from_secs(600);
     loop {
       let state = backend
@@ -369,9 +390,9 @@ impl Server {
   async fn command(&self, params: ExecuteCommandParams) -> Result<Value> {
     let arg = params.arguments.first().cloned().unwrap_or(json!({}));
     if params.command == "ghidra.location" {
-      return self.execute_location_command(arg).await;
+      return self.execute_location_command(arg);
     }
-    let backend = self.engine.lock().await.backend.clone();
+    let backend = self.backend();
     match params.command.as_str() {
       "ghidra.sessions"
       | "ghidra.selectSession"
@@ -424,6 +445,185 @@ impl Server {
           .await
       }
     }
+  }
+
+  /// Resolves Markdown hover cards for symbols, functions, globals, locals, and data types.
+  async fn handle_hover(&self, params: HoverParams) -> jsonrpc::Result<Option<Hover>> {
+    let p = params.text_document_position_params;
+    let uri = canonical_virtual_uri(&p.text_document.uri);
+    let target = {
+      let state = self.engine.read_state();
+      state
+        .target(&uri, p.position)
+        .ok()
+        .map(|(md5, symbol, range)| {
+          let local = state.local_detail(&symbol);
+          let cached_fn = state
+            .functions
+            .get(&(md5.clone(), symbol.address.clone()))
+            .cloned();
+          (md5, symbol, range, local, cached_fn)
+        })
+    };
+    if let Some((md5, symbol, range, local, cached_fn)) = target {
+      let backend = self.backend();
+      let detail = if let Some(local) = local {
+        let dtype = local
+          .get("data_type")
+          .filter(|v| !v.is_null())
+          .map(data_type_name)
+          .unwrap_or_default();
+        let storage = format_storage(local.get("storage"));
+        match (dtype.is_empty(), storage.is_empty()) {
+          (false, false) => format!("```c\n{dtype}\n```\n\n`{storage}`"),
+          (false, true) => format!("```c\n{dtype}\n```"),
+          (true, false) => format!("`{storage}`"),
+          (true, true) => String::new(),
+        }
+      } else if symbol.kind.eq_ignore_ascii_case("function") {
+        let value = match cached_fn {
+          Some(v) => Some(v),
+          None => backend
+            .call(
+              "function",
+              "get",
+              Some(&md5),
+              json!({"selector": {"entry": symbol.address}}),
+            )
+            .await
+            .ok(),
+        };
+        let signature = value
+          .as_ref()
+          .and_then(|v| {
+            v.get("signature").map(|sig| {
+              sig
+                .as_str()
+                .map(str::to_owned)
+                .unwrap_or_else(|| sig.to_string())
+            })
+          })
+          .unwrap_or_else(|| symbol.display_name());
+        let comment = value
+          .as_ref()
+          .and_then(|v| v.get("comment").and_then(Value::as_str))
+          .unwrap_or("");
+        if comment.is_empty() {
+          format!("```c\n{signature}\n```")
+        } else {
+          format!("```c\n{signature}\n```\n\n{comment}")
+        }
+      } else if !symbol.local() {
+        backend
+          .call(
+            "global_variable",
+            "get",
+            Some(&md5),
+            json!({"selector": {"address": symbol.address}}),
+          )
+          .await
+          .ok()
+          .map(|value| {
+            let dtype = value
+              .get("data_type")
+              .filter(|v| !v.is_null())
+              .map(data_type_name)
+              .unwrap_or_default();
+            let repr = value
+              .get("representation")
+              .or_else(|| value.get("value"))
+              .map(|v| {
+                v.as_str()
+                  .map(str::to_owned)
+                  .unwrap_or_else(|| v.to_string())
+              })
+              .unwrap_or_default();
+            match (dtype.is_empty(), repr.is_empty()) {
+              (false, false) => format!("```c\n{dtype}\n```\n\n`{repr}`"),
+              (false, true) => format!("```c\n{dtype}\n```"),
+              (true, false) => format!("`{repr}`"),
+              (true, true) => String::new(),
+            }
+          })
+          .unwrap_or_default()
+      } else {
+        String::new()
+      };
+      let demangled_full = symbol.full_name();
+      let raw_mangled =
+        (!symbol.name.is_empty() && symbol.name != demangled_full).then_some(symbol.name.as_str());
+      let extra_names = match (symbol.display_name() != demangled_full, raw_mangled) {
+        (true, Some(raw)) => format!(
+          "\n\n`{}` (`{}`)",
+          demangled_full.replace('`', "'"),
+          raw.replace('`', "'")
+        ),
+        (true, None) => format!("\n\n`{}`", demangled_full.replace('`', "'")),
+        (false, Some(raw)) => format!("\n\n`{}`", raw.replace('`', "'")),
+        (false, None) => String::new(),
+      };
+      return Ok(Some(Hover {
+        contents: HoverContents::Markup(MarkupContent {
+          kind: MarkupKind::Markdown,
+          value: format!(
+            "### {}\n`{} · {}`{}{}",
+            symbol
+              .display_name()
+              .chars()
+              .fold(String::new(), |mut text, ch| {
+                if ch.is_ascii_punctuation() {
+                  text.push('\\');
+                }
+                text.push(ch);
+                text
+              }),
+            symbol.kind,
+            symbol.address,
+            extra_names,
+            if detail.is_empty() {
+              String::new()
+            } else {
+              format!("\n\n{detail}")
+            }
+          ),
+        }),
+        range: Some(range),
+      }));
+    }
+
+    if let Ok(Some(type_data)) = self.engine.type_definition(&uri, p.position).await {
+      let range = {
+        let state = self.engine.read_state();
+        state
+          .docs
+          .get(&uri)
+          .and_then(|d| d.span_at(p.position).map(|s| d.range(s)))
+      };
+      let name = type_data
+        .get("name")
+        .and_then(Value::as_str)
+        .unwrap_or("Type");
+      let kind = type_data
+        .get("kind")
+        .and_then(Value::as_str)
+        .unwrap_or("type");
+      let path = type_data.get("path").and_then(Value::as_str).unwrap_or("");
+      let length = type_data
+        .get("length")
+        .or_else(|| type_data.get("size"))
+        .and_then(Value::as_u64)
+        .map(|s| format!("{s} bytes (`0x{s:x}`)"))
+        .unwrap_or_else(|| "variable/unknown".into());
+      let value = format!("```c\n{kind} {name}\n```\n- **Path**: `{path}`\n- **Size**: {length}");
+      return Ok(Some(Hover {
+        contents: HoverContents::Markup(MarkupContent {
+          kind: MarkupKind::Markdown,
+          value,
+        }),
+        range,
+      }));
+    }
+    Ok(None)
   }
 }
 

@@ -18,12 +18,12 @@ export const controlFlowUiStyles = `
 .cfg-page{--cfg-ground:var(--vscode-editor-background);--cfg-surface:var(--vscode-sideBar-background,var(--vscode-editor-background));--cfg-ink:var(--vscode-foreground);--cfg-muted:var(--ghidra-muted);--cfg-rule:var(--vscode-panel-border);--cfg-focus:var(--ghidra-focus)}
 .flow-page .call-icon{font:16px call-icons;display:inline-block;line-height:1;vertical-align:middle}
 .cfg-topbar{min-height:48px;border-bottom:1px solid var(--cfg-rule);background:var(--cfg-ground)}
-.cfg-heading{display:flex;align-items:center;gap:10px;flex:1 1 140px;min-width:min(140px,100%)}.cfg-identity{display:flex;flex-direction:column;gap:1px;min-width:0}
+.cfg-heading{display:flex;align-items:center;gap:10px;min-width:0}.cfg-identity{display:flex;flex-direction:column;gap:1px;min-width:0}
 .cfg-page .cfg-heading h1{font-size:13px;line-height:1.25;font-weight:600;color:var(--cfg-ink);overflow-wrap:anywhere}
 .cfg-function-name{font-size:11px;line-height:1.25;font-weight:400;color:var(--cfg-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .cfg-page .cfg-icon-button{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;width:32px;height:32px;min-width:24px;min-height:24px;padding:6px;border:0;border-radius:6px;background:transparent;color:var(--vscode-foreground);cursor:pointer}
 .cfg-page button:hover{background:var(--vscode-toolbar-hoverBackground,var(--vscode-list-hoverBackground))}
-.cfg-page .cfg-topbar [aria-pressed="true"],.cfg-page .cfg-topbar [aria-expanded="true"]{background:var(--ghidra-pressed-bg);color:var(--ghidra-accent);box-shadow:inset 0 0 0 1px var(--ghidra-focus)}
+.cfg-page .cfg-topbar [aria-pressed="true"],.cfg-page .cfg-topbar [aria-expanded="true"]{background:var(--ghidra-pressed-bg);color:var(--ghidra-accent);width:auto;min-width:32px;gap:3px;padding-inline:6px;border:2px solid var(--ghidra-active-border)}
 .cfg-page .cfg-search input{width:100%;min-height:30px;height:auto;min-width:0;border-radius:6px}
 .cfg-page .flow-canvas:focus-visible{outline:2px solid var(--cfg-focus);outline-offset:-2px}
 .cfg-page .flow-canvas{position:relative;border:0;border-radius:0;background:var(--vscode-editor-background)}
@@ -42,12 +42,6 @@ export const controlFlowUiStyles = `
 .cfg-page .cfg-edge.is-hovered .edge{stroke-width:2.5}
 .cfg-page .cfg-edge.is-active .edge,.cfg-page .cfg-edge:focus-visible .edge{stroke-width:3}
 .cfg-page .flow-canvas.is-tracing .cfg-edge:not(.is-hovered):not(.is-active){opacity:.25}
-.cfg-page .graph-node.edge-endpoint .block-body{stroke:var(--vscode-focusBorder);stroke-width:2}
-.cfg-page .flow-canvas .block-body{stroke-width:1;vector-effect:non-scaling-stroke}
-.cfg-page .flow-canvas .block-header{fill:color-mix(in srgb,var(--cfg-ink) 7%,var(--cfg-ground))}
-.cfg-page .flow-canvas .tok-mnemonic{font-weight:500}
-.cfg-page .flow-canvas .node-title{font-weight:500}
-.cfg-page .flow-canvas .graph-node.selected .block-header{fill:color-mix(in srgb,var(--vscode-focusBorder) 10%,var(--vscode-editor-background))}
 .cfg-overview{position:absolute;right:14px;bottom:52px;z-index:2;width:min(160px,calc(100% - 20px));max-height:calc(100% - 58px);padding:0;margin:0;border:1px solid var(--vscode-editorWidget-border,var(--vscode-panel-border));border-radius:8px;background:var(--vscode-editor-background);box-shadow:0 2px 8px var(--vscode-widget-shadow);overflow:hidden}
 .cfg-page .cfg-overview summary{touch-action:none;user-select:none;cursor:grab;display:flex;align-items:center;gap:6px;min-height:28px;margin:0;padding:4px 8px;font-size:11px;font-weight:500;list-style:none}
 .cfg-overview summary::-webkit-details-marker{display:none}
@@ -64,8 +58,6 @@ export const controlFlowUiStyles = `
 .cfg-page button,.cfg-page summary{transition:background-color 120ms ease,color 120ms ease}
 @media(prefers-reduced-motion:reduce){.cfg-page *{animation:none!important;transition:none!important}}
 .vscode-high-contrast .cfg-edge,.vscode-high-contrast-light .cfg-edge{opacity:1!important}
-.cfg-page .cfg-icon-button{display:inline-flex}
-.cfg-page .cfg-topbar [aria-pressed="true"],.cfg-page .cfg-topbar [aria-expanded="true"]{width:auto;min-width:32px;gap:3px;padding-inline:6px;border:2px solid var(--ghidra-active-border)}
 .cfg-page .cfg-node.edge-endpoint:not(.selected):not(:focus-visible){border-color:var(--ghidra-focus);outline:1px solid var(--ghidra-focus);outline-offset:0}
 body.cfg-page:is(.vscode-high-contrast,.vscode-high-contrast-light) :is(.cfg-icon-button:not([aria-pressed="true"]):not([aria-expanded="true"]),.cfg-overview-close){border:1px solid var(--ghidra-hv-border)}
 body.cfg-page:is(.vscode-high-contrast,.vscode-high-contrast-light) .cfg-topbar :is([aria-pressed="true"],[aria-expanded="true"]){background:var(--vscode-editor-background);color:var(--vscode-foreground);border:2px solid var(--ghidra-active-border)}
@@ -75,7 +67,6 @@ body.cfg-page:is(.vscode-high-contrast,.vscode-high-contrast-light) .cfg-topbar 
   .cfg-page .cfg-icon-button:not([aria-pressed="true"]):not([aria-expanded="true"]),.cfg-page .cfg-zoom button,.cfg-page .cfg-overview-close{background:ButtonFace;color:ButtonText;border:1px solid var(--ghidra-hv-border)}
   .cfg-page .cfg-topbar [aria-pressed="true"],.cfg-page .cfg-topbar [aria-expanded="true"]{background:var(--ghidra-pressed-bg);color:var(--ghidra-selection-fg);border:2px solid var(--ghidra-active-border)}
   .cfg-page .cfg-edge{opacity:1!important}
-  .cfg-page .flow-canvas svg .block-header,.cfg-page .flow-canvas svg .graph-node.selected .block-header{fill:var(--ghidra-selection-bg);stroke:var(--ghidra-hv-border);stroke-width:1}
 }
 @media(max-width:640px){
   .cfg-topbar{min-height:40px}
@@ -83,17 +74,17 @@ body.cfg-page:is(.vscode-high-contrast,.vscode-high-contrast-light) .cfg-topbar 
   .cfg-page .cfg-heading h1{font-size:12px}
   .cfg-function-name{font-size:11px}
   .cfg-page .cfg-icon-button{width:28px;height:28px;padding:4px}
-  .cfg-page .cfg-topbar :is([aria-pressed="true"],[aria-expanded="true"]){width:auto;min-width:28px;padding-inline:5px}
+  .cfg-page .cfg-topbar :is([aria-pressed="true"],[aria-expanded="true"]){width:auto;min-width:28px;min-height:28px;height:auto;padding-inline:5px}
   .cfg-page .cfg-search input{min-height:28px}
   .cfg-page .cfg-zoom{right:8px;bottom:8px}
   .cfg-page .cfg-zoom button{min-width:28px;min-height:28px;padding:3px 6px}
   .cfg-overview{width:min(130px,calc(100% - 16px));right:8px;bottom:42px}
-  .cfg-page .cfg-overview svg{height:76px}
+  .cfg-page .cfg-overview svg{height:68px}
 }
 @media(max-height:420px){
   .cfg-topbar{min-height:32px}
   .cfg-page .cfg-icon-button{width:24px;height:24px;min-width:24px;min-height:24px;padding:2px}
-  .cfg-page .cfg-topbar :is([aria-pressed="true"],[aria-expanded="true"]){width:auto;min-width:24px;padding-inline:4px}
+  .cfg-page .cfg-topbar :is([aria-pressed="true"],[aria-expanded="true"]){width:auto;min-width:24px;min-height:24px;height:auto;padding-inline:4px}
   .cfg-page .cfg-search input{min-height:24px;padding:2px 6px}
   .cfg-page .cfg-zoom{right:6px;bottom:6px}
   .cfg-page .cfg-zoom button{min-width:24px;min-height:24px;padding:2px 5px}
@@ -141,7 +132,7 @@ export const controlFlowUiScript = String.raw`
       const autoOverview=()=>{const view=graphViewport.snapshot(),width=Number(svg.dataset.width)*view.scale,height=Number(svg.dataset.height)*view.scale,compact=canvas.clientWidth<=480||canvas.clientHeight<=320;const clipped=view.x < -1||view.y < -1||view.x+width>canvas.clientWidth+1||view.y+height>canvas.clientHeight+1;if(clipped&&!compact&&!overview.open&&!cfgOverviewDismissed){overview.open=true;syncOverview();if(cfgOverviewPosition){setPosition(cfgOverviewPosition.x,cfgOverviewPosition.y)}else{placeOverview()}graphViewport.reveal();persist()}};
       canvas.addEventListener('graph-viewport',autoOverview);
       const updateMap=()=>{const view=graphViewport.snapshot(),box=map.viewBox.baseVal,left=Math.max(0,Math.min(box.width,-view.x/view.scale)),top=Math.max(0,Math.min(box.height,-view.y/view.scale)),right=Math.max(left,Math.min(box.width,(canvas.clientWidth-view.x)/view.scale)),bottom=Math.max(top,Math.min(box.height,(canvas.clientHeight-view.y)/view.scale));const w=Math.min(box.width,Math.max(4,right-left)),h=Math.min(box.height,Math.max(4,bottom-top)),wx=Math.max(0,Math.min(box.width-w,left)),wy=Math.max(0,Math.min(box.height-h,top));windowRect.setAttribute('x',wx);windowRect.setAttribute('y',wy);windowRect.setAttribute('width',w);windowRect.setAttribute('height',h);const ids=new Set(nodes.filter(node=>node.classList.contains('selected')).map(node=>node.dataset.node));for(const rect of map.querySelectorAll('[data-map-node]')){rect.classList.toggle('cfg-map-selected',ids.has(rect.dataset.mapNode))}};
-      canvas.addEventListener('graph-viewport',updateMap);new MutationObserver(updateMap).observe(canvas.querySelector('.graph-card-world')||canvas.querySelector('.graph-world'),{subtree:true,attributes:true,attributeFilter:['class']});
+      canvas.addEventListener('graph-viewport',updateMap);new MutationObserver(updateMap).observe(canvas.querySelector('.graph-card-world')||canvas.querySelector('.graph-world')||canvas,{subtree:true,attributes:true,attributeFilter:['class']});
       let pointer;const move=event=>{const matrix=map.getScreenCTM();if(!matrix){return}const p=map.createSVGPoint();p.x=event.clientX;p.y=event.clientY;const target=p.matrixTransform(matrix.inverse());graphViewport.center(target.x,target.y)};
       map.addEventListener('pointerdown',event=>{if(event.button!==0){return}event.preventDefault();event.stopPropagation();pointer=event.pointerId;map.setPointerCapture(pointer);map.focus({preventScroll:true});move(event)});map.addEventListener('pointermove',event=>{if(pointer===event.pointerId){move(event)}});for(const event of ['pointerup','pointercancel','lostpointercapture']){map.addEventListener(event,()=>{pointer=undefined})}
       map.addEventListener('keydown',event=>{const delta={ArrowLeft:[-50,0],ArrowRight:[50,0],ArrowUp:[0,-50],ArrowDown:[0,50]}[event.key];if(delta){event.preventDefault();event.stopPropagation();const view=graphViewport.snapshot();graphViewport.center((canvas.clientWidth/2-view.x+delta[0])/view.scale,(canvas.clientHeight/2-view.y+delta[1])/view.scale)}});

@@ -12,7 +12,7 @@ use tower_lsp_server::ls_types::{
   Range, SignatureHelp, SignatureInformation, Uri,
 };
 
-use super::{Engine, find_function_symbol, format_type_markdown};
+use super::{Engine, find_function_symbol};
 use crate::backend::list_all;
 use crate::document::{
   Document, Symbol, canonical_virtual_uri, contains_case_insensitive, data_type_name, offset,
@@ -55,40 +55,56 @@ const COMMON_TYPES: &[&str] = &[
   "string",
 ];
 
+/// Pre-extracted token and symbol metadata for type-definition lookup outside [`super::EngineState`].
+enum TypeLookupSource {
+  /// Direct type reference JSON ready for pointer/array unwrapping.
+  Direct(Value),
+  /// Local or parameter symbol whose `data_type` must be queried from `function.get`.
+  LocalFallback {
+    /// Resolved local or parameter symbol at the cursor.
+    symbol: Symbol,
+    /// Cached synthetic local detail when present without `data_type`.
+    local_info: Option<Value>,
+  },
+  /// Function symbol whose `return_type` must be queried from `function.get`.
+  FunctionReturn(String),
+  /// Label symbol whose `data_type` must be queried from `global_variable.get`.
+  GlobalLabel(String),
+}
+
 impl Engine {
   /// Returns semantic completion items for locals, program symbols, and built-in C types.
-  pub(crate) async fn completion(
-    &mut self,
-    uri: &Uri,
-    pos: Position,
-  ) -> Result<Vec<CompletionItem>> {
+  pub(crate) async fn completion(&self, uri: &Uri, pos: Position) -> Result<Vec<CompletionItem>> {
     let canon = canonical_virtual_uri(uri);
     let uri = &canon;
-    let doc = self.docs.get(uri).context("Unknown virtual document")?;
-    ensure!(
-      doc.clean(),
-      "Refresh modified decompilation before requesting semantic completion"
-    );
-    let cursor = offset(&doc.base, pos).context("Invalid completion position")?;
-    let prefix: String = doc.base[..cursor]
-      .chars()
-      .rev()
-      .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
-      .collect::<String>()
-      .chars()
-      .rev()
-      .collect();
-    let prefix_lower = prefix.to_lowercase();
-    let md5 = doc.md5.clone();
-    let locals: Vec<_> = doc
-      .spans
-      .iter()
-      .filter_map(|s| s.symbol.as_ref())
-      .filter(|s| s.local())
-      .cloned()
-      .collect();
+    let (prefix_lower, md5, locals) = {
+      let state = self.read_state();
+      let doc = state.docs.get(uri).context("Unknown virtual document")?;
+      ensure!(
+        doc.clean(),
+        "Refresh modified decompilation before requesting semantic completion"
+      );
+      let cursor = offset(&doc.base, pos).context("Invalid completion position")?;
+      let prefix: String = doc.base[..cursor]
+        .chars()
+        .rev()
+        .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+        .collect::<String>()
+        .chars()
+        .rev()
+        .collect();
+      let locals: Vec<_> = doc
+        .spans
+        .iter()
+        .filter_map(|s| s.symbol.as_ref())
+        .filter(|s| s.local())
+        .cloned()
+        .collect();
+      (prefix.to_lowercase(), doc.md5.clone(), locals)
+    };
     let session_symbols = self.symbols(&md5).await?;
     let local_qualified: Vec<String> = locals.iter().map(Symbol::qualified).collect();
+    let state = self.read_state();
     let mut seen = HashSet::new();
     let mut items = vec![];
     for (symbol, qualified) in locals
@@ -112,7 +128,7 @@ impl Engine {
         continue;
       }
       let display = symbol.display_name();
-      let detail = self
+      let detail = state
         .local_detail(symbol)
         .and_then(|v| {
           v.get("data_type")
@@ -137,6 +153,7 @@ impl Engine {
         ..Default::default()
       });
     }
+    drop(state);
 
     for t in COMMON_TYPES {
       if t.to_lowercase().starts_with(&prefix_lower) && seen.insert((*t).to_owned()) {
@@ -155,90 +172,92 @@ impl Engine {
 
   /// Resolves active parameter signature help when the cursor sits inside a function call.
   pub(crate) async fn signature_help(
-    &mut self,
+    &self,
     uri: &Uri,
     pos: Position,
   ) -> Result<Option<SignatureHelp>> {
     let canon = canonical_virtual_uri(uri);
     let uri = &canon;
-    let doc = self.docs.get(uri).context("Unknown virtual document")?;
-    if !doc.clean() {
-      return Ok(None);
-    }
-    let cursor = offset(&doc.base, pos).context("Invalid signature position")?;
-    let mut stack: Vec<Option<(Symbol, u32)>> = vec![];
-    let mut previous = None;
-    for span in doc.spans.iter().take_while(|s| s.start < cursor) {
-      let token = span.token.text.trim();
-      // Native GUI layout includes whitespace and zero-width separators.
-      // They do not interrupt a callee followed by its argument list.
-      if token.is_empty() || span.token.kind == "comment" {
-        continue;
+    let call_target = {
+      let state = self.read_state();
+      let doc = state.docs.get(uri).context("Unknown virtual document")?;
+      if !doc.clean() {
+        return Ok(None);
       }
-      match token {
-        "(" => stack.push(previous.take().map(|s| (s, 0))),
-        ")" => {
-          stack.pop();
-          previous = None;
+      let cursor = offset(&doc.base, pos).context("Invalid signature position")?;
+      let mut stack: Vec<Option<(Symbol, u32)>> = vec![];
+      let mut previous = None;
+      for span in doc.spans.iter().take_while(|s| s.start < cursor) {
+        let token = span.token.text.trim();
+        // Native GUI layout includes whitespace and zero-width separators.
+        // They do not interrupt a callee followed by its argument list.
+        if token.is_empty() || span.token.kind == "comment" {
+          continue;
         }
-        "," => {
-          if let Some(Some((_, argument))) = stack.last_mut() {
-            *argument += 1;
+        match token {
+          "(" => stack.push(previous.take().map(|s| (s, 0))),
+          ")" => {
+            stack.pop();
+            previous = None;
           }
-          previous = None;
-        }
-        _ => {
-          if let Some(sym) = &span.symbol {
-            if sym.kind.eq_ignore_ascii_case("function") {
-              previous = Some(sym.clone());
+          "," => {
+            if let Some(Some((_, argument))) = stack.last_mut() {
+              *argument += 1;
+            }
+            previous = None;
+          }
+          _ => {
+            if let Some(sym) = &span.symbol {
+              if sym.kind.eq_ignore_ascii_case("function") {
+                previous = Some(sym.clone());
+              } else {
+                previous = None;
+              }
+            } else if span.token.kind == "function" {
+              let sym = state
+                .symbols
+                .get(&doc.md5)
+                .and_then(|syms| {
+                  find_function_symbol(syms, span.token.address.as_deref(), &span.token.text)
+                })
+                .cloned()
+                .or_else(|| {
+                  span.token.address.as_ref().map(|addr| Symbol {
+                    demangled_name: None,
+                    id: format!("Function:{}:{}", doc.md5, addr),
+                    name: span.token.text.clone(),
+                    address: addr.clone(),
+                    namespace: String::new(),
+                    kind: "Function".into(),
+                  })
+                });
+              previous = sym;
             } else {
               previous = None;
             }
-          } else if span.token.kind == "function" {
-            let sym = self
-              .symbols
-              .get(&doc.md5)
-              .and_then(|syms| {
-                find_function_symbol(syms, span.token.address.as_deref(), &span.token.text)
-              })
-              .cloned()
-              .or_else(|| {
-                span.token.address.as_ref().map(|addr| Symbol {
-                  demangled_name: None,
-                  id: format!("Function:{}:{}", doc.md5, addr),
-                  name: span.token.text.clone(),
-                  address: addr.clone(),
-                  namespace: String::new(),
-                  kind: "Function".into(),
-                })
-              });
-            previous = sym;
-          } else {
-            previous = None;
           }
         }
       }
-    }
-    let Some((symbol, argument)) = stack.into_iter().rev().flatten().next() else {
-      return Ok(None);
-    };
-    let md5 = doc.md5.clone();
-    // The function header is a declaration, not a call expression.
-    if doc.entry.as_deref() == Some(symbol.address.as_str())
-      && doc
-        .spans
-        .iter()
-        .find(|s| s.symbol.as_ref().is_some_and(|v| v.id == symbol.id))
-        .is_some_and(|s| s.start < doc.body_start())
-    {
-      // Recursive calls in the body are still eligible.
+      let Some((symbol, argument)) = stack.into_iter().rev().flatten().next() else {
+        return Ok(None);
+      };
+      // The function header is a declaration, not a call expression.
       let body_start = doc.body_start();
-      if cursor < body_start {
+      if doc.entry.as_deref() == Some(symbol.address.as_str())
+        && doc
+          .spans
+          .iter()
+          .find(|s| s.symbol.as_ref().is_some_and(|v| v.id == symbol.id))
+          .is_some_and(|s| s.start < body_start)
+        && cursor < body_start
+      {
         return Ok(None);
       }
-    }
-    let Ok(function) = self
-      .backend
+      (doc.md5.clone(), symbol, argument)
+    };
+    let (md5, symbol, argument) = call_target;
+    let backend = self.backend();
+    let Ok(function) = backend
       .call(
         "function",
         "get",
@@ -299,122 +318,95 @@ impl Engine {
   }
 
   /// Resolves the underlying Ghidra data-type record at `pos` for graphical or hover display.
-  pub(crate) async fn type_definition(
-    &mut self,
-    uri: &Uri,
-    pos: Position,
-  ) -> Result<Option<Value>> {
+  pub(crate) async fn type_definition(&self, uri: &Uri, pos: Position) -> Result<Option<Value>> {
     let canon = canonical_virtual_uri(uri);
     let uri = &canon;
-    let doc = self.docs.get(uri).context("Unknown virtual document")?;
-    if !doc.clean() {
-      return Ok(None);
-    }
-    let Some(span) = doc.span_at(pos) else {
-      return Ok(None);
-    };
-    let md5 = doc.md5.clone();
-    let mut reference = if span.token.kind == "type" {
-      json!({"kind": "named", "name": span.token.text})
-    } else if let Some(symbol) = &span.symbol {
-      if let Some(dt) = self
-        .local_detail(symbol)
-        .and_then(|d| d.get("data_type").cloned())
-        .filter(|v| !v.is_null())
-      {
-        dt
-      } else if symbol.local() {
-        let cached = self
-          .functions
-          .get(&(md5.clone(), symbol.address.clone()))
-          .cloned();
-        let function = match cached {
-          Some(f) => f,
-          None => {
-            self
-              .backend
-              .call(
-                "function",
-                "get",
-                Some(&md5),
-                json!({"selector": {"entry": symbol.address}}),
-              )
-              .await?
-          }
-        };
-        let local_info = self.local_detail(symbol);
-        let expected_ord = local_info
+    let (md5, source) = {
+      let state = self.read_state();
+      let doc = state.docs.get(uri).context("Unknown virtual document")?;
+      if !doc.clean() {
+        return Ok(None);
+      }
+      let Some(span) = doc.span_at(pos) else {
+        return Ok(None);
+      };
+      let source = if span.token.kind == "type" {
+        TypeLookupSource::Direct(json!({"kind": "named", "name": span.token.text}))
+      } else if let Some(symbol) = &span.symbol {
+        let local_info = state.local_detail(symbol);
+        if let Some(dt) = local_info
           .as_ref()
-          .and_then(|d| d.get("ordinal").and_then(Value::as_u64));
-        let expected_storage = local_info
-          .as_ref()
-          .and_then(|d| d.get("storage"))
-          .filter(|s| !s.is_null());
-        let key = if symbol.kind == "Parameter" {
-          "parameters"
-        } else {
-          "local_variables"
-        };
-        let Some(dt) = function
-          .get(key)
-          .and_then(Value::as_array)
-          .and_then(|items| {
-            expected_ord
-              .and_then(|ord| {
-                items
-                  .iter()
-                  .find(|v| v.get("ordinal").and_then(Value::as_u64) == Some(ord))
-              })
-              .or_else(|| {
-                expected_storage.and_then(|st| {
-                  items
-                    .iter()
-                    .find(|v| same_storage(v.get("storage"), Some(st)))
-                })
-              })
-              .or_else(|| {
-                items
-                  .iter()
-                  .find(|v| v.get("name").and_then(Value::as_str) == Some(&symbol.name))
-              })
-          })
-          .and_then(|v| v.get("data_type"))
+          .and_then(|d| d.get("data_type").cloned())
           .filter(|v| !v.is_null())
-          .cloned()
-        else {
+        {
+          TypeLookupSource::Direct(dt)
+        } else if symbol.local() {
+          if let Some(cached) = state
+            .functions
+            .get(&(doc.md5.clone(), symbol.address.clone()))
+          {
+            let Some(dt) = local_fallback_type(cached, symbol, local_info.as_ref()) else {
+              return Ok(None);
+            };
+            TypeLookupSource::Direct(dt)
+          } else {
+            TypeLookupSource::LocalFallback {
+              symbol: symbol.clone(),
+              local_info,
+            }
+          }
+        } else if symbol.kind.eq_ignore_ascii_case("function") {
+          TypeLookupSource::FunctionReturn(symbol.address.clone())
+        } else if symbol.kind.eq_ignore_ascii_case("label") {
+          TypeLookupSource::GlobalLabel(symbol.address.clone())
+        } else {
           return Ok(None);
-        };
-        dt
-      } else if symbol.kind.eq_ignore_ascii_case("function") {
-        self
-          .backend
+        }
+      } else {
+        return Ok(None);
+      };
+      (doc.md5.clone(), source)
+    };
+    let backend = self.backend();
+    let mut reference = match source {
+      TypeLookupSource::Direct(value) => value,
+      TypeLookupSource::LocalFallback { symbol, local_info } => {
+        let function = backend
           .call(
             "function",
             "get",
             Some(&md5),
             json!({"selector": {"entry": symbol.address}}),
           )
-          .await?["return_type"]
-          .clone()
-      } else if symbol.kind.eq_ignore_ascii_case("label") {
-        let Ok(global) = self
-          .backend
+          .await?;
+        let Some(dt) = local_fallback_type(&function, &symbol, local_info.as_ref()) else {
+          return Ok(None);
+        };
+        dt
+      }
+      TypeLookupSource::FunctionReturn(address) => backend
+        .call(
+          "function",
+          "get",
+          Some(&md5),
+          json!({"selector": {"entry": address}}),
+        )
+        .await?["return_type"]
+        .clone(),
+      TypeLookupSource::GlobalLabel(address) => {
+        let Ok(global) = backend
           .call(
             "global_variable",
             "get",
             Some(&md5),
-            json!({"selector": {"address": symbol.address}}),
+            json!({"selector": {"address": address}}),
           )
           .await
         else {
           return Ok(None);
         };
         global["data_type"].clone()
-      } else {
-        return Ok(None);
       }
-    } else {
-      return Ok(None);
     };
     loop {
       reference = match reference.get("kind").and_then(Value::as_str) {
@@ -429,8 +421,7 @@ impl Engine {
     };
     if name.starts_with('/') {
       return Ok(
-        self
-          .backend
+        backend
           .call(
             "data_type",
             "get",
@@ -442,7 +433,7 @@ impl Engine {
       );
     }
     let types = list_all(
-      self.backend.as_ref(),
+      backend.as_ref(),
       "data_type",
       &md5,
       json!({"filter": {"query": name}, "page": {"limit": 1000}}),
@@ -463,8 +454,7 @@ impl Engine {
     } else if let Some(first) = candidates.first() {
       first
     } else {
-      if let Ok(builtin) = self
-        .backend
+      if let Ok(builtin) = backend
         .call(
           "data_type",
           "get",
@@ -482,8 +472,7 @@ impl Engine {
       .and_then(Value::as_str)
       .context("Type lacks its full path")?;
     Ok(Some(
-      self
-        .backend
+      backend
         .call(
           "data_type",
           "get",
@@ -496,21 +485,20 @@ impl Engine {
 
   /// Opens a virtual Markdown document describing the resolved data type at `pos`.
   pub(crate) async fn goto_type_definition(
-    &mut self,
+    &self,
     uri: &Uri,
     pos: Position,
   ) -> Result<Option<Location>> {
     let canon = canonical_virtual_uri(uri);
     let uri = &canon;
+    let (md5, start_gen, start_epoch) = {
+      let state = self.read_state();
+      let doc = state.docs.get(uri).context("Unknown virtual document")?;
+      (doc.md5.clone(), state.generation, state.epoch(&doc.md5))
+    };
     let Some(type_data) = self.type_definition(uri, pos).await? else {
       return Ok(None);
     };
-    let md5 = self
-      .docs
-      .get(uri)
-      .context("Unknown virtual document")?
-      .md5
-      .clone();
     let path = type_data
       .get("path")
       .and_then(Value::as_str)
@@ -522,21 +510,191 @@ impl Engine {
     let key = format!("{path}.md");
     let type_uri = virtual_uri(&md5, "type", &key)?;
     let md = format_type_markdown(&type_data);
-    self.install(Document {
-      uri: type_uri.clone(),
-      md5,
-      entry: None,
-      base: md.clone(),
-      current: md.clone(),
-      saved: md,
-      version: None,
-      spans: vec![],
-      warning: None,
-    })?;
+    {
+      let mut state = self.write_state();
+      ensure!(
+        !state.is_closed_since(&md5, start_epoch, start_gen),
+        "Session was closed"
+      );
+      state.install(Document {
+        uri: type_uri.clone(),
+        md5,
+        entry: None,
+        base: md.clone(),
+        current: md.clone(),
+        saved: md,
+        version: None,
+        spans: vec![],
+        warning: None,
+      })?;
+    }
     let range = Range::new(
       Position::new(0, 0),
       Position::new(0, (2 + name.encode_utf16().count()) as u32),
     );
     Ok(Some(Location::new(type_uri, range)))
   }
+}
+
+/// Finds the `data_type` of `symbol` in `function` by ordinal, storage, or name.
+fn local_fallback_type(
+  function: &Value,
+  symbol: &Symbol,
+  local_info: Option<&Value>,
+) -> Option<Value> {
+  let expected_ord = local_info.and_then(|d| d.get("ordinal").and_then(Value::as_u64));
+  let expected_storage = local_info
+    .and_then(|d| d.get("storage"))
+    .filter(|s| !s.is_null());
+  let key = if symbol.kind == "Parameter" {
+    "parameters"
+  } else {
+    "local_variables"
+  };
+  function
+    .get(key)
+    .and_then(Value::as_array)
+    .and_then(|items| {
+      expected_ord
+        .and_then(|ord| {
+          items
+            .iter()
+            .find(|v| v.get("ordinal").and_then(Value::as_u64) == Some(ord))
+        })
+        .or_else(|| {
+          expected_storage.and_then(|st| {
+            items
+              .iter()
+              .find(|v| same_storage(v.get("storage"), Some(st)))
+          })
+        })
+        .or_else(|| {
+          items
+            .iter()
+            .find(|v| v.get("name").and_then(Value::as_str) == Some(&symbol.name))
+        })
+    })
+    .and_then(|v| v.get("data_type"))
+    .filter(|v| !v.is_null())
+    .cloned()
+}
+
+/// Formats structured data-type JSON returned by `ghidra-mcp` into Markdown documentation.
+pub(crate) fn format_type_markdown(data: &Value) -> String {
+  let name = data
+    .get("name")
+    .and_then(Value::as_str)
+    .unwrap_or("Unknown");
+  let kind = data.get("kind").and_then(Value::as_str).unwrap_or("type");
+  let length = data
+    .get("length")
+    .or_else(|| data.get("size"))
+    .and_then(Value::as_u64)
+    .map(|s| format!("{s} bytes (`0x{s:x}`)"))
+    .unwrap_or_else(|| "Unknown / variable".into());
+  let category = data
+    .get("category_path")
+    .and_then(Value::as_str)
+    .unwrap_or("/");
+  let path = data.get("path").and_then(Value::as_str).unwrap_or("");
+
+  let mut md = format!("# {kind} {name}\n\n");
+  md.push_str(&format!("- **Kind**: `{kind}`\n"));
+  md.push_str(&format!("- **Path**: `{path}`\n"));
+  md.push_str(&format!("- **Category**: `{category}`\n"));
+  md.push_str(&format!("- **Size**: {length}\n"));
+
+  if let Some(desc) = data.get("description").and_then(Value::as_str)
+    && !desc.trim().is_empty()
+  {
+    md.push_str(&format!("- **Description**: {desc}\n"));
+  }
+  if let Some(base) = data.get("base_type") {
+    let base_name = data_type_name(base);
+    if !base_name.is_empty() && base_name != "unknown" {
+      md.push_str(&format!("- **Base Type**: `{base_name}`\n"));
+    }
+  }
+
+  if let Some(fields) = data
+    .get("fields")
+    .and_then(Value::as_array)
+    .filter(|f| !f.is_empty())
+  {
+    md.push_str("\n## Fields\n\n");
+    md.push_str("| Offset | Size | Name | Type | Notes |\n");
+    md.push_str("| :--- | :--- | :--- | :--- | :--- |\n");
+    for f in fields {
+      let offset = f
+        .get("offset")
+        .and_then(Value::as_u64)
+        .map(|o| format!("`+0x{o:04x}`"))
+        .unwrap_or_else(|| "-".into());
+      let size = f
+        .get("length")
+        .and_then(Value::as_u64)
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| "-".into());
+      let fname = f.get("name").and_then(Value::as_str).unwrap_or("(unnamed)");
+      let ftype = data_type_name(&f["data_type"]);
+      let notes = f.get("comment").and_then(Value::as_str).unwrap_or("");
+      md.push_str(&format!(
+        "| {offset} | {size} | `{fname}` | `{ftype}` | {notes} |\n"
+      ));
+    }
+  }
+
+  if let Some(values) = data
+    .get("values")
+    .and_then(Value::as_array)
+    .filter(|v| !v.is_empty())
+  {
+    md.push_str("\n## Enum Values\n\n");
+    md.push_str("| Name | Value | Comment |\n");
+    md.push_str("| :--- | :--- | :--- |\n");
+    for v in values {
+      let vname = v.get("name").and_then(Value::as_str).unwrap_or("");
+      let val = v
+        .get("value")
+        .map(|val| {
+          val
+            .as_str()
+            .map(str::to_owned)
+            .unwrap_or_else(|| val.to_string())
+        })
+        .unwrap_or_default();
+      let comm = v.get("comment").and_then(Value::as_str).unwrap_or("");
+      md.push_str(&format!("| `{vname}` | `{val}` | {comm} |\n"));
+    }
+  }
+
+  if let Some(sig) = data.get("signature") {
+    md.push_str("\n## Function Signature\n\n");
+    if let Some(sig_str) = sig.as_str() {
+      md.push_str(&format!("`{sig_str}`\n"));
+    } else if let Some(sig_obj) = sig.as_object() {
+      if let Some(ret) = sig_obj.get("return_type") {
+        md.push_str(&format!("- **Return Type**: `{}`\n", data_type_name(ret)));
+      }
+      if let Some(conv) = sig_obj.get("calling_convention").and_then(Value::as_str) {
+        md.push_str(&format!("- **Calling Convention**: `{conv}`\n"));
+      }
+      if let Some(params) = sig_obj
+        .get("parameters")
+        .and_then(Value::as_array)
+        .filter(|p| !p.is_empty())
+      {
+        md.push_str("\n### Parameters\n\n");
+        md.push_str("| Ordinal | Name | Type |\n");
+        md.push_str("| :--- | :--- | :--- |\n");
+        for (idx, p) in params.iter().enumerate() {
+          let pname = p.get("name").and_then(Value::as_str).unwrap_or("(unnamed)");
+          let ptype = data_type_name(&p["data_type"]);
+          md.push_str(&format!("| {idx} | `{pname}` | `{ptype}` |\n"));
+        }
+      }
+    }
+  }
+
+  md
 }
