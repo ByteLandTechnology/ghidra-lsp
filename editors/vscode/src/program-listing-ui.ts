@@ -14,7 +14,7 @@ import { pageStyles } from './page-styles';
 import { addrSpan, programViewStyles } from './program-views-styles';
 import { highlightAsm, highlightName } from './syntax';
 import { browserLiveRegions, browserStateScript, moreActionsPopover, pageOptionsPopover, viewStyles, webviewPopoverScript, webviewShortcutScript } from './view-ui';
-import { escape } from './web';
+import { domId, escape, gotoFormHtml, liveRegionsHtml } from './web';
 
 /** Full view-model payload used to render the graphical Program Listing HTML page. */
 export interface ListingViewPayload {
@@ -33,6 +33,8 @@ export interface ListingViewPayload {
     syncEnabled: boolean;
     singleKeyShortcuts?: boolean;
     totalUnitsLabel: string;
+    busy?: boolean;
+    error?: string;
     focusId?: string;
 }
 
@@ -107,7 +109,7 @@ export function renderListingRowsHtml(items: ListingRenderItem[], selectedAddres
             ? `<span class="target-chips">${visibleTargets.map(t => `<button type="button" class="target-link" data-jump="${escape(t.to)}" title="${escape(`Jump to ${t.to}${t.kind ? ` (${t.kind})` : ''}`)}">→ ${escape(t.label)}</button>`).join('')}</span>`
             : '';
         const eolHtml = unit.eolComment ? `; ${escape(unit.eolComment)}` : '';
-        parts.push(`<tr class="listing-unit-row${isSel ? ' selected' : ''}"${isSel ? ' aria-current="true"' : ''} tabindex="0" data-address="${escape(unit.address)}" data-byte-length="${unit.byteLength}" data-kind="${escape(unit.kind)}"${unit.entry ? ` data-entry="${escape(unit.entry)}"` : ''}${unit.functionName ? ` data-fn-name="${escape(unit.functionName)}"` : ''}${unit.targets[0]?.to ? ` data-jump-primary="${escape(unit.targets[0].to)}"` : ''}${hiddenRun ? ' data-run-member="true" hidden' : ''}><td class="addr">${addrSpan(unit.address)}</td><td class="col-bytes" title="${escape(unit.bytesText)}">${escape(unit.bytesShort)}</td><td class="col-mnemonic"><span class="tok-mnemonic">${escape(unit.mnemonic)}</span></td><td class="col-operands">${opHtml}${chipsHtml}</td><td class="col-comment">${eolHtml}</td></tr>`);
+        parts.push(`<tr id="${domId('unit', unit.address)}" class="listing-unit-row${isSel ? ' selected' : ''}"${isSel ? ' aria-current="true"' : ''} tabindex="0" data-address="${escape(unit.address)}" data-byte-length="${unit.byteLength}" data-kind="${escape(unit.kind)}"${unit.entry ? ` data-entry="${escape(unit.entry)}"` : ''}${unit.functionName ? ` data-fn-name="${escape(unit.functionName)}"` : ''}${unit.targets[0]?.to ? ` data-jump-primary="${escape(unit.targets[0].to)}"` : ''}${hiddenRun ? ' data-run-member="true" hidden' : ''}><td class="addr">${addrSpan(unit.address)}</td><td class="col-bytes" title="${escape(unit.bytesText)}">${escape(unit.bytesShort)}</td><td class="col-mnemonic"><span class="tok-mnemonic">${escape(unit.mnemonic)}</span></td><td class="col-operands">${opHtml}${chipsHtml}</td><td class="col-comment">${eolHtml}</td></tr>`);
 
         if (unit.postComment) {
             parts.push(`<tr class="listing-aux-row listing-post-row"${hiddenRun ? ' hidden' : ''}><td class="addr"></td><td colspan="4">; post: ${escape(unit.postComment)}</td></tr>`);
@@ -122,7 +124,7 @@ export function renderListingRowsHtml(items: ListingRenderItem[], selectedAddres
                 const b = run.blockHeader;
                 out.push(`<tr class="listing-aux-row listing-block-row"><td colspan="5"><span class="listing-block-name">${escape(b.name)}</span><span>${addrSpan(b.start)}–${addrSpan(b.end)} · ${escape(b.permissions)}${b.initialized ? '' : ' · uninitialized'}${b.kind ? ` · ${escape(b.kind)}` : ''}${b.comment ? ` · ${escape(b.comment)}` : ''}</span></td></tr>`);
             }
-            out.push(`<tr class="listing-undef-run" data-run-start="${escape(run.startAddress)}"><td class="addr">${addrSpan(run.startAddress)}</td><td class="col-bytes"></td><td class="col-mnemonic">${run.uninitialized ? '??' : 'db'}</td><td class="col-operands"><button type="button" class="expand-run-btn" aria-expanded="false" data-expand-run="${escape(run.startAddress)}">${run.byteLength} ${run.uninitialized ? 'uninitialized' : 'undefined'} bytes (${escape(displayAddress(run.startAddress))}..${escape(displayAddress(run.endAddress))})</button></td><td class="col-comment"></td></tr>`);
+            out.push(`<tr id="${domId('undef-run', run.startAddress)}" class="listing-undef-run" data-run-start="${escape(run.startAddress)}"><td class="addr">${addrSpan(run.startAddress)}</td><td class="col-bytes"></td><td class="col-mnemonic">${run.uninitialized ? '??' : 'db'}</td><td class="col-operands"><button type="button" id="${domId('run-btn', run.startAddress)}" class="expand-run-btn" aria-expanded="false" data-expand-run="${escape(run.startAddress)}">${run.byteLength} ${run.uninitialized ? 'uninitialized' : 'undefined'} bytes (${escape(displayAddress(run.startAddress))}..${escape(displayAddress(run.endAddress))})</button></td><td class="col-comment"></td></tr>`);
             for (const member of run.units) {
                 out.push(renderUnit(member, true));
             }
@@ -157,7 +159,7 @@ ${pageStyles}
 ${iconFontStyles}
 ${viewStyles}
 ${programViewStyles}
-</style></head><body class="browser-page program-view hide-vars" data-view-kind="listing"><main>
+</style></head><body class="browser-page program-view hide-vars${payload.busy ? ' is-busy' : ''}" data-view-kind="listing"${payload.busy ? ' aria-busy="true"' : ''}><main>
 <h1 class="page-context">${escape(payload.title)}</h1>
 <div class="toolbar pv-toolbar" role="group" aria-label="Listing navigation">
   <div class="pv-nav" role="group" aria-label="History and window">
@@ -165,7 +167,7 @@ ${programViewStyles}
     <button type="button" id="nav-forward" class="icon-button" data-action="navForward" aria-label="Forward" title="Forward (Alt+Right)"${payload.canForward ? '' : ' disabled'}>${callIcon('forward')}</button>
     <span class="pv-step" id="pv-step"${payload.hasMoreBefore || payload.hasMoreAfter ? '' : ' hidden'}><span class="pv-divider" aria-hidden="true"></span><button type="button" id="pager-before" class="icon-button" data-action="loadBefore" aria-label="Previous window" title="Previous window"${payload.hasMoreBefore ? '' : ' disabled'}>${callIcon('up')}</button><button type="button" id="pager-after" class="icon-button" data-action="loadAfter" aria-label="Next window" title="Next window"${payload.hasMoreAfter ? '' : ' disabled'}>${callIcon('down')}</button></span>
   </div>
-  <form id="goto"><input id="address" aria-label="Address or symbol" value="${escape(displayAddress(payload.cursorAddress))}" placeholder="Address or symbol…"><button type="submit" id="goto-submit" aria-label="Go to address" title="Go to address">${callIcon('right')}</button></form>
+  ${gotoFormHtml(displayAddress(payload.cursorAddress), 'Address or symbol', 'Address or symbol…')}
   <div class="browser-search">${callIcon('search')}<input class="search" id="search" aria-label="Filter displayed rows" placeholder="Filter instructions, labels, comments…"></div>
   <div class="pv-tools" role="group" aria-label="Listing tools">
     <button type="button" id="sync-toggle" class="icon-button" data-action="toggleSync" aria-pressed="${payload.syncEnabled}" aria-label="Sync cursor with other Ghidra views" title="Sync cursor with other Ghidra views">${callIcon('link')}</button>
@@ -173,6 +175,7 @@ ${programViewStyles}
     ${pageOptionsPopover(`${blockOptions ? `<label class="pv-option-row">Memory block<select id="block-select" aria-label="Memory block">${blockOptions}</select></label>` : ''}<label><input id="listing-bytes" type="checkbox" checked>Show bytes</label><label><input id="listing-headers" type="checkbox" checked>Show function headers</label><label><input id="listing-vars" type="checkbox">Show function variables</label><label><input id="listing-xrefs" type="checkbox" checked>Show cross-references</label><label><input id="listing-collapse" type="checkbox" checked>Collapse undefined byte runs</label><p id="listing-scope-note">${escape(payload.totalUnitsLabel)}</p>`)}
   </div>
 </div>
+${liveRegionsHtml(Boolean(payload.busy), payload.error ?? '')}
 ${browserLiveRegions}
 <div class="table-wrap" id="listing-wrap">
   <table class="listing-table">
@@ -263,6 +266,23 @@ wrap.addEventListener('scroll', () => persist(), { passive: true });
 
 const unitRows = () => [...tbody.querySelectorAll('tr.listing-unit-row')];
 const findUnitRow = addr => addr ? unitRows().find(r => sameAddr(r.dataset.address, addr)) : undefined;
+const shortAddr = v => /^ram:[0-9a-f]+$/i.test(v || '') ? v.slice(4) : String(v || '');
+
+const focusListingFallback = () => {
+  const selRow = findUnitRow(selected);
+  if (selRow && !selRow.hidden) {
+    selRow.focus({ preventScroll: true });
+    return;
+  }
+  const firstVisible = unitRows().find(r => !r.hidden);
+  if (firstVisible) {
+    firstVisible.scrollIntoView({ block: 'nearest' });
+    firstVisible.focus({ preventScroll: true });
+    return;
+  }
+  const clearBtn = document.getElementById('clear-filter');
+  ((clearBtn && !clearBtn.closest('[hidden]')) ? clearBtn : search)?.focus({ preventScroll: true });
+};
 
 const updateSelectionTools = () => {
   const label = document.getElementById('selection-label');
@@ -277,19 +297,15 @@ const updateSelectionTools = () => {
   document.body.classList.toggle('has-selection', visible);
   if (!visible) {
     closePopover(more);
-    if (hadBarFocus) {
-      const clearBtn = document.getElementById('clear-filter');
-      ((clearBtn && !clearBtn.closest('[hidden]')) ? clearBtn : search)?.focus({ preventScroll: true });
-    }
+    if (hadBarFocus) focusListingFallback();
     return;
   }
-  const short = v => /^ram:[0-9a-f]+$/i.test(v || '') ? v.slice(4) : v;
   const fn = active.dataset.entry || '';
   const fnName = active.dataset.fnName || '';
   const kind = active.dataset.kind || 'instruction';
   label.textContent = fnName
-    ? short(selected) + ' · ' + fnName
-    : (kind === 'data' ? short(selected) + ' · data' : short(selected));
+    ? shortAddr(selected) + ' · ' + fnName
+    : (kind === 'data' ? shortAddr(selected) + ' · data' : shortAddr(selected));
   label.title = selected + (fnName ? ' in ' + fnName : fn ? ' in ' + fn : '');
 
   const canDecompile = !!fn || kind === 'instruction';
@@ -345,14 +361,14 @@ const updateSelectionTools = () => {
   }
 };
 
-const selectRow = (row, notify = true, scroll = true) => {
+const selectRow = (row, notify = true, scroll = true, forceAddress = notify) => {
   if (!row) return;
   setCurrentRow(row, tbody);
   selected = row.dataset.address || '';
   selectedEntry = row.dataset.entry || '';
   selectedKind = row.dataset.kind || 'instruction';
   selectedLength = Number(row.dataset.byteLength) || 1;
-  if (addressInput) addressInput.value = /^ram:[0-9a-f]+$/i.test(selected) ? selected.slice(4) : selected;
+  setSyncedAddressValue(shortAddr(selected), forceAddress);
   if (scroll) row.scrollIntoView({ block: 'nearest' });
   updateSelectionTools();
   persist();
@@ -398,26 +414,12 @@ const bindTableInteractions = () => {
   applyFilter();
 };
 
-const focusListingFallback = () => {
-  const selRow = findUnitRow(selected);
-  if (selRow && !selRow.hidden) {
-    selRow.focus({ preventScroll: true });
-    return;
-  }
-  const firstVisible = unitRows().find(r => !r.hidden);
-  if (firstVisible) {
-    firstVisible.scrollIntoView({ block: 'nearest' });
-    firstVisible.focus({ preventScroll: true });
-    return;
-  }
-  search?.focus({ preventScroll: true });
-};
-
 tbody.addEventListener('click', event => {
   const jumpBtn = event.target.closest('[data-jump]');
   if (jumpBtn) {
     event.stopPropagation();
-    vscode.postMessage({ action: 'goto', address: jumpBtn.dataset.jump });
+    setBusyState(true);
+    vscode.postMessage({ action: 'goto', address: jumpBtn.dataset.jump, fromGoto: false });
     return;
   }
   const expandBtn = event.target.closest('[data-expand-run]');
@@ -453,7 +455,7 @@ tbody.addEventListener('dblclick', event => {
   if (!row) return;
   selectRow(row, false, false);
   const jump = row.dataset.jumpPrimary;
-  if (jump) vscode.postMessage({ action: 'goto', address: jump });
+  if (jump) { setBusyState(true); vscode.postMessage({ action: 'goto', address: jump, fromGoto: false }); }
   else if (primaryAction) vscode.postMessage({ action: primaryAction, address: selected, entry: selectedEntry, kind: selectedKind });
 });
 
@@ -472,7 +474,7 @@ tbody.addEventListener('keydown', event => {
     event.preventDefault();
     if (!sameAddr(selected, row.dataset.address)) selectRow(row, false, false);
     const jump = row.dataset.jumpPrimary;
-    if (jump) vscode.postMessage({ action: 'goto', address: jump });
+    if (jump) { setBusyState(true); vscode.postMessage({ action: 'goto', address: jump, fromGoto: false }); }
     else if (primaryAction) vscode.postMessage({ action: primaryAction, address: selected, entry: selectedEntry, kind: selectedKind });
   }
 });
@@ -489,6 +491,7 @@ document.addEventListener('click', event => {
       return;
     }
     if (menu) focusInvokerAndClose(menu);
+    if (['navBack', 'navForward', 'refresh', 'loadBefore', 'loadAfter'].includes(act)) setBusyState(true);
     persist();
     const focusId = document.activeElement?.id || '';
     if (['navBack', 'navForward', 'refresh', 'loadBefore', 'loadAfter', 'toggleSync', 'openHexBeside'].includes(act)) {
@@ -499,16 +502,13 @@ document.addEventListener('click', event => {
   }
 });
 
-document.getElementById('goto').addEventListener('submit', event => {
-  event.preventDefault();
-  const val = addressInput.value.trim();
-  if (val) vscode.postMessage({ action: 'goto', address: val, focusId: document.activeElement?.id || '' });
-});
+bindGotoForm(val => vscode.postMessage({ action: 'goto', address: val, fromGoto: true, focusId: document.activeElement?.id || '' }), persist);
 blockSelect?.addEventListener('change', () => {
   if (blockSelect.value) {
     focusInvokerAndClose(pageOptions);
     persist();
-    vscode.postMessage({ action: 'goto', address: blockSelect.value, pushHistory: true, focusId: document.activeElement?.id || '' });
+    setBusyState(true);
+    vscode.postMessage({ action: 'goto', address: blockSelect.value, pushHistory: true, fromGoto: false, focusId: document.activeElement?.id || '' });
   }
 });
 search.addEventListener('input', () => { applyFilter(); persist(); });
@@ -519,8 +519,16 @@ for (const chk of [optBytes, optHeaders, optVars, optXrefs, optCollapse]) {
 
 document.addEventListener('keydown', event => {
   if (event.altKey && !event.ctrlKey && !event.metaKey) {
-    if (event.key === 'ArrowLeft') { event.preventDefault(); vscode.postMessage({ action: 'navBack' }); return; }
-    if (event.key === 'ArrowRight') { event.preventDefault(); vscode.postMessage({ action: 'navForward' }); return; }
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault();
+      if (!document.getElementById('nav-back')?.disabled) { setBusyState(true); vscode.postMessage({ action: 'navBack' }); }
+      return;
+    }
+    if (event.key === 'ArrowRight') {
+      event.preventDefault();
+      if (!document.getElementById('nav-forward')?.disabled) { setBusyState(true); vscode.postMessage({ action: 'navForward' }); }
+      return;
+    }
   }
   if (isModShortcut(event, 'f')) { event.preventDefault(); search.focus(); search.select(); return; }
   if (isModShortcut(event, 'g')) { event.preventDefault(); addressInput.focus(); addressInput.select(); return; }
@@ -534,14 +542,21 @@ document.addEventListener('keydown', event => {
 window.addEventListener('message', event => {
   const msg = event.data || {};
   if (msg.action === 'highlight') {
+    setViewError('');
     const row = findUnitRow(msg.address);
-    if (row) selectRow(row, false, true);
+    if (row) selectRow(row, false, true, Boolean(msg.fromGoto));
+    if (msg.fromGoto) addressInput?.focus({ preventScroll: true });
   } else if (msg.action === 'syncState') {
     state.syncEnabled = !!msg.syncEnabled;
     syncToggle.setAttribute('aria-pressed', String(state.syncEnabled));
   } else if (msg.action === 'windowData') {
+    setViewError('');
+    const prevScrollTop = wrap.scrollTop;
     const activeEl = document.activeElement;
     const focusInTbody = !!activeEl && tbody.contains(activeEl);
+    const prevRowAddr = activeEl?.closest?.('tr.listing-unit-row')?.dataset?.address || '';
+    const prevExpandRun = activeEl?.closest?.('[data-expand-run]')?.dataset?.expandRun || '';
+    const prevJumpTarget = focusInTbody ? (activeEl.dataset?.jump || '') : '';
     const navBack = document.querySelector('[data-action="navBack"]');
     const navForward = document.querySelector('[data-action="navForward"]');
     const navButtons = [navBack, navForward, pagerBefore, pagerAfter].filter(Boolean);
@@ -550,9 +565,7 @@ window.addEventListener('message', event => {
     const prevTop = anchorAddr ? findUnitRow(anchorAddr)?.getBoundingClientRect().top : undefined;
     tbody.innerHTML = msg.rowsHtml;
     selected = msg.selectedAddress || selected;
-    if (addressInput && activeEl !== addressInput) {
-      addressInput.value = /^ram:[0-9a-f]+$/i.test(selected) ? selected.slice(4) : selected;
-    }
+    setSyncedAddressValue(shortAddr(selected), Boolean(msg.fromGoto));
     state.windowStart = msg.windowStart;
     state.windowEnd = msg.windowEnd;
     if (typeof msg.canBack === 'boolean' && navBack) navBack.disabled = !msg.canBack;
@@ -563,7 +576,9 @@ window.addEventListener('message', event => {
     if (msg.scopeNote) scopeNote.textContent = msg.scopeNote;
     if (blockSelect && msg.currentBlockStart) blockSelect.value = msg.currentBlockStart;
     bindTableInteractions();
-    if (anchorAddr && prevTop !== undefined) {
+    if (msg.preserveScroll) {
+      wrap.scrollTop = prevScrollTop;
+    } else if (anchorAddr && prevTop !== undefined) {
       const nextRow = findUnitRow(anchorAddr);
       if (nextRow) { wrap.scrollTop += nextRow.getBoundingClientRect().top - prevTop; }
     } else if (msg.scrollToSelected) {
@@ -572,8 +587,20 @@ window.addEventListener('message', event => {
     } else {
       wrap.scrollTop = 0;
     }
-    if (focusInTbody) {
-      focusListingFallback();
+    if (msg.fromGoto && addressInput) {
+      addressInput.focus({ preventScroll: true });
+    } else if (focusInTbody) {
+      const restoredRow = findUnitRow(prevRowAddr);
+      const restoredJump = prevJumpTarget && restoredRow && !restoredRow.hidden
+        ? restoredRow.querySelector('[data-jump="' + CSS.escape(prevJumpTarget) + '"]')
+        : null;
+      const restoredRun = prevExpandRun
+        ? tbody.querySelector('[data-expand-run="' + CSS.escape(prevExpandRun) + '"]')
+        : null;
+      if (restoredJump) restoredJump.focus({ preventScroll: true });
+      else if (restoredRun && !restoredRun.closest('[hidden]')) restoredRun.focus({ preventScroll: true });
+      else if (restoredRow && !restoredRow.hidden) restoredRow.focus({ preventScroll: true });
+      else focusListingFallback();
     } else if (focusedNavBtn && (focusedNavBtn.disabled || focusedNavBtn.closest('[hidden]'))) {
       const siblingOrder = focusedNavBtn === pagerBefore
         ? [pagerAfter, navBack, navForward]
@@ -585,6 +612,8 @@ window.addEventListener('message', event => {
       const nextBtn = siblingOrder.find(btn => btn && !btn.disabled && !btn.closest('[hidden]'));
       if (nextBtn) nextBtn.focus({ preventScroll: true });
       else focusListingFallback();
+    } else if (activeEl && activeEl !== document.body && activeEl !== document.documentElement && (!document.activeElement || document.activeElement === document.body)) {
+      focusListingFallback();
     }
     persist();
   }

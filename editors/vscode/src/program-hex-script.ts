@@ -226,6 +226,13 @@ ${webviewPopoverScript}
 document.addEventListener('focusin', persist);
 hexWrap.addEventListener('scroll', () => persist(), { passive: true });
 
+const focusHexFallback = () => {
+  const cell = syncRovingTabindex(cursorAddress || selected);
+  if (cell && !cell.closest('tr')?.hidden && !hexMain.hidden) { cell.focus({ preventScroll: true }); return; }
+  const clearBtn = document.getElementById('clear-filter');
+  ((clearBtn && !clearBtn.closest('[hidden]')) ? clearBtn : search)?.focus({ preventScroll: true });
+};
+
 const updateSelectionTools = () => {
   const label = document.getElementById('selection-label');
   const bar = label.closest('.selection-tools');
@@ -238,14 +245,7 @@ const updateSelectionTools = () => {
   const visible = (!!activeHex && !hexMain.hidden) || (!!activeMap && memoryMap?.open);
   bar.hidden = !visible;
   document.body.classList.toggle('has-selection', visible);
-  if (!visible) {
-    closePopover(more);
-    if (hadBarFocus) {
-      const clearBtn = document.getElementById('clear-filter');
-      ((clearBtn && !clearBtn.closest('[hidden]')) ? clearBtn : search)?.focus({ preventScroll: true });
-    }
-    return;
-  }
+  if (!visible) { closePopover(more); if (hadBarFocus) focusHexFallback(); return; }
 
   const isBlock = selectedKind === 'block' || (!!activeMap && !activeHex);
   const curBlock = findBlockFor(selected);
@@ -302,7 +302,7 @@ const updateSelectionTools = () => {
   }
 };
 
-const highlightRange = (startAddr, len = 1, notify = true, scroll = true) => {
+const highlightRange = (startAddr, len = 1, notify = true, scroll = true, forceAddress = notify) => {
   const start = parseAddr(startAddr);
   if (!start) return;
   const clampedLen = Math.max(1, len);
@@ -339,7 +339,7 @@ const highlightRange = (startAddr, len = 1, notify = true, scroll = true) => {
   selectionLength = clampedLen;
   selectedKind = 'bytes';
   syncRovingTabindex(cursorAddress || startAddr);
-  if (addressInput) addressInput.value = shortAddr(startAddr);
+  setSyncedAddressValue(shortAddr(startAddr), forceAddress);
   if (firstMatchedRow && scroll) firstMatchedRow.scrollIntoView({ block: 'nearest' });
   renderInspector(startAddr, selectionLength);
   updateSelectionTools();
@@ -538,7 +538,7 @@ inspectorEl.addEventListener('click', event => {
     return;
   }
   const jumpBtn = event.target.closest('[data-jump]');
-  if (jumpBtn) vscode.postMessage({ action: 'goto', address: jumpBtn.dataset.jump });
+  if (jumpBtn) { setBusyState(true); vscode.postMessage({ action: 'goto', address: jumpBtn.dataset.jump, fromGoto: false }); }
 });
 
 const selectBlockRow = row => {
@@ -563,7 +563,7 @@ mapTbody?.addEventListener('dblclick', event => {
   const row = event.target.closest('tr[data-address]');
   if (!row) return;
   selectBlockRow(row);
-  if (row.dataset.address) vscode.postMessage({ action: 'goto', address: row.dataset.address });
+  if (row.dataset.address) { setBusyState(true); vscode.postMessage({ action: 'goto', address: row.dataset.address, fromGoto: false }); }
 });
 mapTbody?.addEventListener('keydown', event => {
   if (event.altKey || event.ctrlKey || event.metaKey) return;
@@ -577,7 +577,7 @@ mapTbody?.addEventListener('keydown', event => {
   if (event.key === 'Enter') {
     event.preventDefault();
     selectBlockRow(row);
-    if (row.dataset.address) vscode.postMessage({ action: 'goto', address: row.dataset.address });
+    if (row.dataset.address) { setBusyState(true); vscode.postMessage({ action: 'goto', address: row.dataset.address, fromGoto: false }); }
     return;
   }
   if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
@@ -598,6 +598,7 @@ document.addEventListener('click', event => {
       return;
     }
     if (menu) focusInvokerAndClose(menu);
+    if (['navBack', 'navForward', 'refresh', 'loadBefore', 'loadAfter'].includes(act)) setBusyState(true);
     persist();
     const focusId = document.activeElement?.id || '';
     if (['navBack', 'navForward', 'refresh', 'loadBefore', 'loadAfter', 'toggleSync', 'openListingBeside'].includes(act)) {
@@ -608,16 +609,13 @@ document.addEventListener('click', event => {
   }
 });
 
-document.getElementById('goto').addEventListener('submit', event => {
-  event.preventDefault();
-  const val = addressInput.value.trim();
-  if (val) vscode.postMessage({ action: 'goto', address: val, focusId: document.activeElement?.id || '' });
-});
+bindGotoForm(val => vscode.postMessage({ action: 'goto', address: val, fromGoto: true, focusId: document.activeElement?.id || '' }), persist);
 blockSelect?.addEventListener('change', () => {
   if (blockSelect.value) {
     focusInvokerAndClose(pageOptions);
     persist();
-    vscode.postMessage({ action: 'goto', address: blockSelect.value, pushHistory: true, focusId: document.activeElement?.id || '' });
+    setBusyState(true);
+    vscode.postMessage({ action: 'goto', address: blockSelect.value, pushHistory: true, fromGoto: false, focusId: document.activeElement?.id || '' });
   }
 });
 search.addEventListener('input', () => { applyFilter(); persist(); });
@@ -632,6 +630,7 @@ widthSelect?.addEventListener('change', () => {
   const w = Number(widthSelect.value) === 8 ? 8 : 16;
   state.bytesPerRow = w;
   persist();
+  setBusyState(true);
   vscode.postMessage({ action: 'setHexOptions', bytesPerRow: w });
 });
 showInspectorChk?.addEventListener('change', () => {
@@ -641,8 +640,8 @@ showInspectorChk?.addEventListener('change', () => {
 
 document.addEventListener('keydown', event => {
   if (event.altKey && !event.ctrlKey && !event.metaKey) {
-    if (event.key === 'ArrowLeft') { event.preventDefault(); vscode.postMessage({ action: 'navBack' }); return; }
-    if (event.key === 'ArrowRight') { event.preventDefault(); vscode.postMessage({ action: 'navForward' }); return; }
+    if (event.key === 'ArrowLeft') { event.preventDefault(); if (!document.getElementById('nav-back')?.disabled) { setBusyState(true); vscode.postMessage({ action: 'navBack' }); } return; }
+    if (event.key === 'ArrowRight') { event.preventDefault(); if (!document.getElementById('nav-forward')?.disabled) { setBusyState(true); vscode.postMessage({ action: 'navForward' }); } return; }
   }
   if (isModShortcut(event, 'f')) { event.preventDefault(); search.focus(); search.select(); return; }
   if (isModShortcut(event, 'g')) { event.preventDefault(); addressInput.focus(); addressInput.select(); return; }
@@ -656,15 +655,19 @@ document.addEventListener('keydown', event => {
 window.addEventListener('message', event => {
   const msg = event.data || {};
   if (msg.action === 'highlight') {
+    setViewError('');
     const nextAddr = msg.address || selected;
     const nextLen = msg.length || 1;
     anchorAddress = nextAddr;
-    cursorAddress = nextAddr;
-    highlightRange(nextAddr, nextLen, false, true);
+    const hp = nextLen > 1 ? parseAddr(nextAddr) : null;
+    cursorAddress = hp ? resolveCanonicalAddr(hp.rawSpace, hp.offset + BigInt(nextLen - 1), hp.width) : nextAddr;
+    highlightRange(nextAddr, nextLen, false, true, Boolean(msg.fromGoto));
+    if (msg.fromGoto) addressInput?.focus({ preventScroll: true });
   } else if (msg.action === 'syncState') {
     state.syncEnabled = !!msg.syncEnabled;
     syncToggle.setAttribute('aria-pressed', String(state.syncEnabled));
   } else if (msg.action === 'inspectorData' && Array.isArray(msg.entries)) {
+    setBusyState(false);
     const addr = msg.address || selected;
     if (sameAddr(addr, selected)) {
       const len = msg.length || selectionLength || 1;
@@ -673,6 +676,8 @@ window.addEventListener('message', event => {
       applyInspector(addr, metaText, msg.entries);
     }
   } else if (msg.action === 'chunkData') {
+    setViewError('');
+    const prevScrollTop = hexWrap.scrollTop;
     const activeEl = document.activeElement;
     const inHexBody = !!(activeEl && hexBody.contains(activeEl));
     const prevHexAddr = inHexBody ? (activeEl.closest('[data-address]')?.dataset.address || '') : '';
@@ -693,25 +698,40 @@ window.addEventListener('message', event => {
     if (blockSelect && msg.currentBlockStart) blockSelect.value = msg.currentBlockStart;
     if (msg.sectionLabel) hexMain.setAttribute('aria-label', msg.sectionLabel);
     applyFilter();
-    const nextSel = msg.selectedAddress || selected;
+    const keepBlockSel = Boolean(msg.preserveScroll && selectedKind === 'block' && memoryMap?.querySelector('tr[aria-current="true"],tr.selected'));
+    const nextSel = keepBlockSel ? selected : (msg.selectedAddress || selected);
     const nextLen = msg.length || 1;
-    if (nextLen <= 1 || !sameAddr(nextSel, selected)) {
-      anchorAddress = nextSel;
-      cursorAddress = nextSel;
+    if (keepBlockSel) {
+      for (const el of hexBody.querySelectorAll('.hb.is-selected,.ha.is-selected,tr.selected')) el.classList.remove('is-selected', 'selected');
+      for (const el of rawByteCells()) el.setAttribute('aria-selected', 'false');
+      syncRovingTabindex('');
+      updateSelectionTools();
+    } else {
+      if (!sameAddr(nextSel, selected) || nextLen !== selectionLength || selectedKind !== 'bytes') {
+        anchorAddress = nextSel;
+        const sp = nextLen > 1 ? parseAddr(nextSel) : null;
+        cursorAddress = sp ? resolveCanonicalAddr(sp.rawSpace, sp.offset + BigInt(nextLen - 1), sp.width) : nextSel;
+      } else if (nextLen <= 1) {
+        anchorAddress = nextSel;
+        cursorAddress = nextSel;
+      }
+      highlightRange(nextSel, nextLen, false, !msg.preserveScroll, Boolean(msg.fromGoto));
     }
-    highlightRange(nextSel, nextLen, false, true);
+    if (msg.preserveScroll) hexWrap.scrollTop = prevScrollTop;
 
     const focusEmptyFallback = () => {
       const clearBtn = document.getElementById('clear-filter');
       const fallback = (clearBtn && !clearBtn.closest('[hidden]')) ? clearBtn : search;
       fallback?.focus({ preventScroll: true });
     };
-    if (inHexBody) {
+    if (msg.fromGoto && addressInput) {
+      addressInput.focus({ preventScroll: true });
+    } else if (inHexBody) {
       const visibleCells = allByteCells();
       if (!visibleCells.length || hexMain.hidden) {
         focusEmptyFallback();
       } else {
-        const targetCell = (prevHexAddr && visibleCells.find(c => c.classList.contains('is-selected') && sameAddr(c.dataset.address, prevHexAddr)))
+        const targetCell = (prevHexAddr && visibleCells.find(c => (c.classList.contains('is-selected') || msg.preserveScroll) && sameAddr(c.dataset.address, prevHexAddr)))
           || visibleCells.find(c => sameAddr(c.dataset.address, cursorAddress))
           || visibleCells.find(c => sameAddr(c.dataset.address, nextSel))
           || visibleCells.find(c => c.classList.contains('is-selected'))
@@ -725,10 +745,11 @@ window.addEventListener('message', event => {
       if (!activeNavBtn.disabled && !activeNavBtn.closest('[hidden]')) {
         if (document.activeElement !== activeNavBtn) activeNavBtn.focus({ preventScroll: true });
       } else {
-        const pairMap = { navBack: navForwardBtn, navForward: navBackBtn, loadBefore: pagerAfter, loadAfter: pagerBefore };
-        const paired = pairMap[activeNavBtn.dataset.action];
-        const fallback = (paired && !paired.disabled && !paired.closest('[hidden]')) ? paired : addressInput;
-        fallback?.focus({ preventScroll: true });
+        const siblings = activeNavBtn === pagerBefore ? [pagerAfter, navBackBtn, navForwardBtn]
+          : activeNavBtn === pagerAfter ? [pagerBefore, navBackBtn, navForwardBtn]
+            : activeNavBtn === navBackBtn ? [navForwardBtn, pagerBefore, pagerAfter] : [navBackBtn, pagerBefore, pagerAfter];
+        const nextBtn = siblings.find(btn => btn && !btn.disabled && !btn.closest('[hidden]'));
+        (nextBtn || addressInput)?.focus({ preventScroll: true });
       }
     } else if (hadFocusedElement && (!document.activeElement || document.activeElement === document.body)) {
       if (!allByteCells().length || hexMain.hidden) {

@@ -98,40 +98,48 @@ body.call-page:is(.vscode-high-contrast,.vscode-high-contrast-light) .call-colum
 
 /** Both presentations share the toolbar and the owning program, without sharing layout state. */
 export const callViewScript = String.raw`
-    for(const button of document.querySelectorAll('[data-call-view]')){button.addEventListener('click',()=>{if(button.getAttribute('aria-pressed')==='true'){return}for(const peer of document.querySelectorAll('[data-call-view]')){peer.setAttribute('aria-pressed',String(peer===button))}state.callView=button.dataset.callView==='columns'?'columns':'graph';persist();button.disabled=true;send('callGraphView',{view:state.callView})})}
+    for(const button of document.querySelectorAll('[data-call-view]')){if(button.dataset.callViewBound){continue}button.dataset.callViewBound='true';button.addEventListener('click',()=>{if(button.getAttribute('aria-pressed')==='true'){return}for(const peer of document.querySelectorAll('[data-call-view]')){peer.setAttribute('aria-pressed',String(peer===button))}state.callView=button.dataset.callView==='columns'?'columns':'graph';setBusyState(true);persist();send('callGraphView',{view:state.callView})})}
 `;
 
 /** Client-side script for call-column selection, keyboard navigation, and scrolling. */
 export const callColumnsScript = String.raw`
+    let mountCallColumnsUi,filterCallColumns;
     (()=>{
-      const browser=document.querySelector('[data-call-columns]');if(!browser){return}
-      const strip=browser.querySelector('.call-column-strip'),columns=[...browser.querySelectorAll('.call-column')],path=browser.dataset.path,direction=browser.dataset.direction;
-      const saved=samePage?previous.columnUi:undefined;
-      columnUi={left:saved?.left||0,lists:saved?.lists||{},path,direction};
-      const captureUi=()=>{columnUi.left=strip.scrollLeft;for(const column of columns){columnUi.lists[column.dataset.source]=column.querySelector('.call-column-list').scrollTop}};
-      const snapshot=()=>{captureUi();persist()};
-      const scheduleSnapshot=()=>{captureUi();schedulePersist()};
-      strip.addEventListener('scroll',scheduleSnapshot,{passive:true});for(const column of columns){column.querySelector('.call-column-list').addEventListener('scroll',scheduleSnapshot,{passive:true})}
-      const request=(action,extra,focusColumn)=>{columnUi.pendingFocus=focusColumn;persist();browser.setAttribute('aria-busy','true');send(action,{graphRoot:state.entry,direction,...extra})};
-      const pick=(button,keyboard=false)=>{const index=Number(button.dataset.columnIndex),cycle=button.dataset.cycleAt;if(button.getAttribute('aria-pressed')==='true'){if(keyboard){columns[index+1]?.querySelector('.call-column-pick:not(:disabled)')?.focus()}return}button.closest('.call-column-row').setAttribute('aria-busy','true');request('callColumnSelect',{entry:button.dataset.entry,index},keyboard?cycle!==undefined?Number(cycle):index+1:undefined)};
-      for(const button of browser.querySelectorAll('.call-column-pick')){
-        button.addEventListener('click',()=>{if(!button.disabled){pick(button)}});
-        button.addEventListener('keydown',event=>{const index=Number(button.dataset.columnIndex),rows=[...button.closest('.call-column-list').querySelectorAll('.call-column-row:not([hidden]) .call-column-pick:not(:disabled)')],at=rows.indexOf(button);if(['ArrowDown','ArrowUp','Home','End'].includes(event.key)){event.preventDefault();const next=event.key==='Home'?0:event.key==='End'?rows.length-1:Math.max(0,Math.min(rows.length-1,at+(event.key==='ArrowDown'?1:-1)));rows[next]?.focus()}else if(event.key==='ArrowRight'||event.key==='Enter'){event.preventDefault();pick(button,true)}else if(event.key==='ArrowLeft'){event.preventDefault();columns[index-1]?.querySelector('.call-column-pick[aria-pressed="true"]')?.focus()}})
-      }
-      for(const button of browser.querySelectorAll('.call-column-code,.call-column-source-code')){button.addEventListener('click',event=>{event.stopPropagation();const fn=button.classList.contains('call-column-source-code')?button:button.closest('.call-column-row');send('decompile',{entry:fn.dataset.entry,address:fn.dataset.entry,kind:'function',label:fn.dataset.label})})}
-      for(const button of browser.querySelectorAll('[data-column-direction]')){button.addEventListener('click',()=>{if(button.dataset.columnDirection===direction){return}button.disabled=true;request('callColumnDirection',{direction:button.dataset.columnDirection})})}
-      for(const button of browser.querySelectorAll('[data-column-trail]')){button.addEventListener('click',()=>request('callColumnTrail',{index:Number(button.dataset.columnTrail)}))}
-      const homeBtn=document.getElementById('call-column-home');if(homeBtn&&!homeBtn.dataset.callBound){homeBtn.dataset.callBound='true';homeBtn.addEventListener('click',()=>request('callColumnTrail',{index:0}))}
-      const searchToggle=document.getElementById('call-search-toggle'),searchHost=search.closest('.call-search');
-      const openSearch=()=>{searchHost.hidden=false;searchToggle.setAttribute('aria-expanded','true');search.focus();search.select()};
-      const closeSearch=()=>{searchHost.hidden=true;searchToggle.setAttribute('aria-expanded','false');searchToggle.focus()};
-      searchToggle.addEventListener('click',()=>searchHost.hidden?openSearch():closeSearch());
-      filterCallColumns=()=>{const activeBrowser=document.querySelector('[data-call-columns]');if(!activeBrowser){return}const activeColumns=[...activeBrowser.querySelectorAll('.call-column')],query=search.value.trim().toLowerCase();let found=0,total=0;for(const column of activeColumns){let count=0;for(const row of column.querySelectorAll('.call-column-row')){total++;row.hidden=!!query&&!((row.dataset.label+' '+row.dataset.entry).toLowerCase().includes(query));if(!row.hidden){count++;found++}}column.querySelector('.call-column-no-matches').hidden=!query||count>0||!column.querySelector('.call-column-row')}updateFilterStatus({query,visible:found,total,visuallyHidden:false,matchText:found+' of '+total+' displayed functions match.',emptyText:'0 of '+total+' displayed functions match.',restoredText:'Filter cleared. Showing all '+total+' displayed functions.'})};
-      search.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();search.value='';filterCallColumns();closeSearch();persist()}else if(event.key==='Enter'){event.preventDefault();browser.querySelector('.call-column-row:not([hidden]) .call-column-pick:not(:disabled)')?.focus()}});if(search.value){openSearch()}filterCallColumns();
-      const menu=document.getElementById('call-menu'),summary=menu.querySelector('summary');
-      menu.addEventListener('keydown',event=>{if(!['ArrowDown','ArrowUp','ArrowLeft','ArrowRight','Home','End'].includes(event.key)){return}event.preventDefault();menu.open=true;const items=[...menu.querySelectorAll('button')],at=items.indexOf(document.activeElement),next=event.key==='Home'?0:event.key==='End'?items.length-1:(event.key==='ArrowDown'||event.key==='ArrowRight')?(at+1)%items.length:(at<=0?items.length-1:at-1);items[next]?.focus()});
-      document.addEventListener('click',event=>{if(menu.open&&(!menu.contains(event.target)||event.target.closest('button'))){menu.open=false}});
-      document.addEventListener('keydown',event=>{if(event.key==='Escape'&&menu.open){event.preventDefault();menu.open=false;summary.focus()}else if(isModShortcut(event,'f')||(event.key==='/'&&canUseSingleKeyShortcut(event))){event.preventDefault();menu.open=false;openSearch()}});
-      requestAnimationFrame(()=>{strip.scrollLeft=saved?.left||0;for(const column of columns){column.querySelector('.call-column-list').scrollTop=saved?.lists?.[column.dataset.source]||0}if(saved?.path!==path||saved?.direction!==direction){columns[columns.length-1]?.scrollIntoView({block:'nearest',inline:'nearest'})}if(saved?.pendingFocus!==undefined){setTimeout(()=>{const column=columns[Math.min(saved.pendingFocus,columns.length-1)];const button=column?.querySelector('.call-column-row:not([hidden]) .call-column-pick:not(:disabled)');if(button){button.focus()}else{column?.querySelector('.call-column-source-code')?.focus()}snapshot()},0)}snapshot()});
+      filterCallColumns=()=>{const browser=document.querySelector('[data-call-columns]');if(!browser){return}const columns=[...browser.querySelectorAll('.call-column')],query=search.value.trim().toLowerCase();let found=0,total=0;for(const column of columns){let count=0;for(const row of column.querySelectorAll('.call-column-row')){total++;row.hidden=!!query&&!((row.dataset.label+' '+row.dataset.entry).toLowerCase().includes(query));if(!row.hidden){count++;found++}}column.querySelector('.call-column-no-matches').hidden=!query||count>0||!column.querySelector('.call-column-row')}updateFilterStatus({query,visible:found,total,visuallyHidden:false,matchText:found+' of '+total+' displayed functions match.',emptyText:'0 of '+total+' displayed functions match.',restoredText:'Filter cleared. Showing all '+total+' displayed functions.'})};
+      mountCallColumnsUi=(preserveState=false,savedUi=undefined)=>{
+        const browser=document.querySelector('[data-call-columns]');if(!browser){return}
+        const strip=browser.querySelector('.call-column-strip'),columns=[...browser.querySelectorAll('.call-column')],path=browser.dataset.path,direction=browser.dataset.direction;
+        const saved=preserveState?savedUi:(samePage?previous.columnUi:undefined);
+        columnUi={left:saved?.left||0,lists:saved?.lists||{},path,direction};
+        const captureUi=()=>{columnUi.left=strip.scrollLeft;for(const column of columns){columnUi.lists[column.dataset.source]=column.querySelector('.call-column-list').scrollTop}};
+        const snapshot=()=>{captureUi();persist()};
+        const scheduleSnapshot=()=>{captureUi();schedulePersist()};
+        strip.addEventListener('scroll',scheduleSnapshot,{passive:true});for(const column of columns){column.querySelector('.call-column-list').addEventListener('scroll',scheduleSnapshot,{passive:true})}
+        const request=(action,extra,focusColumn)=>{columnUi.pendingFocus=focusColumn;setBusyState(true);persist();browser.setAttribute('aria-busy','true');send(action,{graphRoot:state.entry,direction,...extra})};
+        const pick=(button,keyboard=false)=>{const index=Number(button.dataset.columnIndex),cycle=button.dataset.cycleAt;if(button.getAttribute('aria-pressed')==='true'){if(keyboard){columns[index+1]?.querySelector('.call-column-pick:not(:disabled)')?.focus()}return}button.closest('.call-column-row').setAttribute('aria-busy','true');request('callColumnSelect',{entry:button.dataset.entry,index},cycle!==undefined?Number(cycle):(keyboard?index+1:undefined))};
+        for(const button of browser.querySelectorAll('.call-column-pick')){
+          button.addEventListener('click',()=>{if(!button.disabled){pick(button)}});
+          button.addEventListener('keydown',event=>{const index=Number(button.dataset.columnIndex),rows=[...button.closest('.call-column-list').querySelectorAll('.call-column-row:not([hidden]) .call-column-pick:not(:disabled)')],at=rows.indexOf(button);if(['ArrowDown','ArrowUp','Home','End'].includes(event.key)){event.preventDefault();const next=event.key==='Home'?0:event.key==='End'?rows.length-1:Math.max(0,Math.min(rows.length-1,at+(event.key==='ArrowDown'?1:-1)));rows[next]?.focus()}else if(event.key==='ArrowRight'||event.key==='Enter'){event.preventDefault();pick(button,true)}else if(event.key==='ArrowLeft'){event.preventDefault();columns[index-1]?.querySelector('.call-column-pick[aria-pressed="true"]')?.focus()}})
+        }
+        for(const button of browser.querySelectorAll('.call-column-code,.call-column-source-code')){button.addEventListener('click',event=>{event.stopPropagation();const fn=button.classList.contains('call-column-source-code')?button:button.closest('.call-column-row');send('decompile',{entry:fn.dataset.entry,address:fn.dataset.entry,kind:'function',label:fn.dataset.label})})}
+        for(const button of browser.querySelectorAll('[data-column-direction]')){button.addEventListener('click',()=>{if(button.dataset.columnDirection===direction){return}request('callColumnDirection',{direction:button.dataset.columnDirection})})}
+        for(const button of browser.querySelectorAll('[data-column-trail]')){button.addEventListener('click',()=>request('callColumnTrail',{index:Number(button.dataset.columnTrail)},Number(button.dataset.columnTrail)))}
+        const homeBtn=document.getElementById('call-column-home');if(homeBtn){homeBtn.onclick=()=>request('callColumnTrail',{index:0},0)}
+        if(!inPageUpdate){filterCallColumns()}
+        const applyLayout=()=>{
+          strip.scrollLeft=saved?.left||0;
+          for(const column of columns){column.querySelector('.call-column-list').scrollTop=saved?.lists?.[column.dataset.source]||0}
+          if(saved?.path!==path||saved?.direction!==direction){columns[columns.length-1]?.scrollIntoView({block:'nearest',inline:'nearest'})}
+          if(saved?.pendingFocus!==undefined){
+            const column=columns[Math.min(saved.pendingFocus,columns.length-1)];
+            const button=column?.querySelector('.call-column-row:not([hidden]) .call-column-pick[aria-pressed="true"]:not(:disabled)')||column?.querySelector('.call-column-row:not([hidden]) .call-column-pick:not(:disabled)')||column?.querySelector('.call-column-source-code');
+            button?.focus({preventScroll:true});
+            columnUi.pendingFocus=undefined;
+          }
+          snapshot();
+        };
+        if(preserveState){applyLayout()}else{requestAnimationFrame(applyLayout)}
+      };
+      mountCallColumnsUi(false);
     })();
 `;

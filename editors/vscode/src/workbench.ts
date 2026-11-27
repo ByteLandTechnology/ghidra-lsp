@@ -6,12 +6,11 @@ import { symbolName, displayAddress } from './names';
 import * as vscode from 'vscode';
 import { Call } from './memory';
 import { ProgramContext } from './context';
-import { escapeHtml, GraphEdge, GraphNode, page, Row, table } from './workbench-page';
-import { controlFlowGraph, layoutControlFlow } from './control-flow-graph';
-import { CallDirection, CallExpansion, CallGraph, CallRecord, callGraph, layoutCalls } from './call-graph';
+import { escapeHtml, GraphEdge, GraphNode, page, PageOptions, Row, table } from './workbench-page';
+import { controlFlowGraph, measureControlFlowLayout } from './control-flow-graph';
+import { CallDirection, CallExpansion, CallGraph, CallRecord, callGraph, measureCallGraphLayout } from './call-graph';
 import { callIcon } from './call-graph-icons';
 import { CallColumns, callColumns, collectColumns, columnPathLimit } from './call-columns';
-import { parseMeasuredSizes } from './graph-layout';
 import { formatFriendlyError } from './error';
 import { cursorLocation } from './location';
 import { ProgramPanelState, ProgramViewsController, singleKeyShortcutsEnabled } from './program-views-controller';
@@ -272,17 +271,23 @@ export class Workbench implements vscode.Disposable {
         const existing = kind === 'callGraph' ? [...this.panels.values()].find(panel => panel.kind === kind && panel.md5 === md5 && panel.entry === entry) : this.panels.get(key);
         if (existing) {
             existing.pendingFocusId = undefined;
-            if (address) {
-                if (kind === 'listing' || kind === 'memory') {
-                    const resolved = await this.programViews.prepareNavigation(existing, address, true);
-                    await this.render(existing);
-                    existing.panel.reveal(viewColumn);
-                    await this.programViews.broadcastCursorSync(existing, resolved, 1);
-                    return;
+            existing.panel.reveal(viewColumn);
+            try {
+                if (existing.mounted) { await existing.panel.webview.postMessage({ action: 'busy' }); }
+                if (address) {
+                    if (kind === 'listing' || kind === 'memory') {
+                        const resolved = await this.programViews.prepareNavigation(existing, address, true);
+                        await this.render(existing);
+                        await this.programViews.broadcastCursorSync(existing, resolved, 1);
+                        return;
+                    }
+                    existing.address = address; existing.cursor = undefined; existing.previous = []; existing.pvWindowStart = undefined; existing.pvPrevStarts = [];
                 }
-                existing.address = address; existing.cursor = undefined; existing.previous = []; existing.pvWindowStart = undefined; existing.pvPrevStarts = [];
+                await this.render(existing);
+            } catch (error) {
+                await this.reportPanelError(existing, error, false);
             }
-            await this.render(existing); existing.panel.reveal(viewColumn); return;
+            return;
         }
         this.context.track(md5);
         const panel = vscode.window.createWebviewPanel(`ghidra.${kind}`, this.context.titled(names[kind], md5), viewColumn, { enableScripts: true, localResourceRoots: [], retainContextWhenHidden: true });
@@ -290,14 +295,52 @@ export class Workbench implements vscode.Disposable {
         this.attach(kind === 'callGraph' ? `${key}:${++this.callGraphSerial}` : key, state);
         await this.context.activate(md5);
         try { await this.render(state); }
-        catch (error) { panel.webview.html = page({ title: names[kind], subtitle: this.context.name(md5), body: `<p class="error">${escapeHtml(String(error))}</p>`, state: this.snapshot(state) }); throw error; }
+        catch (error) {
+            const text = formatFriendlyError(error);
+            state.mounted = true;
+            panel.webview.html = page(this.errorPageOptions(state, text));
+            if (!panel.visible) { void vscode.window.showErrorMessage(text); }
+        }
+    }
+    /** Build fallback {@link PageOptions} displaying `errorText` inside `#error` (`role="alert"`). */
+    private errorPageOptions(state: PanelState, errorText: string): PageOptions {
+        return {
+            title: names[state.kind],
+            subtitle: this.context.name(state.md5),
+            body: '',
+            error: errorText,
+            address: ['references', 'listing', 'memory'].includes(state.kind) ? state.address : undefined,
+            singleKeyShortcuts: singleKeyShortcutsEnabled(),
+            state: this.snapshot(state),
+            actions: true,
+            graph: ['callGraph', 'controlFlow'].includes(state.kind),
+            controlFlow: state.kind === 'controlFlow',
+            callGraph: state.kind === 'callGraph',
+            callView: state.callView || 'graph',
+            callName: state.entry ? displayAddress(state.entry) : '',
+            viewKind: state.kind,
+        };
+    }
+    /** Route a panel error to `#error` or `#goto-error` when visible, and to a host toast only when hidden. */
+    private async reportPanelError(state: PanelState, error: unknown, isGoto = false): Promise<void> {
+        const text = formatFriendlyError(error);
+        if (!state.panel.visible) {
+            void vscode.window.showErrorMessage(text);
+        }
+        if (state.mounted) {
+            await state.panel.webview.postMessage({ action: isGoto ? 'gotoError' : 'error', error: text });
+        }
     }
     /** Register lifecycle, focus, and message listeners for a workbench panel. */
     private attach(key: string, state: PanelState): void {
         this.panels.set(key, state);
         state.panel.onDidDispose(() => { state.generation++; if (this.panels.get(key) === state) { this.panels.delete(key); } });
         state.panel.onDidChangeViewState(event => { if (event.webviewPanel.active) { void this.context.activate(state.md5).catch(error => void vscode.window.showErrorMessage(formatFriendlyError(error))); } });
-        state.panel.webview.onDidReceiveMessage((message: unknown) => { void this.message(state, object(message)).catch(error => { void vscode.window.showErrorMessage(formatFriendlyError(error)); }); });
+        state.panel.webview.onDidReceiveMessage((message: unknown) => {
+            const payload = object(message);
+            const isGoto = payload.action === 'goto' && payload.fromGoto !== false && ['references', 'listing', 'memory'].includes(state.kind);
+            void this.message(state, payload).catch(error => { void this.reportPanelError(state, error, isGoto); });
+        });
     }
     /** Build the serializable state snapshot stored inside webview HTML for VS Code reload. */
     private snapshot(state: PanelState): Data {
@@ -305,7 +348,7 @@ export class Workbench implements vscode.Disposable {
         return { kind: state.kind, md5: state.md5, address: state.kind === 'listing' ? state.displayAddress || state.address : state.address, entry: state.entry, cursor: state.cursor, previous: state.previous, singleKeyShortcuts: singleKeyShortcutsEnabled(),
             ...(focusId ? { focusId } : {}),
             ...(state.selected && state.kind !== 'callGraph' ? { selected: state.selected } : {}),
-            ...(state.kind === 'listing' || state.kind === 'memory' ? { selected: state.selected, syncEnabled: state.syncEnabled, bytesPerRow: state.pvBytesPerRow, endian: state.pvEndian } : {}),
+            ...(state.kind === 'listing' || state.kind === 'memory' ? { selected: state.selected, selectionLength: state.pvSelectionLength, syncEnabled: state.syncEnabled, bytesPerRow: state.pvBytesPerRow, endian: state.pvEndian } : {}),
             ...(state.kind === 'callGraph' ? { selected: state.entry, selectedEntry: state.entry, callExpansion: state.callExpansion || { callers: [state.entry!], callees: [state.entry!] }, callHistory: state.callHistory || [], callView: state.callView || 'graph', callColumnDirection: state.callColumnDirection || 'callees', callColumnPath: state.callColumnPath || [] } : {}) };
     }
     /** Rehydrate a persisted workbench webview panel after a VS Code window reload. */
@@ -317,6 +360,7 @@ export class Workbench implements vscode.Disposable {
         const state: PanelState = { kind, md5, address: stringOf(saved.address) || undefined, entry: stringOf(saved.entry) || undefined, selected: stringOf(saved.selected) || undefined, previous: [], generation: 0, panel };
         if (kind === 'listing' || kind === 'memory') {
             state.selected = stringOf(saved.selected) || state.address;
+            if (Number(saved.selectionLength) > 1) { state.pvSelectionLength = Math.min(64, Math.floor(Number(saved.selectionLength))); }
             if (typeof saved.syncEnabled === 'boolean') { state.syncEnabled = saved.syncEnabled; }
             if (Number(saved.bytesPerRow) === 8 || Number(saved.bytesPerRow) === 16) { state.pvBytesPerRow = Number(saved.bytesPerRow) as 8 | 16; }
             if (saved.endian === 'big' || saved.endian === 'little') { state.pvEndian = saved.endian as ProgramEndian; }
@@ -337,40 +381,67 @@ export class Workbench implements vscode.Disposable {
             if (panel.active) { await this.context.activate(md5); }
             await this.render(state);
         } catch (error) {
-            panel.webview.html = page({ title: names[kind], subtitle: this.context.name(md5), body: `<p class="error">${escapeHtml(String(error))}</p>`, state: this.snapshot(state) });
+            const text = formatFriendlyError(error);
+            state.mounted = true;
+            panel.webview.html = page(this.errorPageOptions(state, text));
+            if (!panel.visible) { void vscode.window.showErrorMessage(text); }
         }
     }
     /** Refresh open workbench panels globally or for program `md5`. */
-    async refresh(md5?: string): Promise<void> {
+    async refresh(md5?: string, options?: { silent?: boolean }): Promise<void> {
         if (md5) { this.programViews.invalidate(md5); }
-        for (const state of this.panels.values()) { if (!md5 || state.md5 === md5) { await this.refreshPanel(state); } }
+        await Promise.all(
+            [...this.panels.values()]
+                .filter(state => !md5 || state.md5 === md5)
+                .map(state => this.refreshPanel(state, options)),
+        );
     }
     /** Clear cached view state and re-render a single workbench panel. */
-    private async refreshPanel(state: PanelState): Promise<void> {
-        if (state.kind === 'callGraph') {
-            state.callRecords = new Map();
-            state.callNodeNames = new Map();
+    private async refreshPanel(state: PanelState, options?: { silent?: boolean; reason?: string }): Promise<void> {
+        if (!options?.silent && state.mounted) {
+            await state.panel.webview.postMessage({ action: 'busy' });
         }
-        if (state.kind === 'listing') {
-            this.programViews.invalidate(state.md5);
-            state.address = state.pvWindowStart || state.displayAddress || state.address;
-            state.cursor = undefined;
+        try {
+            if (state.kind === 'callGraph') {
+                state.callRecords = new Map();
+                state.callNodeNames = new Map();
+            }
+            if (state.kind === 'listing') {
+                this.programViews.invalidate(state.md5);
+                state.address = state.pvWindowStart || state.displayAddress || state.address;
+                state.cursor = undefined;
+            }
+            if (state.kind === 'memory') {
+                this.programViews.invalidate(state.md5);
+            }
+            await this.render(state, true, { silent: options?.silent, reason: options?.reason || (options?.silent ? 'poll' : 'refresh') });
+        } catch (error) {
+            await this.reportPanelError(state, error, false);
         }
-        if (state.kind === 'memory') {
-            this.programViews.invalidate(state.md5);
-        }
-        await this.render(state, true);
     }
-    /** Query backend data and render HTML into the workbench panel `owner`. */
-    private async render(owner: PanelState, forceRefresh = false): Promise<void> {
+    /** Query backend data and render HTML or post an incremental update into panel `owner`. */
+    private async render(
+        owner: PanelState,
+        forceRefresh = false,
+        options?: { silent?: boolean; reason?: string; fromGoto?: boolean },
+    ): Promise<void> {
         if (owner.kind === 'listing') {
             owner.generation++;
-            await this.programViews.renderListing(owner, 'full');
+            await this.programViews.renderListing(
+                owner,
+                owner.mounted && owner.pvListingWindow ? 'partial' : 'full',
+                undefined,
+                { preserveScroll: forceRefresh, fromGoto: options?.fromGoto },
+            );
             return;
         }
         if (owner.kind === 'memory') {
             owner.generation++;
-            await this.programViews.renderHex(owner, 'full');
+            await this.programViews.renderHex(
+                owner,
+                owner.mounted && owner.pvChunk ? 'partial' : 'full',
+                { preserveScroll: forceRefresh, fromGoto: options?.fromGoto },
+            );
             return;
         }
         const generation = ++owner.generation;
@@ -438,7 +509,7 @@ export class Workbench implements vscode.Disposable {
                 if (generation !== owner.generation) { return; }
                 owner.callColumnPath = state.callColumnPath = model.path; owner.callColumnModel = model; owner.callGraphModel = undefined;
                 body = callColumns(model);
-                callTools = `<div class="call-controls call-icon-row" role="group" aria-label="Column view options"><button id="call-column-home" aria-label="Return to current function" title="Return to current function">${callIcon('back')}</button><button data-action="refresh" aria-label="Refresh calls" title="Refresh calls">${callIcon('refresh')}</button></div>`;
+                callTools = `<div class="call-controls call-icon-row" role="group" aria-label="Column view options"><button type="button" id="call-column-home" aria-label="Return to current function" title="Return to current function">${callIcon('back')}</button><button type="button" id="call-columns-refresh" data-action="refresh" aria-label="Refresh calls" title="Refresh calls">${callIcon('refresh')}</button></div>`;
                 callName = rootTitle;
             } else {
                 const res = await this.call<CallGraph & {
@@ -493,7 +564,7 @@ export class Workbench implements vscode.Disposable {
                 })));
                 owner.callGraphModel = model;
                 body = await callGraph(model) + `<details class="call-details" hidden><summary>Call relationships and sites (${model.edges.length})</summary>${table(['Caller', 'Callee', 'Call site'], rows)}</details>`;
-                callTools = `<div class="call-controls call-icon-row" role="group" aria-label="Call graph exploration"><button id="call-center" aria-label="Center current function" title="Center current function">${callIcon('center')}</button><button id="call-focus" data-action="focusCallGraph" aria-label="Focus selected function" title="Focus selected function">${callIcon('focus')}</button><span class="call-divider" aria-hidden="true"></span><button id="call-menu-overview" aria-pressed="true" aria-label="Overview" title="Overview">${callIcon('overview')}</button><button id="call-details-toggle" aria-pressed="false" aria-label="Call sites" title="Call sites">${callIcon('details')}</button><span class="call-divider" aria-hidden="true"></span><button data-action="refresh" aria-label="Refresh graph" title="Refresh graph">${callIcon('refresh')}</button></div>`;
+                callTools = `<div class="call-controls call-icon-row" role="group" aria-label="Call graph exploration"><button type="button" id="call-center" aria-label="Center current function" title="Center current function">${callIcon('center')}</button><button type="button" id="call-focus" data-action="focusCallGraph" aria-label="Focus selected function" title="Focus selected function">${callIcon('focus')}</button><span class="call-divider" aria-hidden="true"></span><button type="button" id="call-menu-overview" aria-pressed="true" aria-label="Overview" title="Overview">${callIcon('overview')}</button><button type="button" id="call-details-toggle" aria-pressed="false" aria-label="Call sites" title="Call sites">${callIcon('details')}</button><span class="call-divider" aria-hidden="true"></span><button type="button" id="call-graph-refresh" data-action="refresh" aria-label="Refresh graph" title="Refresh graph">${callIcon('refresh')}</button></div>`;
                 scope = `${model.limited ? 'Graph limit reached; fold branches for a smaller neighborhood. ' : ''}${model.warnings.length ? `${model.warnings.length} functions could not be expanded; refresh to retry.` : ''}`;
                 callName = res.rootName || names.get(model.root)?.name || displayAddress(state.entry || '');
                 nodeNames.set(state.entry!.toLowerCase(), callName);
@@ -508,7 +579,36 @@ export class Workbench implements vscode.Disposable {
         if (generation !== owner.generation) { return; }
         owner.address = state.address; owner.displayAddress = state.displayAddress; owner.next = state.next;
         const singleKeyShortcuts = singleKeyShortcutsEnabled();
-        state.panel.webview.html = page({ title, subtitle, body, scope, scopeSummary, address, callTools, callName, callBack: !!state.callHistory?.length, singleKeyShortcuts, state: this.snapshot(state), actions: true, graph: ['callGraph', 'controlFlow'].includes(state.kind), controlFlow: state.kind === 'controlFlow', callGraph: state.kind === 'callGraph', callView: state.callView || 'graph', viewKind: state.kind, ...(['listing', 'memory'].includes(state.kind) ? { next, previous: state.previous.length > 0 } : {}) });
+        const pageOptions: PageOptions = {
+            title,
+            subtitle,
+            body,
+            scope,
+            scopeSummary,
+            address,
+            callTools,
+            callName,
+            callBack: !!state.callHistory?.length,
+            singleKeyShortcuts,
+            state: this.snapshot(state),
+            actions: true,
+            graph: ['callGraph', 'controlFlow'].includes(state.kind),
+            controlFlow: state.kind === 'controlFlow',
+            callGraph: state.kind === 'callGraph',
+            callView: state.callView || 'graph',
+            viewKind: state.kind,
+            ...(['listing', 'memory'].includes(state.kind) ? { next, previous: state.previous.length > 0 } : {}),
+        };
+        if (owner.mounted) {
+            await state.panel.webview.postMessage({
+                action: 'pageUpdate',
+                options: pageOptions,
+                reason: options?.reason || (forceRefresh ? 'refresh' : 'reload'),
+            });
+            return;
+        }
+        owner.mounted = true;
+        state.panel.webview.html = page(pageOptions);
     }
     /** Fetch and render the basic-block Control Flow Graph HTML for function `entry`. */
     async controlFlow(md5: string, entry: string): Promise<ControlFlowData> {
@@ -549,33 +649,14 @@ export class Workbench implements vscode.Disposable {
         if (await this.programViews.handleMessage(state, message)) { return; }
         const action = stringOf(message.action), address = stringOf(message.address), entry = stringOf(message.entry);
         if (action === 'measureGraph') {
-            const sizes = parseMeasuredSizes(message.sizes ?? message.nodes);
             const generation = state.generation;
+            const rawSizes = message.sizes ?? message.nodes;
             if (state.kind === 'controlFlow' && state.cfgModel?.nodes.length) {
-                const layout = await layoutControlFlow(state.cfgModel.nodes, state.cfgModel.edges, sizes);
-                if (generation !== state.generation) { return; }
-                await state.panel.webview.postMessage({
-                    action: 'graphLayout',
-                    graphKind: 'controlFlow',
-                    requestId: message.requestId,
-                    width: layout.width,
-                    height: layout.height,
-                    nodes: layout.nodes.map(node => ({ id: node.id, x: node.x, y: node.y, width: node.width, height: node.height })),
-                    edges: layout.edges.map(edge => ({ index: edge.index, from: edge.from, to: edge.to, path: edge.path, kind: edge.kind, backward: edge.backward, badge: edge.badge })),
-                });
-            } else if (state.kind === 'callGraph' && state.callView !== 'columns' && state.callGraphModel?.nodes.length) {
-                if (message.graphRoot && message.graphRoot !== state.entry) { return; }
-                const layout = await layoutCalls(state.callGraphModel, sizes);
-                if (generation !== state.generation) { return; }
-                await state.panel.webview.postMessage({
-                    action: 'graphLayout',
-                    graphKind: 'callGraph',
-                    requestId: message.requestId,
-                    width: layout.width,
-                    height: layout.height,
-                    nodes: layout.nodes.map(node => ({ id: node.id, x: node.x, y: node.y, width: node.width, height: node.height })),
-                    edges: layout.edges.map(edge => ({ index: edge.index, from: edge.from, to: edge.to, path: edge.path })),
-                });
+                const payload = await measureControlFlowLayout(state.cfgModel.nodes, state.cfgModel.edges, rawSizes, message.requestId);
+                if (generation === state.generation) { await state.panel.webview.postMessage(payload); }
+            } else if (state.kind === 'callGraph' && state.callView !== 'columns' && state.callGraphModel?.nodes.length && (!message.graphRoot || message.graphRoot === state.entry)) {
+                const payload = await measureCallGraphLayout(state.callGraphModel, rawSizes, message.requestId);
+                if (generation === state.generation) { await state.panel.webview.postMessage(payload); }
             }
             return;
         }
@@ -588,78 +669,110 @@ export class Workbench implements vscode.Disposable {
 
         if (state.kind === 'callGraph' && action === 'pickCallGraphFunction') {
             const chosen = await this.pickEntry(state.md5, state.entry);
-            if (chosen && Array.from(this.panels.values()).includes(state)) { await this.message(state, { action: 'focusCallGraph', entry: chosen }); }
+            if (chosen && Array.from(this.panels.values()).includes(state)) {
+                if (state.mounted) { await state.panel.webview.postMessage({ action: 'busy' }); }
+                await this.message(state, { action: 'focusCallGraph', entry: chosen });
+            } else if (state.mounted) {
+                await state.panel.webview.postMessage({ action: 'busyDone' });
+            }
             return;
         }
         if (state.kind === 'callGraph' && action === 'callGraphView') {
-            if (message.view !== 'graph' && message.view !== 'columns') { return; }
-            if ((state.callView || 'graph') === message.view) { return; }
-            state.callView = message.view; await this.render(state); return;
+            if ((message.view !== 'graph' && message.view !== 'columns') || (state.callView || 'graph') === message.view) {
+                if (state.mounted) { await state.panel.webview.postMessage({ action: 'busyDone' }); }
+                return;
+            }
+            state.callView = message.view; await this.render(state, false, { reason: 'callGraphView' }); return;
         }
         if (state.kind === 'callGraph' && state.callView === 'columns' && ['callColumnSelect', 'callColumnTrail', 'callColumnDirection'].includes(action)) {
-            if (message.graphRoot !== state.entry) { return; }
+            if (message.graphRoot !== state.entry) {
+                if (state.mounted) { await state.panel.webview.postMessage({ action: 'busyDone' }); }
+                return;
+            }
             const direction = state.callColumnDirection || 'callees';
             if (action === 'callColumnDirection') {
-                if (message.direction !== 'callers' && message.direction !== 'callees' || message.direction === direction) { return; }
+                if (message.direction !== 'callers' && message.direction !== 'callees' || message.direction === direction) {
+                    if (state.mounted) { await state.panel.webview.postMessage({ action: 'busyDone' }); }
+                    return;
+                }
                 state.callColumnPaths ||= new Map();
                 state.callColumnPaths.set(JSON.stringify([state.entry, direction]), state.callColumnPath || []);
                 state.callColumnDirection = message.direction;
                 state.callColumnPath = state.callColumnPaths.get(JSON.stringify([state.entry, message.direction])) || [];
             } else {
-                if (message.direction !== direction) { return; }
+                if (message.direction !== direction) {
+                    if (state.mounted) { await state.panel.webview.postMessage({ action: 'busyDone' }); }
+                    return;
+                }
                 const index = Number(message.index), path = state.callColumnPath || [];
-                if (!Number.isInteger(index) || index < 0 || index > path.length) { return; }
+                if (!Number.isInteger(index) || index < 0 || index > path.length) {
+                    if (state.mounted) { await state.panel.webview.postMessage({ action: 'busyDone' }); }
+                    return;
+                }
                 if (action === 'callColumnTrail') { state.callColumnPath = path.slice(0, index); }
                 else {
                     const column = state.callColumnModel?.columns[index];
                     const row = column?.rows.find(row => sameAddress(row.entry, entry));
-                    if (!row || index >= columnPathLimit && row.cycleAt === undefined) { return; }
+                    if (!row || index >= columnPathLimit && row.cycleAt === undefined) {
+                        if (state.mounted) { await state.panel.webview.postMessage({ action: 'busyDone' }); }
+                        return;
+                    }
                     state.callColumnPath = row.cycleAt !== undefined ? path.slice(0, row.cycleAt) : [...path.slice(0, index), row.entry];
                 }
             }
-            await this.render(state); return;
+            await this.render(state, false, { reason: action }); return;
         }
         if (state.kind === 'callGraph' && action === 'callGraphToggle') {
             const direction = stringOf(message.direction);
-            if (!entry || message.graphRoot !== state.entry || !['callers', 'callees'].includes(direction)) { return; }
+            if (!entry || message.graphRoot !== state.entry || !['callers', 'callees'].includes(direction)) {
+                if (state.mounted) { await state.panel.webview.postMessage({ action: 'busyDone' }); }
+                return;
+            }
             state.callExpansion ||= { callers: [state.entry!], callees: [state.entry!] };
             const side = direction as 'callers' | 'callees';
             const values = state.callExpansion[side];
             state.callExpansion[side] = values.some(value => sameAddress(value, entry)) ? values.filter(value => !sameAddress(value, entry)) : [...values, entry];
-            await this.render(state); return;
+            await this.render(state, false, { reason: 'callGraphToggle' }); return;
         }
         if (state.kind === 'callGraph' && ['focusCallGraph', 'callGraphBack'].includes(action)) {
             const oldRoot = state.entry!;
             state.callColumnPaths ||= new Map(); state.callColumnPaths.set(JSON.stringify([oldRoot, state.callColumnDirection || 'callees']), state.callColumnPath || []);
             state.callRoots ||= new Map(); state.callRoots.set(oldRoot, state.callExpansion || { callers: [oldRoot], callees: [oldRoot] });
             if (action === 'callGraphBack') {
-                const previous = state.callHistory?.pop(); if (!previous) { return; }
+                const previous = state.callHistory?.pop();
+                if (!previous) { if (state.mounted) { await state.panel.webview.postMessage({ action: 'busyDone' }); } return; }
                 state.entry = previous; state.address = previous;
             } else {
-                if (!entry || entry === state.entry) { return; }
+                if (!entry || entry === state.entry) {
+                    if (state.mounted) { await state.panel.webview.postMessage({ action: 'busyDone' }); }
+                    return;
+                }
                 state.callHistory = [...(state.callHistory || []), state.entry!].slice(-20);
                 state.entry = entry; state.address = entry;
             }
             state.callColumnPath = state.callColumnPaths.get(JSON.stringify([state.entry, state.callColumnDirection || 'callees'])) || [];
             state.callExpansion = state.callRoots.get(state.entry!) || { callers: [state.entry!], callees: [state.entry!] };
-            await this.render(state); return;
+            await this.render(state, false, { reason: action }); return;
         }
-        if (action === 'refresh') { await this.refreshPanel(state); return; }
-        if (action === 'next' && state.next) {
+        if (action === 'refresh') { await this.refreshPanel(state, { silent: false, reason: 'refresh' }); return; }
+        if (action === 'next') {
+            if (!state.next) { if (state.mounted) { await state.panel.webview.postMessage({ action: 'busyDone' }); } return; }
             if (state.kind === 'memory') { state.previous.push(state.address); state.address = state.next; }
             else { state.previous.push(state.displayAddress || state.address); state.cursor = state.next; }
-            await this.render(state); return;
+            await this.render(state, false, { reason: 'pagination' }); return;
         }
-        if (action === 'previous' && state.previous.length) {
+        if (action === 'previous') {
+            if (!state.previous.length) { if (state.mounted) { await state.panel.webview.postMessage({ action: 'busyDone' }); } return; }
             if (state.kind === 'memory') { state.address = state.previous.pop(); }
             else { state.address = state.previous.pop(); state.cursor = undefined; }
-            await this.render(state); return;
+            await this.render(state, false, { reason: 'pagination' }); return;
         }
         if (action === 'goto') {
-            if (!address.trim()) { return; }
+            if (!address.trim()) { if (state.mounted) { await state.panel.webview.postMessage({ action: 'busyDone' }); } return; }
             const resolved = await this.query(state.md5, 'address', 'resolve', { selector: { address: address.trim() } });
             if (resolved.valid === false || state.kind !== 'references' && resolved.in_memory === false) { throw new Error(`Address ${address} is not in program memory`); }
-            state.address = stringOf(resolved.address) || address.trim(); state.cursor = undefined; state.previous = []; await this.render(state); return;
+            state.address = stringOf(resolved.address) || address.trim(); state.cursor = undefined; state.previous = [];
+            await this.render(state, false, { reason: 'goto', fromGoto: true }); return;
         }
         if (action === 'select' && address) {
             // Selecting bytes or data remains in this graphical view. Instruction/CFG selections

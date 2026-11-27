@@ -14,7 +14,7 @@ import { pageStyles } from './page-styles';
 import { renderProgramHexScript } from './program-hex-script';
 import { addrSpan, programViewStyles } from './program-views-styles';
 import { browserLiveRegions, moreActionsPopover, pageOptionsPopover, viewStyles } from './view-ui';
-import { escape } from './web';
+import { domId, escape, gotoFormHtml, liveRegionsHtml } from './web';
 
 /** Short byte-order identifier used by the Data Inspector pill toggle. */
 export type InspectorEndian = 'le' | 'be';
@@ -42,6 +42,8 @@ export interface HexViewPayload {
     singleKeyShortcuts?: boolean;
     bytesPerRow: 8 | 16;
     initialInspector: DataInspectorEntry[];
+    busy?: boolean;
+    error?: string;
     focusId?: string;
 }
 
@@ -63,39 +65,22 @@ export function renderHexRowsHtml(chunk: HexChunk, selectedAddress: string, sele
 
     const matchesSelectedStart = (addr: string): boolean => {
         const parsed = parseAddress(addr);
-        if (selStart && parsed) {
-            return parsed.space.toLowerCase() === selStart.space.toLowerCase() && parsed.offset === selStart.offset;
-        }
-        return addr.toLowerCase() === selStartHex;
+        return selStart && parsed ? parsed.space.toLowerCase() === selStart.space.toLowerCase() && parsed.offset === selStart.offset : addr.toLowerCase() === selStartHex;
     };
 
     const isInSelectedRange = (addr: string): boolean => {
         const parsed = parseAddress(addr);
-        if (selStart && parsed) {
-            return parsed.space.toLowerCase() === selStart.space.toLowerCase()
-                && parsed.offset >= selStart.offset
-                && parsed.offset <= selEndOffset;
-        }
-        return addr.toLowerCase() === selStartHex;
+        return selStart && parsed ? parsed.space.toLowerCase() === selStart.space.toLowerCase() && parsed.offset >= selStart.offset && parsed.offset <= selEndOffset : addr.toLowerCase() === selStartHex;
     };
 
     let focusStopAddress = '';
     for (const row of chunk.rows) {
         for (const cell of row.cells) {
-            if (!cell.inBlock || !cell.address) {
-                continue;
-            }
-            if (!focusStopAddress) {
-                focusStopAddress = cell.address;
-            }
-            if (matchesSelectedStart(cell.address)) {
-                focusStopAddress = cell.address;
-                break;
-            }
+            if (!cell.inBlock || !cell.address) { continue; }
+            if (!focusStopAddress) { focusStopAddress = cell.address; }
+            if (matchesSelectedStart(cell.address)) { focusStopAddress = cell.address; break; }
         }
-        if (focusStopAddress && matchesSelectedStart(focusStopAddress)) {
-            break;
-        }
+        if (focusStopAddress && matchesSelectedStart(focusStopAddress)) { break; }
     }
 
     let focusAssigned = false;
@@ -121,7 +106,7 @@ export function renderHexRowsHtml(chunk: HexChunk, selectedAddress: string, sele
                 ? `?? uninitialized at ${cell.address}${symbolSuffix}`
                 : `${byteStr} at ${cell.address}${symbolSuffix}`;
             const title = `${cell.address}${cell.symbol ? ` · ${cell.symbol}` : ''}${cell.value === null ? ' (uninitialized)' : ''}`;
-            return `<td class="hb${gapClass}${nullClass}${isSel ? ' is-selected' : ''}" data-address="${escape(cell.address)}" data-byte="${cell.value === null ? '' : cell.value}" title="${escape(title)}" aria-label="${escape(ariaLabel)}" aria-selected="${isSel ? 'true' : 'false'}" tabindex="${isFocusStop ? '0' : '-1'}">${byteStr}</td>`;
+            return `<td id="${domId('byte', cell.address)}" class="hb${gapClass}${nullClass}${isSel ? ' is-selected' : ''}" data-address="${escape(cell.address)}" data-byte="${cell.value === null ? '' : cell.value}" title="${escape(title)}" aria-label="${escape(ariaLabel)}" aria-selected="${isSel ? 'true' : 'false'}" tabindex="${isFocusStop ? '0' : '-1'}">${byteStr}</td>`;
         }).join('');
 
         const asciiHtml = row.cells.map(cell => {
@@ -135,7 +120,7 @@ export function renderHexRowsHtml(chunk: HexChunk, selectedAddress: string, sele
 
         const rowAddr = row.firstInBlockAddress || row.rowAddress;
         const firstByte = row.cells.find(c => c.inBlock)?.address || rowAddr;
-        return `<tr class="hex-row${rowHasSel ? ' selected' : ''}" data-address="${escape(firstByte)}" data-kind="bytes" data-sel-len="${selectionLength}"><th scope="row" class="addr">${addrSpan(row.rowAddress)}</th>${bytesHtml}<td class="hex-ascii" aria-readonly="true">${asciiHtml}</td></tr>`;
+        return `<tr id="${domId('hex-row', row.rowAddress)}" class="hex-row${rowHasSel ? ' selected' : ''}" data-address="${escape(firstByte)}" data-kind="bytes" data-sel-len="${selectionLength}"><th scope="row" class="addr">${addrSpan(row.rowAddress)}</th>${bytesHtml}<td class="hex-ascii" aria-readonly="true">${asciiHtml}</td></tr>`;
     }).join('');
 }
 
@@ -174,7 +159,7 @@ function renderMemoryMapHtml(blocks: MemoryBlockInfo[]): string {
     const rowsHtml = blocks.map(block => {
         const perms = permissionsLabel(block);
         const initText = block.initialized ? 'Yes' : 'No';
-        return `<tr data-address="${escape(block.start)}" data-kind="block" data-label="${escape(block.name)}" tabindex="0"><td>${escape(block.name)}</td><td class="addr">${addrSpan(block.start)}</td><td class="addr">${addrSpan(block.end)}</td><td>${escape(block.length.toString(10))}</td><td>${escape(perms)}</td><td>${escape(initText)}</td></tr>`;
+        return `<tr id="${domId('block-row', block.start)}" data-address="${escape(block.start)}" data-kind="block" data-label="${escape(block.name)}" tabindex="0"><td>${escape(block.name)}</td><td class="addr">${addrSpan(block.start)}</td><td class="addr">${addrSpan(block.end)}</td><td>${escape(block.length.toString(10))}</td><td>${escape(perms)}</td><td>${escape(initText)}</td></tr>`;
     }).join('');
     return `<details class="memory-map"><summary>Memory map (${blocks.length} blocks)</summary><div class="table-wrap"><table><thead><tr><th scope="col">Block</th><th scope="col">Start</th><th scope="col">End</th><th scope="col">Length</th><th scope="col">Permissions</th><th scope="col">Initialized</th></tr></thead><tbody>${rowsHtml}</tbody></table></div></details>`;
 }
@@ -212,7 +197,7 @@ ${pageStyles}
 ${iconFontStyles}
 ${viewStyles}
 ${programViewStyles}
-</style></head><body class="browser-page program-view" data-view-kind="memory"><main>
+</style></head><body class="browser-page program-view${payload.busy ? ' is-busy' : ''}" data-view-kind="memory"${payload.busy ? ' aria-busy="true"' : ''}><main>
 <h1 class="page-context">${escape(payload.title)}</h1>
 <div class="toolbar pv-toolbar" role="group" aria-label="Hex navigation">
   <div class="pv-nav" role="group" aria-label="History and window">
@@ -220,7 +205,7 @@ ${programViewStyles}
     <button type="button" id="nav-forward" class="icon-button" data-action="navForward" aria-label="Forward" title="Forward (Alt+Right)"${payload.canForward ? '' : ' disabled'}>${callIcon('forward')}</button>
     <span class="pv-step" id="pv-step"${payload.hasMoreBefore || payload.hasMoreAfter ? '' : ' hidden'}><span class="pv-divider" aria-hidden="true"></span><button type="button" id="pager-before" class="icon-button" data-action="loadBefore" aria-label="Previous window" title="Previous window"${payload.hasMoreBefore ? '' : ' disabled'}>${callIcon('up')}</button><button type="button" id="pager-after" class="icon-button" data-action="loadAfter" aria-label="Next window" title="Next window"${payload.hasMoreAfter ? '' : ' disabled'}>${callIcon('down')}</button></span>
   </div>
-  <form id="goto"><input id="address" aria-label="Address" value="${escape(displayAddress(payload.cursorAddress))}" placeholder="Address or +offset…"><button type="submit" id="goto-submit" aria-label="Go to address" title="Go to address">${callIcon('right')}</button></form>
+  ${gotoFormHtml(displayAddress(payload.cursorAddress), 'Address', 'Address or +offset…')}
   <div class="browser-search">${callIcon('search')}<input class="search" id="search" aria-label="Filter displayed rows" placeholder="Filter hex, ASCII, or block…"></div>
   <div class="pv-tools" role="group" aria-label="Hex tools">
     <button type="button" id="sync-toggle" class="icon-button" data-action="toggleSync" aria-pressed="${payload.syncEnabled}" aria-label="Sync cursor with other Ghidra views" title="Sync cursor with other Ghidra views">${callIcon('link')}</button>
@@ -228,6 +213,7 @@ ${programViewStyles}
     ${pageOptionsPopover(`${blockOptions ? `<label class="pv-option-row">Memory block<select id="block-select" aria-label="Memory block">${blockOptions}</select></label>` : ''}<label class="pv-option-row">Byte order<select id="hex-endian" aria-label="Byte order"><option value="little"${payload.endian === 'little' ? ' selected' : ''}>Little-endian</option><option value="big"${payload.endian === 'big' ? ' selected' : ''}>Big-endian</option></select></label><label class="pv-option-row">Bytes per row<select id="hex-row-width" aria-label="Bytes per row"><option value="16"${payload.bytesPerRow === 16 ? ' selected' : ''}>16 bytes</option><option value="8"${payload.bytesPerRow === 8 ? ' selected' : ''}>8 bytes</option></select></label><label><input id="hex-show-inspector" type="checkbox" checked>Show Data Inspector</label><p id="hex-scope-note">${escape(scopeText)}</p>`)}
   </div>
 </div>
+${liveRegionsHtml(Boolean(payload.busy), payload.error ?? '')}
 ${browserLiveRegions}
 <div class="hex-workspace">
   <section class="hex-main" aria-label="Memory bytes at ${escape(payload.cursorAddress)}">

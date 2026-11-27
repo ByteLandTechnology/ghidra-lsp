@@ -4,7 +4,7 @@
 /** Shared styles for control-flow, call-graph, and call-column pages. */
 export const controlFlowStyles = `
 .flow-page{overflow:hidden;overflow:clip}
-.flow-page main{height:100vh;max-width:none;padding:0;margin:0;position:relative;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto auto minmax(0,1fr);gap:0}
+.flow-page main{height:100vh;max-width:none;padding:0;margin:0;position:relative;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto auto auto minmax(0,1fr);gap:0}
 .flow-page .flow-topbar{grid-row:1;position:relative;z-index:4;display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:6px 8px;padding:8px 14px;min-width:0;border-bottom:1px solid var(--vscode-panel-border);background:var(--vscode-editor-background)}
 .flow-page .flow-topbar:not(:has(.flow-topbar-controls)){grid-template-columns:minmax(0,1fr) auto}
 .flow-page .flow-topbar-primary{display:flex;align-items:center;gap:8px;min-width:0}
@@ -20,10 +20,12 @@ export const controlFlowStyles = `
 .flow-page :is(button:not(.link),#call-menu>summary,.cfg-overview-close){min-width:24px;min-height:24px}
 .flow-page .zoom-step{min-width:28px;font-size:16px;padding:0 7px}
 .flow-page #graph-zoom{min-width:51px;font-variant-numeric:tabular-nums}
-.flow-page #filter-status{grid-row:2;margin:0;padding:4px 12px;font-size:11px;line-height:1.35;overflow-wrap:anywhere;border-bottom:1px solid var(--vscode-panel-border);background:var(--vscode-editor-background);color:var(--vscode-foreground)}
-.flow-page .scope{grid-row:3;margin:0;padding:4px 12px;font-size:11px;line-height:1.35;overflow-wrap:anywhere;border-bottom:1px solid var(--vscode-panel-border);background:var(--vscode-editor-background);color:var(--ghidra-muted)}
+.flow-page #error:not(:empty){grid-row:2}
+.flow-page #filter-status{grid-row:3;margin:0;padding:4px 12px;font-size:11px;line-height:1.35;overflow-wrap:anywhere;border-bottom:1px solid var(--vscode-panel-border);background:var(--vscode-editor-background);color:var(--vscode-foreground)}
+.flow-page .scope{grid-row:4;margin:0;padding:4px 12px;font-size:11px;line-height:1.35;overflow-wrap:anywhere;border-bottom:1px solid var(--vscode-panel-border);background:var(--vscode-editor-background);color:var(--ghidra-muted)}
 .flow-page .selection-tools{flex-wrap:wrap;padding-bottom:6px}
-.flow-page .flow-canvas,.flow-page .call-columns,.flow-page main>.empty,.flow-page main>.error{grid-row:4;min-width:0;min-height:0}
+.flow-page #page-body{grid-row:5;min-height:0;min-width:0;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr)}
+.flow-page .flow-canvas,.flow-page .call-columns{min-height:0;min-width:0}
 .flow-page .flow-canvas{position:relative;width:100%;height:100%;min-height:0;overflow:hidden;overflow:clip;cursor:grab;touch-action:none;border:0;border-radius:0;background:var(--vscode-editor-background)}
 .flow-canvas.panning,.flow-canvas.panning .graph-node{cursor:grabbing}
 .flow-canvas>svg{display:block;width:100%;height:100%;overflow:visible;user-select:none}
@@ -91,7 +93,7 @@ body.flow-page:is(.vscode-high-contrast,.vscode-high-contrast-light) .flow-canva
   .flow-page .flow-topbar-controls{grid-column:1;justify-self:start}
   .flow-page .flow-topbar:has(.flow-topbar-controls) .flow-topbar-actions{grid-column:2;justify-self:end}
   .flow-page .flow-topbar-actions{gap:2px}
-  .flow-page #filter-status,.flow-page .scope{padding:3px 8px;font-size:11px}
+  .flow-page #filter-status,.flow-page .scope,.flow-page #error:not(:empty){padding:3px 8px;font-size:11px}
 }
 @media(max-width:300px){
   .flow-page .flow-topbar{grid-template-columns:minmax(0,1fr)}
@@ -99,26 +101,28 @@ body.flow-page:is(.vscode-high-contrast,.vscode-high-contrast-light) .flow-canva
 }
 @media(max-height:420px){
   .flow-page .flow-topbar{padding:4px 8px;gap:3px 6px}
-  .flow-page #filter-status,.flow-page .scope{padding:2px 8px;font-size:10px;line-height:1.25;max-height:24px;overflow-y:auto}
+  .flow-page #filter-status,.flow-page .scope,.flow-page #error:not(:empty){padding:2px 8px;font-size:10px;line-height:1.25;max-height:24px;overflow-y:auto}
 }
 `;
 
 /** Runs inside the existing nonce-protected page and uses its persisted view state. */
 export const controlFlowScript = String.raw`
-    graphViewport=(()=>{
+    let graphPointerFocus=false,graphMeasureSeq=0;
+    const mountGraphViewport=(preserveViewport=samePage,savedViewport=undefined)=>{
+      graphViewport?.destroy?.();graphViewport=undefined;
       const canvas=document.querySelector('[data-control-flow],[data-call-graph]');if(!canvas){return undefined}
       const svg=canvas.querySelector('svg'),world=svg.querySelector('.graph-world'),cards=canvas.querySelector('.graph-cards'),cardWorld=canvas.querySelector('.graph-card-world'),host=canvas.closest('main')||document;
       let width=Math.max(1,Number(svg.dataset.width)||1),height=Math.max(1,Number(svg.dataset.height)||1);
-      const saved=samePage?previous.graphViewport:undefined;
-      const restored=saved&&[saved.scale,saved.x,saved.y].every(Number.isFinite)&&saved.scale>0;
-      let scale=restored?saved.scale:1,x=restored?saved.x:0,y=restored?saved.y:24,fitted=!!(restored&&saved.fitted),userMoved=Boolean(restored),drag;
-      let suppressClick=false,firstHighlight=true,pointerFocus=false;
+      const saved=preserveViewport?(savedViewport||previous.graphViewport):undefined;
+      const restored=Boolean(saved&&[saved.scale,saved.x,saved.y].every(Number.isFinite)&&saved.scale>0);
+      let scale=restored?saved.scale:1,x=restored?saved.x:0,y=restored?saved.y:24,fitted=!!(restored&&saved.fitted),userMoved=restored,drag;
+      let suppressClick=false,firstHighlight=true,searchIndex=-1,toggleAnchorEntry='';
       // Remove visible floating overlays from the viewport area.
       const safeBoxes=()=>{
         const rect=canvas.getBoundingClientRect(),vw=canvas.clientWidth||rect.width,vh=canvas.clientHeight||rect.height,pad=Math.min(12,Math.max(4,Math.floor(Math.min(vw,vh)*.04)));
         const base={left:pad,top:pad,right:Math.max(pad+1,vw-pad),bottom:Math.max(pad+1,vh-pad)};
         let boxes=[base];
-        for(const el of host.querySelectorAll('.cfg-zoom,.cfg-overview,.scope,.call-zoom,.call-overview,.call-details,#filter-status,.cfg-search,.call-search')){
+        for(const el of host.querySelectorAll('.cfg-zoom,.cfg-overview,.scope,.call-zoom,.call-overview,.call-details,#filter-status:not(.sr-filter-status),.cfg-search,.call-search,#error:not(:empty)')){
           if(el.hidden||el.closest('[hidden]')||el.classList.contains('sr-filter-status')){continue}
           const r=el.getBoundingClientRect();if(r.width<=0||r.height<=0||r.right<=rect.left+1||r.left>=rect.right-1||r.bottom<=rect.top+1||r.top>=rect.bottom-1){continue}
           const gap=Math.min(8,pad),ox0=r.left-rect.left-gap,oy0=r.top-rect.top-gap,ox1=r.right-rect.left+gap,oy1=r.bottom-rect.top+gap,next=[];
@@ -139,7 +143,7 @@ export const controlFlowScript = String.raw`
       const bestSafe=(tw,th)=>safeBoxes().reduce((best,b)=>{const fitA=Math.min(b.right-b.left,tw)*Math.min(b.bottom-b.top,th),fitB=Math.min(best.right-best.left,tw)*Math.min(best.bottom-best.top,th);return fitA>fitB+.5||Math.abs(fitA-fitB)<=.5&&boxArea(b)>boxArea(best)?b:best});
       // Keep the graph in view and let edge items move clear of overlays.
       const panBounds=()=>{const boxes=safeBoxes(),sLeft=Math.min(...boxes.map(b=>b.left)),sRight=Math.max(...boxes.map(b=>b.right)),sTop=Math.min(...boxes.map(b=>b.top)),sBottom=Math.max(...boxes.map(b=>b.bottom));const axis=(sMin,sMax,span)=>{const keep=Math.min(16,span/2);return {min:sMin+keep-span-8,max:sMax-keep+8}};return {x:axis(sLeft,sRight,width*scale),y:axis(sTop,sBottom,height*scale)}};
-      const update=()=>{if(canvas.scrollLeft||canvas.scrollTop){canvas.scrollLeft=canvas.scrollTop=0}if(cards&&(cards.scrollLeft||cards.scrollTop)){cards.scrollLeft=cards.scrollTop=0}const bounds=panBounds();if(bounds){x=Math.max(bounds.x.min,Math.min(bounds.x.max,x));y=Math.max(bounds.y.min,Math.min(bounds.y.max,y))}world.setAttribute('transform','translate('+x+','+y+') scale('+scale+')');if(cardWorld){cardWorld.style.transform='translate('+x+'px,'+y+'px) scale('+scale+')'}svg.dataset.zoom=String(scale);document.getElementById('graph-zoom').textContent=Math.round(scale*100)+'%';canvas.dispatchEvent(new CustomEvent('graph-viewport'));persist()};
+      const update=()=>{if(canvas.scrollLeft||canvas.scrollTop){canvas.scrollLeft=canvas.scrollTop=0}if(cards&&(cards.scrollLeft||cards.scrollTop)){cards.scrollLeft=cards.scrollTop=0}const bounds=panBounds();if(bounds){x=Math.max(bounds.x.min,Math.min(bounds.x.max,x));y=Math.max(bounds.y.min,Math.min(bounds.y.max,y))}world.setAttribute('transform','translate('+x+','+y+') scale('+scale+')');if(cardWorld){cardWorld.style.transform='translate('+x+'px,'+y+'px) scale('+scale+')'}svg.dataset.zoom=String(scale);const zoomBtn=document.getElementById('graph-zoom');if(zoomBtn){zoomBtn.textContent=Math.round(scale*100)+'%'}canvas.dispatchEvent(new CustomEvent('graph-viewport'));persist()};
       const fit=()=>{const safe=largestSafe(),sw=Math.max(1,safe.right-safe.left),sh=Math.max(1,safe.bottom-safe.top);scale=Math.min(1,sw/width,sh/height);x=safe.left+(sw-width*scale)/2;y=safe.top+(sh-height*scale)/2;fitted=true;userMoved=true;update()};
       const zoom=(next,px=canvas.clientWidth/2,py=canvas.clientHeight/2)=>{next=Math.max(.05,Math.min(4,next));x=px-(px-x)*next/scale;y=py-(py-y)*next/scale;scale=next;fitted=false;userMoved=true;update()};
       const placeInitial=()=>{
@@ -174,17 +178,9 @@ export const controlFlowScript = String.raw`
         if(Math.abs(nx-x)<.5&&Math.abs(ny-y)<.5){return}
         x=nx;y=ny;fitted=false;userMoved=true;update()
       };
-      let searchIndex=-1;search.addEventListener('input',()=>{searchIndex=-1});
-      search.addEventListener('keydown',event=>{if(event.key!=='Enter'){return}event.preventDefault();const matches=[...canvas.querySelectorAll('.graph-node.search-match')];if(matches.length){searchIndex=(searchIndex+1)%matches.length;reveal(matches[searchIndex])}});
       const select=(rows,follow)=>{const ids=new Set(rows.map(row=>row.dataset.node));svg.querySelectorAll('.cfg-edge,.call-edge').forEach(edge=>{const connected=ids.has(edge.dataset.from)||ids.has(edge.dataset.to);edge.classList.toggle('connected',connected);edge.classList.toggle('dimmed',ids.size>0&&!connected)});
         if(follow&&rows[0]&&!(firstHighlight&&restored)){reveal(rows[0])}if(follow){firstHighlight=false}};
-      document.addEventListener('pointerdown',()=>{pointerFocus=true;requestAnimationFrame(()=>{pointerFocus=false})},true);
-      document.addEventListener('keydown',event=>{if(!['Control','Shift','Alt','Meta'].includes(event.key)){pointerFocus=false}},true);
-      canvas.addEventListener('focusin',event=>{const item=event.target.closest(focusSelector);if(item&&(!pointerFocus||item.matches?.(':focus-visible'))){reveal(item)}});
-      document.getElementById('graph-fit').addEventListener('click',fit);
-      document.getElementById('graph-zoom').addEventListener('click',()=>zoom(1));
-      document.getElementById('graph-zoom-in').addEventListener('click',()=>zoom(scale*1.2));
-      document.getElementById('graph-zoom-out').addEventListener('click',()=>zoom(scale/1.2));
+      canvas.addEventListener('focusin',event=>{const item=event.target.closest(focusSelector);if(item&&(!graphPointerFocus||item.matches?.(':focus-visible'))){reveal(item)}});
       canvas.addEventListener('wheel',event=>{event.preventDefault();const r=canvas.getBoundingClientRect();zoom(scale*Math.exp(-event.deltaY*(event.deltaMode===1?16:1)*.002),event.clientX-r.left,event.clientY-r.top)},{passive:false});
       canvas.addEventListener('pointerdown',event=>{suppressClick=false;if(event.target.closest('.call-overview,.cfg-overview,.call-node-controls,.cfg-node-controls')||event.button!==1&&(event.button!==0||event.target.closest('.graph-node'))){return}event.preventDefault();canvas.focus({preventScroll:true});canvas.setPointerCapture(event.pointerId);drag={id:event.pointerId,button:event.button,x:event.clientX,y:event.clientY,ox:x,oy:y}});
       canvas.addEventListener('pointermove',event=>{if(!drag||event.pointerId!==drag.id){return}const dx=event.clientX-drag.x,dy=event.clientY-drag.y;if(Math.hypot(dx,dy)>3){suppressClick=drag.button===0;canvas.classList.add('panning')}x=drag.ox+dx;y=drag.oy+dy;fitted=false;userMoved=true;update()});
@@ -192,8 +188,10 @@ export const controlFlowScript = String.raw`
       canvas.addEventListener('click',event=>{if(suppressClick){event.preventDefault();event.stopImmediatePropagation();suppressClick=false}},{capture:true});
       canvas.addEventListener('keydown',event=>{if(canUseSingleKeyShortcut(event,canvas)){if(event.key==='+'||event.key==='='){event.preventDefault();zoom(scale*1.2);return}if(event.key==='-'){event.preventDefault();zoom(scale/1.2);return}if(event.key==='0'){event.preventDefault();fit();return}}if(event.target===canvas&&['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key)){event.preventDefault();x+=event.key==='ArrowLeft'?50:event.key==='ArrowRight'?-50:0;y+=event.key==='ArrowUp'?50:event.key==='ArrowDown'?-50:0;fitted=false;userMoved=true;update()}});
       let oldWidth=canvas.clientWidth,oldHeight=canvas.clientHeight;
-      new ResizeObserver(()=>{if(fitted){fit()}else if(!userMoved){placeInitial();update()}else{x+=(canvas.clientWidth-oldWidth)/2;y+=(canvas.clientHeight-oldHeight)/2;update()}oldWidth=canvas.clientWidth;oldHeight=canvas.clientHeight}).observe(canvas);
-      let measureFrame=0,measureTimer=0,requestSeq=0,appliedSeq=0,lastSent='';
+      const resizeObserver=new ResizeObserver(()=>{if(fitted){fit()}else if(!userMoved){placeInitial();update()}else{x+=(canvas.clientWidth-oldWidth)/2;y+=(canvas.clientHeight-oldHeight)/2;update()}oldWidth=canvas.clientWidth;oldHeight=canvas.clientHeight});
+      resizeObserver.observe(canvas);
+      const minSeq=graphMeasureSeq+1;
+      let destroyed=false,measureFrame=0,measureTimer=0,appliedSeq=0,lastSent='',cardObserver,styleObserver;
       const readSizes=()=>{
         const nodes=[...canvas.querySelectorAll('.graph-node')],sizes=[];let changed=false;
         for(const node of nodes){
@@ -207,20 +205,22 @@ export const controlFlowScript = String.raw`
       };
       const flushMeasure=()=>{
         measureFrame=0;measureTimer=0;
+        if(destroyed||!canvas.isConnected){return}
         const {sizes,changed,sig}=readSizes();
         if(!sizes.length||(!changed&&sig===lastSent)||sig===lastSent){return}
         lastSent=sig;
-        vscode.postMessage({action:'measureGraph',requestId:++requestSeq,graphRoot:state.entry,sizes});
+        vscode.postMessage({action:'measureGraph',requestId:++graphMeasureSeq,graphRoot:state.entry,sizes});
       };
       const scheduleMeasure=()=>{
+        if(destroyed||!canvas.isConnected){return}
         if(measureTimer){clearTimeout(measureTimer)}
         if(measureFrame){cancelAnimationFrame(measureFrame)}
-        measureFrame=requestAnimationFrame(()=>{measureFrame=0;measureTimer=setTimeout(flushMeasure,20)});
+        measureFrame=requestAnimationFrame(()=>{measureFrame=0;if(!destroyed&&canvas.isConnected){measureTimer=setTimeout(flushMeasure,20)}});
       };
       if(cardWorld){
-        const cardObserver=new ResizeObserver(scheduleMeasure);
+        cardObserver=new ResizeObserver(scheduleMeasure);
         for(const node of cardWorld.querySelectorAll('.graph-node')){cardObserver.observe(node)}
-        const styleObserver=new MutationObserver(scheduleMeasure);
+        styleObserver=new MutationObserver(scheduleMeasure);
         styleObserver.observe(document.head,{childList:true,subtree:true,characterData:true,attributes:true});
         styleObserver.observe(document.documentElement,{attributes:true,attributeFilter:['style','class']});
         styleObserver.observe(document.body,{attributes:true,attributeFilter:['style','class']});
@@ -228,10 +228,13 @@ export const controlFlowScript = String.raw`
         window.addEventListener('resize',scheduleMeasure);
         window.visualViewport?.addEventListener('resize',scheduleMeasure);
       }
-      window.addEventListener('message',event=>{
+      const onGraphLayout=event=>{
+        if(destroyed||!canvas.isConnected){return}
         const msg=event.data||{};if(msg.action!=='graphLayout'){return}
-        if(typeof msg.requestId==='number'){if(msg.requestId<appliedSeq){return}appliedSeq=msg.requestId}
-        const anchorEl=document.activeElement?.closest?.('.graph-node')||canvas.querySelector('.graph-node.selected')||canvas.querySelector('.is-root')||canvas.querySelector('.graph-node');
+        if(msg.graphKind&&((msg.graphKind==='callGraph')!==canvas.hasAttribute('data-call-graph'))){return}
+        if(typeof msg.requestId==='number'){if(msg.requestId<minSeq||msg.requestId<appliedSeq){return}appliedSeq=msg.requestId}
+        const toggledEl=toggleAnchorEntry?[...canvas.querySelectorAll('.call-node')].find(item=>item.dataset.entry===toggleAnchorEntry):undefined;
+        const anchorEl=(canvas.contains(document.activeElement)?document.activeElement?.closest?.('.graph-node'):undefined)||toggledEl||canvas.querySelector('.graph-node.selected')||canvas.querySelector('.is-root')||canvas.querySelector('.graph-node');
         const anchorX=anchorEl?(Number(anchorEl.dataset.x)+Number(anchorEl.dataset.width)/2)*scale+x:0;
         const anchorY=anchorEl?(Number(anchorEl.dataset.y)+Number(anchorEl.dataset.height)/2)*scale+y:0;
         if(Number(msg.width)>0){width=Math.ceil(Number(msg.width));svg.dataset.width=String(width)}
@@ -287,8 +290,23 @@ export const controlFlowScript = String.raw`
         canvas.dataset.layoutSettled=String(msg.requestId||'true');
         canvas.dispatchEvent(new CustomEvent('graph-layout-settled'));
         scheduleMeasure();
-      });
-      requestAnimationFrame(()=>{const anchor=samePage?previous.branchAnchor:undefined;if(restored&&anchor&&Number.isFinite(anchor.x)&&Number.isFinite(anchor.y)){const node=[...canvas.querySelectorAll('.call-node')].find(item=>item.dataset.entry===anchor.entry);if(node){x=anchor.x-(Number(node.dataset.x)+Number(node.dataset.width)/2)*scale;y=anchor.y-(Number(node.dataset.y)+Number(node.dataset.height)/2)*scale;fitted=false;userMoved=true}}if(!restored){placeInitial()}update();select([...canvas.querySelectorAll('.graph-node.selected')],false);scheduleMeasure()});
-      return {select,fit,reveal,center:(cx,cy)=>{x=canvas.clientWidth/2-cx*scale;y=canvas.clientHeight/2-cy*scale;fitted=false;userMoved=true;update()},snapshot:()=>({scale,x,y,fitted,bounds:panBounds()})};
-    })();
+      };
+      window.addEventListener('message',onGraphLayout);
+      const applyInitial=()=>{if(destroyed||!canvas.isConnected){return}const anchor=preserveViewport?(branchAnchor||previous.branchAnchor):undefined;if(restored&&anchor&&Number.isFinite(anchor.x)&&Number.isFinite(anchor.y)){const node=[...canvas.querySelectorAll('.call-node')].find(item=>item.dataset.entry===anchor.entry);if(node){toggleAnchorEntry=anchor.entry||'';x=anchor.x-(Number(node.dataset.x)+Number(node.dataset.width)/2)*scale;y=anchor.y-(Number(node.dataset.y)+Number(node.dataset.height)/2)*scale;fitted=false;userMoved=true}}branchAnchor=undefined;if(!restored){placeInitial()}update();select([...canvas.querySelectorAll('.graph-node.selected')],false);scheduleMeasure()};
+      if(inPageUpdate&&canvas.clientWidth>0){applyInitial()}else{requestAnimationFrame(applyInitial)}
+      graphViewport={select,fit,reveal,zoomTo:next=>zoom(next),zoomStep:factor=>zoom(scale*factor),resetSearch:()=>{searchIndex=-1},nextSearchMatch:()=>{const matches=[...canvas.querySelectorAll('.graph-node.search-match')];if(matches.length){searchIndex=(searchIndex+1)%matches.length;reveal(matches[searchIndex])}},center:(cx,cy)=>{x=canvas.clientWidth/2-cx*scale;y=canvas.clientHeight/2-cy*scale;fitted=false;userMoved=true;update()},snapshot:()=>({scale,x,y,fitted,bounds:panBounds()}),destroy:()=>{destroyed=true;resizeObserver.disconnect();cardObserver?.disconnect();styleObserver?.disconnect();if(measureTimer){clearTimeout(measureTimer);measureTimer=0}if(measureFrame){cancelAnimationFrame(measureFrame);measureFrame=0}window.removeEventListener('resize',scheduleMeasure);window.visualViewport?.removeEventListener('resize',scheduleMeasure);window.removeEventListener('message',onGraphLayout)}};
+      return graphViewport;
+    };
+    if(!document.body.dataset.graphControlsBound){
+      document.body.dataset.graphControlsBound='true';
+      document.addEventListener('pointerdown',()=>{graphPointerFocus=true;requestAnimationFrame(()=>{graphPointerFocus=false})},true);
+      document.addEventListener('keydown',event=>{if(!['Control','Shift','Alt','Meta'].includes(event.key)){graphPointerFocus=false}},true);
+      search?.addEventListener('input',()=>graphViewport?.resetSearch?.());
+      search?.addEventListener('keydown',event=>{if(event.key==='Enter'&&graphViewport){event.preventDefault();graphViewport.nextSearchMatch()}});
+      document.getElementById('graph-fit')?.addEventListener('click',()=>graphViewport?.fit());
+      document.getElementById('graph-zoom')?.addEventListener('click',()=>graphViewport?.zoomTo(1));
+      document.getElementById('graph-zoom-in')?.addEventListener('click',()=>graphViewport?.zoomStep(1.2));
+      document.getElementById('graph-zoom-out')?.addEventListener('click',()=>graphViewport?.zoomStep(1/1.2));
+    }
+    mountGraphViewport();
 `;

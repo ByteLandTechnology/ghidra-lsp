@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import { highlightAsm } from './syntax';
+import { domId } from './web';
 import { escapeHtml, GraphEdge, GraphNode } from './workbench-page';
-import { layoutLayeredGraph, LayoutPoint, MeasuredSize } from './graph-layout';
+import { layoutLayeredGraph, LayoutPoint, MeasuredSize, parseMeasuredSizes } from './graph-layout';
 import { callIcon } from './call-graph-icons';
 
 /** Default line height estimate in CSS pixels for initial basic-block layout. */
@@ -198,16 +199,35 @@ export async function controlFlowGraph(
 ): Promise<string> {
     const layout = await layoutControlFlow(nodes, edges, measured);
     const titles = new Map(nodes.map(node => [node.id, node.title]));
-    const edgeSvg = layout.edges.map(edge => `<g class="cfg-edge ${edge.kind}${edge.backward ? ' backward' : ''}" tabindex="0" role="button" aria-pressed="false" aria-label="${escapeHtml(`${edge.label || 'Flow'} from ${titles.get(edge.from)} to ${titles.get(edge.to)}`)}" data-edge-index="${edge.index}" data-edge-key="${escapeHtml(JSON.stringify([edge.from, edge.to, edge.kind]))}" data-from="${escapeHtml(edge.from)}" data-to="${escapeHtml(edge.to)}" data-kind="${edge.kind}"><title>${escapeHtml(edge.label || 'Flow')} · ${escapeHtml(titles.get(edge.from))} → ${escapeHtml(titles.get(edge.to))}</title><path class="cfg-edge-hit" d="${edge.path}"/><path class="edge" d="${edge.path}" marker-end="url(#cfg-arrow-${edge.kind})"/>${renderCfgEdgeBadge(edge)}</g>`).join('');
+    const edgeSvg = layout.edges.map(edge => `<g id="${domId('cfg-edge', `${edge.from}-${edge.to}-${edge.kind}-${edge.index}`)}" class="cfg-edge ${edge.kind}${edge.backward ? ' backward' : ''}" tabindex="0" role="button" aria-pressed="false" aria-label="${escapeHtml(`${edge.label || 'Flow'} from ${titles.get(edge.from)} to ${titles.get(edge.to)}`)}" data-edge-index="${edge.index}" data-edge-key="${escapeHtml(JSON.stringify([edge.from, edge.to, edge.kind]))}" data-from="${escapeHtml(edge.from)}" data-to="${escapeHtml(edge.to)}" data-kind="${edge.kind}"><title>${escapeHtml(edge.label || 'Flow')} · ${escapeHtml(titles.get(edge.from))} → ${escapeHtml(titles.get(edge.to))}</title><path class="cfg-edge-hit" d="${edge.path}"/><path class="edge" d="${edge.path}" marker-end="url(#cfg-arrow-${edge.kind})"/>${renderCfgEdgeBadge(edge)}</g>`).join('');
     const nodeCards = layout.nodes.map(node => {
         const tooltip = [node.title, ...(node.lines?.length ? [] : [node.subtitle]), ...(node.lines || [])].filter(Boolean).join('\n');
         const entryBadge = node.address && node.address === node.entry ? '<span class="node-subtitle cfg-entry-badge">Entry</span>' : '';
         const body = node.lines?.length
             ? node.lines.map(instructionLine).join('')
             : `<div class="node-subtitle">${escapeHtml(node.subtitle || '')}</div>`;
-        return `<div class="graph-node cfg-node" tabindex="0" role="button" aria-label="${escapeHtml(node.title)}" title="${escapeHtml(tooltip)}" data-node="${escapeHtml(node.id)}" data-address="${escapeHtml(node.address)}" data-entry="${escapeHtml(node.entry)}" data-kind="${node.kind || 'address'}" data-label="${escapeHtml(node.title)}" data-x="${node.x}" data-y="${node.y}" data-width="${node.width}" data-height="${node.height}" style="left:${node.x}px;top:${node.y}px"><div class="block-header"><span class="node-title">${escapeHtml(node.title)}</span>${entryBadge}</div><div class="block-body">${body}</div></div>`;
+        return `<div id="${domId('cfg-node', node.id)}" class="graph-node cfg-node" tabindex="0" role="button" aria-label="${escapeHtml(node.title)}" title="${escapeHtml(tooltip)}" data-node="${escapeHtml(node.id)}" data-address="${escapeHtml(node.address)}" data-entry="${escapeHtml(node.entry)}" data-kind="${node.kind || 'address'}" data-label="${escapeHtml(node.title)}" data-x="${node.x}" data-y="${node.y}" data-width="${node.width}" data-height="${node.height}" style="left:${node.x}px;top:${node.y}px"><div class="block-header"><span class="node-title">${escapeHtml(node.title)}</span>${entryBadge}</div><div class="block-body">${body}</div></div>`;
     }).join('');
     const markers = ['taken', 'fallthrough', 'flow'].map(kind => `<marker id="cfg-arrow-${kind}" markerUnits="userSpaceOnUse" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z"/></marker>`).join('');
     const overview = `<details class="cfg-overview" hidden><summary title="Drag to move overview" aria-label="Overview. Drag or use arrow keys to move">${callIcon('overview')}<span>Overview</span><span role="button" tabindex="0" class="cfg-overview-close" aria-label="Hide overview" title="Hide overview">${callIcon('close')}</span></summary><svg id="cfg-overview-map" viewBox="0 0 ${layout.width} ${layout.height}" preserveAspectRatio="xMidYMid meet" tabindex="0" role="button" aria-label="Graph overview. Click or drag to pan; arrow keys move the viewport.">${layout.edges.map(edge => `<path data-map-edge="${edge.index}" d="${edge.path}"/>`).join('')}${layout.nodes.map(node => `<rect data-map-node="${escapeHtml(node.id)}" x="${node.x}" y="${node.y}" width="${node.width}" height="${node.height}"/>`).join('')}<rect id="cfg-overview-window"/></svg></details>`;
-    return `<div class="graph-wrap flow-canvas" data-control-flow tabindex="0" role="region" aria-label="Control flow canvas. Drag the background or middle-drag a block to pan; wheel to zoom. Enter on a block reveals source."><svg role="group" aria-label="Control flow graph" data-width="${layout.width}" data-height="${layout.height}"><defs>${markers}</defs><g class="graph-world">${edgeSvg}</g></svg><div class="graph-cards"><div class="graph-card-world">${nodeCards}</div></div>${overview}</div>`;
+    return `<div id="cfg-canvas" class="graph-wrap flow-canvas" data-control-flow tabindex="0" role="region" aria-label="Control flow canvas. Drag the background or middle-drag a block to pan; wheel to zoom. Enter on a block reveals source."><svg role="group" aria-label="Control flow graph" data-width="${layout.width}" data-height="${layout.height}"><defs>${markers}</defs><g class="graph-world">${edgeSvg}</g></svg><div class="graph-cards"><div class="graph-card-world">${nodeCards}</div></div>${overview}</div>`;
+}
+
+/** Recompute CFG basic-block coordinates, routed edges, and badges for a webview `measureGraph` message. */
+export async function measureControlFlowLayout(
+    nodes: GraphNode[],
+    edges: GraphEdge[],
+    rawSizes: unknown,
+    requestId: unknown,
+): Promise<Record<string, unknown>> {
+    const layout = await layoutControlFlow(nodes, edges, parseMeasuredSizes(rawSizes));
+    return {
+        action: 'graphLayout',
+        graphKind: 'controlFlow',
+        requestId,
+        width: layout.width,
+        height: layout.height,
+        nodes: layout.nodes.map(node => ({ id: node.id, x: node.x, y: node.y, width: node.width, height: node.height })),
+        edges: layout.edges.map(edge => ({ index: edge.index, from: edge.from, to: edge.to, path: edge.path, kind: edge.kind, backward: edge.backward, badge: edge.badge })),
+    };
 }
