@@ -6,6 +6,7 @@ import { ProgramContext } from './context';
 import { formatFriendlyError } from './error';
 import { ListingFiles, listingScheme } from './listing';
 import { singleKeyShortcutsEnabled } from './program-views-controller';
+import { measureControlFlowLayout } from './control-flow-graph';
 import { Workbench, ControlFlowData } from './workbench';
 import { page, PageOptions } from './workbench-page';
 import { AddressRange, addressRange, intersects } from './view-ranges';
@@ -153,12 +154,20 @@ export class ControlFlowView implements vscode.CustomTextEditorProvider, vscode.
         this.mountedPanels.add(panel);
         panel.webview.html = page(options);
     }
-    /** Handle selection, refresh, and decompile messages posted by the CFG webview. */
-    private async message(state: GraphState, panel: vscode.WebviewPanel, message: { action?: string; address?: string }): Promise<void> {
+    /** Handle selection, refresh, layout measurement, and decompile messages posted by the CFG webview. */
+    private async message(state: GraphState, panel: vscode.WebviewPanel, message: { action?: string; address?: string; sizes?: unknown; nodes?: unknown; requestId?: unknown }): Promise<void> {
         if (this.context.isClosing(state.uri.authority)) { await panel.webview.postMessage({ action: 'busyDone' }); return; }
         if (message.action === 'ready') { await this.highlight(state.uri, state.addresses, state.selected); return; }
         if (message.action === 'refresh') {
             await this.refresh(state.uri.authority, { silent: false });
+            return;
+        }
+        if (message.action === 'measureGraph') {
+            if (!state.data.nodes.length) { return; }
+            const currentData = state.data;
+            const payload = await measureControlFlowLayout(currentData.nodes, currentData.edges, message.sizes ?? message.nodes, message.requestId);
+            if (this.context.isClosing(state.uri.authority) || state.data !== currentData || !state.panels.has(panel)) { return; }
+            await panel.webview.postMessage(payload);
             return;
         }
         if (!panel.active) { return; }

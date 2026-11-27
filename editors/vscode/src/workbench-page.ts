@@ -87,11 +87,9 @@ export function page(options: PageOptions): string {
     .hex table{min-width:780px}.hex td:nth-child(2){white-space:pre}
     .scope,.notice{font-size:12px;color:var(--ghidra-muted);margin:12px 0}
     .graph-wrap{max-width:100%;overflow:auto;border:1px solid var(--vscode-panel-border);border-radius:2px}
-    .graph-node{cursor:pointer}.graph-node rect{fill:var(--vscode-editor-background);stroke:var(--vscode-panel-border)}
-    .graph-node:hover rect,.graph-node.selected rect,.graph-node:focus-visible rect{stroke:var(--ghidra-focus);stroke-width:2}
-    .graph-node.search-muted{opacity:.35}.graph-node.search-match rect{stroke:var(--ghidra-focus);stroke-width:2}
-    .graph-node text{fill:var(--vscode-foreground);pointer-events:none}.node-title{font-weight:600;font-size:14px}
-    .node-subtitle,.node-line{font-size:11px}.node-subtitle{fill:var(--ghidra-muted)}
+    .graph-node{cursor:pointer}.graph-node.search-muted{opacity:.35}
+    .node-title{font-weight:600;font-size:14px}
+    .node-subtitle,.node-line{font-size:11px}.node-subtitle{color:var(--ghidra-muted);fill:var(--ghidra-muted)}
     .edge{fill:none;stroke:var(--vscode-charts-blue);stroke-width:1.5}marker path{fill:var(--vscode-charts-blue)}
     .edge-label{fill:var(--ghidra-muted);font-size:10px}
     .pagination{display:flex;gap:8px;margin-top:16px}

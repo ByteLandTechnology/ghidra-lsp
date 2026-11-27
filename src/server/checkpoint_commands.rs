@@ -5,6 +5,7 @@
 
 use anyhow::{Context, Result, bail};
 use serde_json::{Value, json};
+use tokio::sync::OwnedMutexGuard;
 use tower_lsp_server::ls_types::Uri;
 
 use super::Server;
@@ -21,7 +22,7 @@ impl Server {
   ) -> Result<Value> {
     match command {
       "ghidra.checkpoints" => {
-        let md5 = self.scoped_md5(&arg).await?;
+        let md5 = self.scoped_md5(&arg)?;
         call_session_checkpoint_op(backend, "checkpoint.list", &md5, json!({})).await
       }
       "ghidra.createCheckpoint" => self.handle_create_checkpoint(&arg, backend).await,
@@ -33,9 +34,9 @@ impl Server {
 
   /// Creates an explicit named or unnamed checkpoint for a clean program session.
   async fn handle_create_checkpoint(&self, arg: &Value, backend: &McpBackend) -> Result<Value> {
-    let md5 = self.scoped_md5(arg).await?;
-    let e = self.engine.lock().await;
-    Self::ensure_program_clean(&e, &md5)?;
+    let md5 = self.scoped_md5(arg)?;
+    let _session_guard = self.engine.lock_session(&md5).await;
+    Self::ensure_program_clean(&self.engine.read_state(), &md5)?;
     let mut parameters = json!({});
     if let Some(name) = arg
       .get("name")
@@ -50,7 +51,8 @@ impl Server {
 
   /// Restores a saved project checkpoint, waits for session relaunch, and refreshes open views.
   async fn handle_restore_checkpoint(&self, arg: &Value, backend: &McpBackend) -> Result<Value> {
-    let md5 = self.scoped_md5(arg).await?;
+    let md5 = self.scoped_md5(arg)?;
+    let session_guard = self.engine.lock_session(&md5).await;
     let mut parameters = json!({"wait": false});
     if let Some(id) = arg
       .get("id")
@@ -68,8 +70,10 @@ impl Server {
     {
       parameters["name"] = Value::String(name.to_owned());
     }
+    self.engine.invalidate_symbols(&md5);
     let restored =
       call_session_checkpoint_op(backend, "checkpoint.restore", &md5, parameters).await?;
+    self.engine.invalidate_symbols(&md5);
     self
       .fail_pending_open_jobs(
         &md5,
@@ -81,7 +85,7 @@ impl Server {
     } else if let Some(id) = restored.get("jobId") {
       self.wait_job(&json!({"id": id})).await?;
     }
-    self.refresh_restored_session(&md5).await?;
+    self.refresh_restored_session(&md5, session_guard).await?;
     let session = backend
       .call("session", "get", Some(&md5), json!({}))
       .await
@@ -99,9 +103,11 @@ impl Server {
 
   /// Resets `projects/<md5>/ghidra/` and checkpoints, optionally re-importing and re-analyzing.
   async fn handle_reset_session(&self, arg: &Value, backend: &McpBackend) -> Result<Value> {
-    let md5 = self.scoped_md5(arg).await?;
+    let md5 = self.scoped_md5(arg)?;
+    let session_guard = self.engine.lock_session(&md5).await;
     let reopen = arg.get("reopen").and_then(Value::as_bool).unwrap_or(true);
     let analyze = reopen && arg.get("analyze").and_then(Value::as_bool).unwrap_or(false);
+    self.engine.invalidate_symbols(&md5);
     let reset = call_session_checkpoint_op(
       backend,
       "reset",
@@ -109,6 +115,7 @@ impl Server {
       json!({"open": reopen, "wait": false}),
     )
     .await?;
+    self.engine.invalidate_symbols(&md5);
     self
       .fail_pending_open_jobs(
         &md5,
@@ -116,7 +123,8 @@ impl Server {
       )
       .await;
     if !reopen {
-      self.engine.lock().await.forget_session(&md5);
+      self.engine.forget_session(&md5);
+      drop(session_guard);
       self.view_cache.invalidate(&md5).await;
       self.changed(&md5).await;
       return Ok(json!({
@@ -143,7 +151,7 @@ impl Server {
         .await
         .context("Analysis completed after session reset, but project persistence failed")?;
     }
-    self.refresh_restored_session(&md5).await?;
+    self.refresh_restored_session(&md5, session_guard).await?;
     let analysis = self.program_analysis(&md5).await.unwrap_or_default();
     Ok(json!({
       "md5": md5,
@@ -169,22 +177,29 @@ impl Server {
   }
 
   /// Selects `md5`, regenerates all open virtual documents, and emits `ghidra/changed`.
-  async fn refresh_restored_session(&self, md5: &str) -> Result<()> {
+  async fn refresh_restored_session(
+    &self,
+    md5: &str,
+    session_guard: OwnedMutexGuard<()>,
+  ) -> Result<()> {
     self.view_cache.invalidate(md5).await;
-    let (changes, uris) = {
-      let mut e = self.engine.lock().await;
-      if e.active.is_none() || e.active.as_deref() == Some(md5) {
-        e.select(md5).await?;
-      }
-      let changes = e.refresh_after_restore(md5).await;
-      let uris: Vec<Uri> = e
-        .docs
-        .values()
-        .filter(|doc| doc.md5 == md5)
-        .map(|doc| doc.uri.clone())
-        .collect();
-      (changes, uris)
+    let should_select = {
+      let state = self.engine.read_state();
+      state.active.is_none() || state.active.as_deref() == Some(md5)
     };
+    if should_select {
+      self.engine.select(md5).await?;
+    }
+    let changes = self.engine.refresh_after_restore_locked(md5).await;
+    let uris: Vec<Uri> = self
+      .engine
+      .read_state()
+      .docs
+      .values()
+      .filter(|doc| doc.md5 == md5)
+      .map(|doc| doc.uri.clone())
+      .collect();
+    drop(session_guard);
     self.apply_refresh(changes).await?;
     for uri in uris {
       self.report(&uri).await;
