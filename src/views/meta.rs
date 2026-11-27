@@ -77,7 +77,7 @@ pub(super) async fn get_or_load_meta(
   });
 
   let batch_res = backend
-    .call("batch", "execute", Some(&md5_lower), batch_params)
+    .call("batch", "query", Some(&md5_lower), batch_params)
     .await?;
   let items_map = extract_batch_items(&batch_res);
 
