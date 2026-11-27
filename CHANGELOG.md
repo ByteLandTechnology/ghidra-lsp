@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.8.1](https://github.com/ByteLandTechnology/ghidra-lsp/compare/v0.8.0...v0.8.1) (2026-11-27)
+
+
+### Bug Fixes
+
+* **vscode:** render html graph cards with webview elk layout ([#53](https://github.com/ByteLandTechnology/ghidra-lsp/issues/53)) ([4660250](https://github.com/ByteLandTechnology/ghidra-lsp/commit/4660250b29b1885553dab1e295278878aecec1cf))
+
+
+### Performance Improvements
+
+* isolate engine state with singleflight RPC ([#59](https://github.com/ByteLandTechnology/ghidra-lsp/issues/59)) ([2565f75](https://github.com/ByteLandTechnology/ghidra-lsp/commit/2565f75c507110aa2b9a45cc41e815ffd96e1212))
+
 ## [0.8.0](https://github.com/ByteLandTechnology/ghidra-lsp/compare/v0.7.0...v0.8.0) (2026-11-26)
 
 
