@@ -23,7 +23,7 @@ Missing default binaries install automatically via `npm` (`@ghidra-lsp/cli` and 
   - Basic-Block Control Flow Graph (`ghidra-cfg://`)
   - Bounded Call Graph (`ghidra-callgraph://`)
   - Program Overview (`ghidra-overview://`), Types, Symbols, and References snapshots
-- **Floating editors and theme highlights**: Five-kind comment float (`PLATE`, `PRE`, `EOL`, `POST`, `REPEATABLE (ext)`), function signature form (`ghidra-edit-fn://`), searchable picker, and variable/parameter editor backed by `all_or_none` server transactions. Theme-linked highlight groups (`GhidraFloatBorder`, `GhidraFloatTitle`, `GhidraFloatFooter`, `GhidraTabActive`, `GhidraTabDirty`, `GhidraTabFilled`, `GhidraStatusAccent`) refresh automatically on `ColorScheme` changes.
+- **Floating editors and theme highlights**: Five-kind comment float (`PLATE`, `PRE`, `EOL`, `POST`, `REPEATABLE (ext)`), function signature form (`ghidra-edit-fn://`, supporting one-line C signatures and `<M-k>` / `<M-j>` parameter reordering), C header importer (`ghidra-parse-c://`), searchable picker, and variable/parameter editor backed by `all_or_none` server transactions. Theme-linked highlight groups (`GhidraFloatBorder`, `GhidraFloatTitle`, `GhidraFloatFooter`, `GhidraTabActive`, `GhidraTabDirty`, `GhidraTabFilled`, `GhidraStatusAccent`) refresh automatically on `ColorScheme` changes.
 - **Native Neovim LSP integration**: Hover (`K`), Signature Help (`<C-k>`), Go to Definition (`gd`), Declaration (`gD`), Implementation (`gi`), Type Definition (`gy`), References (`gr`), Document Symbols (`gO`), Code Actions (`<leader>ca`), Rename (`<F2>` / `<leader>rn`), Semantic Tokens, Inlay Hints, and Call Hierarchy (`:GhidraCallHierarchy`).
 
 ## Installation
@@ -97,7 +97,7 @@ Verify installation with `:checkhealth ghidra-lsp`.
 - `K` / `<C-k>` / `gd` / `gD` / `gi` / `gy` / `gr` / `gO`: Native LSP Hover, Signature Help, Definition, Declaration, Implementation, Type Definition, References, and Document Symbols.
 - `q`: Close snapshot, Listing, Memory, String, CFG, or Call Graph splits.
 
-## Commands (28)
+## Commands (29)
 
 - `:GhidraInstall [lsp|mcp]`: Install or update managed `ghidra-lsp` and `ghidra-mcp` binaries via `npm`.
 
@@ -106,7 +106,7 @@ Verify installation with `:checkhealth ghidra-lsp`.
 - `:GhidraCheckpoints [md5]` / `:GhidraRestoreCheckpoint [id|name]` / `:GhidraResetSession [analyze|noanalyze]`: Browse or restore saved project checkpoints, or reset a session to a clean binary import.
 - `:GhidraOpenFunction [entry|name]` / `:GhidraFunctions`: Open or search functions with `<Tab>` completion.
 - `:GhidraSymbols` / `:GhidraTypes` / `:GhidraStrings`: Search symbols, data types, and defined strings.
-- `:GhidraEditType [path]`: Open an editable `ghidra-type://<md5><path>.ghidra-type` JSONC buffer.
+- `:GhidraEditType [path]` / `:GhidraParseC [category]`: Open an editable `ghidra-type://<md5><path>.ghidra-type` JSONC buffer or import C header declarations through `data_type.parse_c`.
 - `:GhidraGoto [address]`: Jump to address in decompilation, or fall back to Program Listing.
 - `:GhidraListing [address]` / `:GhidraMemory [address]` / `:GhidraHex [address]`: Open Listing or Hex/Memory splits (`:GhidraHex` aliases `:GhidraMemory`).
 - `:GhidraControlFlow` / `:GhidraCallGraph [entry|address]`: Open basic-block CFG and bounded Call Graph splits.

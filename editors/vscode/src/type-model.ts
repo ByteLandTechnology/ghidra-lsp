@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { applyEdits, createScanner, findNodeAtLocation, getNodeValue, modify, Node, ParseError, parseTree, printParseErrorCode, SyntaxKind } from 'jsonc-parser';
-import { Data, FieldError, FieldPath, object, reference, rows, typeReference } from './web';
+import { Data, FieldError, FieldPath, isArrayTypeReference, object, reference, rows, typeReference } from './web';
 
 /** Single backend mutation operation derived from a data type edit. */
 export interface TypeMutation { method: string; arguments: Data; }
@@ -50,7 +50,7 @@ export function typeModel(data: Data): TypeModel {
     if (kind === 'struct' || kind === 'union') {
         result.fields = rows(data.fields).filter(field => field.is_undefined !== true).map((field, index) => ({
             id: String(index), ...(kind === 'struct' ? { offset: field.offset } : {}), name: field.name || '',
-            type: reference(field.data_type), ...(object(field.data_type).kind === 'array' ? {} : { length: field.length }),
+            type: reference(field.data_type), ...(isArrayTypeReference(field.data_type) ? {} : { length: field.length }),
         }));
     } else if (kind === 'enum') {
         result.values = rows(data.values).map((value, index) => ({ id: String(index), name: value.name, value: value.value }));
@@ -90,7 +90,7 @@ function array(value: unknown, path: JsonPath): Data[] {
     return value as Data[];
 }
 /** Validate and parse a string data type reference at `path`. */
-function type(value: unknown, path: JsonPath): Data {
+function type(value: unknown, path: JsonPath): string {
     const name = string(value, path);
     try { return typeReference(name, path); } catch (error) { fail(error instanceof Error ? error.message : String(error), path); }
 }
@@ -241,7 +241,7 @@ export function typeMutations(original: TypeModel, draft: TypeModel, raw: Data):
             if (rows(raw.fields).some(field => field.comment)) { fail('Moving these fields would lose Ghidra comments. Move them in Ghidra instead.', ['fields']); }
             return [op({ remove_fields: before.map(selector), add_fields: after.map(member => {
                 const dataType = typeReference(member.type), definition: Data = { name: member.name, data_type: dataType };
-                if (member.length !== undefined && dataType.kind !== 'array') { definition.length = member.length; }
+                if (member.length !== undefined && !isArrayTypeReference(dataType)) { definition.length = member.length; }
                 return definition;
             }) })];
         }
@@ -263,7 +263,7 @@ export function typeMutations(original: TypeModel, draft: TypeModel, raw: Data):
         } else {
             const dataType = typeReference(member.type), definition: Data = { data_type: dataType };
             // Arrays carry their length in the type; a changed type otherwise uses its natural size.
-            if (member.length !== undefined && dataType.kind !== 'array'
+            if (member.length !== undefined && !isArrayTypeReference(dataType)
                 && (!previous || member.length !== previous.length || member.type === previous.type)) { definition.length = member.length; }
             if (!previous) { additions.push({ name: member.name, ...definition, ...(kind === 'struct' ? { offset: member.offset } : {}) }); }
             else {

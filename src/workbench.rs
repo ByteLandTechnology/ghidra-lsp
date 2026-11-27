@@ -5,13 +5,14 @@
 
 use std::collections::HashSet;
 
-use anyhow::{Context, Result, ensure};
+use anyhow::{Context, Result, bail, ensure};
 use serde_json::{Value, json};
 use tower_lsp_server::ls_types::{
   SemanticToken, SemanticTokenModifier, SemanticTokenType, SemanticTokensLegend,
 };
 
-use crate::backend::{ListOptions, McpBackend, list_pages};
+use crate::address::{parse_type_ref_for, validate_c_declarations, validate_c_signature};
+use crate::backend::{BackendCapabilities, ListOptions, McpBackend, list_pages};
 use crate::document::{Document, advance_position};
 
 /// Returns the LSP semantic token legend used for decompiled virtual documents.
@@ -144,6 +145,7 @@ const WRITE: &[(&str, &str)] = &[
   ("comment", "upsert"),
   ("data_type", "create"),
   ("data_type", "delete"),
+  ("data_type", "parse_c"),
   ("data_type", "patch"),
   ("data_type", "upsert"),
   ("flow_override", "patch"),
@@ -280,6 +282,133 @@ pub(crate) fn allow_write(domain: &str, operation: &str, params: &Value) -> Resu
     "Unsupported workbench mutation: {domain}.{operation}"
   );
   Ok(())
+}
+
+/// Converts a string `data_type_reference` slot in place according to `c_type_strings`.
+fn adapt_type_slot(slot: Option<&mut Value>, c_type_strings: bool) -> Result<()> {
+  if let Some(val) = slot
+    && let Some(raw) = val.as_str()
+  {
+    *val = parse_type_ref_for(raw, c_type_strings)?;
+  }
+  Ok(())
+}
+
+/// Converts property `key` across every object in `array_slot` according to `c_type_strings`.
+fn adapt_type_array(array_slot: Option<&mut Value>, key: &str, c_type_strings: bool) -> Result<()> {
+  if let Some(items) = array_slot.and_then(Value::as_array_mut) {
+    for item in items {
+      adapt_type_slot(item.get_mut(key), c_type_strings)?;
+    }
+  }
+  Ok(())
+}
+
+/// Adapts write `params` to match the schema capabilities of the active `ghidra-mcp` session.
+pub(crate) fn adapt_write_params(
+  domain: &str,
+  operation: &str,
+  mut params: Value,
+  caps: BackendCapabilities,
+) -> Result<Value> {
+  let (domain, operation) = resource_operation(domain, operation);
+  match (domain, operation) {
+    ("batch", "execute") => {
+      if let Some(items) = params.get_mut("items").and_then(Value::as_array_mut) {
+        for item in items {
+          let method = item
+            .get("method")
+            .and_then(Value::as_str)
+            .context("batch method is required")?;
+          let (d, op) = method.split_once('.').context("invalid batch method")?;
+          let args = item.get("arguments").cloned().unwrap_or_else(|| json!({}));
+          item["arguments"] = adapt_write_params(d, op, args, caps)?;
+        }
+      }
+    }
+    ("data_type", "parse_c") => {
+      let Some(target_field) = caps.parse_c_field else {
+        bail!("A newer ghidra-mcp is required to import C header declarations.");
+      };
+      let alt_field = if target_field == "source" {
+        "declarations"
+      } else {
+        "source"
+      };
+      if let Some(obj) = params.as_object_mut()
+        && !obj.contains_key(target_field)
+        && let Some(val) = obj.remove(alt_field)
+      {
+        obj.insert(target_field.to_owned(), val);
+      }
+      let raw = params
+        .get(target_field)
+        .and_then(Value::as_str)
+        .unwrap_or("");
+      validate_c_declarations(raw)?;
+    }
+    ("data_type", "create" | "upsert") => {
+      if let Some(res) = params.get_mut("resource") {
+        adapt_type_slot(res.get_mut("base_type"), caps.c_type_strings)?;
+        adapt_type_array(res.get_mut("fields"), "data_type", caps.c_type_strings)?;
+        if let Some(sig) = res.get_mut("signature") {
+          adapt_type_slot(sig.get_mut("return_type"), caps.c_type_strings)?;
+          adapt_type_array(sig.get_mut("parameters"), "data_type", caps.c_type_strings)?;
+        }
+      }
+    }
+    ("data_type", "patch") => {
+      if let Some(patch) = params.get_mut("patch") {
+        adapt_type_slot(patch.get_mut("base_type"), caps.c_type_strings)?;
+        for list_key in [
+          "add_fields",
+          "update_fields",
+          "rename_fields",
+          "remove_fields",
+        ] {
+          adapt_type_array(patch.get_mut(list_key), "data_type", caps.c_type_strings)?;
+        }
+      }
+    }
+    ("function", "patch") => {
+      if let Some(patch) = params.get_mut("patch") {
+        if let Some(sig_val) = patch.get("signature").filter(|v| !v.is_null()) {
+          ensure!(
+            caps.function_signature,
+            "A newer ghidra-mcp is required for one-line C function signatures."
+          );
+          let sig = sig_val
+            .as_str()
+            .context("function.patch signature must be a string")?;
+          validate_c_signature(sig)?;
+        }
+        if patch.get("parameters").is_some_and(|v| !v.is_null()) {
+          ensure!(
+            caps.atomic_function_parameters,
+            "A newer ghidra-mcp is required for atomic function.patch parameters."
+          );
+        }
+        adapt_type_slot(patch.get_mut("return_type"), caps.c_type_strings)?;
+        adapt_type_array(
+          patch.get_mut("parameters"),
+          "data_type",
+          caps.c_type_strings,
+        )?;
+      }
+    }
+    ("function_parameter", "create") | ("global_variable", "create" | "upsert") => {
+      if let Some(res) = params.get_mut("resource") {
+        adapt_type_slot(res.get_mut("data_type"), caps.c_type_strings)?;
+      }
+    }
+    ("function_parameter" | "function_local_variable" | "global_variable", "patch") => {
+      if let Some(patch) = params.get_mut("patch") {
+        adapt_type_slot(patch.get_mut("data_type"), caps.c_type_strings)?;
+      }
+    }
+    _ => {}
+  }
+  Ok(params)
 }
 
 /// Verifies that an atomic batch write completed with zero item errors.

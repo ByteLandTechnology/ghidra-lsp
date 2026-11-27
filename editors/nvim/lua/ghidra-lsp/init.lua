@@ -87,6 +87,7 @@ M.open_call_graph = views.open_call_graph
 M.edit_comment = edit.edit_comment
 M.edit_function = edit.edit_function
 M.edit_variables = edit.edit_variables
+M.parse_c = edit.parse_c
 M.start_client = client.start_client
 M.stop_client = client.stop_client
 M.get_client = client.get_client

@@ -135,11 +135,12 @@ export const viewStyles = `
 .edit-page .editable,.edit-page .editable thead,.edit-page .editable tbody{display:block;min-width:0}
 .edit-page .editable tr{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 8px;align-items:center;padding:6px;border-bottom:1px solid var(--vscode-panel-border)}
 .edit-page .editable tr:has(.field-error:not([hidden]):not(:empty)){align-items:start}
-.edit-page .editable tr:has(.row-remove,.editable-action-col){grid-template-columns:repeat(2,minmax(0,1fr)) 32px}
+.edit-page .editable tr:has(.row-remove,.row-move,.editable-action-col){grid-template-columns:repeat(2,minmax(0,1fr)) 32px}
+.edit-page .editable[data-reorder] tr{grid-template-columns:repeat(2,minmax(0,1fr)) 104px}
 .edit-page .editable tbody tr:last-child{border-bottom:0}
-.edit-page .editable th,.edit-page .editable td,.edit-page .editable td:last-child:has(.row-remove){display:block;width:auto;min-width:0;padding:0;border:0;overflow-wrap:anywhere}
+.edit-page .editable th,.edit-page .editable td,.edit-page .editable td:last-child:has(.row-remove,.row-move){display:block;width:auto;min-width:0;padding:0;border:0;overflow-wrap:anywhere}
 .edit-page .editable th:not(.editable-action-col){padding:2px 4px}
-.edit-page .editable .row-remove{opacity:1}
+.edit-page .editable :is(.row-remove,.row-move){opacity:1}
 }
 
 .inspector-page h2{font-size:13px;font-weight:600;margin-bottom:8px}
@@ -174,8 +175,8 @@ export const viewStyles = `
 .edit-page .table-wrap{scrollbar-width:thin}
 .edit-page .success:not(:empty){font-size:12px;padding:10px 0}
 .edit-page .editable .editable-action-col{position:relative}
-.edit-page .row-remove{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;min-height:0;padding:6px;border:0;background:transparent;color:var(--ghidra-muted)}
-.edit-page .row-remove:hover:enabled:not([aria-disabled="true"]){background:var(--vscode-toolbar-hoverBackground,var(--vscode-list-hoverBackground));color:var(--vscode-foreground)}
+.edit-page :is(.row-remove,.row-move){display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;min-height:0;padding:6px;border:0;background:transparent;color:var(--ghidra-muted)}
+.edit-page :is(.row-remove,.row-move):hover:enabled:not([aria-disabled="true"]){background:var(--vscode-toolbar-hoverBackground,var(--vscode-list-hoverBackground));color:var(--vscode-foreground)}
 .browser-page main{max-width:1450px;margin:0;padding:20px 24px 32px}
 .browser-page h1{font-size:16px;line-height:1.4;margin:0 0 2px}
 .browser-page .subtitle{font-size:11px;overflow-wrap:anywhere}
@@ -320,19 +321,19 @@ html:has(body.browser-page.has-selection){scroll-padding-bottom:68px}
 .browser-page tbody tr.selected:focus{outline:2px solid var(--ghidra-active-selection-fg);outline-offset:-2px}
 body.inspector-page[data-view-kind="type-editor"]:is(.vscode-high-contrast,.vscode-high-contrast-light) :is(.type-table input,.type-table tr[data-new] td[data-field="name"] input),body.edit-page:is(.vscode-high-contrast,.vscode-high-contrast-light) .editable input{border:1px solid var(--ghidra-hv-border);background:var(--vscode-input-background)}
 :is(body.vscode-high-contrast,body.vscode-high-contrast-light) :is(.type-table input,.editable input)[aria-invalid="true"]{border-color:var(--vscode-inputValidation-errorBorder,var(--vscode-errorForeground))}
-body.inspector-page[data-view-kind="type-editor"]:is(.vscode-high-contrast,.vscode-high-contrast-light) :is(.type-row-handle,.type-row-handle .type-move,.type-row-action,.type-row-action button),body.edit-page:is(.vscode-high-contrast,.vscode-high-contrast-light) .row-remove{opacity:1;transition:none}
-body.inspector-page:is(.vscode-high-contrast,.vscode-high-contrast-light) :is(.icon-button,.inspector-menu>summary,.page-options>summary),body.inspector-page[data-view-kind="type-editor"]:is(.vscode-high-contrast,.vscode-high-contrast-light) :is(.type-icon,.type-actions [data-open-jsonc]),body.browser-page:is(.vscode-high-contrast,.vscode-high-contrast-light) :is(.icon-button:not([aria-pressed="true"]):not([aria-expanded="true"]),.more-actions>summary,.page-options>summary),body.edit-page:is(.vscode-high-contrast,.vscode-high-contrast-light) .row-remove{border:1px solid var(--ghidra-hv-border);color:var(--vscode-foreground)}
+body.inspector-page[data-view-kind="type-editor"]:is(.vscode-high-contrast,.vscode-high-contrast-light) :is(.type-row-handle,.type-row-handle .type-move,.type-row-action,.type-row-action button),body.edit-page:is(.vscode-high-contrast,.vscode-high-contrast-light) :is(.row-remove,.row-move){opacity:1;transition:none}
+body.inspector-page:is(.vscode-high-contrast,.vscode-high-contrast-light) :is(.icon-button,.inspector-menu>summary,.page-options>summary),body.inspector-page[data-view-kind="type-editor"]:is(.vscode-high-contrast,.vscode-high-contrast-light) :is(.type-icon,.type-actions [data-open-jsonc]),body.browser-page:is(.vscode-high-contrast,.vscode-high-contrast-light) :is(.icon-button:not([aria-pressed="true"]):not([aria-expanded="true"]),.more-actions>summary,.page-options>summary),body.edit-page:is(.vscode-high-contrast,.vscode-high-contrast-light) :is(.row-remove,.row-move){border:1px solid var(--ghidra-hv-border);color:var(--vscode-foreground)}
 body.browser-page:is(.vscode-high-contrast,.vscode-high-contrast-light) tbody tr.selected,body.browser-page:is(.vscode-high-contrast,.vscode-high-contrast-light) tbody tr.selected:focus{background:var(--vscode-editor-background);color:var(--vscode-foreground);outline:2px solid var(--ghidra-active-border);outline-offset:-2px}
 @media(prefers-contrast:more){
   .inspector-page[data-view-kind="type-editor"] .type-table input,.inspector-page[data-view-kind="type-editor"] .type-table tr[data-new] td[data-field="name"] input,.edit-page .editable input{border:1px solid var(--ghidra-hv-border);background:var(--vscode-input-background)}
   .inspector-page[data-view-kind="type-editor"] .type-table input[aria-invalid="true"],.edit-page .editable input[aria-invalid="true"]{border-color:var(--vscode-inputValidation-errorBorder,var(--vscode-errorForeground))}
-  .inspector-page[data-view-kind="type-editor"] :is(.type-row-handle,.type-row-handle .type-move,.type-row-action,.type-row-action button),.edit-page .row-remove{opacity:1;transition:none}
-  .inspector-page .icon-button,.browser-page .icon-button:not([aria-pressed="true"]):not([aria-expanded="true"]),.inspector-page[data-view-kind="type-editor"] .type-icon,.edit-page .row-remove,.inspector-menu>summary,.browser-page .more-actions>summary,.page-options>summary,.inspector-page[data-view-kind="type-editor"] .type-actions [data-open-jsonc]{border:1px solid var(--ghidra-hv-border);color:var(--vscode-foreground)}
+  .inspector-page[data-view-kind="type-editor"] :is(.type-row-handle,.type-row-handle .type-move,.type-row-action,.type-row-action button),.edit-page :is(.row-remove,.row-move){opacity:1;transition:none}
+  .inspector-page .icon-button,.browser-page .icon-button:not([aria-pressed="true"]):not([aria-expanded="true"]),.inspector-page[data-view-kind="type-editor"] .type-icon,.edit-page :is(.row-remove,.row-move),.inspector-menu>summary,.browser-page .more-actions>summary,.page-options>summary,.inspector-page[data-view-kind="type-editor"] .type-actions [data-open-jsonc]{border:1px solid var(--ghidra-hv-border);color:var(--vscode-foreground)}
 }
 @media(forced-colors:active){
   .inspector-page[data-view-kind="type-editor"] .type-table input,.inspector-page[data-view-kind="type-editor"] .type-table tr[data-new] td[data-field="name"] input,.edit-page .editable input{background:Field;color:FieldText;border:1px solid var(--ghidra-hv-border)}
-  .inspector-page[data-view-kind="type-editor"] :is(.type-row-handle,.type-row-handle .type-move,.type-row-action,.type-row-action button),.edit-page .row-remove{opacity:1;transition:none}
-  .inspector-page .icon-button,.browser-page .icon-button:not([aria-pressed="true"]):not([aria-expanded="true"]),.inspector-page[data-view-kind="type-editor"] .type-icon,.edit-page .row-remove,.inspector-menu>summary,.browser-page .more-actions>summary,.page-options>summary,.inspector-page[data-view-kind="type-editor"] .type-actions [data-open-jsonc]{background:ButtonFace;color:ButtonText;border:1px solid var(--ghidra-hv-border)}
+  .inspector-page[data-view-kind="type-editor"] :is(.type-row-handle,.type-row-handle .type-move,.type-row-action,.type-row-action button),.edit-page :is(.row-remove,.row-move){opacity:1;transition:none}
+  .inspector-page .icon-button,.browser-page .icon-button:not([aria-pressed="true"]):not([aria-expanded="true"]),.inspector-page[data-view-kind="type-editor"] .type-icon,.edit-page :is(.row-remove,.row-move),.inspector-menu>summary,.browser-page .more-actions>summary,.page-options>summary,.inspector-page[data-view-kind="type-editor"] .type-actions [data-open-jsonc]{background:ButtonFace;color:ButtonText;border:1px solid var(--ghidra-hv-border)}
   .browser-page tbody tr.selected,.browser-page tbody tr.selected:focus,.inspector-page[data-view-kind="type-editor"] .type-table tbody tr:focus-within:not([data-new]){background:var(--ghidra-selection-bg);color:var(--ghidra-selection-fg);box-shadow:none;outline:2px solid var(--ghidra-active-border);outline-offset:-2px}
   .browser-page tr:focus-visible,.browser-page :is(button,summary,input):focus-visible,.inspector-page :is(button,summary,input):focus-visible,.edit-page :is(button,summary,input,select,textarea):focus-visible{outline:2px solid var(--ghidra-focus);outline-offset:-2px}
   .browser-page .selection-tools,.inspector-menu-content,.page-options-content,.browser-page #selection-more{background:var(--ghidra-selection-bg);color:var(--ghidra-selection-fg);border:1px solid var(--ghidra-hv-border)}

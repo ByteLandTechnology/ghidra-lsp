@@ -92,7 +92,7 @@ require('ghidra-lsp').setup({
 
 ---
 
-## 28 条用户命令参考（`editors/nvim/plugin/ghidra-lsp.lua`）
+## 29 条用户命令参考（`editors/nvim/plugin/ghidra-lsp.lua`）
 
 ### 会话与二进制管理
 
@@ -138,6 +138,7 @@ require('ghidra-lsp').setup({
 | `:GhidraEditFunction` | — | 打开当前函数签名、调用约定、属性（`varargs`/`noreturn`/`inline`）及参数浮动编辑表单。 |
 | `:GhidraEditVariables` | — | 选择参数或局部变量，交互修改名称与数据类型后原子提交。 |
 | `:GhidraEditType` | `[path]` | 打开可编辑的 `ghidra-type://<md5><path>.ghidra-type` JSONC 缓冲区（内置/复杂类型只读）。 |
+| `:GhidraParseC` | `[category]` | 打开 C 头文件声明浮动缓冲区（`ghidra-parse-c://`），在 `:w` 时通过 `data_type.parse_c` 原子解析导入。 |
 | `:GhidraRefresh` | — | 从 Ghidra 重新抓取并刷新当前虚拟缓冲区。 |
 | `:GhidraDiscardRename` | — | 放弃当前会话中所有尚未提交的 `<F2>` 重命名预览并恢复原文。 |
 | `:GhidraOrigin` | — | 跳转回发起当前待决重命名的原始（Origin）反编译缓冲区以便执行 `:w`。 |

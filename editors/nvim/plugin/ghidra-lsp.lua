@@ -122,6 +122,10 @@ vim.api.nvim_create_user_command('GhidraEditType', function(opts)
     ghidra.edit_type(opts.args ~= '' and opts.args or nil)
 end, { nargs = '?', desc = 'Open editable .ghidra-type JSONC buffer for a Ghidra data type' })
 
+vim.api.nvim_create_user_command('GhidraParseC', function(opts)
+    ghidra.parse_c(opts.args ~= '' and opts.args or nil)
+end, { nargs = '?', desc = 'Open C header scratch buffer and import declarations into Ghidra' })
+
 vim.api.nvim_create_user_command('GhidraRefresh', function()
     ghidra.refresh()
 end, { desc = 'Refresh current Ghidra virtual buffer' })

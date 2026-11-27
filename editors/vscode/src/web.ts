@@ -19,17 +19,15 @@ export const escape = (value: unknown): string => String(value ?? '').replace(/[
 export const text = (value: unknown): string => typeof value === 'string' || typeof value === 'number' ? String(value) : '—';
 /** Convert a string or number to text, or return an empty string when absent. */
 export const stringOf = (value: unknown): string => typeof value === 'string' || typeof value === 'number' ? String(value) : '';
-/** Format a structured type reference into C-like declaration syntax. */
-export function reference(value: unknown): string {
-    if (typeof value === 'string') { return value; }
-    const ref = object(value);
-    switch (ref.kind) {
-        case 'named': return text(ref.name);
-        case 'pointer': return `${reference(ref.target)} *`;
-        case 'untyped_pointer': return 'pointer';
-        case 'array': return `${reference(ref.element)}[${text(ref.count)}]`;
-        default: return text(ref.name);
+/** Find the index of the closing parenthesis matching `open` in `input`. */
+function findMatchingParen(input: string, open: number): number {
+    if (input[open] !== '(') { return -1; }
+    let depth = 0;
+    for (let i = open; i < input.length; i++) {
+        if (input[i] === '(') { depth++; }
+        else if (input[i] === ')') { depth--; if (depth === 0) { return i; } if (depth < 0) { return -1; } }
     }
+    return -1;
 }
 /** JSON path segments that identify a form control or data-type member field. */
 export type FieldPath = (string | number)[];
@@ -46,15 +44,66 @@ export function requiredText(value: unknown, label: string, path: FieldPath = []
     if (!trimmed) { throw new FieldError(`${label} is required.`, path); }
     return trimmed;
 }
-/** Parse a user-entered type string into a structured server type reference. */
-export function typeReference(value: unknown, path: FieldPath = [], label?: string): Data {
+/** Return true when C abstract declarator `decl` has a top-level array dimension. */
+function isDeclaratorArray(decl: string): boolean {
+    const rest = decl.replace(/^[\s*]+/, '');
+    if (rest.startsWith('(')) {
+        const close = findMatchingParen(rest, 0);
+        if (close > 0) {
+            const inside = rest.slice(1, close).trim();
+            if (/^[*(\[]/.test(inside)) { return isDeclaratorArray(inside); }
+        }
+    }
+    return rest.startsWith('[');
+}
+/** Return true when `value` denotes a top-level array type in structured or C string form. */
+export function isArrayTypeReference(value: unknown): boolean {
+    if (typeof value === 'string') {
+        const trimmed = value.trim(), match = /[*(\[]/.exec(trimmed);
+        return match ? isDeclaratorArray(trimmed.slice(match.index)) : false;
+    }
+    return object(value).kind === 'array';
+}
+/** Format structured `value` with accumulated inner C declarator text `inner`. */
+function formatDeclarator(value: unknown, inner: string): string {
+    if (typeof value === 'string') { return !inner ? value : inner.startsWith('[') ? `${value}${inner}` : `${value} ${inner}`; }
+    const ref = object(value);
+    if (ref.kind === 'pointer') { return formatDeclarator(ref.target, `*${inner}`); }
+    if (ref.kind === 'array') {
+        const count = text(ref.count);
+        return formatDeclarator(ref.element, inner.startsWith('*') ? `(${inner})[${count}]` : `${inner}[${count}]`);
+    }
+    const base = ref.kind === 'untyped_pointer' ? 'pointer' : text(ref.name);
+    return !inner ? base : inner.startsWith('[') ? `${base}${inner}` : `${base} ${inner}`;
+}
+/** Format a structured type reference into C declaration syntax. */
+export function reference(value: unknown): string {
+    return formatDeclarator(value, '');
+}
+/** Validate a user-entered C type expression and pass the trimmed C type string directly. */
+export function typeReference(value: unknown, path: FieldPath = [], label?: string): string {
     const name = String(value ?? '').trim();
     if (!name) { throw new FieldError(label ? `${label} is required. Choose a data type.` : 'Choose a data type.', path); }
-    if (name === 'pointer') { return { kind: 'untyped_pointer' }; }
-    const array = /^(.*)\[([0-9]+)\]$/.exec(name);
-    if (array) { return { kind: 'array', element: typeReference(array[1], path, label), count: integer(array[2], 'Array length', 1, 2147483647, path) }; }
-    if (/\*$/.test(name)) { return { kind: 'pointer', target: typeReference(name.slice(0, -1), path, label) }; }
-    return { kind: 'named', name };
+    if (Buffer.byteLength(name, 'utf8') > 4096) { throw new FieldError('Data type must not exceed 4096 UTF-8 bytes.', path); }
+    if (/[;{}]/.test(name)) { throw new FieldError('Enter one C data type without braces or semicolons.', path); }
+    let parenDepth = 0;
+    for (let i = 0; i < name.length; i++) {
+        const ch = name[i];
+        if (ch === '(') { parenDepth++; }
+        else if (ch === ')') { if (parenDepth === 0) { throw new FieldError('Parentheses in the data type are not balanced.', path); } parenDepth--; }
+        else if (ch === '[') {
+            const close = name.indexOf(']', i + 1);
+            if (close < 0) { throw new FieldError('Brackets in the data type are not balanced.', path); }
+            const rawCount = name.slice(i + 1, close).trim();
+            const parsed = /^0x[0-9a-f]+$/i.test(rawCount) ? Number.parseInt(rawCount.slice(2), 16) : Number(rawCount);
+            if (!rawCount || !/^(?:0x[0-9a-f]+|[0-9]+)$/i.test(rawCount) || !Number.isSafeInteger(parsed) || parsed < 1 || parsed > 2147483647) {
+                throw new FieldError('Array length must be an integer between 1 and 2147483647.', path);
+            }
+            i = close;
+        } else if (ch === ']') { throw new FieldError('Brackets in the data type are not balanced.', path); }
+    }
+    if (parenDepth !== 0) { throw new FieldError('Parentheses in the data type are not balanced.', path); }
+    return name;
 }
 /** Parse and validate an integer within inclusive bounds. */
 export function integer(value: unknown, label: string, minimum = 0, maximum = 2147483647, path: FieldPath = []): number {
@@ -97,6 +146,8 @@ export interface FormControlOptions {
     disabled?: boolean;
     /** Request initial focus when the form opens. */
     autofocus?: boolean;
+    /** Span the full width of a multi-column form grid. */
+    full?: boolean;
     /** Optional input placeholder text. */
     placeholder?: string;
     /** Optional tooltip text on the control. */
@@ -143,7 +194,7 @@ export function formControl(options: FormControlOptions): string {
         ? `<textarea ${common}${rowsAttr}>${escape(options.value)}</textarea>`
         : `<input ${common} type="${options.kind === 'number' ? 'number' : 'text'}" value="${escape(options.value)}"${options.kind === 'type' ? ' list="type-options"' : ''}>`;
     if (options.inline) { return `${control}${errorSpan}`; }
-    return `<div class="form-field${options.kind === 'textarea' ? ' full' : ''}"><label for="${escape(id)}">${escape(options.label)}</label>${hintSpan}${control}${errorSpan}</div>`;
+    return `<div class="form-field${options.kind === 'textarea' || options.full ? ' full' : ''}"><label for="${escape(id)}">${escape(options.label)}</label>${hintSpan}${control}${errorSpan}</div>`;
 }
 /** Render a titled HTML section block. */
 export const section = (title: string, body: string): string => `<section><h2>${escape(title)}</h2>${body}</section>`;
@@ -291,6 +342,11 @@ export function page(title: string, eyebrow: string, subtitle: unknown, body: st
             const path=[key,rowIndex,el.dataset.column],id=table.dataset.singular?'grid-'+key+'-'+number+'-'+el.dataset.column:fieldId(path);
             el.dataset.path=JSON.stringify(path);
             syncControl(el,id,(el.dataset.label||table.dataset.singular)?prefix+' '+number+' '+(el.dataset.label||el.dataset.column).toLowerCase():'');
+          }
+          for(const moveBtn of row.querySelectorAll('[data-move-row]')){
+            const dir=moveBtn.dataset.moveRow;
+            moveBtn.id='grid-'+key+'-'+number+'-'+dir;
+            moveBtn.setAttribute('aria-label','Move '+singular+' '+number+' '+dir);
           }
           const button=row.querySelector('[data-remove-row]');
           if(button){button.id='grid-'+key+'-'+number+'-remove';button.setAttribute('aria-label','Remove '+singular+' '+number)}

@@ -81,7 +81,7 @@ Run `:checkhealth ghidra-lsp` at any time to inspect the Neovim version, `npm` a
 
 ## Complete `:Ghidra*` command reference
 
-`editors/nvim/plugin/ghidra-lsp.lua` registers all 28 user commands:
+`editors/nvim/plugin/ghidra-lsp.lua` registers all 29 user commands:
 
 | Command | Arguments | Action |
 | --- | --- | --- |
@@ -103,11 +103,12 @@ Run `:checkhealth ghidra-lsp` at any time to inspect the Neovim version, `npm` a
 | `:GhidraMemory` | `[address]` | Open `ghidra-memory://` hex and Data Inspector split |
 | `:GhidraHex` | `[address]` | Alias for `:GhidraMemory` |
 | `:GhidraComment` | `[address]` | Open the 5-kind floating comment editor at cursor or address |
-| `:GhidraEditFunction` | — | Open floating YAML-style form to edit signature, calling convention, flags, and parameters |
+| `:GhidraEditFunction` | — | Open floating YAML-style form to edit one-line C signature, structured return type, calling convention, flags, and `<M-k>`/`<M-j>` reorderable parameters |
 | `:GhidraEditVariables` | — | Pick and rename/retype a parameter or local variable |
 | `:GhidraControlFlow` | — | Open `ghidra-cfg://` basic-block control-flow graph for the current function |
 | `:GhidraCallGraph` | `[entry\|address]` | Open `ghidra-callgraph://` bounded caller/callee neighborhood view |
 | `:GhidraEditType` | `[path]` | Open editable `ghidra-type://<md5><path>.ghidra-type` JSONC buffer |
+| `:GhidraParseC` | `[category]` | Open floating C scratch buffer (`ghidra-parse-c://`) and import declarations through `data_type.parse_c` on `:w` |
 | `:GhidraRefresh` | — | Refresh the active virtual buffer (`ghidra://`, `ghidra-listing://`, `ghidra-memory://`, `ghidra-cfg://`, `ghidra-callgraph://`, or `ghidra-type://`) |
 | `:GhidraDiscardRename` | — | Cancel pending `<F2>` scoped rename preview and revert clean buffers |
 | `:GhidraOrigin` | — | Jump back to the origin buffer of an active pending rename |
@@ -174,6 +175,6 @@ Running `<leader>gc`, `:GhidraComment [address]`, or choosing the comment Code A
 | `ghidra-string://` | Read-only decoded string content. Keys: `gr` / `x` incoming xrefs in Quickfix, `<leader>gl` open Listing, `<leader>gm` open Memory, `q` close. |
 | `ghidra-type://` | Editable `.ghidra-type` JSONC buffer with live validation diagnostics on `TextChanged` and `InsertLeave`, conflict detection, and normalized text readback on `:w` (built-in types and unsupported layouts open read-only). |
 
-Function signature and local variable forms (`:GhidraEditFunction` and `:GhidraEditVariables`) commit edits atomically through `ghidra.saveFunctionPrototype` and `ghidra.saveVariables`; the `:GhidraEditFunction` float (`ghidra-edit-fn://`) uses chunk-highlighted title (`Edit Function · <name> [<addr>] [*]`) and `:w save to Ghidra │ q close` footer borders.
+Function signature and local variable forms (`:GhidraEditFunction` and `:GhidraEditVariables`) commit edits atomically through `ghidra.saveFunctionPrototype` and `ghidra.saveVariables`; the `:GhidraEditFunction` float (`ghidra-edit-fn://`) uses chunk-highlighted title (`Edit Function · <name> [<addr>] [*]`) and `:w save │ <M-k>/<M-j> move param │ q close` footer borders.
 
 Next chapter: [Editing and Safety](editing-and-safety.md).

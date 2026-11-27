@@ -5,11 +5,15 @@
 
 use std::cmp::Ordering;
 
-use anyhow::{Context, Result, bail};
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::backend::{McpBackend, list_operation};
+pub(crate) use crate::c_type::{
+  format_type_ref, is_array_type_ref, parse_type_ref, parse_type_ref_for, validate_c_declarations,
+  validate_c_signature,
+};
 
 /// Canonical parsed address components with explicit address space and 64-bit offset.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -358,79 +362,6 @@ pub(crate) fn permissions_label(block: &MemoryBlockInfo) -> String {
     if block.write { 'W' } else { '\u{2212}' },
     if block.execute { 'X' } else { '\u{2212}' }
   )
-}
-
-/// Parses C-like type notation (`int`, `/pkg/Type`, `char *`, `int[4]`, `pointer`) into bridge JSON.
-pub(crate) fn parse_type_ref(raw: &str) -> Result<Value> {
-  let name = raw.trim();
-  if name.is_empty() {
-    bail!("Choose a data type.");
-  }
-  if name == "pointer" {
-    return Ok(json!({ "kind": "untyped_pointer" }));
-  }
-  if let Some(without_close) = name.strip_suffix(']')
-    && let Some(open) = without_close.rfind('[')
-  {
-    let count_str = &without_close[open + 1..];
-    if !count_str.is_empty() && count_str.bytes().all(|b| b.is_ascii_digit()) {
-      let element = parse_type_ref(&without_close[..open])?;
-      let count = count_str
-        .parse::<i64>()
-        .ok()
-        .filter(|&n| (1..=2_147_483_647).contains(&n))
-        .context("Array length must be an integer between 1 and 2147483647.")?;
-      return Ok(json!({
-        "kind": "array",
-        "element": element,
-        "count": count,
-      }));
-    }
-  }
-  if let Some(target_raw) = name.strip_suffix('*') {
-    let target = parse_type_ref(target_raw)?;
-    return Ok(json!({
-      "kind": "pointer",
-      "target": target,
-    }));
-  }
-  Ok(json!({
-    "kind": "named",
-    "name": name,
-  }))
-}
-
-/// Extracts scalar text from string or number JSON values, falling back to an em dash.
-fn scalar_text(value: Option<&Value>) -> String {
-  match value {
-    Some(Value::String(s)) => s.clone(),
-    Some(Value::Number(n)) => n.to_string(),
-    _ => "\u{2014}".to_owned(),
-  }
-}
-
-/// Formats structured bridge data-type reference JSON back into readable C notation.
-pub(crate) fn format_type_ref(value: &Value) -> String {
-  if let Some(s) = value.as_str() {
-    return s.to_owned();
-  }
-  match value.get("kind").and_then(Value::as_str) {
-    Some("named") => scalar_text(value.get("name")),
-    Some("pointer") => {
-      let target = value.get("target").unwrap_or(&Value::Null);
-      format!("{} *", format_type_ref(target))
-    }
-    Some("untyped_pointer") => "pointer".to_owned(),
-    Some("array") => {
-      let element = value.get("element").unwrap_or(&Value::Null);
-      format!(
-        "{}[{}]",
-        format_type_ref(element),
-        scalar_text(value.get("count"))
-      )
-    }
-    _ => scalar_text(value.get("name")),
-  }
 }
 
 /// Returns true when lowercase `lower` contains `utf` followed by an optional separator and digit.

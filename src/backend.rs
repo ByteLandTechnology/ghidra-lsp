@@ -12,7 +12,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result, bail, ensure};
 use rmcp::model::{CallToolRequestParams, CallToolResult};
-use rmcp::service::{Peer, RunningService};
+use rmcp::service::{Peer, RunningService, ServiceError};
 use rmcp::transport::TokioChildProcess;
 use rmcp::{RoleClient, ServiceExt};
 use serde::{Deserialize, Serialize};
@@ -42,6 +42,50 @@ impl Default for Config {
   }
 }
 
+/// Schema capabilities advertised by the connected `ghidra-mcp` child process.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct BackendCapabilities {
+  /// Whether `data_type_reference` inputs accept C type strings.
+  pub(crate) c_type_strings: bool,
+  /// Whether `function.patch` accepts an atomic `parameters` array.
+  pub(crate) atomic_function_parameters: bool,
+  /// Whether `function.patch` accepts a one-line C `signature` string.
+  pub(crate) function_signature: bool,
+  /// Input property name (`"source"` or `"declarations"`) when `data_type.parse_c` exists.
+  pub(crate) parse_c_field: Option<&'static str>,
+}
+
+impl BackendCapabilities {
+  /// Returns full capabilities when the MCP server does not expose `ghidra_help`.
+  pub(crate) const fn modern() -> Self {
+    Self {
+      c_type_strings: true,
+      atomic_function_parameters: true,
+      function_signature: true,
+      parse_c_field: Some("declarations"),
+    }
+  }
+}
+
+/// Returns true when a JSON Schema node permits a JSON `string` value.
+fn schema_accepts_string(schema: &Value) -> bool {
+  if schema.get("type").and_then(Value::as_str) == Some("string") {
+    return true;
+  }
+  if schema
+    .get("type")
+    .and_then(Value::as_array)
+    .is_some_and(|types| types.iter().any(|item| item.as_str() == Some("string")))
+  {
+    return true;
+  }
+  schema
+    .get("oneOf")
+    .or_else(|| schema.get("anyOf"))
+    .and_then(Value::as_array)
+    .is_some_and(|items| items.iter().any(schema_accepts_string))
+}
+
 /// Result of checking `ghidra_session` `open` parameter support on the child server.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum SessionOpenSupport {
@@ -59,6 +103,8 @@ struct ClientSession {
   id: u64,
   /// Running `rmcp` client service attached to the child process.
   service: RunningService<RoleClient, ()>,
+  /// Cached schema capabilities queried from `ghidra_help`.
+  capabilities: Option<BackendCapabilities>,
   /// Whether the child `ghidra-mcp` tool schema advertises `checkpoint.create`.
   schema_supports_checkpoints: bool,
   /// Whether `checkpoint.create` is active for pre-edit checkpoints on this connection.
@@ -73,6 +119,8 @@ struct SessionHandle {
   id: u64,
   /// Cloneable `rmcp` client peer handle.
   peer: Peer<RoleClient>,
+  /// Cached schema capabilities queried from `ghidra_help`.
+  capabilities: Option<BackendCapabilities>,
   /// Shared flag for `checkpoint.create` support on this connection.
   checkpoint_create_supported: Arc<AtomicBool>,
   /// Cached `session.open` parameter check result for this child process.
@@ -117,6 +165,7 @@ impl McpBackend {
       *guard = Some(ClientSession {
         id,
         service,
+        capabilities: None,
         schema_supports_checkpoints,
         checkpoint_create_supported: Arc::new(AtomicBool::new(schema_supports_checkpoints)),
         session_open_support: None,
@@ -126,6 +175,7 @@ impl McpBackend {
     Ok(SessionHandle {
       id: session.id,
       peer: session.service.peer().clone(),
+      capabilities: session.capabilities,
       checkpoint_create_supported: Arc::clone(&session.checkpoint_create_supported),
       session_open_support: session.session_open_support,
     })
@@ -200,6 +250,116 @@ impl McpBackend {
         .checkpoint_create_supported
         .store(supported, Ordering::Relaxed);
     }
+  }
+
+  /// Queries `ghidra_help` on `peer`, returning `Ok(None)` when `ghidra_help` is unavailable.
+  async fn call_help(
+    &self,
+    session_id: u64,
+    peer: &Peer<RoleClient>,
+    deadline: Duration,
+    args: Value,
+  ) -> Result<Option<Value>> {
+    let args_obj = args
+      .as_object()
+      .cloned()
+      .context("MCP help arguments must be a JSON object")?;
+    let request = CallToolRequestParams::new("ghidra_help").with_arguments(args_obj);
+    match tokio::time::timeout(deadline, peer.call_tool(request)).await {
+      Ok(Ok(result)) => {
+        if result.is_error == Some(true) {
+          return Ok(None);
+        }
+        let value = result
+          .structured_content
+          .clone()
+          .or_else(|| {
+            result
+              .content
+              .iter()
+              .find_map(|c| c.as_text().and_then(|t| serde_json::from_str(&t.text).ok()))
+          })
+          .context("MCP help result has no structured JSON")?;
+        Ok(Some(normalize(value)?))
+      }
+      Ok(Err(ServiceError::McpError(_))) => Ok(None),
+      Ok(Err(error)) => {
+        self.invalidate(session_id).await;
+        Err(error.into())
+      }
+      Err(_) => {
+        self.invalidate(session_id).await;
+        bail!("MCP ghidra_help timed out")
+      }
+    }
+  }
+
+  /// Returns cached schema capabilities for the active `ghidra-mcp` session.
+  pub(crate) async fn capabilities(&self) -> Result<BackendCapabilities> {
+    let deadline = Duration::from_millis(self.config.request_timeout_ms.clamp(100, 300_000));
+    let handle = self.ensure_client(deadline).await?;
+    if let Some(caps) = handle.capabilities {
+      return Ok(caps);
+    }
+    let fn_help = self
+      .call_help(
+        handle.id,
+        &handle.peer,
+        deadline,
+        json!({ "domain": "ghidra_function", "operation": "patch" }),
+      )
+      .await?;
+    let caps = if let Some(fn_schema) = fn_help {
+      let c_type_strings = fn_schema
+        .pointer("/inputSchema/$defs/data_type_reference")
+        .or_else(|| fn_schema.pointer("/inputSchema/properties/patch/properties/return_type"))
+        .is_some_and(schema_accepts_string);
+      let atomic_function_parameters = fn_schema
+        .pointer("/inputSchema/properties/patch/properties/parameters")
+        .is_some();
+      let function_signature = fn_schema
+        .pointer("/inputSchema/properties/patch/properties/signature")
+        .is_some();
+      let dt_help = self
+        .call_help(
+          handle.id,
+          &handle.peer,
+          deadline,
+          json!({ "domain": "ghidra_data_type" }),
+        )
+        .await?;
+      let parse_c_field = dt_help
+        .as_ref()
+        .and_then(|dt| dt.get("operations"))
+        .and_then(Value::as_array)
+        .and_then(|ops| {
+          ops
+            .iter()
+            .find(|op| op.get("name").and_then(Value::as_str) == Some("parse_c"))
+        })
+        .map(|op| {
+          if op.pointer("/inputSchema/properties/declarations").is_some() {
+            "declarations"
+          } else if op.pointer("/inputSchema/properties/source").is_some() {
+            "source"
+          } else {
+            "declarations"
+          }
+        });
+      BackendCapabilities {
+        c_type_strings,
+        atomic_function_parameters,
+        function_signature,
+        parse_c_field,
+      }
+    } else {
+      BackendCapabilities::modern()
+    };
+    let mut guard = self.client.lock().await;
+    if let Some(session) = guard.as_mut().filter(|s| s.id == handle.id) {
+      session.capabilities = Some(caps);
+    }
+    Ok(caps)
   }
 
   /// Invokes `ghidra_<domain>` with `operation`, optional `md5`, and JSON `params`.

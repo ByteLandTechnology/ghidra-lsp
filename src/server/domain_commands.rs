@@ -447,6 +447,8 @@ impl Server {
     let md5 = self.scoped_md5(arg)?;
     let (domain, operation, parameters) = workbench::operation(arg)?;
     workbench::allow_write(domain, operation, &parameters)?;
+    let caps = backend.capabilities().await?;
+    let parameters = workbench::adapt_write_params(domain, operation, parameters, caps)?;
     let session_guard = self.engine.lock_session(&md5).await;
     Self::ensure_program_clean(&self.engine.read_state(), &md5)?;
     if (domain, operation) != ("program", "save") {
