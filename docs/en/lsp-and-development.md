@@ -65,7 +65,7 @@ All 49 commands declared in `COMMANDS` (`src/server/mod.rs`) and dispatched acro
 | `ghidra.symbols` | `{"md5?"}` | List all program symbols with pagination coverage |
 | `ghidra.types` | `{"md5?"}` | List all program data types with pagination coverage |
 | `ghidra.type` | `{"md5?", "path"}` | Fetch one raw data type definition with `data_type.get` |
-| `ghidra.strings` | `{"md5?"}` | Query defined strings in the program (`address::defined_strings`) |
+| `ghidra.strings` | `{"md5?"}` | Load defined strings from `string.list`, with a `data_unit.list` fallback (`address::defined_strings`) |
 | `ghidra.binaryInterface` | `{"md5?"}` | Load imports and exports from the Ghidra session (`import.list` and `export.list`), with a local loader-table fallback (`binary::interface`) |
 | `ghidra.openFunction` | `{"md5?", "entry"}` | Decompile `entry` and return its canonical `ghidra://` URI |
 | `ghidra.openSymbol` | `{"md5?", "id"}` | Resolve symbol `id` to its function or `/symbol/` URI |

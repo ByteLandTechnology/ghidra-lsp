@@ -21,6 +21,12 @@ class StringLens extends vscode.CodeLens {
     constructor(readonly uri: vscode.Uri) { super(new vscode.Range(0, 0, 0, 0)); }
 }
 
+/** Return true if `error` reports an unknown or unsupported server operation. */
+function unsupportedOperation(error: unknown): boolean {
+    const text = (error instanceof Error ? error.message : String(error)).toLowerCase();
+    return /unknown[ _](operation|method)|method not found|unsupported operation|is not one of|unknown variant/.test(text);
+}
+
 /** `ghidra-string://<md5>/string/<address>?{"address":"ram:…"}`: the string's decoded text, nothing else. */
 export function stringUri(md5: string, address: string): vscode.Uri {
     return vscode.Uri.from({ scheme: stringScheme, authority: md5, path: `/string/${plainAddress(address)}`, query: JSON.stringify({ address }) });
@@ -89,11 +95,24 @@ export class StringFiles implements vscode.TextDocumentContentProvider, vscode.C
         }
     }
 
-    /** Load decoded string text from `global_variable.get` for a `ghidra-string://` document. */
+    /** Load decoded string text from `string.list`, or from `global_variable.get` on older servers. */
     async provideTextDocumentContent(uri: vscode.Uri): Promise<string> {
         if (this.context.isClosing(uri.authority)) { throw vscode.FileSystemError.FileNotFound(uri); }
         const address = stringAddress(uri);
         this.entries.set(uri.toString(), this.entries.get(uri.toString()) || { address });
+        try {
+            const listed = await this.call<{ items?: Data[] }>('ghidra.query', {
+                md5: uri.authority,
+                domain: 'string',
+                operation: 'list',
+                params: { scan: { range: { start: address, end: address } }, page: { limit: 1 } },
+            });
+            const value = listed.items?.[0]?.value;
+            if (typeof value !== 'string') { throw new Error(`No defined string at ${address}`); }
+            return value;
+        } catch (error) {
+            if (!unsupportedOperation(error)) { throw error; }
+        }
         const data = await this.call<Data>('ghidra.query', { md5: uri.authority, domain: 'global_variable', operation: 'get', params: { selector: { address } } });
         const value = data.value ?? data.representation;
         if (typeof value !== 'string') { throw new Error(`No defined string at ${address}`); }

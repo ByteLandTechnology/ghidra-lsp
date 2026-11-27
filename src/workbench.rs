@@ -124,6 +124,7 @@ const READ: &[(&str, &str)] = &[
   ("interface", "get"),
   ("job", "get"),
   ("job", "wait"),
+  ("memory", "find"),
   ("memory", "read"),
   ("memory_block", "get"),
   ("memory_block", "list"),
@@ -132,6 +133,7 @@ const READ: &[(&str, &str)] = &[
   ("reference", "list"),
   ("session", "get"),
   ("session", "list"),
+  ("string", "list"),
   ("symbol", "get"),
   ("symbol", "list"),
 ];
@@ -189,7 +191,7 @@ pub(crate) fn mcp_operation<'a>(domain: &'a str, operation: &'a str) -> (&'a str
     "program_language" => ("program", "language"),
     "import" | "export" | "entry_point" => ("program", domain),
     "memory_block" => ("memory", "block"),
-    "code_unit" | "data_unit" | "instruction" | "flow_override" => ("listing", domain),
+    "code_unit" | "data_unit" | "string" | "instruction" | "flow_override" => ("listing", domain),
     "function_call" => ("function", "call"),
     "function_parameter" => ("function", "parameter"),
     "function_local_variable" => ("function", "local_variable"),
@@ -216,7 +218,10 @@ fn resource_operation<'a>(domain: &'a str, operation: &'a str) -> (&'a str, &'a 
     ("memory", Some(("block", op))) => ("memory_block", op),
     (
       "listing",
-      Some((resource @ ("code_unit" | "data_unit" | "instruction" | "flow_override"), op)),
+      Some((
+        resource @ ("code_unit" | "data_unit" | "string" | "instruction" | "flow_override"),
+        op,
+      )),
     ) => (resource, op),
     ("function", Some(("call", op))) => ("function_call", op),
     ("function", Some(("parameter", op))) => ("function_parameter", op),
@@ -327,8 +332,10 @@ pub(crate) fn coverage(domain: &str, params: &Value, count: usize, complete: boo
       "symbol"
         | "function"
         | "global_variable"
+        | "memory"
         | "code_unit"
         | "data_unit"
+        | "string"
         | "instruction"
         | "comment"
     );
@@ -352,7 +359,10 @@ pub(crate) fn coverage(domain: &str, params: &Value, count: usize, complete: boo
       "Address-scanned symbols. Use import.list, export.list, or entry_point.list for imports, exports, and entry points."
     }
     "data_unit" => {
-      "Defined data units, including Ghidra-defined strings. This does not scan undefined bytes for candidate strings."
+      "Defined data units in address order. Use string.list with filter.include_candidates to scan undefined bytes for candidate strings."
+    }
+    "string" => {
+      "Decoded strings in address order. Set filter.include_candidates to scan undefined initialized bytes."
     }
     _ => "Resources returned by the real Ghidra bridge under the supplied filters and range.",
   };
@@ -379,15 +389,16 @@ pub(crate) fn allow_read(domain: &str, operation: &str, params: &Value) -> Resul
   Ok(())
 }
 
-/// Executes a read-only workbench query, paginating all pages when `all` is true on a list call.
+/// Executes a read-only workbench query, paginating all pages when `all` is true on a paged call.
 pub(crate) async fn query(backend: &McpBackend, md5: Option<&str>, arg: &Value) -> Result<Value> {
   let (domain, operation, params) = operation(arg)?;
   let (resource, verb) = resource_operation(domain, operation);
   allow_read(domain, operation, &params)?;
   let all = arg.get("all").and_then(Value::as_bool).unwrap_or(false);
+  let paged = matches!(verb, "list" | "find");
   ensure!(
-    !all || verb == "list",
-    "all is only valid for list operations"
+    !all || paged,
+    "all is only valid for list or find operations"
   );
   let (domain, operation) = mcp_operation(domain, operation);
   if all && session_required(domain, &operation) {
@@ -405,9 +416,7 @@ pub(crate) async fn query(backend: &McpBackend, md5: Option<&str>, arg: &Value) 
   let mut value = backend
     .call(domain, &operation, md5, params.clone())
     .await?;
-  if verb == "list"
-    && let Some(items) = value.get("items").and_then(Value::as_array)
-  {
+  if paged && let Some(items) = value.get("items").and_then(Value::as_array) {
     let complete = value.get("next_cursor").is_none_or(Value::is_null)
       && value.pointer("/scan/complete").and_then(Value::as_bool) != Some(false);
     value["coverage"] = coverage(resource, &params, items.len(), complete);

@@ -64,7 +64,7 @@ Click the **Ghidra** icon (`resources/ghidra.svg`) in the Activity Bar to open f
 
 1. **Sessions (`ghidra.sessions`, collapsed by default)**: Lists open, closed, or stale Ghidra sessions and active background import/analysis tasks. Includes toolbar actions to open a binary, refresh sessions, or stop waiting on an analysis progress dialog.
 2. **Symbols (`ghidra.symbols`)**: Displays program functions, symbols grouped by C++ namespace, and recent programs. When no program is open, displays welcome links for **Open Binary**, **Open Recent Program**, and **select an open session**.
-3. **Strings (`ghidra.strings`, collapsed by default)**: Lists defined strings in the active program with address and decoded text. Selecting a string opens a read-only `ghidra-string://` tab with a reference-count CodeLens (`Shift+F12`).
+3. **Strings (`ghidra.strings`)**: Lists defined strings in the active program with address and decoded text. Selecting a string opens a read-only `ghidra-string://` tab with a reference-count CodeLens (`Shift+F12`).
 4. **Data Types (`ghidra.types`)**: Shows the project category tree for structs, unions, enums, function definitions, typedefs, and primitives, with create, edit, and delete actions.
 
 ## Custom editors and virtual documents

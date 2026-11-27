@@ -69,7 +69,7 @@
 | `ghidra.symbols` | `{"md5?"}` | 分页列出全部程序符号及覆盖范围 |
 | `ghidra.types` | `{"md5?"}` | 分页列出全部程序数据类型及覆盖范围 |
 | `ghidra.type` | `{"md5?", "path"}` | 通过 `data_type.get` 读取单个原始数据类型定义 |
-| `ghidra.strings` | `{"md5?"}` | 查询程序内已定义字符串列表（`address::defined_strings`） |
+| `ghidra.strings` | `{"md5?"}` | 通过 `string.list` 读取程序内已定义字符串列表，旧版服务时回退至 `data_unit.list`（`address::defined_strings`） |
 | `ghidra.binaryInterface` | `{"md5?"}` | 从 Ghidra 会话（`import.list` / `export.list`）读取导入导出表，旧版桥接时回退至本地可执行文件解析（`binary::interface`） |
 | `ghidra.openFunction` | `{"md5?", "entry"}` | 反编译 `entry` 函数并返回规范 `ghidra://` URI |
 | `ghidra.openSymbol` | `{"md5?", "id"}` | 将符号 `id` 解析为所属函数或 `/symbol/` 快照 URI |
