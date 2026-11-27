@@ -57,7 +57,7 @@
 | `ghidra.createCheckpoint` | `{"md5?", "name?"}` | 保存干净程序会话并创建命名或未命名项目检查点 |
 | `ghidra.restoreCheckpoint` | `{"md5?", "id?", "name?"}` | 不保存强制停止 Ghidra、原子恢复指定或最新检查点、重新启动会话并刷新全部已打开视图 |
 | `ghidra.resetSession` | `{"md5?", "reopen?", "analyze?"}` | 删除 `ghidra/` 与检查点同时保留 `binary` 和 `binary.json`，可选重新导入与分析 |
-| `ghidra.cancelJob` | `{}` | 返回明确指引：已安装的 `ghidra-mcp` 仅暴露 `job.get`/`job.wait` 而无 `job.cancel` |
+| `ghidra.cancelJob` | `{"token?" \| "jobId?", "md5?", "wait?", "timeoutMs?"}` | 通过 `job.cancel` 或 `analysis.cancel` 取消正在运行的分析作业，记录 `job.error` 并发送 `ghidra/changed`（若后端不支持 `cancel` 则返回升级或关闭会话提示） |
 
 ### 程序目录与虚拟文档
 

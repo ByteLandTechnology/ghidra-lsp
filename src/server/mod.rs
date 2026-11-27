@@ -3,6 +3,8 @@
 
 //! Language Server Protocol state, virtual buffer synchronization, and command dispatch.
 
+/// Custom command execution handlers for analysis job cancellation.
+mod cancel_commands;
 /// Custom command execution handlers for checkpoints and session reset.
 mod checkpoint_commands;
 /// Custom command execution handlers for session, function, and location actions.
@@ -375,7 +377,10 @@ impl Server {
       let job = state.get("job").unwrap_or(&state);
       match job.get("status").and_then(Value::as_str) {
         Some("completed") => return Ok(()),
-        Some("failed" | "cancelled") => bail!("Ghidra job failed: {}", job_error_text(job)),
+        Some("failed" | "cancelled") => match job_error(job) {
+          Some(reason) => bail!("Ghidra job failed: {reason}"),
+          None => bail!("Ghidra job did not complete"),
+        },
         _ => {}
       }
       ensure!(
@@ -659,14 +664,19 @@ fn job_id(response: &Value) -> Option<String> {
     .map(str::to_owned)
 }
 
-/// Returns the error text from a backend job payload, or its JSON representation.
-pub(super) fn job_error_text(job: &Value) -> String {
-  job
-    .get("error")
-    .and_then(Value::as_str)
-    .map(str::trim)
-    .filter(|text| !text.is_empty())
-    .map_or_else(|| job.to_string(), str::to_owned)
+/// Extracts a non-empty error message from a backend job or analysis snapshot.
+pub(super) fn job_error(job: &Value) -> Option<String> {
+  [
+    job.get("error"),
+    job.pointer("/result/analysis/error"),
+    job.pointer("/analysis/error"),
+  ]
+  .into_iter()
+  .flatten()
+  .find_map(Value::as_str)
+  .map(str::trim)
+  .filter(|error| !error.is_empty())
+  .map(str::to_owned)
 }
 
 /// Converts any displayable error into a JSON-RPC `INVALID_PARAMS` error.

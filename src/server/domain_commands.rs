@@ -9,7 +9,7 @@ use anyhow::{Context, Result, bail, ensure};
 use serde_json::{Map, Value, json};
 use tower_lsp_server::ls_types::Uri;
 
-use super::{OpenProgress, ProgramAnalysis, Server, job_error_text, job_id};
+use super::{OpenProgress, ProgramAnalysis, Server, job_error, job_id};
 use crate::backend::{McpBackend, list_all};
 use crate::document::{canonical_virtual_uri, matches_text};
 use crate::workbench;
@@ -62,9 +62,7 @@ impl Server {
       "ghidra.openBinary" => self.handle_open_binary(&arg, backend).await,
       "ghidra.closeSession" => self.handle_close_session(&arg, backend).await,
       "ghidra.reanalyze" => self.handle_reanalyze(&arg, backend).await,
-      "ghidra.cancelJob" => bail!(
-        "The installed ghidra-mcp exposes job.get and job.wait, but no job.cancel operation. Closing a progress view does not cancel Ghidra analysis"
-      ),
+      "ghidra.cancelJob" => self.handle_cancel_job(&arg, backend).await,
       "ghidra.binaryInterface" => {
         let md5 = self.scoped_md5(&arg)?;
         crate::binary::interface(backend, &md5).await
@@ -195,17 +193,20 @@ impl Server {
       match job.get("status").and_then(Value::as_str) {
         Some("completed") => {}
         Some("failed" | "cancelled") => {
-          progress.error = Some(format!(
-            "Ghidra {} job did not complete: {}",
-            progress.phase,
-            job_error_text(job)
-          ));
+          progress.error = Some(match job_error(job) {
+            Some(reason) => format!("Ghidra {} job did not complete: {reason}", progress.phase),
+            None => format!("Ghidra {} job did not complete", progress.phase),
+          });
+          progress.analysis.running = false;
+          let md5 = progress.md5.clone();
           let value = progress.value(token);
           self
             .open_jobs
             .lock()
             .await
             .insert(token.to_owned(), progress);
+          self.engine.invalidate_symbols(&md5);
+          self.changed(&md5).await;
           return Ok(value);
         }
         _ => {
@@ -215,10 +216,14 @@ impl Server {
             .or_else(|| job.get("phase"))
             .and_then(Value::as_str)
             .map(str::to_owned);
-          progress.percentage = job
-            .get("percentage")
-            .or_else(|| job.get("progress"))
-            .and_then(Value::as_f64);
+          progress.percentage = [
+            job.get("percentage"),
+            job.get("progress"),
+            job.pointer("/progress/progress"),
+          ]
+          .into_iter()
+          .flatten()
+          .find_map(Value::as_f64);
           self
             .open_jobs
             .lock()

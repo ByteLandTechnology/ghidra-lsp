@@ -53,7 +53,7 @@ All 49 commands declared in `COMMANDS` (`src/server/mod.rs`) and dispatched acro
 | `ghidra.createCheckpoint` | `{"md5?", "name?"}` | Persist the clean session and save a project checkpoint |
 | `ghidra.restoreCheckpoint` | `{"md5?", "id?", "name?"}` | Force-stop Ghidra without save, restore a checkpoint, relaunch, and refresh all open views |
 | `ghidra.resetSession` | `{"md5?", "reopen?", "analyze?"}` | Delete `ghidra/` and checkpoints while keeping `binary` and `binary.json`, optionally re-import and analyze |
-| `ghidra.cancelJob` | `{}` | Returns explicit guidance because installed `ghidra-mcp` exposes `job.get` / `job.wait` without `job.cancel` |
+| `ghidra.cancelJob` | `{"token?" \| "jobId?", "md5?", "wait?", "timeoutMs?"}` | Cancel active analysis job with `job.cancel` or `analysis.cancel`, record `job.error`, and send `ghidra/changed` (returns upgrade and session-close guidance if backend lacks `cancel`) |
 
 ### Program catalogs and documents
 
