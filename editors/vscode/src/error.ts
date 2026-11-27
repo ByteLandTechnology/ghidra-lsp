@@ -101,6 +101,10 @@ export function formatFriendlyError(error: unknown): string {
         return 'This analysis session is closed. Reopen it from Sessions.';
     }
 
+    if (/does not support (?:this operation|session\.)|unknown operation of ghidra_|No such (?:method|operation):\s*(?:instruction\.|code_unit\.|session\.)|\/patch\/(?:clear_existing|disassemble) is not allowed/i.test(raw)) {
+        return 'The installed Ghidra MCP backend does not support this operation yet. Run "Ghidra: Install or Update Binaries" or update ghidra-mcp, then reload the window.';
+    }
+
     // Strip "MCP <domain>.<operation>: " prefix if still present
     raw = raw.replace(/^MCP\s+[\w.-]+:\s*/i, '');
 
@@ -141,8 +145,10 @@ function extractMessageFromParsed(parsed: unknown, depth = 0): string | undefine
         if (target === 'path') {
             return `Cannot open the binary${reason ? `: ${reason}` : ''}. Check that the file exists and choose it again with Ghidra: Open Binary.`;
         }
-        const idDisplay = target ? ` (Target: ${target.slice(0, 12)}...)` : '';
-        return `The binary is unavailable in Ghidra${idDisplay}. Reopen it with Ghidra: Open Binary.`;
+        if (!target || /^[0-9a-f]{16,64}$/i.test(target)) {
+            const idDisplay = target ? ` (Target: ${target.slice(0, 12)}...)` : '';
+            return `The binary is unavailable in Ghidra${idDisplay}. Reopen it with Ghidra: Open Binary.`;
+        }
     }
 
     if (reason) {

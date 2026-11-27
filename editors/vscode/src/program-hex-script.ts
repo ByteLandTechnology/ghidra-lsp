@@ -255,13 +255,18 @@ const updateSelectionTools = () => {
   label.title = selected;
   const items = [
     { action: 'listing', label: isBlock ? 'Show block in Listing' : 'Show location in Listing', available: true },
+    { action: 'patchBytes', label: selectionLength > 1 ? 'Patch selected bytes' : 'Patch bytes at address', available: !isBlock },
+    { action: 'assemble', label: 'Assemble instruction at address', available: !isBlock },
+    { action: 'disassemble', label: selectionLength > 1 ? 'Disassemble selected bytes' : 'Disassemble bytes at address', available: !isBlock },
+    { action: 'clearCodeUnits', label: selectionLength > 1 ? 'Clear code units in selection' : 'Clear code unit at address', available: !isBlock },
     { action: 'references', label: 'References at location', available: true },
     { action: 'copyAddress', label: 'Copy address', available: true },
     { action: 'decompile', label: 'Decompile containing function', available: !isBlock },
   ].filter(i => i.available);
   primaryAction = 'listing';
-  const main = items.filter(i => i.action === primaryAction);
-  const extra = items.filter(i => i.action !== primaryAction);
+  const inlineActions = new Set([primaryAction, 'patchBytes', 'assemble', 'disassemble', 'clearCodeUnits']);
+  const main = items.filter(i => inlineActions.has(i.action));
+  const extra = items.filter(i => !inlineActions.has(i.action));
   const hosts = [document.getElementById('selection-primary'), more];
   for (const [idx, list] of [main, extra].entries()) {
     hosts[idx].replaceChildren(...list.map(item => {
@@ -603,7 +608,7 @@ document.addEventListener('click', event => {
     if (['navBack', 'navForward', 'refresh', 'loadBefore', 'loadAfter', 'toggleSync', 'openListingBeside'].includes(act)) {
       vscode.postMessage({ action: act, focusId });
     } else if (selected) {
-      vscode.postMessage({ action: act, address: selected, kind: selectedKind, focusId });
+      vscode.postMessage({ action: act, address: selected, kind: selectedKind, length: selectionLength, focusId });
     }
   }
 });

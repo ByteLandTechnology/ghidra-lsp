@@ -78,6 +78,7 @@ When `ghidraLsp.serverPath` (`"ghidra-lsp"`) and `ghidraLsp.mcpCommand` (`"ghidr
 - **Ghidra: Rename Symbol** / **Ghidra: Submit Pending Rename** / **Ghidra: Submit All Pending Renames** / **Ghidra: Show Pending Rename** / **Ghidra: Discard Pending Rename**
 - **Ghidra: Code Actions…** / **Ghidra: Edit Comment** / **Switch Comment Kind** (`ghidraLsp.selectCommentKind`) / inline **Edit** / **Save** / **Cancel** / **Close comment editor**
 - **Ghidra: Edit Function Signature** / **Ghidra: Edit Variables and Parameters** / **Ghidra: Edit Global Symbol**
+- **Ghidra: Assemble Instruction** / **Ghidra: Disassemble Bytes** / **Ghidra: Clear Code Units (Undefine)** / **Ghidra: Patch Bytes**
 
 ### Data types
 

@@ -9,6 +9,7 @@ import { countLabel, inlineText, statusAccessibility } from './a11y';
 import { ProgramBrowser } from './browser';
 import { ProgramContext } from './context';
 import { EditingUI } from './editing';
+import { PatchingUI } from './patching';
 import { Workbench } from './workbench';
 import { LanguageClient, LanguageClientOptions, ServerOptions } from 'vscode-languageclient/node';
 import { Call, GhidraMemory, VirtualDocument } from './memory';
@@ -133,8 +134,9 @@ export async function activate(extension: vscode.ExtensionContext): Promise<void
     const workbench = new Workbench(call, context, editor => listingViews?.addressAt(editor) || memoryAddressAt(editor));
     const typeFiles = new DataTypeFiles(call, context, extension.workspaceState);
     const editing = new EditingUI(call, context, typeFiles);
+    const patching = new PatchingUI(call, context, () => listingViews);
     const typeEditorView = new DataTypeEditorView(call);
-    extension.subscriptions.push(context, tracker, stringFiles, stringsView, sessionsView, sessionsTree, browser, workbench, editing, typeFiles, typeEditorView);
+    extension.subscriptions.push(context, tracker, stringFiles, stringsView, sessionsView, sessionsTree, browser, workbench, editing, patching, typeFiles, typeEditorView);
     const memory = new GhidraMemory(call);
     renames = new ReadonlyRenames(call, async md5 => { await Promise.all([browser.refresh(md5), workbench.refresh(md5)]); });
     // Template display is presentation-only: re-render the names already on screen for the current program.

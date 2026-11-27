@@ -214,11 +214,20 @@ impl McpBackend {
       .pointer("/scan/timeout_ms")
       .and_then(Value::as_u64)
       .unwrap_or(0);
+    let floor_ms = if matches!(
+      (domain, operation),
+      ("listing", "instruction.assemble") | ("batch", "execute")
+    ) {
+      125_000
+    } else {
+      0
+    };
     let deadline = Duration::from_millis(
       self
         .config
         .request_timeout_ms
         .max(scan_ms)
+        .max(floor_ms)
         .clamp(100, 300_000),
     );
     let handle = self.ensure_client(deadline).await?;
@@ -359,6 +368,22 @@ fn is_read_only_operation(domain: &str, operation: &str) -> bool {
   )
 }
 
+/// Returns true when `target` names a binary path or hexadecimal digest rather than an operation.
+fn is_binary_target(target: &str) -> bool {
+  target == "path" || (target.len() >= 16 && target.bytes().all(|b| b.is_ascii_hexdigit()))
+}
+
+/// Returns true when `reason` reports an operation or patch field absent from an older backend.
+fn is_unsupported_backend_feature(reason: &str) -> bool {
+  reason.starts_with("unknown operation of ghidra_")
+    || reason.starts_with("No such method: ")
+    || reason.starts_with("No such operation: ")
+    || matches!(
+      reason,
+      "/patch/clear_existing is not allowed" | "/patch/disassemble is not allowed"
+    )
+}
+
 /// Extracts a human-readable error message from a structured MCP response value.
 pub(crate) fn format_error_value(val: &Value) -> Option<String> {
   match val {
@@ -389,8 +414,18 @@ pub(crate) fn format_error_value(val: &Value) -> Option<String> {
         .and_then(Value::as_str);
 
       if let Some(reason) = reason {
+        if is_unsupported_backend_feature(reason) {
+          let detail =
+            match target.filter(|t| !t.is_empty() && !is_binary_target(t) && !reason.contains(t)) {
+              Some(t) => format!("{t}: {reason}"),
+              None => reason.to_owned(),
+            };
+          return Some(format!(
+            "The installed ghidra-mcp backend does not support this operation ({detail}). Update ghidra-mcp and restart the language server."
+          ));
+        }
         if err_type == Some("missing_target")
-          && let Some(target) = target
+          && let Some(target) = target.filter(|t| is_binary_target(t))
           && !reason.starts_with("unknown operation")
         {
           return Some(format!(
@@ -401,6 +436,11 @@ pub(crate) fn format_error_value(val: &Value) -> Option<String> {
       }
 
       if let Some(msg) = map.get("message").and_then(Value::as_str) {
+        if is_unsupported_backend_feature(msg) {
+          return Some(format!(
+            "The installed ghidra-mcp backend does not support this operation ({msg}). Update ghidra-mcp and restart the language server."
+          ));
+        }
         return Some(msg.to_owned());
       }
 

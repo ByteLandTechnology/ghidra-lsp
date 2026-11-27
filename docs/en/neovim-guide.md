@@ -81,7 +81,7 @@ Run `:checkhealth ghidra-lsp` at any time to inspect the Neovim version, `npm` a
 
 ## Complete `:Ghidra*` command reference
 
-`editors/nvim/plugin/ghidra-lsp.lua` registers all 28 user commands:
+`editors/nvim/plugin/ghidra-lsp.lua` registers all 32 user commands:
 
 | Command | Arguments | Action |
 | --- | --- | --- |
@@ -105,6 +105,10 @@ Run `:checkhealth ghidra-lsp` at any time to inspect the Neovim version, `npm` a
 | `:GhidraComment` | `[address]` | Open the 5-kind floating comment editor at cursor or address |
 | `:GhidraEditFunction` | — | Open floating YAML-style form to edit signature, calling convention, flags, and parameters |
 | `:GhidraEditVariables` | — | Pick and rename/retype a parameter or local variable |
+| `:GhidraAssemble` | `[address]` | Assemble Sleigh instructions at cursor or address |
+| `:GhidraDisassemble` | `[address\|start..end]` | Disassemble undefined bytes at cursor, visual range, or address |
+| `:GhidraClear` | `[address\|start..end]` | Clear code units (undefine) at cursor, visual range, or address |
+| `:GhidraPatchBytes` | `[address]` | Patch hexadecimal bytes at cursor or address |
 | `:GhidraControlFlow` | — | Open `ghidra-cfg://` basic-block control-flow graph for the current function |
 | `:GhidraCallGraph` | `[entry\|address]` | Open `ghidra-callgraph://` bounded caller/callee neighborhood view |
 | `:GhidraEditType` | `[path]` | Open editable `ghidra-type://<md5><path>.ghidra-type` JSONC buffer |
@@ -167,8 +171,8 @@ Running `<leader>gc`, `:GhidraComment [address]`, or choosing the comment Code A
 
 | Buffer scheme | Features and buffer-local keymaps |
 | --- | --- |
-| `ghidra-listing://` | Memory block banner, collapsed undefined runs, function headers, inline comments, xrefs. Keys: `<CR>` / `d` decompile at address, `m` open Memory, `c` open comment float, `gr` / `x` incoming xrefs into Quickfix, `g` go to address, `]p` / `[p` page forward/back, `]b` / `[b` next/previous memory block, `r` refresh, `q` close. |
-| `ghidra-memory://` | 16-byte hex + ASCII rows with live 2-line Data Inspector (`uint8`, `int8`, `char`, `utf8`, `uint16`, `uint32`, `int32`, `uint64`, `ptr`) decoded from `ghidra.inspectBytes` on `CursorMoved`. Keys: `<CR>` / `l` open Listing, `d` decompile, `e` toggle endianness (`little`/`big`), `]p` / `[p` next/previous chunk, `g` go to address, `r` refresh, `q` close. |
+| `ghidra-listing://` | Memory block banner, collapsed undefined runs, function headers, inline comments, xrefs. Keys: `<CR>` / `d` decompile at address, `m` open Memory, `c` open comment float, `a` assemble, `D` disassemble, `u` clear code units, `p` patch bytes, `gr` / `x` incoming xrefs into Quickfix, `g` go to address, `]p` / `[p` page forward/back, `]b` / `[b` next/previous memory block, `r` refresh, `q` close. |
+| `ghidra-memory://` | 16-byte hex + ASCII rows with live 2-line Data Inspector (`uint8`, `int8`, `char`, `utf8`, `uint16`, `uint32`, `int32`, `uint64`, `ptr`) decoded from `ghidra.inspectBytes` on `CursorMoved`. Keys: `<CR>` / `l` open Listing, `d` decompile, `a` assemble, `D` disassemble, `u` clear code units, `p` patch bytes, `e` toggle endianness (`little`/`big`), `]p` / `[p` next/previous chunk, `g` go to address, `r` refresh, `q` close. |
 | `ghidra-cfg://` | Ordered basic blocks with instructions and outgoing branch edge arrows. Keys: `<CR>` reveal block in decompiler, `l` open Listing, `r` refresh, `q` close. |
 | `ghidra-callgraph://` | Incoming callers, root function, outgoing callees, and call-site edges. Keys: `<CR>` open function, `l` open Listing, `+` / `-` adjust depth (`1..3`), `r` refresh, `q` close. |
 | `ghidra-string://` | Read-only decoded string content. Keys: `gr` / `x` incoming xrefs in Quickfix, `<leader>gl` open Listing, `<leader>gm` open Memory, `q` close. |

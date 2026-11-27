@@ -151,3 +151,29 @@ end, {
     end,
     desc = 'Install or update ghidra-lsp and ghidra-mcp binaries via npm',
 })
+
+vim.api.nvim_create_user_command('GhidraAssemble', function(opts)
+    ghidra.assemble(opts.args ~= '' and { address = opts.args } or nil)
+end, { nargs = '?', desc = 'Assemble Sleigh instruction(s) at cursor or address' })
+
+vim.api.nvim_create_user_command('GhidraDisassemble', function(opts)
+    ghidra.disassemble({
+        address = opts.args ~= '' and opts.args or nil,
+        line1 = opts.line1,
+        line2 = opts.line2,
+        has_range = opts.range > 0,
+    })
+end, { nargs = '?', range = true, desc = 'Disassemble undefined bytes at cursor, range, or address' })
+
+vim.api.nvim_create_user_command('GhidraClear', function(opts)
+    ghidra.clear_code_units({
+        address = opts.args ~= '' and opts.args or nil,
+        line1 = opts.line1,
+        line2 = opts.line2,
+        has_range = opts.range > 0,
+    })
+end, { nargs = '?', range = true, desc = 'Clear code units (undefine) at cursor, range, or address' })
+
+vim.api.nvim_create_user_command('GhidraPatchBytes', function(opts)
+    ghidra.patch_bytes(opts.args ~= '' and { address = opts.args } or nil)
+end, { nargs = '?', desc = 'Patch hexadecimal bytes at cursor or address' })

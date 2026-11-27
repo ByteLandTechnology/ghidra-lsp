@@ -47,9 +47,9 @@
 
 ![Neovim Ghidra LSP ワークベンチ](../assets/screenshots/neovim-workbench.svg)
 
-## 全 28 個の `:Ghidra*` ユーザーコマンド
+## 全 32 個の `:Ghidra*` ユーザーコマンド
 
-`editors/nvim/plugin/ghidra-lsp.lua` に登録されている全 28 個のコマンドは次のとおりです。
+`editors/nvim/plugin/ghidra-lsp.lua` に登録されている全 32 個のコマンドは次のとおりです。
 
 | コマンド | 引数 | 動作 |
 | --- | --- | --- |
@@ -76,6 +76,10 @@
 | `:GhidraControlFlow` | なし | 現在の関数の基本ブロック制御フローグラフ（`ghidra-cfg://`）を開きます |
 | `:GhidraCallGraph` | `[entry\|address]` | 指定または現在関数の境界付きコールグラフ（`ghidra-callgraph://`）を開きます |
 | `:GhidraEditType` | `[path]` | 指定データ型の編集可能 `.ghidra-type` JSONC バッファ（`ghidra-type://`）を開きます |
+| `:GhidraAssemble` | `[address]` | カーソル位置または指定アドレスで Sleigh 命令をアセンブルします |
+| `:GhidraDisassemble` | `[address\|start..end]` | カーソル位置、選択範囲、または指定アドレスの未定義バイトを逆アセンブルします |
+| `:GhidraClear` | `[address\|start..end]` | カーソル位置、選択範囲、または指定アドレスのコードユニットをクリア（未定義化）します |
+| `:GhidraPatchBytes` | `[address]` | カーソル位置または指定アドレスの 16 進バイト列をパッチします |
 | `:GhidraRefresh` | なし | 現在の Ghidra 仮想バッファ（C 擬似コード、型、Listing、Hex、グラフ）を再取得・更新します |
 | `:GhidraDiscardRename` | なし | 保留中のスコープ付きシンボルリネームプレビューを破棄します |
 | `:GhidraOrigin` | なし | 保留中リネームを開始したオリジンバッファへジャンプします |
@@ -111,6 +115,7 @@
 - `<CR>` / `d`: カーソル行のアドレスを逆コンパイラで表示（`:GhidraGoto` 相当）
 - `m`: カーソル行のアドレスを Hex / Memory ビューアで開く
 - `c`: カーソル行のアドレスに対する 5 種コメントエディタを開く
+- `a` / `D` / `u` / `p`: 命令アセンブル / 未定義バイト逆アセンブル / コードユニットクリア / 16 進バイトパッチ
 - `gr` / `x`: 当該アドレスへの被参照（Xrefs）を Quickfix リストへ表示
 - `g`: アドレス入力プロンプトからジャンプ
 - `]p` / `[p`: 次／前のページウィンドウを読み込み
@@ -123,6 +128,7 @@
 
 - `<CR>` / `l`: 選択バイトアドレスの Program Listing を開く
 - `d`: 選択バイトアドレスの逆コンパイル位置を開く
+- `a` / `D` / `u` / `p`: 命令アセンブル / 未定義バイト逆アセンブル / コードユニットクリア / 16 進バイトパッチ
 - `e`: エンディアンを `little` / `big` 間で切り替え
 - `]p` / `[p`: 次／前のメモリチャンクへ移動
 - `g` / `r` / `q`: アドレスジャンプ / リフレッシュ / 閉じる

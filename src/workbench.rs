@@ -138,6 +138,7 @@ const READ: &[(&str, &str)] = &[
 
 /// Mutation workbench operations permitted in `ghidra.mutate`.
 const WRITE: &[(&str, &str)] = &[
+  ("code_unit", "clear"),
   ("comment", "create"),
   ("comment", "delete"),
   ("comment", "patch"),
@@ -156,6 +157,8 @@ const WRITE: &[(&str, &str)] = &[
   ("global_variable", "delete"),
   ("global_variable", "patch"),
   ("global_variable", "upsert"),
+  ("instruction", "assemble"),
+  ("instruction", "disassemble"),
   ("memory", "write"),
   ("program", "save"),
   ("symbol", "patch"),
