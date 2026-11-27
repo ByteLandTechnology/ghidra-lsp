@@ -58,6 +58,8 @@ export const viewStyles = `
 .inspector-page[data-view-kind="type-editor"] .type-list{margin:0 0 20px;padding-top:12px}
 .inspector-page[data-view-kind="type-editor"] .type-list:first-of-type{border-top:0;padding-top:0}
 .inspector-page[data-view-kind="type-editor"] .type-definition{margin:0 0 20px;padding:0;border:0}
+.inspector-page[data-view-kind="type-editor"] .type-readonly-banner{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px;margin:0 0 14px;padding:10px 12px;border:1px solid var(--vscode-panel-border);border-left:3px solid var(--ghidra-focus);border-radius:4px;background:color-mix(in srgb,var(--vscode-focusBorder) 8%,var(--vscode-sideBar-background,var(--vscode-editor-background)));color:var(--vscode-foreground);font-size:12px;line-height:1.5}
+.inspector-page[data-view-kind="type-editor"] .type-readonly-banner strong{font-weight:600;white-space:nowrap}
 .inspector-page[data-view-kind="type-editor"] .hint{margin:0 0 8px;font-size:12px;line-height:1.5}
 .inspector-page[data-view-kind="type-editor"] .type-table-wrap{max-width:100%;overflow:auto}
 .inspector-page[data-view-kind="type-editor"] .type-table{table-layout:fixed;min-width:520px}
@@ -168,8 +170,16 @@ export const viewStyles = `
 .edit-page input:not([type="checkbox"]),.edit-page select{min-height:34px}
 .edit-page label{font-size:12px}
 .edit-page .form-fields{margin-top:0}
+.edit-page .form-notes{margin-top:16px}
+.edit-page .form-notes:first-child{margin-top:0}
+.edit-page .field-hint{display:block;font-size:11px;font-weight:400;line-height:1.45;color:var(--ghidra-muted)}
+.edit-page textarea{min-height:76px;font:12px/1.5 var(--vscode-editor-font-family,monospace);resize:vertical}
 .edit-page :is(input,select,textarea,button){scroll-margin-block:12px 80px}
-.edit-page .form-actions{position:sticky;bottom:0;z-index:2;background:var(--vscode-editor-background);padding:16px 0 8px;gap:8px}
+.edit-page .form-actions{position:sticky;bottom:0;z-index:2;display:flex;align-items:center;background:var(--vscode-editor-background);padding:16px 0 8px;gap:8px}
+.edit-page .form-actions .secondary{min-height:32px;padding:5px 12px;border:1px solid var(--vscode-panel-border);background:var(--vscode-button-secondaryBackground,var(--vscode-input-background));color:var(--vscode-button-secondaryForeground,var(--vscode-foreground));cursor:pointer}
+.edit-page .form-actions .secondary:hover:enabled:not([aria-disabled="true"]){background:var(--vscode-button-secondaryHoverBackground,var(--vscode-list-hoverBackground))}
+.edit-page .form-dirty{font-size:11px;color:var(--ghidra-warning);margin-left:4px}
+.edit-page .form-dirty:empty{position:absolute;width:1px;height:1px;padding:0;margin:0;border:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .edit-page .form-hint{font-size:11px;line-height:1.65}
 .edit-page .table-wrap{scrollbar-width:thin}
 .edit-page .success:not(:empty){font-size:12px;padding:10px 0}

@@ -491,7 +491,7 @@ impl Engine {
 }
 
 /// Formats structured data-type JSON returned by `ghidra-mcp` into Markdown documentation.
-pub(crate) fn format_type_markdown(data: &Value) -> String {
+pub(super) fn format_type_markdown(data: &Value) -> String {
   let name = data
     .get("name")
     .and_then(Value::as_str)

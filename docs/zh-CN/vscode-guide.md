@@ -95,12 +95,12 @@ code --install-extension editors/vscode/ghidra-lsp-<version>.vsix
 
 ## 行内 5 类注释、作用域重命名与数据类型编辑器
 
-- **行内注释组件**：通过 `Ctrl+.`（macOS 为 `Cmd+.`）触发快速修复 **Edit comments at …** 或运行 **Ghidra: Edit Comment**，在伪代码对应行下方展开原生 VS Code `CommentThread` 组件；顶部 **Comment type** 行提供 `PLATE`、`PRE`、`EOL`、`POST` 与 `REPEATABLE (ext)` 5 枚横向可点击徽章标签（带已填指示圆点），点击任意徽章即触发 `ghidraLsp.selectCommentKind`（Switch Comment Kind）将下方单个输入框切换至对应分类，并支持 `Edit`、`Save`、`Cancel` 与 `Close comment editor`。
+- **行内注释与 5 类注释表单**：在伪代码已映射 Token 上通过 `Ctrl+.`（macOS 为 `Cmd+.`）触发快速修复 **Edit comments at …** 或运行 **Ghidra: Edit Comment**，会在对应行下方展开原生 VS Code `CommentThread` 组件（顶部 **Comment type** 行提供 `PLATE`、`PRE`、`EOL`、`POST` 与 `REPEATABLE (ext)` 5 枚横向徽章标签）；而在伪代码 Token 之外（如 **Symbol Inspector**、**Function Inspector**、**Program Listing** 工具栏、全局符号或未打开函数）点击 **Edit comment** 时，会直接打开基于 `ghidra.commentsAt` 与 `ghidra.saveComment` 的 5 类图形化注释表单（无需打开伪代码标签页）。两种注释界面在关闭未保存草稿前均会弹窗确认。
 - **作用域 `F2` 重命名**：在只读 `ghidra://` 文档按 `F2` 修改符号名后，编辑器会在所有受影响的已打开标签页显示 `M` 徽标与底部状态栏待保存提示；切回源标签页按 `Ctrl+S`（macOS 为 `Cmd+S`）即可提交。
 
 ![VS Code 注释与重命名预览](../assets/screenshots/vscode-comments-and-rename.svg)
 
-- **图形化与 JSONC 类型编辑器**：打开 `ghidra-type://<md5>/<path>.ghidra-type?v=3` 时，图形化编辑器顶部显示结构化标题栏（类型徽标 `struct` / `union` / `enum` / `function` 与只读标记、规范路径、总字节数、成员数、未保存状态标记及 **`JSONC`** 并排打开按钮），支持当前聚焦行高亮、拖拽或方向键重排、表尾虚线 `+ Add field` / `+ Add value` / `+ Add parameter` 新增槽位；点击 **`JSONC`** 可在旁侧分栏（`ViewColumn.Beside`）打开同一底层文档的 JSONC 文本视图（纯模型字段，不写入 `$schema` 键，模式校验由 `package.json` 的 `jsonValidation` 绑定 `schemas/data-type.schema.json`），按下保存即执行冲突检测与事务提交。
+- **图形化与 JSONC 类型编辑器（默认打开）**：`ghidra.dataTypeEditor` 采用 `priority: "default"` 注册，所有类型操作、转到类型定义（`provideTypeDefinition` / `provideDefinition` 客户端中间件）与工作区符号均默认打开图形化编辑器（客户端中间件同时将内存全局符号重写为 `ghidra-listing://` 目标行并将数据地址链接重写为 `ghidraLsp.goToAddress`）。可编辑类型使用 `.ghidra-type` 后缀并绑定 `schemas/data-type.schema.json` 校验，只读类型使用 `.ghidra-type-readonly` 后缀并在界面内联展示只读原因横幅、免除编辑模式校验；点击标题栏 **`JSONC`** 按钮可在旁侧分栏（`ViewColumn.Beside`）打开同一底层文档的原始 JSONC 文本视图。
 
 ![VS Code 数据类型编辑器与 JSONC](../assets/screenshots/vscode-type-editor-and-jsonc.svg)
 

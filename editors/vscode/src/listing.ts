@@ -13,6 +13,15 @@ import { Data, object, stringOf } from './web';
 
 /** URI scheme for virtual assembly listing documents. */
 export const listingScheme = 'ghidra-listing';
+/** Build a canonical `ghidra-listing://` URI for `address` and optional containing `entry`. */
+export function listingUri(md5: string, address: string, entry?: string): vscode.Uri {
+    return vscode.Uri.from({
+        scheme: listingScheme,
+        authority: md5.toLowerCase(),
+        path: `/listing/${plainAddress(address)}${listingExtension}`,
+        query: JSON.stringify({ address, ...(entry ? { entry } : {}) }),
+    });
+}
 /** Active text representation mode inside a `ghidra-listing://` tab. */
 export type ListingMode = 'listing' | 'bytes';
 /** Persisted display mode and byte-window address for one listing URI. */
@@ -177,6 +186,27 @@ export class ListingFiles implements vscode.FileSystemProvider, vscode.Disposabl
     }
     /** The window currently rendered for a listing document. */
     entry(uri: vscode.Uri): Entry | undefined { return this.entries.get(uri.toString()); }
+    /** Preload a `ghidra-listing://` window for `address` and return a pure `vscode.Location` at its row. */
+    async locationForAddress(md5: string, address: string, entry?: string): Promise<vscode.Location> {
+        const uri = listingUri(md5, address, entry);
+        const loaded = await this.load(uri);
+        const lines = Buffer.from(loaded.data).toString('utf8').split('\n');
+        const plain = plainAddress(address);
+        let row = lines.findIndex(line => line.trim().toUpperCase().startsWith(plain));
+        if (row < 0) {
+            const target = addressRange(address);
+            if (target) {
+                const containing = loaded.units.find(unit => {
+                    const unitRange = addressRange(unit.address, Math.max(1, unit.bytes.split(' ').filter(Boolean).length));
+                    return Boolean(unitRange && intersects(unitRange, target));
+                });
+                if (containing) {
+                    row = lines.findIndex(line => line.trim().toUpperCase().startsWith(containing.plain));
+                }
+            }
+        }
+        return new vscode.Location(uri, new vscode.Position(Math.max(0, row), 0));
+    }
     /** Return read-only file metadata for listing or byte-mode `uri`. */
     async stat(uri: vscode.Uri): Promise<vscode.FileStat> {
         const target = this.target(uri);
@@ -345,8 +375,7 @@ export class ListingViews implements vscode.Disposable {
     }
     /** Open or focus a virtual listing document at `address` and reveal its row. */
     async open(md5: string, address: string, entry?: string): Promise<vscode.TextEditor> {
-        const uri = vscode.Uri.from({ scheme: listingScheme, authority: md5, path: `/listing/${plainAddress(address)}${listingExtension}`,
-            query: JSON.stringify({ address, ...(entry ? { entry } : {}) }) });
+        const uri = listingUri(md5, address, entry);
         const document = await vscode.workspace.openTextDocument(uri);
         if (document.languageId !== this.files.language(uri)) {
             await vscode.languages.setTextDocumentLanguage(document, this.files.language(uri));

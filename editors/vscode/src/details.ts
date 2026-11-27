@@ -373,7 +373,8 @@ export class Details implements vscode.Disposable {
         if (action === 'decompile' && value) { await vscode.commands.executeCommand('ghidraLsp.browseFunction', md5, value); return; }
         const commands: Record<string, [string, unknown[]]> = {
             editType: ['editType', [md5, state.path]], deleteType: ['deleteType', [md5, state.path]],
-            applyType: ['applyType', [md5, state.path, value]], editSymbol: ['editSymbol', [md5, state.id]], editFunction: ['editFunction', [md5, state.entry]], editVariables: ['editVariables', [md5, state.entry]], comment: ['editComment', [md5, value]],
+            applyType: ['applyType', [md5, state.path, value]], editSymbol: ['editSymbol', [md5, state.id]], editFunction: ['editFunction', [md5, state.entry]], editVariables: ['editVariables', [md5, state.entry]],
+            comment: ['editComment', [{ md5, address: value, ...(state.kind === 'function' ? { entry: state.entry } : {}), preferForm: true }]],
         };
         const command = commands[action]; if (command) { await vscode.commands.executeCommand(`ghidraLsp.${command[0]}`, ...command[1]); }
     }

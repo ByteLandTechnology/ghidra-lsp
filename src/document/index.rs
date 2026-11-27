@@ -64,6 +64,33 @@ impl SymbolIndex {
       .map(|&idx| &self.items[idx])
   }
 
+  /// Returns the first symbol in arrival order matching `target` via `same_address`.
+  pub(crate) fn by_address(&self, target: &str) -> Option<&Symbol> {
+    let (_, off) = address(target)?;
+    self
+      .by_offset
+      .get(&off)?
+      .iter()
+      .copied()
+      .find(|&idx| same_address(target, &self.items[idx].address))
+      .map(|idx| &self.items[idx])
+  }
+
+  /// Returns the first function symbol in arrival order matching `addr` via `same_address`.
+  pub(crate) fn function_at(&self, addr: &str) -> Option<&Symbol> {
+    let (_, off) = address(addr)?;
+    self
+      .by_offset
+      .get(&off)?
+      .iter()
+      .copied()
+      .find(|&idx| {
+        let sym = &self.items[idx];
+        sym.kind.eq_ignore_ascii_case("function") && same_address(&sym.address, addr)
+      })
+      .map(|idx| &self.items[idx])
+  }
+
   /// Iterates over all symbols paired with their precomputed qualified names in arrival order.
   pub(crate) fn iter_with_qualified(&self) -> impl Iterator<Item = (&Symbol, &str)> {
     self
@@ -106,15 +133,9 @@ impl SymbolIndex {
   /// Finds a function symbol by compatible address first, then by short or qualified name.
   pub(crate) fn find_function(&self, entry_or_addr: Option<&str>, name: &str) -> Option<&Symbol> {
     if let Some(addr) = entry_or_addr
-      && let Some((_, off)) = address(addr)
-      && let Some(idx) = self.by_offset.get(&off).and_then(|indices| {
-        indices.iter().copied().find(|&idx| {
-          let sym = &self.items[idx];
-          sym.kind.eq_ignore_ascii_case("function") && same_address(&sym.address, addr)
-        })
-      })
+      && let Some(sym) = self.function_at(addr)
     {
-      return Some(&self.items[idx]);
+      return Some(sym);
     }
     let by_short = self.by_name.get(name).and_then(|indices| {
       indices

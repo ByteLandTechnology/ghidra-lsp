@@ -50,7 +50,7 @@ fn pick_default_address(
 }
 
 /// Returns cached program metadata for `md5` or fetches and indexes it in one batch wave.
-pub(super) async fn get_or_load_meta(
+pub(crate) async fn get_or_load_meta(
   backend: &McpBackend,
   cache: &ProgramMetaCache,
   md5: &str,

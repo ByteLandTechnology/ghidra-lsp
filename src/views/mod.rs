@@ -24,11 +24,11 @@ use tokio::sync::RwLock;
 
 use crate::address::MemoryBlockInfo;
 
-pub(crate) use format::symbol_display_name;
+pub(crate) use format::{decode_bytes_vec, normalize_type_ref, symbol_display_name};
 pub(crate) use inspector::inspect_bytes;
 pub(crate) use listing_fetch::{ListingWindowRequest, listing_window};
 pub(crate) use memory::{MemoryWindowRequest, memory_window};
-pub(crate) use meta::{program_meta, resolve_target};
+pub(crate) use meta::{get_or_load_meta, program_meta, resolve_target};
 
 /// Default maximum unit count requested for one listing window.
 pub(super) const DEFAULT_LISTING_LIMIT: usize = 140;
@@ -41,9 +41,9 @@ pub(super) const COLLAPSE_THRESHOLD: usize = 8;
 
 /// Cached summary metadata for a single Ghidra function.
 #[derive(Clone, Debug)]
-pub(super) struct RawFunctionMeta {
+pub(crate) struct RawFunctionMeta {
   /// Canonical entry address string.
-  pub(super) entry: String,
+  pub(crate) entry: String,
   /// Unqualified symbol name.
   pub(super) name: String,
   /// Containing namespace path.
@@ -54,7 +54,7 @@ pub(super) struct RawFunctionMeta {
 
 /// Cached program layout, endianness, blocks, and function index for a session.
 #[derive(Clone, Debug)]
-pub(super) struct CachedProgramMeta {
+pub(crate) struct CachedProgramMeta {
   /// Lowercase 32-character program MD5 hash.
   pub(super) md5: String,
   /// Human-readable binary name or MD5 fallback.
@@ -64,15 +64,15 @@ pub(super) struct CachedProgramMeta {
   /// Default pointer size in bits.
   pub(super) address_size_bits: u64,
   /// Default memory address space name.
-  pub(super) default_space: String,
+  pub(crate) default_space: String,
   /// Display width in hexadecimal digits for default addresses.
-  pub(super) address_width: usize,
+  pub(crate) address_width: usize,
   /// Sorted memory blocks defined in the program.
-  pub(super) blocks: Vec<MemoryBlockInfo>,
+  pub(crate) blocks: Vec<MemoryBlockInfo>,
   /// Initial view target address chosen from executable or loaded blocks.
   pub(super) default_address: Option<String>,
   /// Indexed functions loaded from the backend.
-  pub(super) functions: Vec<RawFunctionMeta>,
+  pub(crate) functions: Vec<RawFunctionMeta>,
 }
 
 /// Per-session cache of call-graph node metadata and edge queries.

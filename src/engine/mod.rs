@@ -19,6 +19,8 @@ mod refresh;
 mod rename;
 /// Singleflight coordinators for concurrent decompilations and symbol loads.
 mod singleflight;
+/// Read-only `type`, `symbol`, and `references` snapshot builders.
+mod snapshots;
 /// Synchronous in-memory document, symbol, pending-rename, and epoch state.
 mod state;
 
@@ -32,7 +34,6 @@ use serde_json::{Value, json};
 use tokio::sync::OwnedMutexGuard;
 use tower_lsp_server::ls_types::Uri;
 
-pub(crate) use assist::format_type_markdown;
 pub(crate) use state::{ClientBuffer, EngineState};
 
 use crate::backend::{McpBackend, list_all};
@@ -693,98 +694,6 @@ impl Engine {
       }
       return state.install(generated.doc);
     }
-  }
-
-  /// Builds synthetic read-only snapshot text for `type`, `symbol`, or `references` URIs.
-  pub(crate) async fn snapshot_text(&self, md5: &str, kind: &str, id: &str) -> Result<String> {
-    let backend = self.backend();
-    if kind == "type" {
-      let path = id.strip_suffix(".md").unwrap_or(id);
-      let type_data = if path.starts_with('/') {
-        backend
-          .call(
-            "data_type",
-            "get",
-            Some(md5),
-            json!({"selector": {"path": path}}),
-          )
-          .await?
-      } else {
-        let types = list_all(
-          backend.as_ref(),
-          "data_type",
-          md5,
-          json!({"filter": {"query": path}, "page": {"limit": 1000}}),
-        )
-        .await?;
-        let candidate = types.into_iter().find(|v| {
-          v.get("name").and_then(Value::as_str) == Some(path)
-            || v.get("path").and_then(Value::as_str) == Some(path)
-        });
-        let full_path = if let Some(cand) = &candidate {
-          cand.get("path").and_then(Value::as_str).unwrap_or(path)
-        } else {
-          path
-        };
-        let lookup_path = if full_path.starts_with('/') {
-          full_path.to_owned()
-        } else {
-          format!("/{full_path}")
-        };
-        backend
-          .call(
-            "data_type",
-            "get",
-            Some(md5),
-            json!({"selector": {"path": lookup_path}}),
-          )
-          .await?
-      };
-      return Ok(format_type_markdown(&type_data));
-    }
-    let symbol: Symbol = serde_json::from_value(
-      backend
-        .call("symbol", "get", Some(md5), json!({"selector": {"id": id}}))
-        .await?,
-    )?;
-    if kind == "symbol" {
-      return Ok(format!(
-        "// {}\n// Address: {}\n// Kind: {}\n",
-        symbol.display_name(),
-        symbol.address,
-        symbol.kind
-      ));
-    }
-    let refs = list_all(
-      backend.as_ref(),
-      "reference",
-      md5,
-      json!({"filter": {"direction": "to", "to": symbol.address}, "page": {"limit": 1000}}),
-    )
-    .await?;
-    let mut code = format!(
-      "// References to {} at {}\n",
-      symbol.display_name(),
-      symbol.address
-    );
-    for reference in refs {
-      code.push_str(&format!(
-        "// {} -> {} ({})\n",
-        reference
-          .get("from")
-          .and_then(Value::as_str)
-          .context("reference lacks from address")?,
-        reference
-          .get("to")
-          .and_then(Value::as_str)
-          .unwrap_or(&symbol.address),
-        reference
-          .get("type")
-          .and_then(Value::as_str)
-          .unwrap_or("reference")
-      ));
-    }
-    Ok(code)
   }
 }
 

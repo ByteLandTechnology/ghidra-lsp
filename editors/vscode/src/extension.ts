@@ -29,6 +29,7 @@ import { singleKeyShortcutsEnabled } from './program-views-controller';
 import { DataTypeFiles, typeScheme } from './type-files';
 import { registerCheckpointCommands } from './checkpoints';
 import { installManagedBinaries, resolveOrInstallBinaries, ResolvedBinaries } from './installer';
+import { createLspMiddleware } from './lsp-middleware';
 import {
     extractCandidatePrograms, formatOpenDisplayName, OpenProgramRequest, resolveOpenInput,
 } from './open-options';
@@ -49,51 +50,12 @@ interface AnalysisOperation { token: string; md5: string; state: 'pending' | 're
 export async function activate(extension: vscode.ExtensionContext): Promise<void> {
     let renames: ReadonlyRenames;
     let references: ReferenceViews;
+    let typeFiles: DataTypeFiles;
+    let listingFiles: ListingFiles;
     const output = vscode.window.createOutputChannel('Ghidra LSP');
     extension.subscriptions.push(output);
     const config = vscode.workspace.getConfiguration('ghidraLsp');
     setShowTemplateArguments(config.get('templateArguments') === 'show');
-    const createClientOptions = (mcpCommand: string): LanguageClientOptions => {
-        const current = vscode.workspace.getConfiguration('ghidraLsp');
-        return {
-            // Reference views of Listing rows are not decompiler documents; only decompiled and Markdown ones reach the server.
-            documentSelector: [{ scheme: 'ghidra' }, { scheme: referenceScheme, language: 'ghidra-decompiled' }, { scheme: referenceScheme, language: 'markdown' }],
-            outputChannel: output,
-            uriConverters: {
-                code2Protocol: uri => (referenceSource(uri) || uri).toString(),
-                protocol2Code: uri => vscode.Uri.parse(uri),
-            },
-            middleware: {
-                didOpen: async (document, next) => { if (document.uri.scheme !== referenceScheme) { await next(document); } },
-                didChange: async (event, next) => { if (event.document.uri.scheme !== referenceScheme) { await next(event); } },
-                didClose: async (document, next) => { if (document.uri.scheme !== referenceScheme) { await next(document); } },
-                didSave: async (document, next) => { if (!['ghidra', referenceScheme].includes(document.uri.scheme)) { await next(document); } },
-                provideReferences: async (document, position, context, token, next) => {
-                    const locations = await next(document, position, context, token);
-                    return locations && references ? references.locations(locations, token, document.uri) : locations;
-                },
-                provideCodeActions: async (document, range, context, token, next) => {
-                    const actions = await next(document, range, context, token);
-                    return actions?.filter(action => !nativeNavigationCommands.has(typeof action.command === 'string' ? action.command : action.command?.command || ''));
-                },
-                provideCodeLenses: async (document, token, next) => {
-                    const lenses = await next(document, token);
-                    return lenses?.filter(lens => !lens.command || !nativeNavigationCommands.has(lens.command.command));
-                },
-                provideRenameEdits: async (document, position, name, token, next) => {
-                    const edit = await next(document, position, name, token);
-                    renames?.schedule(document.uri.authority);
-                    return edit;
-                },
-            },
-            initializationOptions: {
-                readonlyDocuments: true,
-                mcpCommand, mcpArgs: current.get('mcpArgs'),
-                requestTimeoutMs: current.get('requestTimeoutMs'),
-                templateArguments: current.get('templateArguments'),
-            },
-        };
-    };
     let startup: Promise<void> | undefined;
     const requests = new Map<string, Set<Promise<unknown>>>();
     const call: Call = async <T>(command: string, args: object = {}): Promise<T> => {
@@ -113,6 +75,32 @@ export async function activate(extension: vscode.ExtensionContext): Promise<void
         pending.add(tracked);
         return tracked;
     };
+    const createClientOptions = (mcpCommand: string): LanguageClientOptions => {
+        const current = vscode.workspace.getConfiguration('ghidraLsp');
+        return {
+            // Reference views of Listing rows are not decompiler documents; only decompiled and Markdown ones reach the server.
+            documentSelector: [{ scheme: 'ghidra' }, { scheme: referenceScheme, language: 'ghidra-decompiled' }, { scheme: referenceScheme, language: 'markdown' }],
+            outputChannel: output,
+            uriConverters: {
+                code2Protocol: uri => (referenceSource(uri) || uri).toString(),
+                protocol2Code: uri => vscode.Uri.parse(uri),
+            },
+            middleware: createLspMiddleware({
+                call,
+                typeFiles: () => typeFiles,
+                listingFiles: () => listingFiles,
+                references: () => references,
+                renames: () => renames,
+                nativeNavigationCommands,
+            }),
+            initializationOptions: {
+                readonlyDocuments: true,
+                mcpCommand, mcpArgs: current.get('mcpArgs'),
+                requestTimeoutMs: current.get('requestTimeoutMs'),
+                templateArguments: current.get('templateArguments'),
+            },
+        };
+    };
     async function settleRequests(md5: string): Promise<void> {
         // Finishing a render can enqueue its next query. Drain those continuations
         // before disconnecting the analysis session beneath a closing editor.
@@ -130,9 +118,10 @@ export async function activate(extension: vscode.ExtensionContext): Promise<void
     const stringsView = new StringsView(call, context, stringFiles);
     const browser = new ProgramBrowser(call, context, md5 => stringsView.refresh(md5));
     let listingViews: ListingViews | undefined;
-    const workbench = new Workbench(call, context, editor => listingViews?.addressAt(editor) || memoryAddressAt(editor));
-    const typeFiles = new DataTypeFiles(call, context, extension.workspaceState);
-    const editing = new EditingUI(call, context, typeFiles);
+    const companionCursorAddress = (editor: vscode.TextEditor | undefined): string | undefined => listingViews?.addressAt(editor) || memoryAddressAt(editor);
+    const workbench = new Workbench(call, context, companionCursorAddress);
+    typeFiles = new DataTypeFiles(call, context, extension.workspaceState);
+    const editing = new EditingUI(call, context, typeFiles, companionCursorAddress);
     const typeEditorView = new DataTypeEditorView(call);
     extension.subscriptions.push(context, tracker, stringFiles, stringsView, sessionsView, sessionsTree, browser, workbench, editing, typeFiles, typeEditorView);
     const memory = new GhidraMemory(call);
@@ -150,7 +139,7 @@ export async function activate(extension: vscode.ExtensionContext): Promise<void
     }));
     extension.subscriptions.push(memory, renames, vscode.workspace.registerFileSystemProvider('ghidra', memory, { isCaseSensitive: true, isReadonly: true }));
     const byteFiles = new MemoryFiles(call, context);
-    const listingFiles = new ListingFiles(call, context, byteFiles, extension.workspaceState);
+    listingFiles = new ListingFiles(call, context, byteFiles, extension.workspaceState);
     listingViews = new ListingViews(call, listingFiles);
     const graphView = new ControlFlowView(listingFiles, workbench, context);
     extension.subscriptions.push(vscode.workspace.onDidChangeConfiguration(async event => {
@@ -229,6 +218,12 @@ export async function activate(extension: vscode.ExtensionContext): Promise<void
     }), vscode.window.onDidChangeActiveTextEditor(editor => {
         if (editor && ['ghidra', listingScheme, memoryScheme, typeScheme, 'ghidra-type-current', stringScheme, referenceScheme].includes(editor.document.uri.scheme)) { void context.activate(editor.document.uri.authority).catch(log); }
         updateStatus();
+    }), vscode.window.tabGroups.onDidChangeTabs(() => {
+        const activeTab = vscode.window.tabGroups.activeTabGroup.activeTab;
+        if (activeTab?.input instanceof vscode.TabInputCustom && [typeScheme, listingScheme].includes(activeTab.input.uri.scheme)) {
+            void context.activate(activeTab.input.uri.authority).catch(log);
+            updateStatus();
+        }
     }));
     /** The address a listing should open at, and the function it belongs to. */
     const listingTarget = async (md5: string, resource?: unknown): Promise<{ address: string; entry?: string } | undefined> => {

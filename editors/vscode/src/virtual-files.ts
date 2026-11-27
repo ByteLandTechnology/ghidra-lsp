@@ -14,6 +14,10 @@ export const listingExtension = '.ghidra-listing';
 export const bytesExtension = '.ghidra-bytes';
 /** Virtual filename suffix for editable data type documents. */
 export const typeExtension = '.ghidra-type';
+/** Virtual filename suffix for read-only data type documents. */
+export const readonlyTypeExtension = '.ghidra-type-readonly';
+/** Custom editor viewType identifier for the graphical data type editor. */
+export const typeEditorViewId = 'ghidra.dataTypeEditor';
 
 /** Paths from older versions have no extension; tabs restored from them must keep resolving. */
 export function withoutExtension(segment: string, extension: string): string {

@@ -4,6 +4,7 @@
 import * as vscode from 'vscode';
 import { applyEdits, modify, parse, ParseError } from 'jsonc-parser';
 import { takeTypeSaveError, TypeDiagnosticIssue, typeDiagnosticIssues, typePath } from './type-files';
+import { typeEditorViewId } from './virtual-files';
 import { callIcon } from './call-graph-icons';
 import { Data, escape, FieldError, FieldPath, formControl, object, page, properties, reference, rows } from './web';
 import { formatFriendlyError } from './error';
@@ -11,7 +12,7 @@ import { Call } from './memory';
 import { kindOf, parseType, reorderTypeMembers, typeModel, typeMutations } from './type-model';
 
 /** Custom editor viewType identifier for the graphical data type editor. */
-export const typeEditorView = 'ghidra.dataTypeEditor';
+export const typeEditorView = typeEditorViewId;
 /** Control focus restoration target sent to the type editor webview. */
 interface EditorFocus {
     /** Focused input or checkbox JSON path. */
@@ -198,10 +199,10 @@ export class DataTypeEditorView implements vscode.CustomTextEditorProvider, vsco
             if (readonly && !errors.length && model && typeof model === 'object' && !Array.isArray(model)) {
                 const m = model as Record<string, any>;
                 const reason = document.getText().split('\n').find(line => line.startsWith('// Read-only: '))?.slice('// Read-only: '.length) || 'This type is read-only.';
-                const readonlyNote = /^read-only\b/i.test(reason) || reason === 'This type is read-only.' ? reason : `Read-only: ${reason}`;
+                const hasReasonPrefix = /^read-only\b/i.test(reason) || reason === 'This type is read-only.';
                 const information: [string, unknown][] = [['Kind', m.kind ? kindOf(m) : m.kind], ['Size', m.length ?? m.size]];
                 if (m.base_type) { information.push(['Base type', reference(m.base_type)]); }
-                body = `<section class="type-definition"><p id="type-readonly-hint" class="hint">${escape(readonlyNote)}</p>${properties(information)}</section>`;
+                body = `<section class="type-definition"><div id="type-readonly-hint" class="type-readonly-banner" role="note" aria-label="Read-only data type">${hasReasonPrefix ? `<span>${escape(reason)}</span>` : `<strong>Read-only:</strong> <span>${escape(reason)}</span>`}</div>${properties(information)}</section>`;
                 if (Array.isArray(m.fields)) { body += list('fields', m.fields.map((field: unknown) => ({ ...object(field), type: reference(object(field).data_type) })), ['offset', 'name', 'type', 'length']); }
                 if (Array.isArray(m.values)) { body += list('values', m.values, ['name', 'value']); }
                 if (m.signature && typeof m.signature === 'object') {
@@ -372,7 +373,7 @@ export class DataTypeEditorView implements vscode.CustomTextEditorProvider, vsco
             const path = typePath(document.uri);
             const summary = typeHeaderSummary(!errors.length ? model : undefined, path, readonly, document.isDirty ? undefined : cachedRawBytes);
             const statusText = statusMessage ? `${statusMessage}${document.isDirty ? ' · Unsaved changes' : ''}` : document.isDirty ? 'Unsaved changes' : '';
-            const actions = `<div class="type-actions"><span class="type-status" data-state="${document.isDirty ? 'dirty' : 'clean'}" role="status">${escape(statusText)}</span><button type="button" data-open-jsonc aria-label="Open JSONC text editor beside" title="Open .ghidra-type JSONC text editor beside">${callIcon('edit')}<span>JSONC</span></button></div>`;
+            const actions = `<div class="type-actions"><span class="type-status" data-state="${document.isDirty ? 'dirty' : 'clean'}" role="status">${escape(statusText)}</span><button type="button" data-open-jsonc aria-label="Open JSONC text editor beside" title="Open raw JSONC text editor beside">${callIcon('edit')}<span>JSONC</span></button></div>`;
             panel.webview.html = page(path.split('/').pop() || 'Data type', 'Data type editor', summary.subtitle, `<p id="type-validation" class="type-validation" role="alert"></p>` + body + `<datalist id="type-options">${typeOptions.map(value => `<option value="${escape(value)}"></option>`).join('')}</datalist>`, script, { kind: 'type-editor', md5: document.uri.authority, path }, actions, { subtitleHtml: summary.subtitleHtml, ...(pageError ? { error: pageError } : {}) });
         };
         const diagnostics = (): TypeDiagnosticIssue[] => typeDiagnosticIssues(document);

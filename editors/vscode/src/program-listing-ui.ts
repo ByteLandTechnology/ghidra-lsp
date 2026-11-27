@@ -296,6 +296,7 @@ const updateSelectionTools = () => {
   const items = [
     { action: 'decompile', label: 'Decompile containing function', available: canDecompile },
     { action: 'memory', label: 'View bytes in Hex', available: true },
+    { action: 'comment', label: 'Edit comment', available: true },
     { action: 'references', label: 'References at location', available: true },
     { action: 'copyAddress', label: 'Copy address', available: true },
     { action: 'callGraph', label: 'Call graph of containing function', available: canDecompile },
