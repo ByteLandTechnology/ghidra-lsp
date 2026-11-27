@@ -13,7 +13,7 @@ use tower_lsp_server::ls_types::{
   SymbolKind, Uri,
 };
 
-use super::Engine;
+use super::{Engine, EngineState};
 use crate::backend::list_operation;
 use crate::document::{
   Document, SHOW_TEMPLATE_ARGUMENTS, Span, canonical_virtual_uri, in_address_range, position,
@@ -235,18 +235,18 @@ fn resolve_open_call_ranges(
   }
 }
 
-/// Finds an already-open virtual function document in `docs` without triggering decompilation.
+/// Finds an open virtual function document in `state` without decompilation.
 fn find_open_function_doc<'a>(
-  docs: &'a HashMap<Uri, Document>,
+  state: &'a EngineState,
   md5: &str,
   target_entry: &str,
 ) -> Option<&'a Document> {
   if let Ok(uri) = virtual_uri(md5, "function", target_entry)
-    && let Some(doc) = docs.get(&uri)
+    && let Some(doc) = state.docs.get(&uri)
   {
     return Some(doc);
   }
-  docs.values().find(|doc| {
+  state.docs.values().find(|doc| {
     doc.md5.eq_ignore_ascii_case(md5)
       && doc
         .entry
@@ -435,12 +435,11 @@ impl Engine {
     )
     .await?;
 
-    let groups = group_peer_calls(records);
     let state = self.read_state();
-    let mut result = Vec::with_capacity(groups.len());
-    for caller in groups {
+    let mut result = Vec::new();
+    for caller in group_peer_calls(records) {
       let (caller_uri, caller_range, caller_sel_range, from_ranges) =
-        if let Some(caller_doc) = find_open_function_doc(&state.docs, md5, &caller.entry) {
+        if let Some(caller_doc) = find_open_function_doc(&state, md5, &caller.entry) {
           let doc_entry = caller_doc.entry.as_deref().unwrap_or(&caller.entry);
           let uri = virtual_uri(md5, "function", doc_entry)?;
           let (range, sel) = open_document_ranges(caller_doc, &caller.name);
@@ -480,7 +479,6 @@ impl Engine {
         from_ranges,
       });
     }
-    drop(state);
 
     Ok(Some(result))
   }
@@ -520,15 +518,14 @@ impl Engine {
     )
     .await?;
 
-    let groups = group_peer_calls(records);
     let state = self.read_state();
-    let source_doc = find_open_function_doc(&state.docs, md5, entry);
+    let source_doc = find_open_function_doc(&state, md5, entry);
     let source_sel_range = source_doc
       .map(|doc| open_document_ranges(doc, source_name).1)
       .unwrap_or_default();
 
-    let mut result = Vec::with_capacity(groups.len());
-    for callee in groups {
+    let mut result = Vec::new();
+    for callee in group_peer_calls(records) {
       let from_ranges = if let Some(doc) = source_doc {
         resolve_open_call_ranges(
           doc,
@@ -542,7 +539,7 @@ impl Engine {
       };
 
       let (callee_uri, callee_range, callee_sel_range) =
-        if let Some(callee_doc) = find_open_function_doc(&state.docs, md5, &callee.entry) {
+        if let Some(callee_doc) = find_open_function_doc(&state, md5, &callee.entry) {
           let doc_entry = callee_doc.entry.as_deref().unwrap_or(&callee.entry);
           let uri = virtual_uri(md5, "function", doc_entry)?;
           let (range, sel) = open_document_ranges(callee_doc, &callee.name);
@@ -574,7 +571,6 @@ impl Engine {
         from_ranges,
       });
     }
-    drop(state);
 
     Ok(Some(result))
   }
