@@ -3,12 +3,11 @@
 
 //! Read-only `type`, `symbol`, and `references` snapshot builders for `ghidra://` documents.
 
-use std::sync::Arc;
-
 use anyhow::{Context, Result, bail};
 use serde_json::{Value, json};
 
 use super::Engine;
+use super::assist::format_type_markdown;
 use crate::backend::{McpBackend, list_all};
 use crate::document::{Symbol, SymbolIndex, data_type_name};
 use crate::views::{decode_bytes_vec, normalize_type_ref};
@@ -23,11 +22,11 @@ const MAX_SNAPSHOT_REFS: usize = 64;
 impl Engine {
   /// Builds synthetic read-only snapshot text for `type`, `symbol`, or `references` URIs.
   pub(crate) async fn snapshot_text(&self, md5: &str, kind: &str, id: &str) -> Result<String> {
+    let backend = self.backend();
     if kind == "type" {
       let path = id.strip_suffix(".md").unwrap_or(id);
       let type_data = if path.starts_with('/') {
-        self
-          .backend
+        backend
           .call(
             "data_type",
             "get",
@@ -37,7 +36,7 @@ impl Engine {
           .await?
       } else {
         let types = list_all(
-          self.backend.as_ref(),
+          backend.as_ref(),
           "data_type",
           md5,
           json!({"filter": {"query": path}, "page": {"limit": 1000}}),
@@ -57,8 +56,7 @@ impl Engine {
         } else {
           format!("/{full_path}")
         };
-        self
-          .backend
+        backend
           .call(
             "data_type",
             "get",
@@ -70,14 +68,19 @@ impl Engine {
       return Ok(format_type_markdown(&type_data));
     }
 
-    let symbol = self.resolve_snapshot_symbol(md5, id).await?;
+    let symbol = self
+      .resolve_snapshot_symbol(backend.as_ref(), md5, id)
+      .await?;
     if kind == "symbol" {
-      let cached_symbols = self.symbols.get(md5).map(Arc::as_ref);
-      return Ok(render_symbol_snapshot(self.backend.as_ref(), md5, &symbol, cached_symbols).await);
+      let md5_key = md5.to_ascii_lowercase();
+      let cached_symbols = self.read_state().symbols.get(&md5_key).cloned();
+      return Ok(
+        render_symbol_snapshot(backend.as_ref(), md5, &symbol, cached_symbols.as_deref()).await,
+      );
     }
 
     let refs = list_all(
-      self.backend.as_ref(),
+      backend.as_ref(),
       "reference",
       md5,
       json!({"filter": {"direction": "to", "to": symbol.address}, "page": {"limit": 1000}}),
@@ -109,9 +112,13 @@ impl Engine {
   }
 
   /// Resolves `id` as a symbol identifier first and as an in-memory address second.
-  async fn resolve_snapshot_symbol(&self, md5: &str, id: &str) -> Result<Symbol> {
-    let direct_err = match self
-      .backend
+  async fn resolve_snapshot_symbol(
+    &self,
+    backend: &McpBackend,
+    md5: &str,
+    id: &str,
+  ) -> Result<Symbol> {
+    let direct_err = match backend
       .call("symbol", "get", Some(md5), json!({"selector": {"id": id}}))
       .await
     {
@@ -119,16 +126,17 @@ impl Engine {
       Err(err) => err,
     };
 
+    let md5_key = md5.to_ascii_lowercase();
     if let Some(cached) = self
+      .read_state()
       .symbols
-      .get(md5)
-      .and_then(|syms| syms.by_id(id).or_else(|| syms.by_address(id)))
+      .get(&md5_key)
+      .and_then(|syms| syms.by_id(id).or_else(|| syms.by_address(id)).cloned())
     {
-      return Ok(cached.clone());
+      return Ok(cached);
     }
 
-    let Ok(resolved) = self
-      .backend
+    let Ok(resolved) = backend
       .call(
         "address",
         "resolve",
@@ -150,8 +158,7 @@ impl Engine {
       .filter(|s| !s.is_empty())
       .unwrap_or(id)
       .to_owned();
-    if let Ok(sym_page) = self
-      .backend
+    if let Ok(sym_page) = backend
       .call(
         "symbol",
         "list",
@@ -413,124 +420,4 @@ async fn render_symbol_snapshot(
   }
 
   out
-}
-
-/// Formats structured data-type JSON returned by `ghidra-mcp` into Markdown documentation.
-pub(crate) fn format_type_markdown(data: &Value) -> String {
-  let name = data
-    .get("name")
-    .and_then(Value::as_str)
-    .unwrap_or("Unknown");
-  let kind = data.get("kind").and_then(Value::as_str).unwrap_or("type");
-  let length = data
-    .get("length")
-    .or_else(|| data.get("size"))
-    .and_then(Value::as_u64)
-    .map(|s| format!("{s} bytes (`0x{s:x}`)"))
-    .unwrap_or_else(|| "Unknown / variable".into());
-  let category = data
-    .get("category_path")
-    .and_then(Value::as_str)
-    .unwrap_or("/");
-  let path = data.get("path").and_then(Value::as_str).unwrap_or("");
-
-  let mut md = format!("# {kind} {name}\n\n");
-  md.push_str(&format!("- **Kind**: `{kind}`\n"));
-  md.push_str(&format!("- **Path**: `{path}`\n"));
-  md.push_str(&format!("- **Category**: `{category}`\n"));
-  md.push_str(&format!("- **Size**: {length}\n"));
-
-  if let Some(desc) = data.get("description").and_then(Value::as_str)
-    && !desc.trim().is_empty()
-  {
-    md.push_str(&format!("- **Description**: {desc}\n"));
-  }
-  if let Some(base) = data.get("base_type") {
-    let base_name = data_type_name(base);
-    if !base_name.is_empty() && base_name != "unknown" {
-      md.push_str(&format!("- **Base Type**: `{base_name}`\n"));
-    }
-  }
-
-  if let Some(fields) = data
-    .get("fields")
-    .and_then(Value::as_array)
-    .filter(|f| !f.is_empty())
-  {
-    md.push_str("\n## Fields\n\n");
-    md.push_str("| Offset | Size | Name | Type | Notes |\n");
-    md.push_str("| :--- | :--- | :--- | :--- | :--- |\n");
-    for f in fields {
-      let offset = f
-        .get("offset")
-        .and_then(Value::as_u64)
-        .map(|o| format!("`+0x{o:04x}`"))
-        .unwrap_or_else(|| "-".into());
-      let size = f
-        .get("length")
-        .and_then(Value::as_u64)
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| "-".into());
-      let fname = f.get("name").and_then(Value::as_str).unwrap_or("(unnamed)");
-      let ftype = data_type_name(&f["data_type"]);
-      let notes = f.get("comment").and_then(Value::as_str).unwrap_or("");
-      md.push_str(&format!(
-        "| {offset} | {size} | `{fname}` | `{ftype}` | {notes} |\n"
-      ));
-    }
-  }
-
-  if let Some(values) = data
-    .get("values")
-    .and_then(Value::as_array)
-    .filter(|v| !v.is_empty())
-  {
-    md.push_str("\n## Enum Values\n\n");
-    md.push_str("| Name | Value | Comment |\n");
-    md.push_str("| :--- | :--- | :--- |\n");
-    for v in values {
-      let vname = v.get("name").and_then(Value::as_str).unwrap_or("");
-      let val = v
-        .get("value")
-        .map(|val| {
-          val
-            .as_str()
-            .map(str::to_owned)
-            .unwrap_or_else(|| val.to_string())
-        })
-        .unwrap_or_default();
-      let comm = v.get("comment").and_then(Value::as_str).unwrap_or("");
-      md.push_str(&format!("| `{vname}` | `{val}` | {comm} |\n"));
-    }
-  }
-
-  if let Some(sig) = data.get("signature") {
-    md.push_str("\n## Function Signature\n\n");
-    if let Some(sig_str) = sig.as_str() {
-      md.push_str(&format!("`{sig_str}`\n"));
-    } else if let Some(sig_obj) = sig.as_object() {
-      if let Some(ret) = sig_obj.get("return_type") {
-        md.push_str(&format!("- **Return Type**: `{}`\n", data_type_name(ret)));
-      }
-      if let Some(conv) = sig_obj.get("calling_convention").and_then(Value::as_str) {
-        md.push_str(&format!("- **Calling Convention**: `{conv}`\n"));
-      }
-      if let Some(params) = sig_obj
-        .get("parameters")
-        .and_then(Value::as_array)
-        .filter(|p| !p.is_empty())
-      {
-        md.push_str("\n### Parameters\n\n");
-        md.push_str("| Ordinal | Name | Type |\n");
-        md.push_str("| :--- | :--- | :--- |\n");
-        for (idx, p) in params.iter().enumerate() {
-          let pname = p.get("name").and_then(Value::as_str).unwrap_or("(unnamed)");
-          let ptype = data_type_name(&p["data_type"]);
-          md.push_str(&format!("| {idx} | `{pname}` | `{ptype}` |\n"));
-        }
-      }
-    }
-  }
-
-  md
 }

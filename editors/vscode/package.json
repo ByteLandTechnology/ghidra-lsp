@@ -2,7 +2,7 @@
   "name": "ghidra-lsp",
   "displayName": "Ghidra LSP",
   "description": "Live Ghidra decompilation, disassembly, graphs, and reverse engineering in VS Code",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "publisher": "byteland-app",
   "license": "MIT",
   "icon": "resources/icon.png",

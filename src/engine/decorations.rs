@@ -13,12 +13,47 @@ use tower_lsp_server::ls_types::{
   Uri,
 };
 
-use super::Engine;
+use super::{Engine, EngineState};
 use crate::address::{find_memory_block, format_address, parse_address};
 use crate::document::{Span, canonical_virtual_uri, offset, position, same_address, virtual_uri};
 use crate::views::CachedProgramMeta;
 
 impl Engine {
+  /// Returns same-document highlights for the symbol or type token under `pos`.
+  pub(crate) fn document_highlight(
+    &self,
+    uri: &Uri,
+    pos: Position,
+  ) -> Result<Option<Vec<DocumentHighlight>>> {
+    self.read_state().document_highlight(uri, pos)
+  }
+
+  /// Returns storage hints for local symbols and target address hints for call sites in `range`.
+  pub(crate) fn inlay_hints(&self, uri: &Uri, range: Range) -> Result<Option<Vec<InlayHint>>> {
+    self.read_state().inlay_hints(uri, range)
+  }
+
+  /// Returns header code lenses for opening Listing, Call Graph, Control Flow, and reference panes.
+  pub(crate) fn code_lenses(&self, uri: &Uri) -> Result<Option<Vec<CodeLens>>> {
+    self.read_state().code_lenses(uri)
+  }
+
+  /// Computes comment and brace-block folding ranges for `uri`.
+  pub(crate) fn folding_ranges(&self, uri: &Uri) -> Result<Option<Vec<FoldingRange>>> {
+    self.read_state().folding_ranges(uri)
+  }
+
+  /// Finds clickable `ghidra://` URIs and verified function or memory-block address links in `uri`.
+  pub(crate) fn document_links(
+    &self,
+    uri: &Uri,
+    meta: Option<&CachedProgramMeta>,
+  ) -> Result<Option<Vec<DocumentLink>>> {
+    self.read_state().document_links(uri, meta)
+  }
+}
+
+impl EngineState {
   /// Returns same-document highlights for the symbol or type token under `pos`.
   pub(crate) fn document_highlight(
     &self,
