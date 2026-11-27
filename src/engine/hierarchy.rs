@@ -235,31 +235,38 @@ fn resolve_open_call_ranges(
   }
 }
 
-impl Engine {
-  /// Finds an already-open virtual function document in memory without triggering decompilation.
-  fn find_open_function_doc(&self, md5: &str, target_entry: &str) -> Option<&Document> {
-    if let Ok(uri) = virtual_uri(md5, "function", target_entry)
-      && let Some(doc) = self.docs.get(&uri)
-    {
-      return Some(doc);
-    }
-    self.docs.values().find(|doc| {
-      doc.md5.eq_ignore_ascii_case(md5)
-        && doc.entry.as_deref().is_some_and(|doc_entry| {
-          doc_entry == target_entry || same_address(doc_entry, target_entry)
-        })
-    })
+/// Finds an already-open virtual function document in `docs` without triggering decompilation.
+fn find_open_function_doc<'a>(
+  docs: &'a HashMap<Uri, Document>,
+  md5: &str,
+  target_entry: &str,
+) -> Option<&'a Document> {
+  if let Ok(uri) = virtual_uri(md5, "function", target_entry)
+    && let Some(doc) = docs.get(&uri)
+  {
+    return Some(doc);
   }
+  docs.values().find(|doc| {
+    doc.md5.eq_ignore_ascii_case(md5)
+      && doc
+        .entry
+        .as_deref()
+        .is_some_and(|doc_entry| doc_entry == target_entry || same_address(doc_entry, target_entry))
+  })
+}
+
+impl Engine {
   /// Builds the root [`CallHierarchyItem`] for the function or call expression at `pos`.
   pub(crate) async fn prepare_call_hierarchy(
-    &mut self,
+    &self,
     uri: &Uri,
     pos: Position,
   ) -> Result<Option<Vec<CallHierarchyItem>>> {
     let canon = canonical_virtual_uri(uri);
     let uri = &canon;
-    let (md5, entry, span, span_range) = {
-      let doc = self.docs.get(uri).context("Unknown virtual document")?;
+    let (md5, entry, span, span_range, body_start, header_name) = {
+      let state = self.read_state();
+      let doc = state.docs.get(uri).context("Unknown virtual document")?;
       if !doc.clean() {
         return Ok(None);
       }
@@ -272,7 +279,20 @@ impl Engine {
         .find(|s| s.start <= cursor && cursor < s.end)
         .cloned();
       let span_range = span.as_ref().map(|s| doc.range(s)).unwrap_or_default();
-      (doc.md5.clone(), doc.entry.clone(), span, span_range)
+      let body_start = doc.body_start();
+      let header_name = doc
+        .spans
+        .iter()
+        .find(|s| s.token.kind == "function" && s.start < body_start)
+        .map(|s| s.token.text.clone());
+      (
+        doc.md5.clone(),
+        doc.entry.clone(),
+        span,
+        span_range,
+        body_start,
+        header_name,
+      )
     };
 
     let target_symbol = if let Some(s) = &span {
@@ -294,11 +314,6 @@ impl Engine {
       None
     };
 
-    let body_start = {
-      let doc = self.docs.get(uri).context("Unknown virtual document")?;
-      doc.body_start()
-    };
-
     let (func_name, func_entry) = if let Some(sym) = target_symbol {
       (sym.display_name(), sym.address)
     } else if let Some(s) = &span
@@ -316,13 +331,7 @@ impl Engine {
       };
       (s.token.text.clone(), addr)
     } else if let Some(ref entry_addr) = entry {
-      let doc = self.docs.get(uri).context("Unknown virtual document")?;
-      let name = doc
-        .spans
-        .iter()
-        .find(|s| s.token.kind == "function" && s.start < body_start)
-        .map(|s| s.token.text.clone())
-        .unwrap_or_else(|| format!("sub_{entry_addr}"));
+      let name = header_name.unwrap_or_else(|| format!("sub_{entry_addr}"));
       (name, entry_addr.clone())
     } else {
       return Ok(None);
@@ -332,7 +341,8 @@ impl Engine {
       .as_deref()
       .is_some_and(|e| same_address(e, &func_entry));
     let (target_uri, target_range, target_sel_range) = if is_current {
-      let doc = self.docs.get(uri).context("Unknown virtual document")?;
+      let state = self.read_state();
+      let doc = state.docs.get(uri).context("Unknown virtual document")?;
       let body_start = doc.body_start();
       let decl = doc
         .spans
@@ -353,7 +363,8 @@ impl Engine {
     } else {
       match self.open(&md5, &func_entry).await {
         Ok(callee_uri) => {
-          let doc = self
+          let state = self.read_state();
+          let doc = state
             .docs
             .get(&callee_uri)
             .context("Unknown callee document")?;
@@ -408,8 +419,9 @@ impl Engine {
       .and_then(Value::as_str)
       .unwrap_or(&item.name);
 
+    let backend = self.backend();
     let records = list_operation(
-      self.backend.as_ref(),
+      backend.as_ref(),
       "function",
       "call.list",
       md5,
@@ -423,10 +435,12 @@ impl Engine {
     )
     .await?;
 
-    let mut result = Vec::new();
-    for caller in group_peer_calls(records) {
+    let groups = group_peer_calls(records);
+    let state = self.read_state();
+    let mut result = Vec::with_capacity(groups.len());
+    for caller in groups {
       let (caller_uri, caller_range, caller_sel_range, from_ranges) =
-        if let Some(caller_doc) = self.find_open_function_doc(md5, &caller.entry) {
+        if let Some(caller_doc) = find_open_function_doc(&state.docs, md5, &caller.entry) {
           let doc_entry = caller_doc.entry.as_deref().unwrap_or(&caller.entry);
           let uri = virtual_uri(md5, "function", doc_entry)?;
           let (range, sel) = open_document_ranges(caller_doc, &caller.name);
@@ -466,6 +480,7 @@ impl Engine {
         from_ranges,
       });
     }
+    drop(state);
 
     Ok(Some(result))
   }
@@ -489,8 +504,9 @@ impl Engine {
       .and_then(Value::as_str)
       .unwrap_or(&item.name);
 
+    let backend = self.backend();
     let records = list_operation(
-      self.backend.as_ref(),
+      backend.as_ref(),
       "function",
       "call.list",
       md5,
@@ -504,13 +520,15 @@ impl Engine {
     )
     .await?;
 
-    let source_doc = self.find_open_function_doc(md5, entry);
+    let groups = group_peer_calls(records);
+    let state = self.read_state();
+    let source_doc = find_open_function_doc(&state.docs, md5, entry);
     let source_sel_range = source_doc
       .map(|doc| open_document_ranges(doc, source_name).1)
       .unwrap_or_default();
 
-    let mut result = Vec::new();
-    for callee in group_peer_calls(records) {
+    let mut result = Vec::with_capacity(groups.len());
+    for callee in groups {
       let from_ranges = if let Some(doc) = source_doc {
         resolve_open_call_ranges(
           doc,
@@ -524,7 +542,7 @@ impl Engine {
       };
 
       let (callee_uri, callee_range, callee_sel_range) =
-        if let Some(callee_doc) = self.find_open_function_doc(md5, &callee.entry) {
+        if let Some(callee_doc) = find_open_function_doc(&state.docs, md5, &callee.entry) {
           let doc_entry = callee_doc.entry.as_deref().unwrap_or(&callee.entry);
           let uri = virtual_uri(md5, "function", doc_entry)?;
           let (range, sel) = open_document_ranges(callee_doc, &callee.name);
@@ -556,6 +574,7 @@ impl Engine {
         from_ranges,
       });
     }
+    drop(state);
 
     Ok(Some(result))
   }
