@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.8.0](https://github.com/ByteLandTechnology/ghidra-lsp/compare/v0.7.0...v0.8.0) (2026-11-26)
+
+
+### Features
+
+* forward firmware import flags and open local .gpr projects ([#39](https://github.com/ByteLandTechnology/ghidra-lsp/issues/39)) ([c76a73c](https://github.com/ByteLandTechnology/ghidra-lsp/commit/c76a73c0012f9c9671eb246bfe8f47631fc80f19))
+
+
+### Bug Fixes
+
+* **vscode:** reflow graph toolbars and chrome for narrow and short viewports ([#58](https://github.com/ByteLandTechnology/ghidra-lsp/issues/58)) ([942443b](https://github.com/ByteLandTechnology/ghidra-lsp/commit/942443b74bb391dc3dddb165338b6252ec5c0ef8))
+
 ## [0.7.0](https://github.com/ByteLandTechnology/ghidra-lsp/compare/v0.6.0...v0.7.0) (2026-11-26)
 
 

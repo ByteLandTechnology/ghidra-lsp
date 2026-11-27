@@ -74,14 +74,19 @@ impl Server {
         .await;
     }
 
-    let md5 = self.scoped_md5(arg).await?;
-    let active = self
-      .open_jobs
-      .lock()
-      .await
-      .iter()
-      .find(|(_, p)| p.md5 == md5 && p.phase != "ready" && p.error.is_none())
-      .map(|(k, v)| (k.clone(), v.clone()));
+    let md5 = self.scoped_md5(arg)?;
+    let active = {
+      let jobs = self.open_jobs.lock().await;
+      jobs
+        .iter()
+        .find(|(_, p)| p.md5 == md5 && p.phase == "analysis" && p.error.is_none())
+        .or_else(|| {
+          jobs
+            .iter()
+            .find(|(_, p)| p.md5 == md5 && p.phase != "ready" && p.error.is_none())
+        })
+        .map(|(k, v)| (k.clone(), v.clone()))
+    };
     if let Some((token, progress)) = active {
       ensure!(
         progress.phase != "opening",
@@ -159,6 +164,7 @@ impl Server {
     }
 
     if let Some(session_md5) = &md5 {
+      self.engine.invalidate_symbols(session_md5);
       self.changed(session_md5).await;
     }
     if let Some(value) = primary_value {
@@ -236,6 +242,7 @@ impl Server {
         }
       }
     }
+    self.engine.invalidate_symbols(md5);
     self.changed(md5).await;
     if let Some(value) = token_value {
       return Ok(value);

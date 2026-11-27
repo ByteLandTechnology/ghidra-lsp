@@ -11,9 +11,7 @@ use tower_lsp_server::ls_types::{Position, Uri};
 
 use super::Server;
 use crate::backend::{McpBackend, list_all};
-use crate::document::{
-  Document, SHOW_TEMPLATE_ARGUMENTS, canonical_virtual_uri, matches_text, same_address,
-};
+use crate::document::{SHOW_TEMPLATE_ARGUMENTS, canonical_virtual_uri, matches_text, same_address};
 use crate::workbench;
 
 impl Server {
@@ -32,11 +30,11 @@ impl Server {
           .and_then(Value::as_str)
           .context("md5 is required")?
           .to_ascii_lowercase();
-        self.engine.lock().await.select(&md5).await?;
+        self.engine.select(&md5).await?;
         Ok(json!({"md5": md5}))
       }
       "ghidra.functions" => {
-        let md5 = self.scoped_md5(&arg).await?;
+        let md5 = self.scoped_md5(&arg)?;
         let functions = list_all(
           backend,
           "function",
@@ -52,30 +50,29 @@ impl Server {
         Ok(json!({"items": functions, "coverage": coverage}))
       }
       "ghidra.openFunction" => {
-        let md5 = self.scoped_md5(&arg).await?;
+        let md5 = self.scoped_md5(&arg)?;
         let entry = arg
           .get("entry")
           .and_then(Value::as_str)
           .context("entry is required")?;
-        let uri = self.engine.lock().await.open(&md5, entry).await?;
+        let uri = self.engine.open(&md5, entry).await?;
         self.report(&uri).await;
         Ok(json!({"uri": uri}))
       }
       "ghidra.openSymbol" => {
-        let md5 = self.scoped_md5(&arg).await?;
+        let md5 = self.scoped_md5(&arg)?;
         let id = arg
           .get("id")
           .and_then(Value::as_str)
           .context("symbol id is required")?;
-        let mut e = self.engine.lock().await;
-        let symbol = e
+        let symbol = self
+          .engine
           .symbols(&md5)
           .await?
           .by_id(id)
           .cloned()
           .context("symbol no longer exists")?;
-        let location = e.symbol_location(&md5, &symbol).await?;
-        drop(e);
+        let location = self.engine.symbol_location(&md5, &symbol).await?;
         self.changed(&md5).await;
         Ok(json!({"uri": location.uri}))
       }
@@ -86,43 +83,56 @@ impl Server {
           .context("uri is required")?
           .parse()?;
         let uri = canonical_virtual_uri(&raw_uri);
-        let mut e = self.engine.lock().await;
-        let mut doc_uri = uri.clone();
-        if !e.docs.contains_key(&uri) {
-          let parsed = url::Url::parse(uri.as_str())?;
-          ensure!(parsed.scheme() == "ghidra", "expected a ghidra URI");
-          let md5 = parsed.host_str().context("missing session")?;
-          let path = parsed.path().strip_prefix('/').unwrap_or(parsed.path());
-          let (kind, raw_key) = path
-            .split_once('/')
-            .context("invalid virtual document path")?;
-          let key = percent_encoding::percent_decode_str(raw_key).decode_utf8()?;
-          if kind == "function" {
-            doc_uri = e.open(md5, &key).await?;
-          } else if matches!(kind, "symbol" | "references" | "type") {
-            let text = e.snapshot_text(md5, kind, &key).await?;
-            doc_uri = e.install(Document {
-              uri: uri.clone(),
-              md5: md5.into(),
-              entry: None,
-              base: text.clone(),
-              current: text.clone(),
-              saved: text,
-              version: None,
-              spans: vec![],
-              warning: None,
-            })?;
-          } else {
-            bail!("Open this symbol through Ghidra first");
+        let include_pending = arg.get("includePending").and_then(Value::as_bool) == Some(true);
+        {
+          let state = self.engine.read_state();
+          if let Some(doc) = state.docs.get(&uri) {
+            let text = if include_pending
+              && state
+                .pending
+                .get(&doc.md5)
+                .and_then(|plan| plan.expected.get(&doc.uri))
+                .is_some_and(|expected| matches_text(&doc.current, expected))
+            {
+              &doc.current
+            } else {
+              &doc.base
+            };
+            return Ok(json!({
+              "uri": doc.uri,
+              "text": text,
+              "md5": doc.md5,
+              "entry": doc.entry,
+              "warning": doc.warning,
+            }));
           }
         }
-        let doc = e
+        let parsed = url::Url::parse(uri.as_str())?;
+        ensure!(parsed.scheme() == "ghidra", "expected a ghidra URI");
+        let md5 = parsed.host_str().context("missing session")?;
+        let path = parsed.path().strip_prefix('/').unwrap_or(parsed.path());
+        let (kind, raw_key) = path
+          .split_once('/')
+          .context("invalid virtual document path")?;
+        let key = percent_encoding::percent_decode_str(raw_key).decode_utf8()?;
+        let doc_uri = if kind == "function" {
+          self.engine.open(md5, &key).await?
+        } else if matches!(kind, "symbol" | "references" | "type") {
+          self
+            .engine
+            .open_snapshot(&uri, md5, kind, &key, false)
+            .await?
+        } else {
+          bail!("Open this symbol through Ghidra first");
+        };
+        let state = self.engine.read_state();
+        let doc = state
           .docs
           .get(&doc_uri)
-          .or_else(|| e.docs.get(&uri))
+          .or_else(|| state.docs.get(&uri))
           .context("Unknown virtual document")?;
-        let text = if arg.get("includePending").and_then(Value::as_bool) == Some(true)
-          && e
+        let text = if include_pending
+          && state
             .pending
             .get(&doc.md5)
             .and_then(|plan| plan.expected.get(&doc.uri))
@@ -147,7 +157,7 @@ impl Server {
         Ok(json!({}))
       }
       "ghidra.reveal" => {
-        let md5 = self.scoped_md5(&arg).await?;
+        let md5 = self.scoped_md5(&arg)?;
         let address_text = arg
           .get("address")
           .and_then(Value::as_str)
@@ -168,9 +178,9 @@ impl Server {
           .get("address")
           .and_then(Value::as_str)
           .unwrap_or(address_text);
-        let mut e = self.engine.lock().await;
-        let uri = e.open(&md5, entry).await?;
-        let doc = &e.docs[&uri];
+        let uri = self.engine.open(&md5, entry).await?;
+        let state = self.engine.read_state();
+        let doc = state.docs.get(&uri).context("Unknown virtual document")?;
         ensure!(
           doc.clean(),
           "Save or discard the pending edit before revealing an assembly address in decompilation"
@@ -204,14 +214,15 @@ impl Server {
             .cloned()
             .context("position is required")?,
         )?;
-        let mut e = self.engine.lock().await;
-        let md5 = e
+        let md5 = self
+          .engine
+          .read_state()
           .docs
           .get(&uri)
           .context("Unknown virtual document")?
           .md5
           .clone();
-        match e.type_definition(&uri, p).await? {
+        match self.engine.type_definition(&uri, p).await? {
           Some(data_type) => Ok(json!({"md5": md5, "type": data_type})),
           None => Ok(Value::Null),
         }
@@ -221,15 +232,15 @@ impl Server {
   }
 
   /// Maps a cursor position, maps an instruction address, or returns all UTF-16 location spans.
-  pub(super) async fn execute_location_command(&self, arg: Value) -> Result<Value> {
+  pub(super) fn execute_location_command(&self, arg: Value) -> Result<Value> {
     let raw_uri: Uri = arg
       .get("uri")
       .and_then(Value::as_str)
       .context("uri is required")?
       .parse()?;
     let uri = canonical_virtual_uri(&raw_uri);
-    let e = self.engine.lock().await;
-    let doc = e.docs.get(&uri).context("Unknown virtual document")?;
+    let state = self.engine.read_state();
+    let doc = state.docs.get(&uri).context("Unknown virtual document")?;
     if let Some(version) = arg.get("version") {
       ensure!(
         *version == json!(doc.version),
