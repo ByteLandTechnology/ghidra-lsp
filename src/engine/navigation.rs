@@ -9,7 +9,7 @@ use anyhow::{Context, Result, bail, ensure};
 use serde_json::{Value, json};
 use tower_lsp_server::ls_types::{Location, Position, Range, Uri};
 
-use super::{Engine, find_function_symbol};
+use super::{Engine, EngineState, find_function_symbol};
 use crate::address::parse_address;
 use crate::backend::{McpBackend, list_all};
 use crate::document::{
@@ -156,6 +156,13 @@ async fn resolve_missing_from_functions(
 impl Engine {
   /// Resolves the unambiguous symbol, owning session MD5, and token range at `pos`.
   pub(crate) fn target(&self, uri: &Uri, pos: Position) -> Result<(String, Symbol, Range)> {
+    self.read_state().target(uri, pos)
+  }
+}
+
+impl EngineState {
+  /// Resolves the unambiguous symbol, owning session MD5, and token range at `pos`.
+  pub(crate) fn target(&self, uri: &Uri, pos: Position) -> Result<(String, Symbol, Range)> {
     let canon = canonical_virtual_uri(uri);
     let uri = &canon;
     let doc = self
@@ -255,17 +262,16 @@ impl Engine {
     }
     bail!("No unambiguous symbol at this position; refresh if modified")
   }
+}
 
+impl Engine {
   /// Resolves the definition location for the symbol, call, local, or type at `pos`.
-  pub(crate) async fn goto_definition(
-    &mut self,
-    uri: &Uri,
-    pos: Position,
-  ) -> Result<Option<Location>> {
+  pub(crate) async fn goto_definition(&self, uri: &Uri, pos: Position) -> Result<Option<Location>> {
     let canon = canonical_virtual_uri(uri);
     let uri = &canon;
-    let (md5, span, entry, fallback_word) = {
-      let Some(doc) = self.docs.get(uri) else {
+    let (md5, span, entry, fallback_word, body_start) = {
+      let state = self.read_state();
+      let Some(doc) = state.docs.get(uri) else {
         return Ok(None);
       };
       if !doc.clean() {
@@ -279,22 +285,17 @@ impl Engine {
         .iter()
         .find(|s| s.start <= c && c < s.end)
         .cloned();
+      let body_start = doc.body_start();
+      // Navigate directly when the cursor is on the enclosing function header.
+      if let Some(s) = &span
+        && s.token.kind == "function"
+        && s.start < body_start
+      {
+        return Ok(Some(Location::new(uri.clone(), doc.range(s))));
+      }
       let word = word_at(&doc.base, pos).map(|(w, r)| (w.to_owned(), r));
-      (doc.md5.clone(), span, doc.entry.clone(), word)
+      (doc.md5.clone(), span, doc.entry.clone(), word, body_start)
     };
-
-    // Navigate directly when the cursor is on the enclosing function header.
-    let body_start = {
-      let doc = self.docs.get(uri).context("Unknown virtual document")?;
-      doc.body_start()
-    };
-    if let Some(s) = &span
-      && s.token.kind == "function"
-      && s.start < body_start
-    {
-      let doc = self.docs.get(uri).context("Unknown virtual document")?;
-      return Ok(Some(Location::new(uri.clone(), doc.range(s))));
-    }
 
     if let Some(s) = &span
       && let Some(symbol) = &s.symbol
@@ -322,7 +323,8 @@ impl Engine {
 
       if let Some(addr) = callee_addr {
         if entry.as_deref().is_some_and(|e| same_address(e, &addr)) {
-          let doc = &self.docs[uri];
+          let state = self.read_state();
+          let doc = state.docs.get(uri).context("Unknown virtual document")?;
           let decl_span = doc
             .spans
             .iter()
@@ -332,14 +334,16 @@ impl Engine {
         }
 
         if let Ok(target_uri) = self.open(&md5, &addr).await {
-          let doc = &self.docs[&target_uri];
-          let target_body = doc.body_start();
-          let decl_span = doc
-            .spans
-            .iter()
-            .find(|sp| sp.token.kind == "function" && sp.start < target_body);
-          let range = decl_span.map(|sp| doc.range(sp)).unwrap_or_default();
-          return Ok(Some(Location::new(target_uri, range)));
+          let state = self.read_state();
+          if let Some(doc) = state.docs.get(&target_uri) {
+            let target_body = doc.body_start();
+            let decl_span = doc
+              .spans
+              .iter()
+              .find(|sp| sp.token.kind == "function" && sp.start < target_body);
+            let range = decl_span.map(|sp| doc.range(sp)).unwrap_or_default();
+            return Ok(Some(Location::new(target_uri, range)));
+          }
         }
       }
     }
@@ -347,8 +351,10 @@ impl Engine {
     if let Some(s) = &span
       && matches!(s.token.kind.as_str(), "variable" | "parameter")
     {
-      let doc = &self.docs[uri];
-      if let Some(decl) = doc.spans.iter().find(|sp| sp.token.text == s.token.text) {
+      let state = self.read_state();
+      if let Some(doc) = state.docs.get(uri)
+        && let Some(decl) = doc.spans.iter().find(|sp| sp.token.text == s.token.text)
+      {
         return Ok(Some(Location::new(uri.clone(), doc.range(decl))));
       }
     }
@@ -394,10 +400,11 @@ impl Engine {
   }
 
   /// Opens or synthesizes the canonical [`Location`] for `symbol` in session `md5`.
-  pub(crate) async fn symbol_location(&mut self, md5: &str, symbol: &Symbol) -> Result<Location> {
+  pub(crate) async fn symbol_location(&self, md5: &str, symbol: &Symbol) -> Result<Location> {
     if symbol.local() {
       let uri = self.open(md5, &symbol.address).await?;
-      let doc = self
+      let state = self.read_state();
+      let doc = state
         .docs
         .get(&uri)
         .context("Missing opened function document")?;
@@ -411,7 +418,8 @@ impl Engine {
     if symbol.kind.eq_ignore_ascii_case("function")
       && let Ok(uri) = self.open(md5, &symbol.address).await
     {
-      let doc = self
+      let state = self.read_state();
+      let doc = state
         .docs
         .get(&uri)
         .context("Missing opened function document")?;
@@ -424,34 +432,26 @@ impl Engine {
       return Ok(Location::new(uri, range));
     }
     let uri = virtual_uri(md5, "symbol", &symbol.id)?;
-    if self.docs.get(&uri).is_none_or(Document::clean) {
-      let code = self.snapshot_text(md5, "symbol", &symbol.id).await?;
-      let version = self.docs.get(&uri).and_then(|doc| doc.version);
-      self.install(Document {
-        uri: uri.clone(),
-        md5: md5.into(),
-        entry: None,
-        base: code.clone(),
-        current: code.clone(),
-        saved: code,
-        version,
-        spans: vec![],
-        warning: None,
-      })?;
-    }
+    let uri = self
+      .open_snapshot(&uri, md5, "symbol", &symbol.id, true)
+      .await?;
     Ok(Location::new(uri, Range::default()))
   }
 
   /// Collects in-document and cross-function references targeting `symbol`.
   pub(crate) async fn references(
-    &mut self,
+    &self,
     md5: &str,
     symbol: &Symbol,
     declaration: bool,
   ) -> Result<Vec<Location>> {
     if symbol.local() {
       let uri = self.open(md5, &symbol.address).await?;
-      let doc = &self.docs[&uri];
+      let state = self.read_state();
+      let doc = state
+        .docs
+        .get(&uri)
+        .context("Missing opened function document")?;
       ensure!(
         doc.clean(),
         "Refresh modified decompilation before finding references"
@@ -466,9 +466,13 @@ impl Engine {
           .collect(),
       );
     }
+    let (start_gen, start_epoch) = {
+      let state = self.read_state();
+      (state.generation, state.epoch(md5))
+    };
+    let backend = self.backend();
     let current_symbol: Symbol = serde_json::from_value(
-      self
-        .backend
+      backend
         .call(
           "symbol",
           "get",
@@ -479,14 +483,13 @@ impl Engine {
     )?;
     let symbol = &current_symbol;
     let refs = list_all(
-      self.backend.as_ref(),
+      backend.as_ref(),
       "reference",
       md5,
       json!({"filter": {"direction": "to", "to": symbol.address}, "page": {"limit": 1000}}),
     )
     .await?;
-    let fallback_entries =
-      resolve_missing_from_functions(self.backend.as_ref(), md5, &refs).await?;
+    let fallback_entries = resolve_missing_from_functions(backend.as_ref(), md5, &refs).await?;
     let mut locations = vec![];
     let mut unmapped = vec![];
     for reference in refs {
@@ -506,8 +509,10 @@ impl Engine {
       if let Some(entry) = entry_opt
         && let Ok(uri) = self.open(md5, entry).await
       {
-        let doc = &self.docs[&uri];
-        if doc.current == doc.base {
+        let state = self.read_state();
+        if let Some(doc) = state.docs.get(&uri)
+          && doc.current == doc.base
+        {
           for span in &doc.spans {
             if span.symbol.as_ref().is_some_and(|s| s.id == symbol.id)
               && span
@@ -541,17 +546,21 @@ impl Engine {
         symbol.address,
         unmapped.join("\n")
       );
+      let mut state = self.write_state();
+      ensure!(
+        !state.is_closed_since(md5, start_epoch, start_gen),
+        "Session was closed"
+      );
       // Never overwrite a user-modified reference document.
-      if self.docs.get(&uri).is_none_or(Document::clean) {
-        let version = self.docs.get(&uri).and_then(|doc| doc.version);
-        self.install(Document {
+      if state.docs.get(&uri).is_none_or(Document::clean) {
+        state.install(Document {
           uri: uri.clone(),
           md5: md5.into(),
           entry: None,
           base: code.clone(),
           current: code.clone(),
           saved: code,
-          version,
+          version: None,
           spans: vec![],
           warning: None,
         })?;

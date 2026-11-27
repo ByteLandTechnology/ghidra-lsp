@@ -43,12 +43,12 @@ impl Server {
   ) -> Result<Value> {
     match command {
       "ghidra.programMeta" => {
-        let md5 = self.scoped_md5(&arg).await?;
+        let md5 = self.scoped_md5(&arg)?;
         let show_template_arguments = show_templates_option(&arg);
         program_meta(backend, &self.view_cache, &md5, show_template_arguments).await
       }
       "ghidra.resolveTarget" => {
-        let md5 = self.scoped_md5(&arg).await?;
+        let md5 = self.scoped_md5(&arg)?;
         let input = arg
           .get("input")
           .or_else(|| arg.get("target"))
@@ -58,7 +58,7 @@ impl Server {
         resolve_target(backend, &self.view_cache, &md5, input, current_address).await
       }
       "ghidra.listingWindow" => {
-        let md5 = self.scoped_md5(&arg).await?;
+        let md5 = self.scoped_md5(&arg)?;
         let req = ListingWindowRequest {
           md5: &md5,
           address: arg.get("address").and_then(Value::as_str),
@@ -73,7 +73,7 @@ impl Server {
         listing_window(backend, &self.view_cache, req).await
       }
       "ghidra.memoryWindow" => {
-        let md5 = self.scoped_md5(&arg).await?;
+        let md5 = self.scoped_md5(&arg)?;
         let req = MemoryWindowRequest {
           md5: &md5,
           address: arg.get("address").and_then(Value::as_str),
@@ -87,14 +87,14 @@ impl Server {
       }
       "ghidra.inspectBytes" => self.handle_inspect_bytes(&arg, backend).await,
       "ghidra.controlFlowGraph" => {
-        let md5 = self.scoped_md5(&arg).await?;
+        let md5 = self.scoped_md5(&arg)?;
         let entry = arg.get("entry").and_then(Value::as_str);
         let address = arg.get("address").and_then(Value::as_str);
         let show_template_arguments = show_templates_option(&arg);
         control_flow_graph(backend, &md5, entry, address, show_template_arguments).await
       }
       "ghidra.callGraph" => {
-        let md5 = self.scoped_md5(&arg).await?;
+        let md5 = self.scoped_md5(&arg)?;
         let expansion = arg
           .get("expansion")
           .filter(|v| !v.is_null())
@@ -144,7 +144,7 @@ impl Server {
       || arg.get("addressSizeBits").and_then(Value::as_u64).is_none()
       || arg.get("defaultSpace").and_then(Value::as_str).is_none()
       || arg.get("addressWidth").and_then(Value::as_u64).is_none();
-    let meta = if need_meta && let Ok(md5) = self.scoped_md5(arg).await {
+    let meta = if need_meta && let Ok(md5) = self.scoped_md5(arg) {
       Some(program_meta(backend, &self.view_cache, &md5, false).await?)
     } else {
       None
