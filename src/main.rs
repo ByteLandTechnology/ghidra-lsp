@@ -63,6 +63,7 @@ async fn main() -> anyhow::Result<()> {
   };
   let (service, socket) = LspService::new(move |client| Server::new(client, config.clone()));
   LspServer::new(tokio::io::stdin(), tokio::io::stdout(), socket)
+    .concurrency_level(64)
     .serve(service)
     .await;
   Ok(())
