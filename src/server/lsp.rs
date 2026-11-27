@@ -18,13 +18,13 @@ use tower_lsp_server::ls_types::{
   DocumentHighlight, DocumentHighlightParams, DocumentLink, DocumentLinkOptions,
   DocumentLinkParams, DocumentSymbolParams, DocumentSymbolResponse, ExecuteCommandOptions,
   ExecuteCommandParams, FoldingRange, FoldingRangeParams, FoldingRangeProviderCapability,
-  GotoDefinitionParams, GotoDefinitionResponse, Hover, HoverContents, HoverParams,
-  HoverProviderCapability, ImplementationProviderCapability, InitializeParams, InitializeResult,
-  InlayHint, InlayHintParams, Location, MarkupContent, MarkupKind, MessageType, OneOf,
-  PositionEncodingKind, PrepareRenameResponse, ReferenceParams, RenameOptions, RenameParams,
-  SaveOptions, SemanticTokens, SemanticTokensFullOptions, SemanticTokensOptions,
-  SemanticTokensParams, SemanticTokensResult, SemanticTokensServerCapabilities, ServerCapabilities,
-  ServerInfo, SignatureHelp, SignatureHelpOptions, SignatureHelpParams, TextDocumentPositionParams,
+  GotoDefinitionParams, GotoDefinitionResponse, Hover, HoverParams, HoverProviderCapability,
+  ImplementationProviderCapability, InitializeParams, InitializeResult, InlayHint, InlayHintParams,
+  Location, MessageType, OneOf, PositionEncodingKind, PrepareRenameResponse, ReferenceParams,
+  RenameOptions, RenameParams, SaveOptions, SemanticTokens, SemanticTokensFullOptions,
+  SemanticTokensOptions, SemanticTokensParams, SemanticTokensResult,
+  SemanticTokensServerCapabilities, ServerCapabilities, ServerInfo, SignatureHelp,
+  SignatureHelpOptions, SignatureHelpParams, TextDocumentPositionParams,
   TextDocumentSyncCapability, TextDocumentSyncKind, TextDocumentSyncOptions,
   TextDocumentSyncSaveOptions, TypeDefinitionProviderCapability, WorkspaceEdit, WorkspaceSymbol,
   WorkspaceSymbolOptions, WorkspaceSymbolParams, WorkspaceSymbolResponse,
@@ -33,12 +33,10 @@ use tower_lsp_server::ls_types::{
 };
 use tower_lsp_server::{LanguageServer, jsonrpc};
 
-use super::{COMMANDS, Server, format_storage, rpc};
+use super::{COMMANDS, Server, rpc};
 use crate::backend::{Config, McpBackend};
-use crate::document::{
-  Document, SHOW_TEMPLATE_ARGUMENTS, canonical_virtual_uri, data_type_name, matches_text, offset,
-};
-use crate::engine::Engine;
+use crate::document::{SHOW_TEMPLATE_ARGUMENTS, canonical_virtual_uri, matches_text, offset};
+use crate::engine::ClientBuffer;
 use crate::workbench;
 
 impl LanguageServer for Server {
@@ -79,7 +77,7 @@ impl LanguageServer for Server {
         config[key] = value.clone();
       }
       let config: Config = serde_json::from_value(config).map_err(rpc)?;
-      *self.engine.lock().await = Engine::new(Arc::new(McpBackend::new(config)));
+      self.swap_backend(Arc::new(McpBackend::new(config)));
       self.view_cache.invalidate_all().await;
     }
     Ok(InitializeResult {
@@ -177,76 +175,154 @@ impl LanguageServer for Server {
   async fn did_open(&self, params: DidOpenTextDocumentParams) {
     let item = params.text_document;
     let uri = canonical_virtual_uri(&item.uri);
-    let mut e = self.engine.lock().await;
-    if !e.docs.contains_key(&uri)
-      && let Ok(parsed) = url::Url::parse(uri.as_str())
-      && parsed.scheme() == "ghidra"
-      && let Some(md5) = parsed.host_str()
-    {
+    let parsed_ghidra = url::Url::parse(uri.as_str()).ok().and_then(|parsed| {
+      if parsed.scheme() != "ghidra" {
+        return None;
+      }
+      let md5 = parsed.host_str()?.to_owned();
       let path = parsed.path().strip_prefix('/').unwrap_or(parsed.path());
-      if let Some((kind, raw_key)) = path.split_once('/')
-        && let Ok(key) = percent_encoding::percent_decode_str(raw_key).decode_utf8()
-      {
-        if kind == "function" {
-          let _ = e.open(md5, &key).await;
-        } else if matches!(kind, "symbol" | "references" | "type")
-          && let Ok(text) = e.snapshot_text(md5, kind, &key).await
-        {
-          let _ = e.install(Document {
-            uri: uri.clone(),
-            md5: md5.into(),
-            entry: None,
-            base: text.clone(),
-            current: text.clone(),
-            saved: text,
-            version: None,
-            spans: vec![],
-            warning: None,
-          });
+      let (kind, raw_key) = path.split_once('/')?;
+      let key = percent_encoding::percent_decode_str(raw_key)
+        .decode_utf8()
+        .ok()?
+        .into_owned();
+      Some((md5, kind.to_owned(), key))
+    });
+    let already_open = {
+      let mut state = self.engine.write_state();
+      if let Some(doc) = state.docs.get_mut(&uri) {
+        if doc.version.is_none_or(|ver| ver <= item.version) {
+          doc.current = item.text;
+          doc.version = Some(item.version);
         }
+        true
+      } else {
+        let should_store = match state.client_buffers.get(&uri) {
+          Some(ClientBuffer::Open { version, .. }) => *version <= item.version,
+          _ => true,
+        };
+        if should_store {
+          state.client_buffers.insert(
+            uri.clone(),
+            ClientBuffer::Open {
+              version: item.version,
+              text: item.text,
+            },
+          );
+        }
+        false
+      }
+    };
+    if already_open {
+      self.report(&uri).await;
+      return;
+    }
+    let mut target_uri = uri.clone();
+    if let Some((md5, kind, key)) = parsed_ghidra {
+      if kind == "function" {
+        if let Ok(opened) = self.engine.open(&md5, &key).await {
+          target_uri = opened;
+        }
+      } else if matches!(kind.as_str(), "symbol" | "references" | "type")
+        && let Ok(opened) = self
+          .engine
+          .open_snapshot(&uri, &md5, &kind, &key, false)
+          .await
+      {
+        target_uri = opened;
       }
     }
-    if let Some(doc) = e.docs.get_mut(&uri) {
-      doc.current = item.text;
-      doc.version = Some(item.version);
+    let closed_early = {
+      let mut state = self.engine.write_state();
+      let pending_buffer = state.client_buffers.remove(&uri).or_else(|| {
+        (target_uri != uri)
+          .then(|| state.client_buffers.remove(&target_uri))
+          .flatten()
+      });
+      match pending_buffer {
+        Some(ClientBuffer::Closed) => {
+          state.close_document(&target_uri);
+          Some(!state.docs.contains_key(&target_uri))
+        }
+        Some(ClientBuffer::Open { version, text }) => {
+          if let Some(doc) = state.docs.get_mut(&target_uri)
+            && doc.version.is_none_or(|ver| ver <= version)
+          {
+            doc.current = text;
+            doc.version = Some(version);
+          }
+          None
+        }
+        None => None,
+      }
+    };
+    if let Some(removed) = closed_early {
+      if removed {
+        self
+          .client
+          .publish_diagnostics(target_uri, vec![], None)
+          .await;
+      }
+      return;
     }
-    drop(e);
-    self.report(&uri).await;
+    self.report(&target_uri).await;
   }
 
   async fn did_change(&self, params: DidChangeTextDocumentParams) {
     let uri = canonical_virtual_uri(&params.text_document.uri);
-    if let Some(doc) = self.engine.lock().await.docs.get_mut(&uri)
-      && let Some(change) = params.content_changes.into_iter().last()
-      && change.range.is_none()
+    let Some(change) = params.content_changes.into_iter().last() else {
+      return;
+    };
+    if change.range.is_some() {
+      return;
+    }
+    let new_ver = params.text_document.version;
+    let mut state = self.engine.write_state();
+    if let Some(doc) = state.docs.get_mut(&uri) {
+      if doc.version.is_none_or(|ver| ver <= new_ver) {
+        doc.current = change.text;
+        doc.version = Some(new_ver);
+      }
+    } else if let Some(ClientBuffer::Open { version, text }) = state.client_buffers.get_mut(&uri)
+      && *version <= new_ver
     {
-      doc.current = change.text;
-      doc.version = Some(params.text_document.version);
+      *version = new_ver;
+      *text = change.text;
     }
   }
 
   async fn did_close(&self, params: DidCloseTextDocumentParams) {
     let uri = canonical_virtual_uri(&params.text_document.uri);
     let removed = {
-      let mut e = self.engine.lock().await;
-      let keep_preview = self.readonly_documents.load(Ordering::Relaxed)
-        && e.docs.get(&uri).is_some_and(|doc| {
-          e.pending
-            .get(&doc.md5)
-            .and_then(|plan| plan.expected.get(&uri))
-            .is_some_and(|expected| matches_text(&doc.current, expected))
-        });
-      if let Some(doc) = e.docs.get_mut(&uri) {
-        if !keep_preview {
-          doc.current = doc.base.clone();
+      let mut state = self.engine.write_state();
+      if !state.docs.contains_key(&uri) {
+        if state.client_buffers.contains_key(&uri) {
+          state
+            .client_buffers
+            .insert(uri.clone(), ClientBuffer::Closed);
         }
-        doc.version = None;
-      }
-      if keep_preview {
         false
       } else {
-        e.close_document(&uri);
-        !e.docs.contains_key(&uri)
+        let keep_preview = self.readonly_documents.load(Ordering::Relaxed)
+          && state.docs.get(&uri).is_some_and(|doc| {
+            state
+              .pending
+              .get(&doc.md5)
+              .and_then(|plan| plan.expected.get(&uri))
+              .is_some_and(|expected| matches_text(&doc.current, expected))
+          });
+        if let Some(doc) = state.docs.get_mut(&uri) {
+          if !keep_preview {
+            doc.current = doc.base.clone();
+          }
+          doc.version = None;
+        }
+        if keep_preview {
+          false
+        } else {
+          state.close_document(&uri);
+          !state.docs.contains_key(&uri)
+        }
       }
     };
     if removed {
@@ -256,11 +332,13 @@ impl LanguageServer for Server {
 
   async fn did_save(&self, params: DidSaveTextDocumentParams) {
     let uri = canonical_virtual_uri(&params.text_document.uri);
-    let mut e = self.engine.lock().await;
-    let md5 = e.docs.get(&uri).map(|d| d.md5.clone());
-    let result = e.save(&uri, params.text).await;
-    drop(e);
-    let result = match result {
+    let md5 = self
+      .engine
+      .read_state()
+      .docs
+      .get(&uri)
+      .map(|d| d.md5.clone());
+    let result = match self.engine.save(&uri, params.text).await {
       Ok(changes) => self.apply_refresh(changes).await,
       Err(e) => Err(e),
     };
@@ -278,172 +356,7 @@ impl LanguageServer for Server {
   }
 
   async fn hover(&self, params: HoverParams) -> jsonrpc::Result<Option<Hover>> {
-    let p = params.text_document_position_params;
-    let uri = canonical_virtual_uri(&p.text_document.uri);
-    let target = {
-      let e = self.engine.lock().await;
-      e.target(&uri, p.position).ok().map(|(md5, symbol, range)| {
-        let local = e.local_detail(&symbol);
-        let cached_fn = e
-          .functions
-          .get(&(md5.clone(), symbol.address.clone()))
-          .cloned();
-        let backend = e.backend.clone();
-        (md5, symbol, range, local, cached_fn, backend)
-      })
-    };
-    if let Some((md5, symbol, range, local, cached_fn, backend)) = target {
-      let detail = if let Some(local) = local {
-        let dtype = local
-          .get("data_type")
-          .filter(|v| !v.is_null())
-          .map(data_type_name)
-          .unwrap_or_default();
-        let storage = format_storage(local.get("storage"));
-        match (dtype.is_empty(), storage.is_empty()) {
-          (false, false) => format!("```c\n{dtype}\n```\n\n`{storage}`"),
-          (false, true) => format!("```c\n{dtype}\n```"),
-          (true, false) => format!("`{storage}`"),
-          (true, true) => String::new(),
-        }
-      } else if symbol.kind.eq_ignore_ascii_case("function") {
-        let value = match cached_fn {
-          Some(v) => Some(v),
-          None => backend
-            .call(
-              "function",
-              "get",
-              Some(&md5),
-              json!({"selector": {"entry": symbol.address}}),
-            )
-            .await
-            .ok(),
-        };
-        let signature = value
-          .as_ref()
-          .and_then(|v| {
-            v.get("signature").map(|sig| {
-              sig
-                .as_str()
-                .map(str::to_owned)
-                .unwrap_or_else(|| sig.to_string())
-            })
-          })
-          .unwrap_or_else(|| symbol.display_name());
-        let comment = value
-          .as_ref()
-          .and_then(|v| v.get("comment").and_then(Value::as_str))
-          .unwrap_or("");
-        if comment.is_empty() {
-          format!("```c\n{signature}\n```")
-        } else {
-          format!("```c\n{signature}\n```\n\n{comment}")
-        }
-      } else {
-        backend
-          .call(
-            "global_variable",
-            "get",
-            Some(&md5),
-            json!({"selector": {"address": symbol.address}}),
-          )
-          .await
-          .ok()
-          .map(|value| {
-            let dtype = value
-              .get("data_type")
-              .filter(|v| !v.is_null())
-              .map(data_type_name)
-              .unwrap_or_default();
-            let repr = value
-              .get("representation")
-              .or_else(|| value.get("value"))
-              .map(|v| {
-                v.as_str()
-                  .map(str::to_owned)
-                  .unwrap_or_else(|| v.to_string())
-              })
-              .unwrap_or_default();
-            match (dtype.is_empty(), repr.is_empty()) {
-              (false, false) => format!("```c\n{dtype}\n```\n\n`{repr}`"),
-              (false, true) => format!("```c\n{dtype}\n```"),
-              (true, false) => format!("`{repr}`"),
-              (true, true) => String::new(),
-            }
-          })
-          .unwrap_or_default()
-      };
-      let demangled_full = symbol.full_name();
-      let raw_mangled =
-        (!symbol.name.is_empty() && symbol.name != demangled_full).then_some(symbol.name.as_str());
-      let extra_names = match (symbol.display_name() != demangled_full, raw_mangled) {
-        (true, Some(raw)) => format!(
-          "\n\n`{}` (`{}`)",
-          demangled_full.replace('`', "'"),
-          raw.replace('`', "'")
-        ),
-        (true, None) => format!("\n\n`{}`", demangled_full.replace('`', "'")),
-        (false, Some(raw)) => format!("\n\n`{}`", raw.replace('`', "'")),
-        (false, None) => String::new(),
-      };
-      return Ok(Some(Hover {
-        contents: HoverContents::Markup(MarkupContent {
-          kind: MarkupKind::Markdown,
-          value: format!(
-            "### {}\n`{} · {}`{}{}",
-            symbol
-              .display_name()
-              .chars()
-              .fold(String::new(), |mut text, ch| {
-                if ch.is_ascii_punctuation() {
-                  text.push('\\');
-                }
-                text.push(ch);
-                text
-              }),
-            symbol.kind,
-            symbol.address,
-            extra_names,
-            if detail.is_empty() {
-              String::new()
-            } else {
-              format!("\n\n{detail}")
-            }
-          ),
-        }),
-        range: Some(range),
-      }));
-    }
-
-    let mut e = self.engine.lock().await;
-    if let Ok(Some(type_data)) = e.type_definition(&uri, p.position).await {
-      let doc = e.docs.get(&uri);
-      let range = doc.and_then(|d| d.span_at(p.position).map(|s| d.range(s)));
-      let name = type_data
-        .get("name")
-        .and_then(Value::as_str)
-        .unwrap_or("Type");
-      let kind = type_data
-        .get("kind")
-        .and_then(Value::as_str)
-        .unwrap_or("type");
-      let path = type_data.get("path").and_then(Value::as_str).unwrap_or("");
-      let length = type_data
-        .get("length")
-        .or_else(|| type_data.get("size"))
-        .and_then(Value::as_u64)
-        .map(|s| format!("{s} bytes (`0x{s:x}`)"))
-        .unwrap_or_else(|| "variable/unknown".into());
-      let value = format!("```c\n{kind} {name}\n```\n- **Path**: `{path}`\n- **Size**: {length}");
-      return Ok(Some(Hover {
-        contents: HoverContents::Markup(MarkupContent {
-          kind: MarkupKind::Markdown,
-          value,
-        }),
-        range,
-      }));
-    }
-    Ok(None)
+    self.handle_hover(params).await
   }
 
   async fn completion(
@@ -454,8 +367,6 @@ impl LanguageServer for Server {
     let uri = canonical_virtual_uri(&p.text_document.uri);
     let items = self
       .engine
-      .lock()
-      .await
       .completion(&uri, p.position)
       .await
       .map_err(rpc)?;
@@ -467,8 +378,8 @@ impl LanguageServer for Server {
     params: SemanticTokensParams,
   ) -> jsonrpc::Result<Option<SemanticTokensResult>> {
     let uri = canonical_virtual_uri(&params.text_document.uri);
-    let e = self.engine.lock().await;
-    let Some(doc) = e.docs.get(&uri) else {
+    let state = self.engine.read_state();
+    let Some(doc) = state.docs.get(&uri) else {
       return Ok(None);
     };
     Ok(Some(SemanticTokensResult::Tokens(SemanticTokens {
@@ -493,8 +404,8 @@ impl LanguageServer for Server {
       })
     };
     let uri = canonical_virtual_uri(&params.text_document.uri);
-    let e = self.engine.lock().await;
-    let Some(doc) = e.docs.get(&uri) else {
+    let state = self.engine.read_state();
+    let Some(doc) = state.docs.get(&uri) else {
       return Ok(None);
     };
     let Some(entry) = doc.entry.as_deref() else {
@@ -607,8 +518,6 @@ impl LanguageServer for Server {
     let uri = canonical_virtual_uri(&p.text_document.uri);
     self
       .engine
-      .lock()
-      .await
       .signature_help(&uri, p.position)
       .await
       .map_err(rpc)
@@ -620,9 +529,11 @@ impl LanguageServer for Server {
   ) -> jsonrpc::Result<Option<GotoDefinitionResponse>> {
     let p = params.text_document_position_params;
     let uri = canonical_virtual_uri(&p.text_document.uri);
-    let mut e = self.engine.lock().await;
-    let location = e.goto_definition(&uri, p.position).await.map_err(rpc)?;
-    drop(e);
+    let location = self
+      .engine
+      .goto_definition(&uri, p.position)
+      .await
+      .map_err(rpc)?;
     if let Some(loc) = &location
       && loc.uri.as_str().contains("/symbol/")
       && let Ok(parsed) = url::Url::parse(loc.uri.as_str())
@@ -653,12 +564,11 @@ impl LanguageServer for Server {
   ) -> jsonrpc::Result<Option<GotoDefinitionResponse>> {
     let p = params.text_document_position_params;
     let uri = canonical_virtual_uri(&p.text_document.uri);
-    let mut e = self.engine.lock().await;
-    let location = e
+    let location = self
+      .engine
       .goto_type_definition(&uri, p.position)
       .await
       .map_err(rpc)?;
-    drop(e);
     if let Some(loc) = &location
       && let Ok(parsed) = url::Url::parse(loc.uri.as_str())
       && let Some(md5) = parsed.host_str()
@@ -671,15 +581,14 @@ impl LanguageServer for Server {
   async fn references(&self, params: ReferenceParams) -> jsonrpc::Result<Option<Vec<Location>>> {
     let p = params.text_document_position;
     let uri = canonical_virtual_uri(&p.text_document.uri);
-    let mut e = self.engine.lock().await;
-    let Ok((md5, symbol, _)) = e.target(&uri, p.position) else {
+    let Ok((md5, symbol, _)) = self.engine.target(&uri, p.position) else {
       return Ok(None);
     };
-    let locations = e
+    let locations = self
+      .engine
       .references(&md5, &symbol, params.context.include_declaration)
       .await
       .map_err(rpc)?;
-    drop(e);
     if locations
       .iter()
       .any(|location| location.uri.as_str().contains("/references/"))
@@ -695,8 +604,10 @@ impl LanguageServer for Server {
   ) -> jsonrpc::Result<Option<Vec<DocumentHighlight>>> {
     let p = params.text_document_position_params;
     let uri = canonical_virtual_uri(&p.text_document.uri);
-    let e = self.engine.lock().await;
-    e.document_highlight(&uri, p.position).map_err(rpc)
+    self
+      .engine
+      .document_highlight(&uri, p.position)
+      .map_err(rpc)
   }
 
   async fn prepare_rename(
@@ -704,8 +615,7 @@ impl LanguageServer for Server {
     params: TextDocumentPositionParams,
   ) -> jsonrpc::Result<Option<PrepareRenameResponse>> {
     let uri = canonical_virtual_uri(&params.text_document.uri);
-    let e = self.engine.lock().await;
-    let Ok((_, symbol, range)) = e.target(&uri, params.position) else {
+    let Ok((_, symbol, range)) = self.engine.target(&uri, params.position) else {
       return Ok(None);
     };
     Ok(Some(PrepareRenameResponse::RangeWithPlaceholder {
@@ -720,8 +630,6 @@ impl LanguageServer for Server {
     Ok(Some(
       self
         .engine
-        .lock()
-        .await
         .rename(&uri, p.position, &params.new_name)
         .map_err(rpc)?,
     ))
@@ -747,8 +655,7 @@ impl LanguageServer for Server {
 
   async fn inlay_hint(&self, params: InlayHintParams) -> jsonrpc::Result<Option<Vec<InlayHint>>> {
     let uri = canonical_virtual_uri(&params.text_document.uri);
-    let e = self.engine.lock().await;
-    e.inlay_hints(&uri, params.range).map_err(rpc)
+    self.engine.inlay_hints(&uri, params.range).map_err(rpc)
   }
 
   async fn prepare_call_hierarchy(
@@ -757,8 +664,9 @@ impl LanguageServer for Server {
   ) -> jsonrpc::Result<Option<Vec<CallHierarchyItem>>> {
     let p = params.text_document_position_params;
     let uri = canonical_virtual_uri(&p.text_document.uri);
-    let mut e = self.engine.lock().await;
-    e.prepare_call_hierarchy(&uri, p.position)
+    self
+      .engine
+      .prepare_call_hierarchy(&uri, p.position)
       .await
       .map_err(rpc)
   }
@@ -767,22 +675,19 @@ impl LanguageServer for Server {
     &self,
     params: CallHierarchyIncomingCallsParams,
   ) -> jsonrpc::Result<Option<Vec<CallHierarchyIncomingCall>>> {
-    let mut e = self.engine.lock().await;
-    e.incoming_calls(&params.item).await.map_err(rpc)
+    self.engine.incoming_calls(&params.item).await.map_err(rpc)
   }
 
   async fn outgoing_calls(
     &self,
     params: CallHierarchyOutgoingCallsParams,
   ) -> jsonrpc::Result<Option<Vec<CallHierarchyOutgoingCall>>> {
-    let mut e = self.engine.lock().await;
-    e.outgoing_calls(&params.item).await.map_err(rpc)
+    self.engine.outgoing_calls(&params.item).await.map_err(rpc)
   }
 
   async fn code_lens(&self, params: CodeLensParams) -> jsonrpc::Result<Option<Vec<CodeLens>>> {
     let uri = canonical_virtual_uri(&params.text_document.uri);
-    let e = self.engine.lock().await;
-    e.code_lenses(&uri).map_err(rpc)
+    self.engine.code_lenses(&uri).map_err(rpc)
   }
 
   async fn folding_range(
@@ -790,8 +695,7 @@ impl LanguageServer for Server {
     params: FoldingRangeParams,
   ) -> jsonrpc::Result<Option<Vec<FoldingRange>>> {
     let uri = canonical_virtual_uri(&params.text_document.uri);
-    let e = self.engine.lock().await;
-    e.folding_ranges(&uri).map_err(rpc)
+    self.engine.folding_ranges(&uri).map_err(rpc)
   }
 
   async fn document_link(
@@ -799,7 +703,6 @@ impl LanguageServer for Server {
     params: DocumentLinkParams,
   ) -> jsonrpc::Result<Option<Vec<DocumentLink>>> {
     let uri = canonical_virtual_uri(&params.text_document.uri);
-    let e = self.engine.lock().await;
-    e.document_links(&uri).map_err(rpc)
+    self.engine.document_links(&uri).map_err(rpc)
   }
 }

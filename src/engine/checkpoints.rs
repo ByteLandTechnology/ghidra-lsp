@@ -6,9 +6,9 @@
 use anyhow::Result;
 use serde_json::json;
 
-use super::{Engine, Pending, Refresh};
+use super::{ClientBuffer, Engine, EngineState, Pending, Refresh};
 use crate::backend::McpBackend;
-use crate::document::Document;
+use crate::document::{Document, canonical_virtual_uri};
 
 /// Records a named project checkpoint in `ghidra-mcp` before a committed edit.
 pub(crate) async fn record_checkpoint(backend: &McpBackend, md5: &str, name: &str) -> Result<()> {
@@ -66,69 +66,111 @@ impl Engine {
       "Before rename {} to {}",
       pending.symbol.name, pending.new_name
     );
-    record_checkpoint(self.backend.as_ref(), md5, &label).await
+    record_checkpoint(self.backend().as_ref(), md5, &label).await
   }
 
   /// Clears cached state for `md5` and regenerates open virtual documents after restore or reset.
-  pub(crate) async fn refresh_after_restore(&mut self, md5: &str) -> Vec<Refresh> {
-    self.pending.remove(md5);
-    self.symbols.remove(md5);
-    self.functions.retain(|(session, _), _| session != md5);
-    let local_prefix = format!("Local:{md5}:");
-    let parameter_prefix = format!("Parameter:{md5}:");
-    self
-      .local_details
-      .retain(|id, _| !id.starts_with(&local_prefix) && !id.starts_with(&parameter_prefix));
+  pub(crate) async fn refresh_after_restore_locked(&self, md5: &str) -> Vec<Refresh> {
+    let key = md5.to_ascii_lowercase();
+    let (documents, start_gen, start_epoch) = {
+      let mut state = self.write_state();
+      let generation = state.generation;
+      let epoch = state.bump_epoch(&key);
+      state.pending.remove(&key);
+      state.symbols.remove(&key);
+      state.functions.retain(|(session, _), _| session != &key);
+      let local_prefix = format!("Local:{key}:");
+      let parameter_prefix = format!("Parameter:{key}:");
+      state
+        .local_details
+        .retain(|id, _| !id.starts_with(&local_prefix) && !id.starts_with(&parameter_prefix));
+      let documents: Vec<Document> = state
+        .docs
+        .values()
+        .filter(|doc| doc.md5 == key && doc.entry.is_some())
+        .cloned()
+        .collect();
+      (documents, generation, epoch)
+    };
+    self.open_flights.forget_session(&key);
+    self.symbol_flights.forget_session(&key);
 
-    let documents: Vec<Document> = self
-      .docs
-      .values()
-      .filter(|doc| doc.md5 == md5 && doc.entry.is_some())
-      .cloned()
-      .collect();
     let mut changes = Vec::new();
     for old in documents {
       let Some(entry) = old.entry.clone() else {
         continue;
       };
-      let next = match self.generate(md5, &entry).await {
-        Ok(generated) => generated,
-        Err(error) => unavailable_function_document(&old, &entry, &error),
+      let (next_doc, metadata) = match self.generate_function(&key, &entry, None).await {
+        Ok(generated) => (generated.doc, generated.metadata),
+        Err(error) => (unavailable_function_document(&old, &entry, &error), None),
       };
-      if let Some(change) = self.replace_restored_document(old, next) {
+      let mut state = self.write_state();
+      if state.is_closed_since(&key, start_epoch, start_gen) {
+        return changes;
+      }
+      state.bump_epoch(&key);
+      if let Some((entry_key, function_val, local_details)) = metadata {
+        state.apply_generated_metadata(&key, entry_key, function_val, local_details);
+      }
+      if let Some(change) = replace_restored_document(&mut state, &old, next_doc) {
         changes.push(change);
       }
     }
-    self.refresh_snapshots(md5).await;
+    self
+      .refresh_snapshots_locked(&key, start_epoch, start_gen)
+      .await;
     changes
   }
+}
 
-  /// Replaces `old` with `new` after restore or reset, overwriting stale local preview text.
-  fn replace_restored_document(&mut self, old: Document, mut new: Document) -> Option<Refresh> {
-    new.version = old.version;
-    let uri = old.uri.clone();
-    new.uri = uri.clone();
-    new.saved = new.base.clone();
-    let mut change = None;
-    if old.version.is_some() {
-      new.current = old.current;
-      if new.current != new.base {
-        self.refresh_allowed.insert(uri.clone(), new.base.clone());
-        change = Some(Refresh {
-          uri: uri.clone(),
-          old: new.current.clone(),
-          new: new.base.clone(),
-          version: old.version,
-        });
-      } else {
-        self.refresh_allowed.remove(&uri);
-      }
+/// Replaces `snapshot_old` with `new` after restore or reset, overwriting stale preview text.
+fn replace_restored_document(
+  state: &mut EngineState,
+  snapshot_old: &Document,
+  mut new: Document,
+) -> Option<Refresh> {
+  let uri = canonical_virtual_uri(&snapshot_old.uri);
+  new.uri = uri.clone();
+  new.saved = new.base.clone();
+  let live = state.docs.get(&uri).unwrap_or(snapshot_old);
+  new.version = live.version;
+  let mut change = None;
+  if live.version.is_some() {
+    new.current = live.current.clone();
+    if new.current != new.base {
+      state
+        .refresh_allowed
+        .insert(uri.clone(), new.current.clone());
+      change = Some(Refresh {
+        uri: uri.clone(),
+        old: new.current.clone(),
+        new: new.base.clone(),
+        version: live.version,
+      });
     } else {
-      self.refresh_allowed.remove(&uri);
+      state.refresh_allowed.remove(&uri);
     }
-    self.docs.insert(uri, new);
-    change
+  } else if let Some(ClientBuffer::Open { version, text }) = state.client_buffers.remove(&uri) {
+    new.version = Some(version);
+    new.current = text;
+    if new.current != new.base {
+      state
+        .refresh_allowed
+        .insert(uri.clone(), new.current.clone());
+      change = Some(Refresh {
+        uri: uri.clone(),
+        old: new.current.clone(),
+        new: new.base.clone(),
+        version: new.version,
+      });
+    } else {
+      state.refresh_allowed.remove(&uri);
+    }
+  } else {
+    state.refresh_allowed.remove(&uri);
   }
+  state.docs.insert(uri, new);
+  change
 }
 
 /// Builds a read-only placeholder document when `entry` does not exist in the restored program.
