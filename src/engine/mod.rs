@@ -11,6 +11,8 @@ mod checkpoints;
 mod decorations;
 /// Incoming and outgoing call hierarchy builders.
 mod hierarchy;
+/// Function parameter and local variable merging, caching, and span binding.
+mod locals;
 /// Symbol resolution, definitions, and cross-reference lookups.
 mod navigation;
 /// Session document regeneration, single-document refresh, and snapshot installation.
@@ -38,7 +40,7 @@ pub(crate) use state::{ClientBuffer, EngineState};
 use crate::backend::{McpBackend, list_all};
 use crate::document::{
   Document, Symbol, SymbolIndex, Token, align, extract_label_address, is_label_token, resolve,
-  resolve_locals, virtual_uri,
+  virtual_uri,
 };
 
 /// Finds a function symbol by address first and by name or qualified name second.
@@ -420,9 +422,13 @@ impl Engine {
           serde_json::from_value(tokens.get("tokens").context("missing tokens")?.clone())?;
         align(&doc.base, tokens)?
       };
-      let function = function
-        .as_ref()
-        .map_err(|error| anyhow::anyhow!("{error:#}"))?;
+      let function = locals::merge_decompilation_locals(
+        function
+          .as_ref()
+          .map_err(|error| anyhow::anyhow!("{error:#}"))?,
+        &text,
+      );
+      let has_native_locals = native.is_some() && text.get("local_variables").is_some();
       let locals: HashSet<String> = ["parameters", "local_variables"]
         .iter()
         .flat_map(|key| {
@@ -435,116 +441,17 @@ impl Engine {
         .filter_map(|v| v.get("name").and_then(Value::as_str).map(str::to_owned))
         .collect();
       resolve(&mut spans, &symbols, &locals);
-      let mut local_symbols = vec![];
-      let mut local_details = HashMap::new();
       let entry_str = doc.entry.as_deref().unwrap_or(entry);
-      for (key, kind) in [("parameters", "Parameter"), ("local_variables", "Local")] {
-        for variable in function
-          .get(key)
-          .and_then(Value::as_array)
-          .into_iter()
-          .flatten()
-        {
-          let Some(name) = variable.get("name").and_then(Value::as_str) else {
-            continue;
-          };
-          if name.is_empty() {
-            continue;
-          }
-          let identity = if kind == "Parameter" {
-            let Some(ordinal) = variable.get("ordinal").and_then(Value::as_u64) else {
-              continue;
-            };
-            json!({"ordinal": ordinal})
-          } else if let Some(storage) = variable.get("storage").filter(|s| !s.is_null()) {
-            json!({"storage": storage, "name": name})
-          } else {
-            json!({"name": name})
-          };
-          let id = format!("{kind}:{md5}:{entry_str}:{identity}");
-          let mut detail = variable.clone();
-          detail["entry"] = json!(entry_str);
-          detail["kind"] = json!(kind);
-          local_details.insert(id.clone(), detail);
-          local_symbols.push(Symbol {
-            demangled_name: None,
-            id,
-            name: name.into(),
-            address: entry_str.to_owned(),
-            namespace: String::new(),
-            kind: kind.into(),
-          });
-        }
-      }
-      let mut local_ids: HashMap<(&str, &str), Option<&str>> =
-        HashMap::with_capacity(local_symbols.len());
-      for sym in &local_symbols {
-        local_ids
-          .entry((sym.kind.as_str(), sym.name.as_str()))
-          .and_modify(|slot| *slot = None)
-          .or_insert(Some(sym.id.as_str()));
-      }
+      let local_details = locals::bind_function_locals(
+        md5,
+        entry_str,
+        &doc.base,
+        &function,
+        has_native_locals,
+        &mut spans,
+      );
       for span in &mut spans {
-        if !matches!(span.token.kind.as_str(), "variable" | "parameter") {
-          continue;
-        }
-        let Some(native) = &mut span.symbol else {
-          continue;
-        };
-        if !native.local() {
-          continue;
-        }
-        let kind = if native.kind == "Parameter" || span.token.kind == "parameter" {
-          "Parameter"
-        } else {
-          "Local"
-        };
-        let prefix = format!("{kind}:{md5}:{entry_str}:");
-        let scoped_id = if native.id.starts_with(&prefix) {
-          native.id.clone()
-        } else {
-          format!("{prefix}symbol={}", native.id)
-        };
-        if !local_details.contains_key(&scoped_id) {
-          let target_name = if native.name.is_empty() {
-            span.token.text.as_str()
-          } else {
-            native.name.as_str()
-          };
-          if let Some(matched) = local_ids
-            .get(&(kind, target_name))
-            .copied()
-            .flatten()
-            .and_then(|id| local_details.get(id).cloned())
-          {
-            local_details.insert(scoped_id.clone(), matched);
-          }
-        }
-        if native.name.is_empty() {
-          native.name = span.token.text.clone();
-        }
-        native.id = scoped_id;
-        native.address = entry_str.to_owned();
-        native.namespace = String::new();
-        native.kind = kind.into();
-      }
-      resolve_locals(&mut spans, &local_symbols);
-      for span in &mut spans {
-        if span.symbol.is_none() && matches!(span.token.kind.as_str(), "variable" | "parameter") {
-          let kind = if span.token.kind == "parameter" {
-            "Parameter"
-          } else {
-            "Local"
-          };
-          span.symbol = Some(Symbol {
-            demangled_name: None,
-            id: format!("{kind}:{md5}:{entry_str}:name={}", span.token.text),
-            name: span.token.text.clone(),
-            address: entry_str.to_owned(),
-            namespace: String::new(),
-            kind: kind.into(),
-          });
-        } else if span.symbol.is_none()
+        if span.symbol.is_none()
           && (span.token.kind == "label"
             || is_label_token(&span.token.text, span.start, span.end, &doc.base))
         {
@@ -587,7 +494,7 @@ impl Engine {
           });
         }
       }
-      Ok::<_, anyhow::Error>((spans, entry_str.to_owned(), function.clone(), local_details))
+      Ok::<_, anyhow::Error>((spans, entry_str.to_owned(), function, local_details))
     }
     .await;
     let metadata = match semantic {

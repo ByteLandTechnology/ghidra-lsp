@@ -513,7 +513,7 @@ impl Server {
         } else {
           format!("```c\n{signature}\n```\n\n{comment}")
         }
-      } else {
+      } else if !symbol.local() {
         backend
           .call(
             "global_variable",
@@ -546,6 +546,8 @@ impl Server {
             }
           })
           .unwrap_or_default()
+      } else {
+        String::new()
       };
       let demangled_full = symbol.full_name();
       let raw_mangled =
@@ -627,25 +629,7 @@ impl Server {
 
 /// Formats variable storage JSON returned by `ghidra-mcp` into concise display text.
 fn format_storage(value: Option<&Value>) -> String {
-  let Some(value) = value.filter(|v| !v.is_null()) else {
-    return String::new();
-  };
-  if let Some(s) = value.as_str() {
-    return s.to_owned();
-  }
-  if let Some(obj) = value.as_object() {
-    let mut parts = Vec::new();
-    if let Some(r) = obj.get("register").and_then(Value::as_str) {
-      parts.push(r.to_owned());
-    }
-    if let Some(off) = obj.get("stack_offset").and_then(Value::as_i64) {
-      parts.push(format!("stack {off:+#x}"));
-    }
-    if !parts.is_empty() {
-      return parts.join(", ");
-    }
-  }
-  value.to_string()
+  crate::document::format_storage_value(value)
 }
 
 /// Extracts a backend job identifier from nested or top-level job response fields.

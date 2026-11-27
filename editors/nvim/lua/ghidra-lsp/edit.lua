@@ -684,8 +684,8 @@ function M.edit_variables(arg)
     for _, p in ipairs(proto.parameters or {}) do
         table.insert(vars, { kind = 'parameter', raw = p })
     end
-    for _, v in ipairs(proto.locals or {}) do
-        table.insert(vars, { kind = 'local', raw = v })
+    for idx, v in ipairs(proto.locals or {}) do
+        table.insert(vars, { kind = 'local', raw = v, index = idx - 1 })
     end
     if #vars == 0 then
         vim.notify('No parameters or local variables in this function', vim.log.levels.INFO)
@@ -718,7 +718,13 @@ function M.edit_variables(arg)
                 if choice.kind == 'parameter' then
                     payload.parameters = { { ordinal = r.ordinal, name = new_name, type = new_type } }
                 else
-                    payload.locals = { { originalName = r.name, name = new_name, type = new_type } }
+                    payload.locals = { {
+                        _original = choice.index,
+                        originalName = r.name,
+                        storage = r.storage,
+                        name = new_name,
+                        type = new_type,
+                    } }
                 end
                 local save_ok, save_err = pcall(client.exec_sync, 'ghidra.saveVariables', payload, 30000)
                 if not save_ok then

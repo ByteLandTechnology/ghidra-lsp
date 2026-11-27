@@ -10,8 +10,8 @@ use tower_lsp_server::ls_types::{Location, Position, Range, Uri};
 use super::{Engine, EngineState, find_function_symbol};
 use crate::backend::list_all;
 use crate::document::{
-  Document, Symbol, canonical_virtual_uri, extract_label_address, in_address_range, is_label_token,
-  offset, same_address, virtual_uri, word_at,
+  Document, Symbol, canonical_virtual_uri, extract_label_address, in_address_range,
+  is_field_access, is_label_token, offset, same_address, virtual_uri, word_at,
 };
 
 impl Engine {
@@ -66,7 +66,9 @@ impl EngineState {
     {
       return Ok((doc.md5.clone(), sym.clone(), doc.range(span)));
     }
-    if matches!(span.token.kind.as_str(), "variable" | "parameter") {
+    if matches!(span.token.kind.as_str(), "variable" | "parameter")
+      && !is_field_access(&doc.base, span.start)
+    {
       let entry = doc.entry.as_deref().context("Unknown function entry")?;
       let kind = if span.token.kind == "parameter" {
         "Parameter"
@@ -214,7 +216,11 @@ impl Engine {
     {
       let state = self.read_state();
       if let Some(doc) = state.docs.get(uri)
-        && let Some(decl) = doc.spans.iter().find(|sp| sp.token.text == s.token.text)
+        && !is_field_access(&doc.base, s.start)
+        && let Some(decl) = doc
+          .spans
+          .iter()
+          .find(|sp| !is_field_access(&doc.base, sp.start) && sp.token.text == s.token.text)
       {
         return Ok(Some(Location::new(uri.clone(), doc.range(decl))));
       }

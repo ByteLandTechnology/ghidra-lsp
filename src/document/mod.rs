@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Value, json};
 use tower_lsp_server::ls_types::{Position, Range, TextEdit, Uri};
 
 /// Display flag that controls whether full C++ template arguments appear in text.
@@ -122,7 +122,10 @@ impl Symbol {
 
   /// Returns true when this symbol represents a function-local variable or parameter.
   pub(crate) fn local(&self) -> bool {
-    matches!(self.kind.as_str(), "Local" | "Local Var" | "Parameter")
+    matches!(
+      self.kind.as_str(),
+      "Local" | "Local Var" | "LocalVar" | "Parameter"
+    )
   }
 
   /// Returns the name prefixed with its namespace when it is not in `Global`.
@@ -430,17 +433,45 @@ pub(crate) fn resolve(spans: &mut [Span], symbols: &SymbolIndex, locals: &HashSe
   }
 }
 
+/// Structured binding metadata for a function parameter or local variable symbol.
+pub(crate) struct LocalBinding {
+  /// Canonical LSP symbol entry for the parameter or local variable.
+  pub(crate) symbol: Symbol,
+  /// Zero-based parameter ordinal when `symbol` is a parameter.
+  pub(crate) ordinal: Option<u64>,
+  /// Formatted variable storage text when known.
+  pub(crate) storage: Option<String>,
+  /// Raw variable storage serialization string when known.
+  pub(crate) serialization: Option<String>,
+}
+
+impl LocalBinding {
+  /// Returns true when `storage_ser` matches the raw serialization or formatted storage text.
+  pub(crate) fn matches_storage(&self, storage_ser: &str) -> bool {
+    !storage_ser.is_empty()
+      && (self.serialization.as_deref() == Some(storage_ser)
+        || self.storage.as_deref() == Some(storage_ser))
+  }
+}
+
 /// Resolves variable and parameter spans without a symbol when `locals` has one match.
-pub(crate) fn resolve_locals(spans: &mut [Span], locals: &[Symbol]) {
+pub(crate) fn resolve_locals(code: &str, spans: &mut [Span], locals: &[LocalBinding]) {
   let mut by_name: HashMap<&str, Option<&Symbol>> = HashMap::with_capacity(locals.len());
   for local in locals {
     by_name
-      .entry(local.name.as_str())
+      .entry(local.symbol.name.as_str())
       .and_modify(|slot| *slot = None)
-      .or_insert(Some(local));
+      .or_insert(Some(&local.symbol));
   }
   for span in spans {
-    if !matches!(span.token.kind.as_str(), "variable" | "parameter") || span.symbol.is_some() {
+    if !matches!(span.token.kind.as_str(), "variable" | "parameter") {
+      continue;
+    }
+    if is_field_access(code, span.start) {
+      span.symbol = None;
+      continue;
+    }
+    if span.symbol.is_some() {
       continue;
     }
     span.symbol = by_name
@@ -449,6 +480,85 @@ pub(crate) fn resolve_locals(spans: &mut [Span], locals: &[Symbol]) {
       .flatten()
       .cloned();
   }
+}
+
+/// Returns true when `code` immediately before `span_start` ends with `.` or `->`.
+pub(crate) fn is_field_access(code: &str, span_start: usize) -> bool {
+  let before = code.get(..span_start).unwrap_or("").trim_end();
+  before.ends_with('.') || before.ends_with("->")
+}
+
+/// Formats variable storage JSON returned by `ghidra-mcp` into display text.
+pub(crate) fn format_storage_value(value: Option<&Value>) -> String {
+  let Some(value) = value.filter(|v| !v.is_null()) else {
+    return String::new();
+  };
+  if let Some(s) = value.as_str() {
+    return s.to_owned();
+  }
+  if let Some(obj) = value.as_object() {
+    let mut parts = Vec::new();
+    if let Some(r) = obj.get("register").and_then(Value::as_str) {
+      parts.push(r.to_owned());
+    }
+    if let Some(off) = obj.get("stack_offset").and_then(Value::as_i64) {
+      let sign = if off < 0 { '-' } else { '+' };
+      parts.push(format!("stack {sign}{:#x}", off.unsigned_abs()));
+    }
+    if !parts.is_empty() {
+      return parts.join(", ");
+    }
+    if let Some(ser) = obj.get("serialization").and_then(Value::as_str) {
+      return ser.to_owned();
+    }
+  }
+  value.to_string()
+}
+
+/// Converts a backend storage value into a valid `selector.storage` wire object when present.
+pub(crate) fn storage_selector(value: Option<&Value>) -> Option<Value> {
+  let value = value.filter(|v| !v.is_null())?;
+  if let Some(obj) = value.as_object() {
+    if let Some(ser) = obj
+      .get("serialization")
+      .and_then(Value::as_str)
+      .map(str::trim)
+      .filter(|s| !s.is_empty())
+    {
+      return Some(json!({ "kind": "serialization", "serialization": ser }));
+    }
+    if obj.get("stack_offset").is_none()
+      && let Some(reg) = obj
+        .get("register")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+      return Some(json!({ "kind": "register", "register": reg }));
+    }
+    return None;
+  }
+  let text = value.as_str().map(str::trim).filter(|s| !s.is_empty())?;
+  Some(json!({ "kind": "serialization", "serialization": text }))
+}
+
+/// Returns true when two `storage` JSON values identify the same storage location.
+pub(crate) fn same_storage(a: Option<&Value>, b: Option<&Value>) -> bool {
+  let (Some(a), Some(b)) = (a.filter(|v| !v.is_null()), b.filter(|v| !v.is_null())) else {
+    return false;
+  };
+  if a == b {
+    return true;
+  }
+  let sa = a
+    .get("serialization")
+    .and_then(Value::as_str)
+    .or_else(|| a.as_str());
+  let sb = b
+    .get("serialization")
+    .and_then(Value::as_str)
+    .or_else(|| b.as_str());
+  matches!((sa, sb), (Some(sa), Some(sb)) if !sa.is_empty() && sa == sb)
 }
 
 /// Formats a structured or string Ghidra data type reference into C-style text.

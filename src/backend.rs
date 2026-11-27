@@ -87,6 +87,8 @@ pub(crate) struct McpBackend {
   client: Mutex<Option<ClientSession>>,
   /// Monotonic counter for distinguishing recreated child sessions.
   next_id: AtomicU64,
+  /// Flag that records if the child server accepts `selector.storage` on local patches.
+  local_storage_selector: AtomicBool,
 }
 
 impl McpBackend {
@@ -96,7 +98,18 @@ impl McpBackend {
       config,
       client: Mutex::new(None),
       next_id: AtomicU64::new(1),
+      local_storage_selector: AtomicBool::new(true),
     }
+  }
+
+  /// Returns true if the active child server accepts `selector.storage` on local patches.
+  pub(crate) fn supports_local_storage(&self) -> bool {
+    self.local_storage_selector.load(Ordering::Relaxed)
+  }
+
+  /// Records that the active child server rejects `selector.storage` on local patches.
+  pub(crate) fn disable_local_storage(&self) {
+    self.local_storage_selector.store(false, Ordering::Relaxed);
   }
 
   /// Connects to `ghidra-mcp` if needed and returns the active session handle.
@@ -114,6 +127,7 @@ impl McpBackend {
         .context("MCP handshake timed out")??;
       let schema_supports_checkpoints = probe_checkpoint_create_support(&service, deadline).await;
       let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+      self.local_storage_selector.store(true, Ordering::Relaxed);
       *guard = Some(ClientSession {
         id,
         service,
@@ -500,4 +514,24 @@ pub(crate) async fn list_pages(
     params["page"] = json!({ "cursor": cursor, "limit": 1000 });
     page = Cow::Owned(backend.call(domain, operation, md5, params.clone()).await?);
   }
+}
+
+/// Returns true if `error` shows that the server schema rejected `selector.storage`.
+pub(crate) fn unsupported_storage_selector(error: &anyhow::Error, batch: bool) -> bool {
+  let text = format!("{error:#}").to_ascii_lowercase();
+  if batch && text.contains("batch structure validation failed") {
+    return true;
+  }
+  text.contains("storage")
+    && [
+      "not allowed",
+      "unknown field",
+      "unknown_field",
+      "additionalproperties",
+      "additional properties",
+      "does not accept",
+      "unexpected",
+    ]
+    .iter()
+    .any(|pattern| text.contains(pattern))
 }

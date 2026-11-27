@@ -13,9 +13,10 @@ use tower_lsp_server::ls_types::{
 };
 
 use super::{Engine, EngineState, Pending, Refresh};
+use crate::backend::unsupported_storage_selector;
 use crate::document::{
-  Document, Span, Symbol, apply_edits, canonical_virtual_uri, matches_text, position, same_address,
-  valid_name,
+  Document, Span, Symbol, apply_edits, canonical_virtual_uri, is_field_access, matches_text,
+  position, same_address, same_storage, storage_selector, valid_name,
 };
 
 impl Engine {
@@ -76,7 +77,7 @@ impl EngineState {
       let replacements: Vec<TextEdit> = doc
         .spans
         .iter()
-        .filter(|span| span_matches_symbol(span, &symbol))
+        .filter(|span| span_matches_symbol(&doc.base, span, &symbol))
         .map(|span| {
           let old = &doc.base[span.start..span.end];
           let replacement = if old == symbol.name {
@@ -310,18 +311,8 @@ impl Engine {
           p.patched = true;
         }
       }
-      let (tool_domain, operation) = match domain {
-        "function_local_variable" => ("function", "local_variable.patch"),
-        "function_parameter" => ("function", "parameter.patch"),
-        _ => (domain, "patch"),
-      };
-      let patch_result = backend
-        .call(
-          tool_domain,
-          operation,
-          Some(md5),
-          json!({"selector": selector, "patch": {"name": pending.new_name}}),
-        )
+      let patch_result = self
+        .apply_rename_patch(md5, domain, selector, &pending.new_name)
         .await;
       self.invalidate_symbols(md5);
       if let Err(err) = patch_result {
@@ -376,6 +367,52 @@ impl Engine {
       .context(
         "Rename persisted, but regeneration failed. Use Ghidra: Refresh Documents to recover",
       )
+  }
+
+  /// Sends one rename patch and retries without `selector.storage` if an older server rejects it.
+  async fn apply_rename_patch(
+    &self,
+    md5: &str,
+    domain: &str,
+    selector: Value,
+    new_name: &str,
+  ) -> Result<()> {
+    let backend = self.backend();
+    let (tool_domain, operation) = match domain {
+      "function_local_variable" => ("function", "local_variable.patch"),
+      "function_parameter" => ("function", "parameter.patch"),
+      _ => (domain, "patch"),
+    };
+    let has_storage = domain == "function_local_variable" && selector.get("storage").is_some();
+    let patch = json!({"name": new_name});
+    match backend
+      .call(
+        tool_domain,
+        operation,
+        Some(md5),
+        json!({"selector": selector.clone(), "patch": patch.clone()}),
+      )
+      .await
+    {
+      Ok(_) => Ok(()),
+      Err(err) if has_storage && unsupported_storage_selector(&err, false) => {
+        backend.disable_local_storage();
+        let mut fallback = selector;
+        if let Some(obj) = fallback.as_object_mut() {
+          obj.remove("storage");
+        }
+        backend
+          .call(
+            tool_domain,
+            operation,
+            Some(md5),
+            json!({"selector": fallback, "patch": patch}),
+          )
+          .await
+          .map(|_| ())
+      }
+      Err(err) => Err(err),
+    }
   }
 
   /// Resolves the backend domain, selector payload, and live name for a pending rename target.
@@ -436,9 +473,28 @@ impl Engine {
     md5: &str,
     pending: &Pending,
   ) -> (&'static str, Value, String) {
-    let detail = self.read_state().local_detail(&pending.symbol);
-    let function = self
-      .backend()
+    let (detail, had_symbol_name) = {
+      let state = self.read_state();
+      let detail = state.local_detail(&pending.symbol);
+      let expected_storage = detail
+        .as_ref()
+        .and_then(|d| d.get("storage"))
+        .filter(|s| !s.is_null());
+      let had_symbol_name = state
+        .functions
+        .get(&(md5.to_owned(), pending.symbol.address.clone()))
+        .and_then(|f| f.get("local_variables"))
+        .and_then(Value::as_array)
+        .is_some_and(|vars| {
+          vars.iter().any(|v| {
+            v.get("name").and_then(Value::as_str) == Some(&pending.symbol.name)
+              && expected_storage.is_none_or(|st| same_storage(v.get("storage"), Some(st)))
+          })
+        });
+      (detail, had_symbol_name)
+    };
+    let backend = self.backend();
+    let function = backend
       .call(
         "function",
         "get",
@@ -451,6 +507,13 @@ impl Engine {
       let ordinal = detail
         .as_ref()
         .and_then(|d| d.get("ordinal").and_then(Value::as_u64))
+        .or_else(|| {
+          pending
+            .symbol
+            .id
+            .rsplit_once(":symbol=parameter:")
+            .and_then(|(_, ord)| ord.parse::<u64>().ok())
+        })
         .or_else(|| {
           function
             .as_ref()
@@ -502,7 +565,26 @@ impl Engine {
       .and_then(Value::as_array)
       .and_then(|vars| {
         expected_storage
-          .and_then(|st| vars.iter().find(|v| v.get("storage") == Some(st)))
+          .and_then(|st| {
+            vars
+              .iter()
+              .find(|v| {
+                same_storage(v.get("storage"), Some(st))
+                  && v
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .is_some_and(|n| n == pending.symbol.name || n == pending.new_name)
+              })
+              .or_else(|| {
+                had_symbol_name
+                  .then(|| {
+                    vars
+                      .iter()
+                      .find(|v| same_storage(v.get("storage"), Some(st)))
+                  })
+                  .flatten()
+              })
+          })
           .or_else(|| {
             vars.iter().find(|v| {
               let n = v.get("name").and_then(Value::as_str);
@@ -519,11 +601,14 @@ impl Engine {
     } else {
       pending.symbol.name.as_str()
     };
-    (
-      "function_local_variable",
-      json!({"entry": pending.symbol.address, "name": selector_name}),
-      current_name,
-    )
+    let mut selector = json!({"entry": pending.symbol.address, "name": selector_name});
+    if backend.supports_local_storage()
+      && let Some(storage) =
+        storage_selector(matched.and_then(|v| v.get("storage")).or(expected_storage))
+    {
+      selector["storage"] = storage;
+    }
+    ("function_local_variable", selector, current_name)
   }
 
   /// Resolves a synthetic label symbol ID and live name by address or name query.
@@ -602,13 +687,15 @@ impl Engine {
 }
 
 /// Returns true when `span` refers to `symbol` or carries an unresolved fallback matching token.
-fn span_matches_symbol(span: &Span, symbol: &Symbol) -> bool {
+fn span_matches_symbol(code: &str, span: &Span, symbol: &Symbol) -> bool {
   if let Some(v) = &span.symbol {
     v.id == symbol.id
   } else if symbol.kind.eq_ignore_ascii_case("function") {
     span.token.kind == "function" && span.token.text == symbol.name
   } else if symbol.local() {
-    matches!(span.token.kind.as_str(), "variable" | "parameter") && span.token.text == symbol.name
+    !is_field_access(code, span.start)
+      && matches!(span.token.kind.as_str(), "variable" | "parameter")
+      && span.token.text == symbol.name
   } else if symbol.kind.eq_ignore_ascii_case("label")
     || symbol.kind.eq_ignore_ascii_case("constant")
   {

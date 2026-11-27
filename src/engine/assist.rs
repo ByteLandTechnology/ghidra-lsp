@@ -16,7 +16,7 @@ use super::{Engine, find_function_symbol};
 use crate::backend::list_all;
 use crate::document::{
   Document, Symbol, canonical_virtual_uri, contains_case_insensitive, data_type_name, offset,
-  starts_with_case_insensitive, virtual_uri,
+  same_storage, starts_with_case_insensitive, virtual_uri,
 };
 
 /// Built-in decompiler type names offered alongside program and local symbols.
@@ -59,6 +59,13 @@ const COMMON_TYPES: &[&str] = &[
 enum TypeLookupSource {
   /// Direct type reference JSON ready for pointer/array unwrapping.
   Direct(Value),
+  /// Local or parameter symbol whose `data_type` must be queried from `function.get`.
+  LocalFallback {
+    /// Resolved local or parameter symbol at the cursor.
+    symbol: Symbol,
+    /// Cached synthetic local detail when present without `data_type`.
+    local_info: Option<Value>,
+  },
   /// Function symbol whose `return_type` must be queried from `function.get`.
   FunctionReturn(String),
   /// Label symbol whose `data_type` must be queried from `global_variable.get`.
@@ -123,7 +130,11 @@ impl Engine {
       let display = symbol.display_name();
       let detail = state
         .local_detail(symbol)
-        .map(|v| format!("{} · {}", data_type_name(&v["data_type"]), symbol.kind))
+        .and_then(|v| {
+          v.get("data_type")
+            .filter(|dt| !dt.is_null())
+            .map(|dt| format!("{} · {}", data_type_name(dt), symbol.kind))
+        })
         .unwrap_or_else(|| format!("{} · {}", symbol.kind, symbol.address));
       items.push(CompletionItem {
         label: display,
@@ -322,8 +333,28 @@ impl Engine {
       let source = if span.token.kind == "type" {
         TypeLookupSource::Direct(json!({"kind": "named", "name": span.token.text}))
       } else if let Some(symbol) = &span.symbol {
-        if let Some(detail) = state.local_detail(symbol) {
-          TypeLookupSource::Direct(detail["data_type"].clone())
+        let local_info = state.local_detail(symbol);
+        if let Some(dt) = local_info
+          .as_ref()
+          .and_then(|d| d.get("data_type").cloned())
+          .filter(|v| !v.is_null())
+        {
+          TypeLookupSource::Direct(dt)
+        } else if symbol.local() {
+          if let Some(cached) = state
+            .functions
+            .get(&(doc.md5.clone(), symbol.address.clone()))
+          {
+            let Some(dt) = local_fallback_type(cached, symbol, local_info.as_ref()) else {
+              return Ok(None);
+            };
+            TypeLookupSource::Direct(dt)
+          } else {
+            TypeLookupSource::LocalFallback {
+              symbol: symbol.clone(),
+              local_info,
+            }
+          }
         } else if symbol.kind.eq_ignore_ascii_case("function") {
           TypeLookupSource::FunctionReturn(symbol.address.clone())
         } else if symbol.kind.eq_ignore_ascii_case("label") {
@@ -339,6 +370,20 @@ impl Engine {
     let backend = self.backend();
     let mut reference = match source {
       TypeLookupSource::Direct(value) => value,
+      TypeLookupSource::LocalFallback { symbol, local_info } => {
+        let function = backend
+          .call(
+            "function",
+            "get",
+            Some(&md5),
+            json!({"selector": {"entry": symbol.address}}),
+          )
+          .await?;
+        let Some(dt) = local_fallback_type(&function, &symbol, local_info.as_ref()) else {
+          return Ok(None);
+        };
+        dt
+      }
       TypeLookupSource::FunctionReturn(address) => backend
         .call(
           "function",
@@ -367,6 +412,7 @@ impl Engine {
       reference = match reference.get("kind").and_then(Value::as_str) {
         Some("pointer") => reference["target"].clone(),
         Some("array") => reference["element"].clone(),
+        Some("untyped_pointer") => json!({"kind": "named", "name": "/pointer"}),
         _ => break,
       };
     }
@@ -488,6 +534,49 @@ impl Engine {
     );
     Ok(Some(Location::new(type_uri, range)))
   }
+}
+
+/// Finds the `data_type` of `symbol` in `function` by ordinal, storage, or name.
+fn local_fallback_type(
+  function: &Value,
+  symbol: &Symbol,
+  local_info: Option<&Value>,
+) -> Option<Value> {
+  let expected_ord = local_info.and_then(|d| d.get("ordinal").and_then(Value::as_u64));
+  let expected_storage = local_info
+    .and_then(|d| d.get("storage"))
+    .filter(|s| !s.is_null());
+  let key = if symbol.kind == "Parameter" {
+    "parameters"
+  } else {
+    "local_variables"
+  };
+  function
+    .get(key)
+    .and_then(Value::as_array)
+    .and_then(|items| {
+      expected_ord
+        .and_then(|ord| {
+          items
+            .iter()
+            .find(|v| v.get("ordinal").and_then(Value::as_u64) == Some(ord))
+        })
+        .or_else(|| {
+          expected_storage.and_then(|st| {
+            items
+              .iter()
+              .find(|v| same_storage(v.get("storage"), Some(st)))
+          })
+        })
+        .or_else(|| {
+          items
+            .iter()
+            .find(|v| v.get("name").and_then(Value::as_str) == Some(&symbol.name))
+        })
+    })
+    .and_then(|v| v.get("data_type"))
+    .filter(|v| !v.is_null())
+    .cloned()
 }
 
 /// Formats structured data-type JSON returned by `ghidra-mcp` into Markdown documentation.
