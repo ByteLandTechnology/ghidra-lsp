@@ -410,6 +410,21 @@ pub(crate) fn format_error_value(val: &Value) -> Option<String> {
   }
 }
 
+/// Returns true if `error` shows that the server does not support the operation or method.
+pub(crate) fn unsupported_operation(error: &anyhow::Error) -> bool {
+  let text = format!("{error:#}").to_ascii_lowercase();
+  text.contains("unknown operation")
+    || text.contains("unknown method")
+    || text.contains("unknown_operation")
+    || text.contains("unknown_method")
+    || text.contains("no such operation")
+    || text.contains("no such method")
+    || text.contains("method not found")
+    || text.contains("unsupported operation")
+    || text.contains("is not one of")
+    || text.contains("unknown variant")
+}
+
 /// Unwraps `{ "response": { "result" | "error" } }` envelopes returned by `ghidra-mcp`.
 pub(crate) fn normalize(value: Value) -> Result<Value> {
   if let Some(response) = value.get("response") {
@@ -423,6 +438,19 @@ pub(crate) fn normalize(value: Value) -> Result<Value> {
     return Ok(response.get("result").unwrap_or(response).clone());
   }
   Ok(value)
+}
+
+/// Returns true if `error` shows that the server rejected an unsupported parameter or schema.
+pub(crate) fn unsupported_schema(error: &anyhow::Error) -> bool {
+  if unsupported_operation(error) {
+    return true;
+  }
+  let text = format!("{error:#}").to_ascii_lowercase();
+  text.contains("does not accept parameter")
+    || text.contains("is not allowed")
+    || text.contains("unknown_field")
+    || text.contains("unknown field")
+    || text.contains("batch structure validation failed")
 }
 
 /// Options for initial page selection and scan checks in `list_pages`.

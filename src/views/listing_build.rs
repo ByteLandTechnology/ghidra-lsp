@@ -26,7 +26,7 @@ use crate::address::{
 pub(super) struct ListingBuildInput<'a> {
   /// Code units sorted or returned by `listing.code_unit.list`.
   pub(super) units: Vec<Value>,
-  /// Detailed data units overlapping the listing range.
+  /// Detailed data units overlapping the listing range when `code_unit.list` omits values.
   pub(super) data_units: Vec<Value>,
   /// Symbols overlapping the listing range.
   pub(super) symbols: Vec<Value>,
@@ -38,7 +38,7 @@ pub(super) struct ListingBuildInput<'a> {
   pub(super) comments: Vec<Value>,
   /// Incoming cross-references keyed by target address.
   pub(super) incoming_refs: HashMap<String, Vec<Value>>,
-  /// Outgoing cross-references keyed by source instruction address.
+  /// Outgoing cross-references keyed by source address.
   pub(super) outgoing_refs: HashMap<String, Vec<Value>>,
   /// Program memory blocks sorted by start address.
   pub(super) blocks: &'a [MemoryBlockInfo],
@@ -224,6 +224,14 @@ pub(super) fn build_listing_window(input: ListingBuildInput<'_>) -> ListingWindo
   };
 
   let mut data_by_key: HashMap<String, Value> = HashMap::new();
+  for u in &input.units {
+    if u.get("kind").and_then(Value::as_str) == Some("data") {
+      let addr = value_str(&u["address"]);
+      if !addr.is_empty() {
+        data_by_key.insert(canonical_key(&addr, default_space), u.clone());
+      }
+    }
+  }
   for d in input.data_units {
     let addr = value_str(&d["address"]);
     if !addr.is_empty() {
@@ -524,6 +532,24 @@ pub(super) fn build_listing_window(input: ListingBuildInput<'_>) -> ListingWindo
             true,
             input.show_template_arguments,
           ))
+        } else if let Some(from_fn) = r.get("from_function").filter(|v| v.is_object()) {
+          let fn_entry = value_str(&from_fn["entry"]);
+          let fn_key = canonical_key(&fn_entry, default_space);
+          let meta_fn = demangled_by_key.get(&fn_key);
+          let raw_name = opt_nonempty_str(from_fn.get("name"))
+            .or_else(|| meta_fn.map(|d| d.name.clone()))
+            .unwrap_or_default();
+          let namespace = meta_fn.map(|d| d.namespace.as_str()).unwrap_or("");
+          let demangled_str = meta_fn.and_then(|d| d.demangled_name.as_deref());
+          (!raw_name.is_empty()).then(|| {
+            symbol_display_name(
+              &raw_name,
+              namespace,
+              demangled_str,
+              true,
+              input.show_template_arguments,
+            )
+          })
         } else if navigable {
           resolve_name_at(&from)
         } else {

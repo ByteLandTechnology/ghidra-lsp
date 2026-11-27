@@ -3,16 +3,155 @@
 
 //! Target symbol resolution, go-to-definition, and cross-reference lookups.
 
+use std::collections::{HashMap, HashSet};
+
 use anyhow::{Context, Result, bail, ensure};
 use serde_json::{Value, json};
 use tower_lsp_server::ls_types::{Location, Position, Range, Uri};
 
 use super::{Engine, EngineState, find_function_symbol};
-use crate::backend::list_all;
+use crate::address::parse_address;
+use crate::backend::{McpBackend, list_all};
 use crate::document::{
-  Document, Symbol, canonical_virtual_uri, extract_label_address, in_address_range, is_label_token,
-  offset, same_address, virtual_uri, word_at,
+  Document, Symbol, canonical_virtual_uri, extract_label_address, is_label_token, offset,
+  same_address, virtual_uri, word_at,
 };
+
+/// Resolves containing function entries for reference `from` addresses when `reference.list`
+/// omits `from_function` and `to_function` relation fields.
+async fn resolve_missing_from_functions(
+  backend: &McpBackend,
+  md5: &str,
+  refs: &[Value],
+) -> Result<HashMap<String, String>> {
+  let mut entries = HashMap::new();
+  if refs.is_empty()
+    || refs
+      .iter()
+      .any(|r| r.get("from_function").is_some() || r.get("to_function").is_some())
+  {
+    return Ok(entries);
+  }
+
+  let mut unique_from: Vec<(String, String)> = Vec::new();
+  let mut seen_canon = HashSet::new();
+  for reference in refs {
+    let Some(from) = reference.get("from").and_then(Value::as_str) else {
+      continue;
+    };
+    if let Some(parsed) = parse_address(from, "ram")
+      && seen_canon.insert(parsed.canonical.clone())
+    {
+      unique_from.push((parsed.canonical, from.to_owned()));
+    }
+  }
+  if unique_from.is_empty() {
+    return Ok(entries);
+  }
+
+  if unique_from.len() == 1 {
+    let (canon, raw) = &unique_from[0];
+    if let Ok(resolved) = backend
+      .call(
+        "address",
+        "resolve",
+        Some(md5),
+        json!({ "selector": { "address": raw } }),
+      )
+      .await
+      && let Some(entry) = resolved
+        .pointer("/function/entry")
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+    {
+      entries.insert(canon.clone(), entry.to_owned());
+    }
+    return Ok(entries);
+  }
+
+  for chunk in unique_from.chunks(1000) {
+    let batch_items: Vec<Value> = chunk
+      .iter()
+      .enumerate()
+      .map(|(idx, (_, raw))| {
+        json!({
+          "id": format!("resolve:{idx}"),
+          "method": "address.resolve",
+          "arguments": { "selector": { "address": raw } },
+        })
+      })
+      .collect();
+    let mut unresolved_indices: Vec<usize> = Vec::new();
+    match backend
+      .call(
+        "batch",
+        "execute",
+        Some(md5),
+        json!({ "transaction_mode": "per_item", "items": batch_items }),
+      )
+      .await
+    {
+      Ok(batch) => {
+        let mut seen_ids = HashSet::new();
+        if let Some(items) = batch.get("items").and_then(Value::as_array) {
+          for item in items {
+            let Some(id) = item.get("id").and_then(Value::as_str) else {
+              continue;
+            };
+            let Some(idx) = id
+              .strip_prefix("resolve:")
+              .and_then(|s| s.parse::<usize>().ok())
+              .filter(|&i| i < chunk.len())
+            else {
+              continue;
+            };
+            seen_ids.insert(idx);
+            if item.get("error").is_some_and(|e| !e.is_null()) {
+              unresolved_indices.push(idx);
+              continue;
+            }
+            if let Some(entry) = item
+              .pointer("/result/function/entry")
+              .and_then(Value::as_str)
+              .filter(|s| !s.is_empty())
+            {
+              entries.insert(chunk[idx].0.clone(), entry.to_owned());
+            }
+          }
+        }
+        for idx in 0..chunk.len() {
+          if !seen_ids.contains(&idx) {
+            unresolved_indices.push(idx);
+          }
+        }
+      }
+      Err(_) => {
+        unresolved_indices.extend(0..chunk.len());
+      }
+    }
+
+    for idx in unresolved_indices {
+      let (canon, raw) = &chunk[idx];
+      if let Ok(resolved) = backend
+        .call(
+          "address",
+          "resolve",
+          Some(md5),
+          json!({ "selector": { "address": raw } }),
+        )
+        .await
+        && let Some(entry) = resolved
+          .pointer("/function/entry")
+          .and_then(Value::as_str)
+          .filter(|s| !s.is_empty())
+      {
+        entries.insert(canon.clone(), entry.to_owned());
+      }
+    }
+  }
+
+  Ok(entries)
+}
 
 impl Engine {
   /// Resolves the unambiguous symbol, owning session MD5, and token range at `pos`.
@@ -350,17 +489,7 @@ impl Engine {
       json!({"filter": {"direction": "to", "to": symbol.address}, "page": {"limit": 1000}}),
     )
     .await?;
-    let functions = list_all(
-      backend.as_ref(),
-      "function",
-      md5,
-      json!({
-        "page": {"limit": 1000},
-        "scan": {"timeout_ms": 60000},
-        "projection": {"fields": ["entry", "body"]},
-      }),
-    )
-    .await?;
+    let fallback_entries = resolve_missing_from_functions(backend.as_ref(), md5, &refs).await?;
     let mut locations = vec![];
     let mut unmapped = vec![];
     for reference in refs {
@@ -368,20 +497,16 @@ impl Engine {
         .get("from")
         .and_then(Value::as_str)
         .context("reference lacks from address")?;
-      let containing: Vec<_> = functions
-        .iter()
-        .filter(|f| {
-          let start = f.pointer("/body/start").and_then(Value::as_str);
-          let end = f.pointer("/body/end").and_then(Value::as_str);
-          match (start, end) {
-            (Some(s), Some(e)) => in_address_range(from, s, e),
-            _ => false,
-          }
-        })
-        .collect();
+      let entry_opt = reference
+        .pointer("/from_function/entry")
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+        .or_else(|| {
+          parse_address(from, "ram")
+            .and_then(|parsed| fallback_entries.get(&parsed.canonical).map(String::as_str))
+        });
       let mut found = false;
-      if containing.len() == 1
-        && let Some(entry) = containing[0].get("entry").and_then(Value::as_str)
+      if let Some(entry) = entry_opt
         && let Ok(uri) = self.open(md5, entry).await
       {
         let state = self.read_state();

@@ -3,48 +3,42 @@
 
 //! Basic-block control-flow graph construction from listing instructions.
 
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 
 use anyhow::Result;
 use serde_json::{Value, json};
 
-use super::{BatchRequest, batch_query, format_function_label, resolve_entry};
+use super::cfg_fallback::{FallbackCfgRequest, fallback_control_flow_graph};
+use super::{format_function_label, resolve_entry};
 use crate::address::{display_address, parse_address, same_address};
-use crate::backend::{McpBackend, list_operation};
+use crate::backend::McpBackend;
+use crate::views::decode_bytes_vec;
 
-/// Computes decoded byte length from a base64 string without storing decoded bytes.
-fn base64_byte_len(data: &str) -> usize {
-  let clean: Vec<u8> = data.bytes().filter(|b| !b.is_ascii_whitespace()).collect();
-  if clean.len() < 4 {
-    return 0;
-  }
-  let padding = clean
-    .iter()
-    .rev()
-    .take(2)
-    .take_while(|&&b| b == b'=')
-    .count();
-  (clean.len() * 3) / 4 - padding
+/// Normalized basic-block record shared by control-flow graph builders.
+pub(super) struct CfgBlockInput<'a> {
+  /// Block start address string.
+  pub(super) start: &'a str,
+  /// Ordered instruction records inside this basic block.
+  pub(super) instructions: &'a [Value],
+  /// Outgoing `(target_address, edge_label)` transitions from this block.
+  pub(super) destinations: Vec<(String, String)>,
+  /// True when this block ends in a jump or branch with zero resolved targets.
+  pub(super) unresolved_jump: bool,
+  /// True when outgoing flow edges were truncated at the backend edge limit.
+  pub(super) edges_limited: bool,
 }
 
-/// Determines the byte length of one listing instruction record, falling back to `1`.
+/// Determines the byte length of one instruction record, falling back to `1`.
 fn instruction_byte_length(instr: &Value) -> usize {
   if let Some(len) = instr
     .get("length")
     .and_then(Value::as_u64)
-    .filter(|&n| n > 0)
+    .filter(|&len| len > 0)
   {
     return usize::try_from(len).unwrap_or(usize::MAX);
   }
-  if let Some(bytes) = instr.get("bytes").and_then(Value::as_object) {
-    let encoding = bytes.get("encoding").and_then(Value::as_str).unwrap_or("");
-    let data = bytes.get("data").and_then(Value::as_str).unwrap_or("");
-    let count = if encoding == "base64" {
-      base64_byte_len(data)
-    } else {
-      let hex_len = data.chars().filter(|c| !c.is_whitespace()).count();
-      hex_len.div_ceil(2)
-    };
+  if let Some(bytes) = instr.get("bytes") {
+    let count = decode_bytes_vec(bytes).len();
     if count > 0 {
       return count;
     }
@@ -52,25 +46,14 @@ fn instruction_byte_length(instr: &Value) -> usize {
   1
 }
 
-/// Returns true when a reference label describes a conditional branch.
-fn is_conditional_label(label: &str) -> bool {
-  label.contains("CONDITIONAL") && !label.contains("UNCONDITIONAL")
-}
-
-/// Finds an instruction index by exact address string or canonical `space:offset` form.
-fn lookup_address_index(
-  exact_map: &HashMap<String, usize>,
-  canon_map: &HashMap<String, usize>,
-  addr: &str,
-) -> Option<usize> {
-  if let Some(&idx) = exact_map.get(addr) {
-    return Some(idx);
-  }
-  parse_address(addr, "ram").and_then(|parsed| canon_map.get(&parsed.canonical).copied())
+/// Returns true when a flow or edge type describes a conditional branch.
+pub(super) fn is_conditional_label(label: &str) -> bool {
+  let upper = label.to_ascii_uppercase();
+  upper.contains("CONDITIONAL") && !upper.contains("UNCONDITIONAL")
 }
 
 /// Builds an empty CFG JSON response when a function has no body or instructions.
-fn empty_control_flow(
+pub(super) fn empty_control_flow(
   md5: &str,
   entry: &str,
   name: &str,
@@ -92,173 +75,9 @@ fn empty_control_flow(
   })
 }
 
-/// Removes instructions outside the owning function when the body span has multiple ranges.
-async fn filter_body_instructions(
-  backend: &McpBackend,
-  md5: &str,
-  entry: &str,
-  bounds: Option<&serde_json::Map<String, Value>>,
-  start: &str,
-  end: &str,
-  mut instructions: Vec<Value>,
-) -> Result<Vec<Value>> {
-  let Some(body_start) = parse_address(start, "ram") else {
-    return Ok(instructions);
-  };
-  let Some(body_end) = parse_address(end, "ram") else {
-    return Ok(instructions);
-  };
-  let Some(num_addresses) = bounds
-    .and_then(|b| b.get("num_addresses"))
-    .and_then(Value::as_u64)
-  else {
-    return Ok(instructions);
-  };
-  if body_end.offset < body_start.offset {
-    return Ok(instructions);
-  }
-  let span = u128::from(body_end.offset) - u128::from(body_start.offset) + 1;
-  if u128::from(num_addresses) == span || instructions.is_empty() {
-    return Ok(instructions);
-  }
-
-  let resolve_requests: Vec<BatchRequest> = instructions
-    .iter()
-    .enumerate()
-    .map(|(index, instr)| BatchRequest {
-      id: format!("resolve:{index}"),
-      domain: "address",
-      operation: "resolve",
-      method: "address.resolve",
-      params: json!({
-        "selector": {
-          "address": instr.get("address").and_then(Value::as_str).unwrap_or("")
-        }
-      }),
-      all: false,
-    })
-    .collect();
-  let resolved_map = batch_query(backend, md5, &resolve_requests).await?;
-  let mut filtered = Vec::with_capacity(instructions.len());
-  for (index, instr) in instructions.drain(..).enumerate() {
-    let owns = resolved_map
-      .get(&format!("resolve:{index}"))
-      .and_then(|val| val.pointer("/function/entry"))
-      .and_then(Value::as_str)
-      .is_some_and(|resolved_entry| same_address(resolved_entry, entry));
-    if owns {
-      filtered.push(instr);
-    }
-  }
-  Ok(filtered)
-}
-
-/// Output produced by partitioning instructions into basic blocks.
-struct PartitionResult {
-  /// Sorted start instruction indexes for each basic block.
-  starts: Vec<usize>,
-  /// Outgoing `(target_address, edge_label)` list per instruction index.
-  targets: Vec<Vec<(String, String)>>,
-  /// Count of jump or branch instructions that produced zero resolved targets.
-  unresolved: usize,
-}
-
-/// Analyzes instruction flow and branch references to determine block leaders and edges.
-fn partition_blocks(
-  instructions: &[Value],
-  branch_refs: &HashMap<String, Value>,
-) -> PartitionResult {
-  let mut exact_index = HashMap::with_capacity(instructions.len());
-  let mut canon_index = HashMap::with_capacity(instructions.len());
-  for (index, instr) in instructions.iter().enumerate() {
-    let addr = instr.get("address").and_then(Value::as_str).unwrap_or("");
-    exact_index.entry(addr.to_owned()).or_insert(index);
-    if let Some(parsed) = parse_address(addr, "ram") {
-      canon_index.entry(parsed.canonical).or_insert(index);
-    }
-  }
-
-  let mut targets: Vec<Vec<(String, String)>> = vec![Vec::new(); instructions.len()];
-  let mut leaders = BTreeSet::from([0usize]);
-  let mut unresolved = 0usize;
-
-  for (index, instr) in instructions.iter().enumerate() {
-    let flow = instr.get("flow_type").and_then(Value::as_str).unwrap_or("");
-    let mut outgoing: Vec<(String, String)> = Vec::new();
-    if flow.contains("JUMP") || flow.contains("BRANCH") {
-      if let Some(refs) = branch_refs
-        .get(&format!("ref:{index}"))
-        .and_then(|v| v.get("items"))
-        .and_then(Value::as_array)
-      {
-        for ref_item in refs {
-          let ref_type = ref_item.get("type").and_then(Value::as_str).unwrap_or("");
-          if ref_type.contains("JUMP") || ref_type.contains("BRANCH") {
-            let to = ref_item
-              .get("to")
-              .and_then(Value::as_str)
-              .unwrap_or("")
-              .to_owned();
-            outgoing.push((to, ref_type.to_owned()));
-          }
-        }
-      }
-      if outgoing.is_empty() {
-        unresolved += 1;
-      }
-    }
-    let fall_through = instr
-      .get("fall_through")
-      .and_then(Value::as_str)
-      .unwrap_or("");
-    if !fall_through.is_empty() {
-      let label = if flow.contains("CONDITIONAL") {
-        "Fall through"
-      } else {
-        ""
-      };
-      outgoing.push((fall_through.to_owned(), label.to_owned()));
-    }
-
-    let breaks_flow = flow.contains("JUMP")
-      || flow.contains("BRANCH")
-      || flow.contains("TERMINATOR")
-      || flow.contains("RETURN")
-      || fall_through.is_empty();
-    if breaks_flow {
-      if index + 1 < instructions.len() {
-        leaders.insert(index + 1);
-      }
-      for (to, _) in &outgoing {
-        if let Some(pos) = lookup_address_index(&exact_index, &canon_index, to) {
-          leaders.insert(pos);
-        }
-      }
-    } else if index + 1 < instructions.len() {
-      let next_addr = instructions[index + 1]
-        .get("address")
-        .and_then(Value::as_str)
-        .unwrap_or("");
-      if !same_address(fall_through, next_addr) {
-        leaders.insert(index + 1);
-        if let Some(pos) = lookup_address_index(&exact_index, &canon_index, fall_through) {
-          leaders.insert(pos);
-        }
-      }
-    }
-    targets[index] = outgoing;
-  }
-
-  PartitionResult {
-    starts: leaders.into_iter().collect(),
-    targets,
-    unresolved,
-  }
-}
-
-/// Formats disassembly lines for one basic block slice.
-fn format_block_lines(block: &[Value]) -> Vec<String> {
-  block
+/// Formats disassembly lines for one basic block's instruction slice.
+fn format_block_lines(instructions: &[Value]) -> Vec<String> {
+  instructions
     .iter()
     .map(|instr| {
       let mnemonic = instr.get("mnemonic").and_then(Value::as_str).unwrap_or("");
@@ -269,8 +88,8 @@ fn format_block_lines(block: &[Value]) -> Vec<String> {
           ops
             .iter()
             .filter_map(|op| match op {
-              Value::String(s) => Some(s.clone()),
-              Value::Number(n) => Some(n.to_string()),
+              Value::String(text) => Some(text.clone()),
+              Value::Number(num) => Some(num.to_string()),
               _ => None,
             })
             .collect::<Vec<_>>()
@@ -282,7 +101,36 @@ fn format_block_lines(block: &[Value]) -> Vec<String> {
     .collect()
 }
 
-/// Serialized blocks, graph nodes, and graph edges for a non-empty CFG.
+/// Returns true when `block` starts at or contains the function `entry` address.
+pub(super) fn block_input_contains_entry(block: &CfgBlockInput<'_>, entry: &str) -> bool {
+  if !block.start.is_empty() && same_address(block.start, entry) {
+    return true;
+  }
+  block.instructions.iter().any(|instr| {
+    instr
+      .get("address")
+      .and_then(Value::as_str)
+      .is_some_and(|addr| same_address(addr, entry))
+  })
+}
+
+/// Places the block containing `entry` at index zero while keeping remaining blocks ordered.
+pub(super) fn order_block_inputs_entry_first<'a>(
+  mut blocks: Vec<CfgBlockInput<'a>>,
+  entry: &str,
+) -> Vec<CfgBlockInput<'a>> {
+  if let Some(pos) = blocks
+    .iter()
+    .position(|block| block_input_contains_entry(block, entry))
+    && pos > 0
+  {
+    let entry_block = blocks.remove(pos);
+    blocks.insert(0, entry_block);
+  }
+  blocks
+}
+
+/// Serialized blocks, graph nodes, graph edges, and limit flags for a non-empty CFG.
 struct CfgGraphPayload {
   /// Compact instruction length metadata grouped by basic block.
   blocks: Vec<Value>,
@@ -290,62 +138,114 @@ struct CfgGraphPayload {
   nodes: Vec<Value>,
   /// Typed control-flow edges between graph nodes.
   edges: Vec<Value>,
+  /// Count of basic blocks ending in an unresolved jump.
+  unresolved_jumps: usize,
+  /// True when any basic block reached its outgoing edge cap.
+  edges_limited: bool,
 }
 
-/// Builds node, edge, and compact block payloads from partitioned instructions.
-fn build_cfg_graph_payload(
-  instructions: &[Value],
-  entry: &str,
-  starts: &[usize],
-  targets: &[Vec<(String, String)>],
-) -> CfgGraphPayload {
-  let mut blocks_slice: Vec<(usize, &[Value])> = Vec::with_capacity(starts.len());
+/// Registers an address in both exact and canonical `space:offset` block membership maps.
+fn insert_block_membership(
+  exact_membership: &mut HashMap<String, String>,
+  canon_membership: &mut HashMap<String, String>,
+  addr: &str,
+  block_id: &str,
+) {
+  if addr.is_empty() {
+    return;
+  }
+  exact_membership
+    .entry(addr.to_owned())
+    .or_insert_with(|| block_id.to_owned());
+  if let Some(parsed) = parse_address(addr, "ram") {
+    canon_membership
+      .entry(parsed.canonical)
+      .or_insert_with(|| block_id.to_owned());
+  }
+}
+
+/// Builds node, edge, and compact block payloads from normalized [`CfgBlockInput`] items.
+fn build_cfg_graph_payload(raw_blocks: &[CfgBlockInput<'_>], entry: &str) -> CfgGraphPayload {
   let mut exact_membership: HashMap<String, String> = HashMap::new();
   let mut canon_membership: HashMap<String, String> = HashMap::new();
+  let mut nodes: Vec<Value> = Vec::with_capacity(raw_blocks.len());
+  let mut blocks: Vec<Value> = Vec::with_capacity(raw_blocks.len());
+  let mut unresolved_jumps = 0usize;
+  let mut edges_limited = false;
 
-  for (block_idx, &start_idx) in starts.iter().enumerate() {
-    let end_idx = starts
-      .get(block_idx + 1)
-      .copied()
-      .unwrap_or(instructions.len());
-    let block = &instructions[start_idx..end_idx];
+  for (block_idx, block) in raw_blocks.iter().enumerate() {
     let block_id = format!("block:{block_idx}");
-    for instr in block {
-      let addr = instr.get("address").and_then(Value::as_str).unwrap_or("");
-      exact_membership
-        .entry(addr.to_owned())
-        .or_insert_with(|| block_id.clone());
-      if let Some(parsed) = parse_address(addr, "ram") {
-        canon_membership
-          .entry(parsed.canonical)
-          .or_insert_with(|| block_id.clone());
-      }
-    }
-    blocks_slice.push((end_idx - 1, block));
-  }
+    let first_addr = if !block.start.is_empty() {
+      block.start
+    } else {
+      block
+        .instructions
+        .first()
+        .and_then(|instr| instr.get("address"))
+        .and_then(Value::as_str)
+        .unwrap_or("")
+    };
 
-  let mut nodes: Vec<Value> = blocks_slice
-    .iter()
-    .enumerate()
-    .map(|(block_idx, (_, block))| {
-      let first_addr = block[0].get("address").and_then(Value::as_str).unwrap_or("");
-      json!({
-        "id": format!("block:{block_idx}"),
-        "title": display_address(first_addr),
-        "subtitle": format!("{} instruction{}", block.len(), if block.len() == 1 { "" } else { "s" }),
-        "address": first_addr,
-        "entry": entry,
-        "kind": "block",
-        "lines": format_block_lines(block),
+    insert_block_membership(
+      &mut exact_membership,
+      &mut canon_membership,
+      first_addr,
+      &block_id,
+    );
+    for instr in block.instructions {
+      let addr = instr.get("address").and_then(Value::as_str).unwrap_or("");
+      insert_block_membership(
+        &mut exact_membership,
+        &mut canon_membership,
+        addr,
+        &block_id,
+      );
+    }
+
+    if block.unresolved_jump {
+      unresolved_jumps += 1;
+    }
+    if block.edges_limited {
+      edges_limited = true;
+    }
+
+    let instr_count = block.instructions.len();
+    nodes.push(json!({
+      "id": block_id,
+      "title": display_address(first_addr),
+      "subtitle": format!("{instr_count} instruction{}", if instr_count == 1 { "" } else { "s" }),
+      "address": first_addr,
+      "entry": entry,
+      "kind": "block",
+      "lines": format_block_lines(block.instructions),
+    }));
+
+    let compact_instrs: Vec<Value> = block
+      .instructions
+      .iter()
+      .map(|instr| {
+        let addr = instr.get("address").and_then(Value::as_str).unwrap_or("");
+        json!({
+          "address": addr,
+          "length": instruction_byte_length(instr),
+        })
       })
-    })
-    .collect();
+      .collect();
+    blocks.push(json!({
+      "address": first_addr,
+      "instructions": compact_instrs,
+    }));
+  }
 
   let mut raw_edges: Vec<(String, String, String)> = Vec::new();
   let mut external_seen = HashSet::new();
-  for (block_idx, (last_idx, _)) in blocks_slice.iter().enumerate() {
+
+  for (block_idx, block) in raw_blocks.iter().enumerate() {
     let from_id = format!("block:{block_idx}");
-    for (to_addr, label) in &targets[*last_idx] {
+    for (to_addr, label) in &block.destinations {
+      if to_addr.is_empty() {
+        continue;
+      }
       let to_id = exact_membership
         .get(to_addr)
         .cloned()
@@ -398,35 +298,46 @@ fn build_cfg_graph_payload(
     })
     .collect();
 
-  let blocks: Vec<Value> = blocks_slice
-    .iter()
-    .map(|(_, block)| {
-      let first_addr = block[0]
-        .get("address")
-        .and_then(Value::as_str)
-        .unwrap_or("");
-      let instrs: Vec<Value> = block
-        .iter()
-        .map(|instr| {
-          let addr = instr.get("address").and_then(Value::as_str).unwrap_or("");
-          json!({
-            "address": addr,
-            "length": instruction_byte_length(instr),
-          })
-        })
-        .collect();
-      json!({
-        "address": first_addr,
-        "instructions": instrs,
-      })
-    })
-    .collect();
-
   CfgGraphPayload {
     blocks,
     nodes,
     edges,
+    unresolved_jumps,
+    edges_limited,
   }
+}
+
+/// Serializes normalized basic blocks into the `ghidra.controlFlowGraph` JSON payload.
+pub(super) fn finish_control_flow(
+  md5: &str,
+  entry: &str,
+  name: &str,
+  blocks_in: &[CfgBlockInput<'_>],
+) -> Value {
+  let payload = build_cfg_graph_payload(blocks_in, entry);
+  let scope = match (payload.unresolved_jumps > 0, payload.edges_limited) {
+    (true, true) => format!(
+      "{} unresolved jumps; flow edges truncated at limit",
+      payload.unresolved_jumps
+    ),
+    (true, false) => format!("{} unresolved jumps", payload.unresolved_jumps),
+    (false, true) => "Flow edges truncated at limit".to_owned(),
+    (false, false) => String::new(),
+  };
+
+  json!({
+    "md5": md5,
+    "entry": entry,
+    "name": name,
+    "displayAddress": display_address(entry),
+    "hasBody": true,
+    "emptyReason": Value::Null,
+    "scope": scope,
+    "unresolvedJumps": payload.unresolved_jumps,
+    "blocks": payload.blocks,
+    "nodes": payload.nodes,
+    "edges": payload.edges,
+  })
 }
 
 /// Builds basic-block nodes and control-flow edges for a function entry or address.
@@ -452,21 +363,29 @@ pub(crate) async fn control_flow_graph(
   let entry = fn_val
     .get("entry")
     .and_then(Value::as_str)
-    .filter(|s| !s.is_empty())
+    .filter(|text| !text.is_empty())
     .unwrap_or(&initial_entry)
     .to_owned();
   let name = format_function_label(&fn_val, &entry, show_template_arguments);
 
-  let bounds = fn_val.get("body").and_then(Value::as_object);
-  let start_str = bounds
-    .and_then(|b| b.get("start"))
+  let Some(bounds) = fn_val.get("body").and_then(Value::as_object) else {
+    return Ok(empty_control_flow(
+      md5,
+      &entry,
+      &name,
+      "This function has no instruction body.",
+      "External functions do not have a local control-flow graph.",
+    ));
+  };
+  let start_opt = bounds
+    .get("start")
     .and_then(Value::as_str)
-    .filter(|s| !s.is_empty());
-  let end_str = bounds
-    .and_then(|b| b.get("end"))
+    .filter(|text| !text.is_empty());
+  let end_opt = bounds
+    .get("end")
     .and_then(Value::as_str)
-    .filter(|s| !s.is_empty());
-  let (Some(start), Some(end)) = (start_str, end_str) else {
+    .filter(|text| !text.is_empty());
+  let (Some(start), Some(end)) = (start_opt, end_opt) else {
     return Ok(empty_control_flow(
       md5,
       &entry,
@@ -476,73 +395,16 @@ pub(crate) async fn control_flow_graph(
     ));
   };
 
-  let raw_instructions = list_operation(
+  fallback_control_flow_graph(
     backend,
-    "listing",
-    "instruction.list",
-    md5,
-    json!({ "scan": { "range": { "start": start, "end": end }, "timeout_ms": 60000 } }),
-  )
-  .await?;
-  let instructions =
-    filter_body_instructions(backend, md5, &entry, bounds, start, end, raw_instructions).await?;
-  if instructions.is_empty() {
-    return Ok(empty_control_flow(
+    FallbackCfgRequest {
       md5,
-      &entry,
-      &name,
-      "No instructions in this body.",
-      "Ghidra reported no instruction flow.",
-    ));
-  }
-
-  let branch_requests: Vec<BatchRequest> = instructions
-    .iter()
-    .enumerate()
-    .filter(|(_, instr)| {
-      let flow = instr.get("flow_type").and_then(Value::as_str).unwrap_or("");
-      flow.contains("JUMP") || flow.contains("BRANCH")
-    })
-    .map(|(index, instr)| BatchRequest {
-      id: format!("ref:{index}"),
-      domain: "reference",
-      operation: "list",
-      method: "reference.list",
-      params: json!({
-        "filter": {
-          "direction": "from",
-          "from": instr.get("address").and_then(Value::as_str).unwrap_or("")
-        }
-      }),
-      all: true,
-    })
-    .collect();
-  let branch_refs = batch_query(backend, md5, &branch_requests).await?;
-
-  let partitioned = partition_blocks(&instructions, &branch_refs);
-  let payload = build_cfg_graph_payload(
-    &instructions,
-    &entry,
-    &partitioned.starts,
-    &partitioned.targets,
-  );
-  let scope = if partitioned.unresolved > 0 {
-    format!("{} unresolved jumps", partitioned.unresolved)
-  } else {
-    String::new()
-  };
-
-  Ok(json!({
-    "md5": md5,
-    "entry": entry,
-    "name": name,
-    "displayAddress": display_address(&entry),
-    "hasBody": true,
-    "emptyReason": Value::Null,
-    "scope": scope,
-    "unresolvedJumps": partitioned.unresolved,
-    "blocks": payload.blocks,
-    "nodes": payload.nodes,
-    "edges": payload.edges,
-  }))
+      entry: &entry,
+      name: &name,
+      bounds,
+      start,
+      end,
+    },
+  )
+  .await
 }
