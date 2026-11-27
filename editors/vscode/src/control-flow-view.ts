@@ -5,6 +5,8 @@ import * as vscode from 'vscode';
 import { ProgramContext } from './context';
 import { ListingFiles, listingScheme } from './listing';
 import { singleKeyShortcutsEnabled } from './program-views-controller';
+import { layoutControlFlow } from './control-flow-graph';
+import { parseMeasuredSizes } from './graph-layout';
 import { Workbench, ControlFlowData } from './workbench';
 import { escapeHtml, page } from './workbench-page';
 import { AddressRange, addressRange, intersects } from './view-ranges';
@@ -109,10 +111,26 @@ export class ControlFlowView implements vscode.CustomTextEditorProvider, vscode.
             body: state.data.body, scope: state.data.scope, graph: true, controlFlow: true, singleKeyShortcuts,
             state: { kind: 'controlFlow', md5: state.uri.authority, entry: state.entry, analysisUri: state.uri.toString(), singleKeyShortcuts } });
     }
-    /** Handle selection, refresh, and decompile messages posted by the CFG webview. */
-    private async message(state: GraphState, panel: vscode.WebviewPanel, message: { action?: string; address?: string }): Promise<void> {
+    /** Handle selection, refresh, layout measurement, and decompile messages posted by the CFG webview. */
+    private async message(state: GraphState, panel: vscode.WebviewPanel, message: { action?: string; address?: string; sizes?: unknown; nodes?: unknown; requestId?: unknown }): Promise<void> {
         if (this.context.isClosing(state.uri.authority)) { return; }
         if (message.action === 'ready') { await this.highlight(state.uri, state.addresses, state.selected); return; }
+        if (message.action === 'measureGraph') {
+            if (!state.data.nodes.length) { return; }
+            const currentData = state.data;
+            const layout = await layoutControlFlow(currentData.nodes, currentData.edges, parseMeasuredSizes(message.sizes ?? message.nodes));
+            if (this.context.isClosing(state.uri.authority) || state.data !== currentData || !state.panels.has(panel)) { return; }
+            await panel.webview.postMessage({
+                action: 'graphLayout',
+                graphKind: 'controlFlow',
+                requestId: message.requestId,
+                width: layout.width,
+                height: layout.height,
+                nodes: layout.nodes.map(node => ({ id: node.id, x: node.x, y: node.y, width: node.width, height: node.height })),
+                edges: layout.edges.map(edge => ({ index: edge.index, from: edge.from, to: edge.to, path: edge.path, kind: edge.kind, backward: edge.backward, badge: edge.badge })),
+            });
+            return;
+        }
         if (!panel.active) { return; }
         if (message.action === 'refresh') { await this.refresh(state.uri.authority); return; }
         if (message.action !== 'select' && message.action !== 'decompile') { return; }
