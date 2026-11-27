@@ -10,7 +10,7 @@ use md5::{Digest, Md5};
 use object::{Object, ObjectSegment};
 use serde_json::{Value, json};
 
-use crate::backend::{McpBackend, list_all, list_operation};
+use crate::backend::{McpBackend, list_all, list_operation, unsupported_operation};
 
 /// Loads import and export tables from the Ghidra program session, or falls back to local loader
 /// tables when connected to an older bridge that lacks `import.list` and `export.list`.
@@ -123,20 +123,6 @@ fn format_label(raw: Option<&str>) -> String {
   } else {
     value.to_owned()
   }
-}
-
-/// Returns true when `error` indicates that the connected server lacks `import.list` or
-/// `export.list`.
-fn unsupported_operation(error: &anyhow::Error) -> bool {
-  let text = format!("{error:#}").to_ascii_lowercase();
-  text.contains("unknown operation")
-    || text.contains("unknown method")
-    || text.contains("unknown_operation")
-    || text.contains("unknown_method")
-    || text.contains("method not found")
-    || text.contains("unsupported operation")
-    || text.contains("is not one of")
-    || text.contains("unknown variant")
 }
 
 /// Reads PE, ELF, or Mach-O import and export tables from `executable_path` on disk.

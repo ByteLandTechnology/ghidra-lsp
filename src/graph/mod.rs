@@ -5,8 +5,12 @@
 
 /// Bounded caller and callee neighborhood builder.
 mod call_graph;
+/// Fallback caller and callee BFS builder using `function` `call.list`.
+mod call_graph_fallback;
 /// Function basic-block control-flow graph builder.
 mod cfg;
+/// Fallback control-flow graph builder using `listing` `instruction.list`.
+mod cfg_fallback;
 
 use std::collections::HashMap;
 
@@ -36,7 +40,7 @@ pub(super) struct BatchRequest {
 }
 
 /// Normalizes a function entry address into a lowercase canonical graph node identifier.
-pub(super) fn canonical_call_id(entry: &str) -> String {
+pub(crate) fn canonical_call_id(entry: &str) -> String {
   match entry.rsplit_once(':') {
     Some((prefix, offset)) => {
       let space = if prefix.eq_ignore_ascii_case("ram") {
@@ -115,7 +119,7 @@ async fn execute_single_request(
   }
 }
 
-/// Executes many read requests via `batch.execute` with direct fallback for failures or partial pages.
+/// Executes many read requests with `batch.execute`, using direct calls for failures or partial pages.
 pub(super) async fn batch_query(
   backend: &McpBackend,
   md5: &str,
