@@ -66,41 +66,43 @@ impl Server {
         "The installed ghidra-mcp exposes job.get and job.wait, but no job.cancel operation. Closing a progress view does not cancel Ghidra analysis"
       ),
       "ghidra.binaryInterface" => {
-        let md5 = self.scoped_md5(&arg).await?;
+        let md5 = self.scoped_md5(&arg)?;
         crate::binary::interface(backend, &md5).await
       }
       "ghidra.query" => {
         let (domain, operation, _) = workbench::operation(&arg)?;
         let md5 = if workbench::session_required(domain, operation) {
-          Some(self.scoped_md5(&arg).await?)
+          Some(self.scoped_md5(&arg)?)
         } else {
           None
         };
         workbench::query(backend, md5.as_deref(), &arg).await
       }
       "ghidra.mutate" => self.handle_mutate(&arg, backend).await,
-      "ghidra.renameState" => self.handle_rename_state(&arg).await,
+      "ghidra.renameState" => self.handle_rename_state(&arg),
       "ghidra.saveDocument" => self.handle_save_document(&arg).await,
       "ghidra.refreshDocument" => self.handle_refresh_document(&arg).await,
       "ghidra.program" | "ghidra.symbols" | "ghidra.types" | "ghidra.type" => {
         self.handle_catalog_command(command, &arg, backend).await
       }
       "ghidra.refresh" | "ghidra.discardRename" => {
-        let md5 = self.scoped_md5(&arg).await?;
+        let md5 = self.scoped_md5(&arg)?;
+        let session_guard = self.engine.lock_session(&md5).await;
         self.view_cache.invalidate(&md5).await;
-        let mut e = self.engine.lock().await;
         let changes = if command == "ghidra.refresh" {
-          e.refresh_session(&md5, None).await?
+          self.engine.refresh_session_locked(&md5, None).await?
         } else {
-          e.discard(&md5).await?
+          self.engine.discard_locked(&md5)?
         };
-        let uris: Vec<Uri> = e
+        let uris: Vec<Uri> = self
+          .engine
+          .read_state()
           .docs
           .values()
           .filter(|d| d.md5 == md5)
           .map(|d| d.uri.clone())
           .collect();
-        drop(e);
+        drop(session_guard);
         self.apply_refresh(changes).await?;
         for uri in uris {
           self.report(&uri).await;
@@ -130,13 +132,11 @@ impl Server {
         .to_ascii_lowercase();
       (md5, response)
     } else {
-      let md5 = self.scoped_md5(arg).await?;
-      let e = self.engine.lock().await;
+      let md5 = self.scoped_md5(arg)?;
       ensure!(
-        !e.pending.contains_key(&md5),
+        !self.engine.read_state().pending.contains_key(&md5),
         "Save or discard the pending rename before analysis"
       );
-      drop(e);
       crate::engine::record_checkpoint(backend, &md5, "Before program analysis").await?;
       let mut parameters = json!({});
       if let Some(analyzers) = arg.get("analyzers") {
@@ -232,7 +232,7 @@ impl Server {
       progress.analysis = self.program_analysis(&progress.md5).await?;
       if progress.analyze_requested && !progress.analysis.analyzed && !progress.analysis.running {
         ensure!(
-          !self.engine.lock().await.pending.contains_key(&progress.md5),
+          !self.engine.read_state().pending.contains_key(&progress.md5),
           "Save or discard the pending rename before analysis"
         );
         let started = backend
@@ -246,18 +246,23 @@ impl Server {
         progress.phase = "ready";
       }
     } else {
+      let session_guard = self.engine.lock_session(&progress.md5).await;
       workbench::persist(backend, &progress.md5)
         .await
         .context("Analysis completed, but project persistence failed")?;
+      self.engine.bump_epoch(&progress.md5);
       self.view_cache.invalidate(&progress.md5).await;
-      let mut e = self.engine.lock().await;
       // Preserve in-flight rename previews started while analysis ran in the background.
-      let changes = if e.pending.contains_key(&progress.md5) {
+      let has_pending = self.engine.read_state().pending.contains_key(&progress.md5);
+      let changes = if has_pending {
         vec![]
       } else {
-        e.refresh_session(&progress.md5, None).await?
+        self
+          .engine
+          .refresh_session_locked(&progress.md5, None)
+          .await?
       };
-      drop(e);
+      drop(session_guard);
       self.apply_refresh(changes).await?;
       progress.analysis = self.program_analysis(&progress.md5).await?;
       progress.phase = "ready";
@@ -297,7 +302,7 @@ impl Server {
         arg.get("md5").and_then(Value::as_str).is_some(),
         "md5 must be a string"
       );
-      Some(self.scoped_md5(arg).await?)
+      Some(self.scoped_md5(arg)?)
     };
     let has_options = copy_open_options(arg, &mut parameters)?;
     if gpr_target || has_options {
@@ -340,7 +345,7 @@ impl Server {
       && !analysis.running
     {
       ensure!(
-        !self.engine.lock().await.pending.contains_key(&md5),
+        !self.engine.read_state().pending.contains_key(&md5),
         "Save or discard the pending rename before analysis"
       );
       let started = backend
@@ -349,28 +354,34 @@ impl Server {
       self
         .wait_job(started.get("job").unwrap_or(&started))
         .await?;
+      let session_guard = self.engine.lock_session(&md5).await;
       workbench::persist(backend, &md5)
         .await
         .context("Analysis completed, but project persistence failed")?;
+      self.engine.bump_epoch(&md5);
+      drop(session_guard);
       self.view_cache.invalidate(&md5).await;
       analysis = self.program_analysis(&md5).await?;
     }
-    self.engine.lock().await.select(&md5).await?;
+    self.engine.select(&md5).await?;
     Ok(json!({"md5": md5, "analyzed": analysis.analyzed, "analysisRunning": analysis.running}))
   }
 
   /// Closes a clean program session and clears cached engine state for that session.
   async fn handle_close_session(&self, arg: &Value, backend: &McpBackend) -> Result<Value> {
-    let md5 = self.scoped_md5(arg).await?;
-    let mut e = self.engine.lock().await;
-    ensure!(
-      !e.pending.contains_key(&md5),
-      "Save or discard this program's pending rename before closing it"
-    );
-    ensure!(
-      !e.docs.values().any(|d| d.md5 == md5 && !d.clean()),
-      "Discard this program's unsaved edits before closing it"
-    );
+    let md5 = self.scoped_md5(arg)?;
+    let session_guard = self.engine.lock_session(&md5).await;
+    {
+      let state = self.engine.read_state();
+      ensure!(
+        !state.pending.contains_key(&md5),
+        "Save or discard this program's pending rename before closing it"
+      );
+      ensure!(
+        !state.docs.values().any(|d| d.md5 == md5 && !d.clean()),
+        "Discard this program's unsaved edits before closing it"
+      );
+    }
     let result = backend
       .call(
         "session",
@@ -379,8 +390,8 @@ impl Server {
         json!({"force": arg.get("force").and_then(Value::as_bool).unwrap_or(false)}),
       )
       .await?;
-    e.forget_session(&md5);
-    drop(e);
+    self.engine.forget_session(&md5);
+    drop(session_guard);
     self.view_cache.invalidate(&md5).await;
     for progress in self
       .open_jobs
@@ -397,13 +408,11 @@ impl Server {
 
   /// Starts program analysis and optionally waits for completion and document regeneration.
   async fn handle_reanalyze(&self, arg: &Value, backend: &McpBackend) -> Result<Value> {
-    let md5 = self.scoped_md5(arg).await?;
-    let e = self.engine.lock().await;
+    let md5 = self.scoped_md5(arg)?;
     ensure!(
-      !e.pending.contains_key(&md5),
+      !self.engine.read_state().pending.contains_key(&md5),
       "Save or discard the pending rename before analysis"
     );
-    drop(e);
     crate::engine::record_checkpoint(backend, &md5, "Before program analysis").await?;
     let mut parameters = json!({});
     if let Some(analyzers) = arg.get("analyzers") {
@@ -417,12 +426,17 @@ impl Server {
       self
         .wait_job(started.get("job").unwrap_or(&started))
         .await?;
+      let session_guard = self.engine.lock_session(&md5).await;
       workbench::persist(backend, &md5)
         .await
         .context("Analysis completed, but project persistence failed")?;
+      self.engine.bump_epoch(&md5);
       self.view_cache.invalidate(&md5).await;
-      let changes = self.engine.lock().await.refresh_session(&md5, None).await?;
+      let changes = self.engine.refresh_session_locked(&md5, None).await?;
+      drop(session_guard);
       self.apply_refresh(changes).await?;
+    } else {
+      self.engine.bump_epoch(&md5);
     }
     self.changed(&md5).await;
     Ok(json!({"md5": md5, "job": started.get("job").unwrap_or(&started), "waited": wait}))
@@ -430,43 +444,47 @@ impl Server {
 
   /// Executes a policy-checked MCP write operation followed by project persistence and refresh.
   async fn handle_mutate(&self, arg: &Value, backend: &McpBackend) -> Result<Value> {
-    let md5 = self.scoped_md5(arg).await?;
+    let md5 = self.scoped_md5(arg)?;
     let (domain, operation, parameters) = workbench::operation(arg)?;
     workbench::allow_write(domain, operation, &parameters)?;
-    let e = self.engine.lock().await;
-    Self::ensure_program_clean(&e, &md5)?;
+    let session_guard = self.engine.lock_session(&md5).await;
+    Self::ensure_program_clean(&self.engine.read_state(), &md5)?;
     if (domain, operation) != ("program", "save") {
       crate::engine::record_checkpoint(backend, &md5, &format!("Before {domain}.{operation}"))
         .await?;
     }
     let (tool, tool_operation) = workbench::mcp_operation(domain, operation);
-    let result = backend
+    self.engine.invalidate_symbols(&md5);
+    let call_result = backend
       .call(tool, &tool_operation, Some(&md5), parameters)
-      .await
-      .context("Modification may have reached Ghidra; refresh and inspect the actual program state before retrying")?;
+      .await;
+    self.engine.invalidate_symbols(&md5);
+    let result = call_result.context(
+      "Modification may have reached Ghidra; refresh and inspect the actual program state before retrying",
+    )?;
     workbench::check_write_result(domain, operation, &result)?;
     let saved_result = ((domain, operation) == ("program", "save")).then_some(&result);
     self
-      .commit_and_refresh(e, backend, &md5, saved_result)
+      .commit_and_refresh(session_guard, backend, &md5, saved_result)
       .await?;
     Ok(json!({"md5": md5, "persisted": true, "result": result}))
   }
 
   /// Reports pending rename metadata and affected documents for the scoped session.
-  async fn handle_rename_state(&self, arg: &Value) -> Result<Value> {
-    let md5 = self.scoped_md5(arg).await?;
-    let engine = self.engine.lock().await;
-    let pending = engine.pending.get(&md5).map(|plan| {
+  fn handle_rename_state(&self, arg: &Value) -> Result<Value> {
+    let md5 = self.scoped_md5(arg)?;
+    let state = self.engine.read_state();
+    let pending = state.pending.get(&md5).map(|plan| {
       let applied = plan.patched
         || plan.expected.iter().any(|(uri, expected)| {
-          engine
+          state
             .docs
             .get(uri)
             .is_some_and(|doc| doc.current != doc.base && matches_text(&doc.current, expected))
         });
       let origin_applied = plan.patched
         || plan.expected.get(&plan.origin).is_some_and(|expected| {
-          engine
+          state
             .docs
             .get(&plan.origin)
             .is_some_and(|doc| matches_text(&doc.current, expected))
@@ -497,59 +515,75 @@ impl Server {
       .and_then(Value::as_str)
       .context("text is required")?
       .to_owned();
-    let mut e = self.engine.lock().await;
-    let (md5, base, saved) = {
-      let doc = e.docs.get(&uri).context("Unknown virtual document")?;
-      (doc.md5.clone(), doc.base.clone(), doc.saved.clone())
-    };
-    let is_clean = matches_text(&text, &base)
-      || matches_text(&text, &saved)
-      || e
-        .refresh_allowed
-        .get(&uri)
-        .is_some_and(|exp| matches_text(&text, exp));
-    if is_clean {
-      if let Some(d) = e.docs.get_mut(&uri) {
-        d.current = text.clone();
-        d.saved = text;
-      }
-      e.refresh_allowed.remove(&uri);
-      return Ok(Value::Null);
-    }
-
-    let matches_pending = e
-      .pending
-      .get(&md5)
-      .and_then(|p| p.expected.get(&uri))
-      .is_some_and(|expected| matches_text(&text, expected));
-    if !matches_pending
-      && !e.pending.contains_key(&md5)
-      && let Some((pos, new_name)) = e.detect_rename(&uri, &text)
-    {
-      let _ = e.rename(&uri, pos, &new_name);
-    }
-
-    let matches_pending_after = e
-      .pending
-      .get(&md5)
-      .and_then(|p| p.expected.get(&uri))
-      .is_some_and(|expected| matches_text(&text, expected));
-    ensure!(
-      matches_pending_after,
-      "Cannot save changes to read-only decompiled text. Use F2 or Rename Symbol to rename functions, variables, or parameters."
-    );
-
-    let text_to_save = e
-      .pending
-      .get(&md5)
-      .and_then(|p| p.expected.get(&uri).cloned())
-      .unwrap_or(text);
-    e.docs
-      .get_mut(&uri)
+    let md5 = self
+      .engine
+      .read_state()
+      .docs
+      .get(&uri)
       .context("Unknown virtual document")?
-      .current = text_to_save.clone();
-    let changes = e.save(&uri, Some(text_to_save)).await?;
-    drop(e);
+      .md5
+      .clone();
+    let session_guard = self.engine.lock_session(&md5).await;
+    let text_to_save = {
+      let mut state = self.engine.write_state();
+      let (base, saved) = {
+        let doc = state.docs.get(&uri).context("Unknown virtual document")?;
+        (doc.base.clone(), doc.saved.clone())
+      };
+      let is_clean = matches_text(&text, &base)
+        || matches_text(&text, &saved)
+        || state
+          .refresh_allowed
+          .get(&uri)
+          .is_some_and(|exp| matches_text(&text, exp));
+      if is_clean {
+        if let Some(d) = state.docs.get_mut(&uri) {
+          d.current = text.clone();
+          d.saved = text;
+        }
+        state.refresh_allowed.remove(&uri);
+        return Ok(Value::Null);
+      }
+
+      let matches_pending = state
+        .pending
+        .get(&md5)
+        .and_then(|p| p.expected.get(&uri))
+        .is_some_and(|expected| matches_text(&text, expected));
+      if !matches_pending
+        && !state.pending.contains_key(&md5)
+        && let Some((pos, new_name)) = state.detect_rename(&uri, &text)
+      {
+        let _ = state.rename(&uri, pos, &new_name);
+      }
+
+      let matches_pending_after = state
+        .pending
+        .get(&md5)
+        .and_then(|p| p.expected.get(&uri))
+        .is_some_and(|expected| matches_text(&text, expected));
+      ensure!(
+        matches_pending_after,
+        "Cannot save changes to read-only decompiled text. Use F2 or Rename Symbol to rename functions, variables, or parameters."
+      );
+
+      let text_to_save = state
+        .pending
+        .get(&md5)
+        .and_then(|p| p.expected.get(&uri).cloned())
+        .unwrap_or(text);
+      state
+        .docs
+        .get_mut(&uri)
+        .context("Unknown virtual document")?
+        .current = text_to_save.clone();
+      text_to_save
+    };
+    let changes = self
+      .engine
+      .save_locked(&md5, &uri, Some(text_to_save))
+      .await?;
+    drop(session_guard);
     self.apply_refresh(changes).await?;
     self.report(&uri).await;
     self.changed(&md5).await;
@@ -564,13 +598,26 @@ impl Server {
       .context("uri is required")?
       .parse()?;
     let uri = canonical_virtual_uri(&raw_uri);
-    let mut e = self.engine.lock().await;
-    let changes = e.refresh_document(&uri).await?;
+    let md5 = self
+      .engine
+      .read_state()
+      .docs
+      .get(&uri)
+      .context("Unknown virtual document")?
+      .md5
+      .clone();
+    let session_guard = self.engine.lock_session(&md5).await;
+    let changes = self.engine.refresh_document_locked(&uri).await?;
     let changed = !changes.is_empty();
-    let doc = e.docs.get(&uri).context("Unknown virtual document")?;
-    let md5 = doc.md5.clone();
-    let text = doc.base.clone();
-    drop(e);
+    let text = self
+      .engine
+      .read_state()
+      .docs
+      .get(&uri)
+      .context("Unknown virtual document")?
+      .base
+      .clone();
+    drop(session_guard);
     self.apply_refresh(changes).await?;
     self.report(&uri).await;
     if changed {
@@ -586,7 +633,7 @@ impl Server {
     arg: &Value,
     backend: &McpBackend,
   ) -> Result<Value> {
-    let md5 = self.scoped_md5(arg).await?;
+    let md5 = self.scoped_md5(arg)?;
     match command {
       "ghidra.program" => backend.call("program", "get", Some(&md5), json!({})).await,
       "ghidra.type" => {
